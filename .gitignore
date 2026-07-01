@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets / env — keys never go in git
+.env
+.env.*
+
+# Market data never goes in git — R2 only (standing rule)
+data/
+*.parquet
+
+# Local tooling
+.claude/settings.local.json
+
+# Raw handoff copy (canonical versions live in docs/ and collector/)
+/files/
