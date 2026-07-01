@@ -122,3 +122,17 @@ Coverage output (verification run):
       (no frontier state yet)
 
     Quality flags: none yet (run --mode quality)
+
+## 2026-07-01 — DoltHub backfill evaluation (spun-off session)
+
+Evaluated `post-no-preference/options` (DoltHub) as the historical EOD
+backfill per the DECIDED block. Full findings + conditions:
+**docs/DOLTHUB-EVAL.md**. Headline: **GO, scoped to SPY 2020-01-06 →
+2026-06-30** — §6 quality passes with headroom (0 crossed rows in 166k,
+2/1,169 sessions breach the dead-quote flag), IV/greeks/parity track known
+regimes; but QQQ/IWM are absent, snapshots are M/W/F-only before 2024-09,
+and each snapshot quotes only ~3 expirations (~14/~28/44–66 DTE, strikes
+~±30%), so pre-2024-09 backtests are checkpoint-marked, not daily-marked.
+Read-only evaluation over the SQL API; nothing imported to R2, no data in
+git. Ingest work (collector `--mode dolthub-backfill`) awaits owner
+acceptance of the conditions in the eval doc §7.
