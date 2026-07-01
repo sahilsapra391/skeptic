@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skeptic.local/strategy-spec.schema.json",
+  "title": "Skeptic Strategy Spec (IR) v1",
+  "type": "object",
+  "required": ["spec_version", "meta", "underlying", "position", "entry", "exit", "sizing", "costs", "backtest"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": { "const": 1 },
+    "meta": {
+      "type": "object",
+      "required": ["name", "description_raw"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 80 },
+        "description_raw": { "type": "string", "description": "The user's original natural-language description, verbatim." }
+      }
+    },
+    "underlying": {
+      "type": "object",
+      "required": ["ticker"],
+      "properties": {
+        "ticker": { "enum": ["SPY", "QQQ", "IWM"] }
+      }
+    },
+    "position": {
+      "type": "object",
+      "required": ["structure", "legs", "expiration_selection"],
+      "properties": {
+        "structure": {
+          "enum": ["short_put", "put_credit_spread", "call_credit_spread", "iron_condor", "covered_call", "long_call", "long_put"]
+        },
+        "legs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["right", "side", "strike_selection", "ratio"],
+            "properties": {
+              "right": { "enum": ["call", "put"] },
+              "side": { "enum": ["long", "short"] },
+              "ratio": { "type": "integer", "minimum": 1, "maximum": 4 },
+              "strike_selection": {
+                "type": "object",
+                "required": ["method", "value"],
+                "properties": {
+                  "method": {
+                    "enum": ["delta", "offset_pct", "atm", "width_from_leg"],
+                    "description": "delta: nearest |delta|; offset_pct: strike = spot*(1+value); atm: value ignored; width_from_leg: strike = referenced leg strike +/- value dollars (spreads/condors)."
+                  },
+                  "value": { "type": "number" },
+                  "reference_leg": { "type": "integer", "minimum": 0, "description": "Required when method=width_from_leg." }
+                }
+              }
+            }
+          }
+        },
+        "expiration_selection": {
+          "type": "object",
+          "required": ["target_dte", "min_dte", "max_dte"],
+          "properties": {
+            "target_dte": { "type": "integer", "minimum": 1, "maximum": 90 },
+            "min_dte": { "type": "integer", "minimum": 1 },
+            "max_dte": { "type": "integer", "maximum": 120 }
+          }
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["schedule", "conditions", "max_concurrent_positions"],
+      "properties": {
+        "schedule": {
+          "type": "object",
+          "required": ["frequency"],
+          "properties": {
+            "frequency": { "enum": ["daily", "weekly", "monthly", "signal_only"] },
+            "day_of_week": { "enum": ["monday", "tuesday", "wednesday", "thursday", "friday"] },
+            "day_of_month": { "type": "integer", "minimum": 1, "maximum": 28 }
+          }
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["indicator", "operator", "value"],
+            "properties": {
+              "indicator": {
+                "enum": ["rsi", "sma", "ema", "price_vs_sma_pct", "price_vs_ema_pct", "ema_cross_state", "iv_percentile_1y", "vix_level", "realized_vol_20d", "drawdown_from_high_pct"],
+                "description": "All computed on strictly trailing windows over the underlying (or VIX). ema_cross_state compares fast vs slow EMA: value encodes {fast, slow}, operator above/below."
+              },
+              "period": { "type": "integer", "minimum": 2, "maximum": 400 },
+              "params": { "type": "object", "description": "Indicator-specific, e.g. {\"fast\": 9, \"slow\": 20} for ema_cross_state." },
+              "operator": { "enum": ["<", "<=", ">", ">=", "above", "below", "crosses_above", "crosses_below"] },
+              "value": { "type": "number" }
+            }
+          }
+        },
+        "max_concurrent_positions": { "type": "integer", "minimum": 1, "maximum": 10 }
+      }
+    },
+    "exit": {
+      "type": "object",
+      "description": "At least one of profit_target_pct, stop_loss_pct, time_exit_dte, or conditions must be present; the parser must ASK rather than default when the user gave none.",
+      "minProperties": 1,
+      "properties": {
+        "profit_target_pct": { "type": "number", "exclusiveMinimum": 0, "description": "Percent of max credit captured (credit) or premium gain (debit)." },
+        "stop_loss_pct": { "type": "number", "exclusiveMinimum": 0, "description": "Percent of credit received (credit) or premium paid (debit) lost." },
+        "time_exit_dte": { "type": "integer", "minimum": 0 },
+        "conditions": { "$ref": "#/properties/entry/properties/conditions" }
+      }
+    },
+    "sizing": {
+      "type": "object",
+      "required": ["method", "value"],
+      "properties": {
+        "method": { "enum": ["fixed_contracts", "risk_pct_of_equity"] },
+        "value": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "costs": {
+      "type": "object",
+      "required": ["commission_per_contract", "slippage_half_spread_fraction"],
+      "properties": {
+        "commission_per_contract": { "type": "number", "minimum": 0, "default": 0.65 },
+        "slippage_half_spread_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.5,
+          "description": "Fraction of the half-spread conceded from mid toward the adverse quote. 0 (mid fills) is forbidden by validation; 1.0 = full adverse quote."
+        }
+      }
+    },
+    "backtest": {
+      "type": "object",
+      "required": ["initial_capital"],
+      "properties": {
+        "start": { "type": ["string", "null"], "format": "date", "description": "null = earliest available options coverage." },
+        "end": { "type": ["string", "null"], "format": "date", "description": "null = latest available." },
+        "initial_capital": { "type": "number", "minimum": 1000, "default": 10000 },
+        "seed": { "type": "integer", "default": 42 }
+      }
+    }
+  }
+}
