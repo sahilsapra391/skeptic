@@ -47,8 +47,7 @@ backfill-limit inputs), `.github/workflows/quality-weekly.yml`
    and cron schedules only operate on the default branch, and M1 acceptance
    requires live workflow runs.
 
-**Coverage output (first live run):** _pending — appended after the
-verification run._
+**Coverage output (first live runs):** see the addendum resolution below.
 
 ## 2026-07-01 — M1 addendum: Alpha Vantage HISTORICAL_OPTIONS is premium-gated
 
@@ -75,3 +74,51 @@ the AV leg resumes automatically (detection is response-based, no config).
 community historical archive (e.g. DoltHub options) for backfill / paid
 source. DATA-PIPELINE.md and M1's acceptance criteria to be amended to
 match the decision.
+
+## 2026-07-01 — M1 addendum resolution + verification (owner decision)
+
+Owner decision: **Yahoo-forward as the EOD record + evaluate the DoltHub
+community archive for backfill** ($0/mo; AV premium rejected at ~2x the
+whole project budget). The DECIDED block now leads docs/DATA-PIPELINE.md.
+The AV leg stays in the collector, dormant; it resumes automatically if the
+key ever gains access. DoltHub evaluation spun off as a separate session.
+
+Verification runs, both green on workflow_dispatch:
+
+- collect-eod run 28553071331 — premium-gated AV handled as a known
+  condition; Yahoo snapshots 3/3 (SPY 3,543 / QQQ 3,247 / IWM 1,594 rows,
+  2026-07-01); underlying + VIX full history; **healthcheck success ping
+  received** — and the earlier failing run proved the fail path pages, so
+  DoD §8.3 is demonstrated in both directions.
+- quality-weekly run 28553211481 — flags computed and written to
+  r2://state/quality_flags.json.
+
+M1 acceptance as amended: §8.1 ✓ (two workflows, dispatch-green, scheduled);
+§8.2 ✓ Yahoo chains 3/3, underlying to the 1990s, VIX to 1990 (AV chains and
+the moving frontier suspended per the DECIDED block); §8.3 ✓ both directions;
+§8.4 ✓ (coverage.py, also runs at the end of every nightly workflow).
+
+Coverage output (verification run):
+
+    ==============================================================
+    Skeptic data lake coverage
+    ==============================================================
+
+    Options chains
+       alphavantage SPY:     0 sessions
+       alphavantage QQQ:     0 sessions
+       alphavantage IWM:     0 sessions
+              yahoo SPY:     1 sessions   2026-07-01 -> 2026-07-01
+              yahoo QQQ:     1 sessions   2026-07-01 -> 2026-07-01
+              yahoo IWM:     1 sessions   2026-07-01 -> 2026-07-01
+
+    Underlying dailies + VIX
+        SPY:   8412 rows   1993-01-29 -> 2026-07-01
+        QQQ:   6870 rows   1999-03-10 -> 2026-07-01
+        IWM:   6562 rows   2000-05-26 -> 2026-07-01
+       ^VIX:   9192 rows   1990-01-02 -> 2026-07-01
+
+    Backfill frontier (walking backward toward 2008-01-02)
+      (no frontier state yet)
+
+    Quality flags: none yet (run --mode quality)

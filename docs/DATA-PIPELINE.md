@@ -2,6 +2,17 @@
 *Consumer: Claude Code (Milestone M1). This pipeline is deliberately built and
 started BEFORE the app, because history only accrues forward.*
 
+> **DECIDED (owner, 2026-07-01): Alpha Vantage HISTORICAL_OPTIONS became
+> premium-only (~$50/mo) and is out of budget. The EOD source of record is
+> the nightly Yahoo snapshot (greeks computed at ingest per TECH-SPEC §4).
+> The AV leg stays in the collector, dormant, and resumes automatically if
+> the key ever gains access; the free backfill-to-2008 drip is suspended.
+> Historical backfill candidate under evaluation: the DoltHub community
+> options archive (the PRD §10 "community-crowdsourced archive"), which
+> requires a quality-verification pass before any of it is trusted.
+> Wherever this document assumes AV as record or backfill engine, read it
+> through this decision. Full context: docs/BUILD-LOG.md, M1 addendum.**
+
 ## 1. Strategy: two sources, three jobs
 
 **Sources**
