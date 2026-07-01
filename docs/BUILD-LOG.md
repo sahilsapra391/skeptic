@@ -49,3 +49,29 @@ backfill-limit inputs), `.github/workflows/quality-weekly.yml`
 
 **Coverage output (first live run):** _pending — appended after the
 verification run._
+
+## 2026-07-01 — M1 addendum: Alpha Vantage HISTORICAL_OPTIONS is premium-gated
+
+First live run (Actions run 28552781791) failed on the AV leg with
+"This is a premium endpoint." Verified against alphavantage.co/documentation:
+Historical Options and Realtime Options are both badged **Premium** as of
+July 2026. The handoff's free-25/day assumption (DATA-PIPELINE §1) no longer
+holds — the free EOD source of record AND the free backfill-to-2008 engine
+are gone. AV premium starts at ~$50/mo, which violates the locked ~$25/mo
+budget (README-START-HERE, Decisions #3).
+
+What the same run proved works: Yahoo snapshots (3/3 tickers), underlying
+dailies (SPY→1993, QQQ→1999, IWM→2000), VIX→1990, healthcheck fail-path
+alerting, coverage report.
+
+**Interim posture (pending owner decision on a replacement source):** a
+premium-gated AV key is treated as a known condition, not a nightly
+incident — the run is green if the Yahoo leg fully covers the day, and the
+AV rejection logs at error level. Nightly Yahoo + dailies collection
+continues so forward history keeps accruing. If the key ever gains access,
+the AV leg resumes automatically (detection is response-based, no config).
+
+**Open decision (owner):** replacement data strategy — Yahoo-forward only /
+community historical archive (e.g. DoltHub options) for backfill / paid
+source. DATA-PIPELINE.md and M1's acceptance criteria to be amended to
+match the decision.

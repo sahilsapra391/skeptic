@@ -169,7 +169,7 @@ def completed_sessions(now_utc: datetime, k: int) -> list[date]:
 def previous_session_before(d: date) -> date | None:
     """The NYSE session immediately before d (which need not be a session)."""
     cal = nyse()
-    window = cal.sessions_in_range(pd.Timestamp(d) - pd.Timedelta(days=20), pd.Timestamp(d))
+    window = cal.sessions_in_range(pd.Timestamp(d - timedelta(days=20)), pd.Timestamp(d))
     prior = [pd.Timestamp(s).date() for s in window if pd.Timestamp(s).date() < d]
     return prior[-1] if prior else None
 
@@ -383,6 +383,7 @@ def run_eod(s3, budget: AvBudget) -> bool:
     if not targets:
         log.info("AV record already complete (catch-up no-op)")
     av_ok = True
+    av_unavailable = False
     for ticker, d in targets:
         if budget.remaining <= 0:
             log.warning("AV budget exhausted; record incomplete today")
@@ -392,7 +393,13 @@ def run_eod(s3, budget: AvBudget) -> bool:
             df = av_fetch_chain(ticker, d)
             budget.spend()
         except (RuntimeError, requests.RequestException) as exc:
-            log.warning("[av:%s] %s: %s — stopping AV leg", ticker, d, exc)
+            if "premium" in str(exc).lower():
+                log.error("[av:%s] HISTORICAL_OPTIONS is premium-gated on this "
+                          "key; AV leg skipped. Data-strategy decision pending "
+                          "(docs/BUILD-LOG.md, M1 addendum).", ticker)
+                av_unavailable = True
+            else:
+                log.warning("[av:%s] %s: %s — stopping AV leg", ticker, d, exc)
             av_ok = False
             break
         if df.empty:
@@ -407,6 +414,7 @@ def run_eod(s3, budget: AvBudget) -> bool:
         time.sleep(AV_PACING_SECONDS)
 
     log.info("== Yahoo redundancy snapshot ==")
+    yahoo_written = 0
     for ticker in TICKERS:
         try:
             df = yahoo_snapshot(ticker)
@@ -417,11 +425,17 @@ def run_eod(s3, budget: AvBudget) -> bool:
             d = df["trading_date"].iloc[0]
             key = f"options/source=yahoo/ticker={ticker}/date={d}/snap_{ts}.parquet"
             r2_put_parquet(s3, key, df)
+            yahoo_written += 1
         except Exception as exc:
             log.warning("[yahoo:%s] failed, non-fatal: %s", ticker, exc)
 
     log.info("== Underlying + VIX refresh ==")
     refresh_underlying_and_vix(s3)
+    if av_unavailable:
+        # Interim posture while the data-strategy decision is pending: a
+        # premium-gated AV key is a known condition, not a nightly incident.
+        # The run is healthy if the Yahoo leg fully covered the day.
+        return yahoo_written == len(TICKERS)
     return av_ok
 
 
@@ -459,7 +473,12 @@ def run_backfill(s3, budget: AvBudget, limit: int | None = None) -> None:
                     budget.spend()
                     fetched += 1
                 except (RuntimeError, requests.RequestException) as exc:
-                    log.warning("[%s] %s: %s — stopping backfill for today", ticker, prev, exc)
+                    if "premium" in str(exc).lower():
+                        log.error("[%s] backfill unavailable: HISTORICAL_OPTIONS "
+                                  "is premium-gated on this key", ticker)
+                    else:
+                        log.warning("[%s] %s: %s — stopping backfill for today",
+                                    ticker, prev, exc)
                     return
                 if df.empty:
                     log.warning("[%s] %s returned no data; advancing frontier", ticker, prev)
