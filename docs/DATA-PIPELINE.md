@@ -23,6 +23,19 @@ started BEFORE the app, because history only accrues forward.*
 > at $0, per the same eval). Implementation: BUILD-PLAN M1.5. Greeks for
 > minute data are computed, not stored per bar (§4b).**
 
+> **DECIDED (owner, 2026-07-02, late): Alpaca options minute lake is
+> FROZEN at 2024-02 → 2026-06.** Alpaca's dashboard errors on signing the
+> OPRA agreement, so the options-bars entitlement lapsed after the bulk
+> backfill completed (159.4M bars banked). The lake stays as a static
+> research asset; the nightly Alpaca top-up treats the missing entitlement
+> as a **known condition** (green run, error-level log) and resumes
+> automatically if the entitlement ever appears — same pattern as the
+> dormant AV leg. **The forward record is: nightly Yahoo EOD snapshots
+> (source of record) + the live intraday recorder (job 5: CBOE full-chain
+> minute quotes with bid/ask/IV/greeks/OI, Yahoo every 15 min as
+> redundancy).** Underlying minute bars are stock data (not OPRA-gated)
+> and continue.**
+
 ## 1. Strategy: sources and jobs
 
 **Sources**
@@ -226,14 +239,17 @@ Reference implementation: `reference/collector_v2.py`. Productionize as
 - Self-collected + AV data is approximate research data: no OPRA-grade
   point-in-time guarantees, EOD quotes can be wide/stale at the close.
   The Observatory and every run's methodology note say so.
-- Intraday options history exists from **2024-02 only** (Alpaca minute
-  bars, §4b) — nothing free reaches earlier at minute granularity
-  (docs/INTRADAY-OPTIONS-DATA-EVAL.md). 0DTE/1DTE strategies (the owner's
+- Intraday options history is a **fixed window plus a live tail**: Alpaca
+  minute trade bars cover **2024-02 → 2026-06 only** (lake frozen — OPRA
+  entitlement unavailable; see DECIDED block), and the live recorder's
+  minute quote snapshots run **2026-07-02 →** (best-effort uptime). The
+  gap 2026-07-01 has EOD coverage only. 0DTE/1DTE strategies (the owner's
   live style) stay refused until the engine gains a minute mode (post-M2
-  milestone); when it does, such runs are bounded to 2024-02→ and the
+  milestone); when it does, runs are bounded to those windows and the
   coverage endpoint says exactly that. Minute bars are trade-derived and
-  sparse on illiquid contracts; fills come from lazily-fetched quotes,
-  never bar closes.
+  sparse on illiquid contracts; minute fills need quote data (the
+  recorder's snapshots forward; a disclosed spread model for the frozen
+  bar window).
 
 ## 8. Definition of done for M1
 

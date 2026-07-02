@@ -329,7 +329,22 @@ def run_backfill(start_month: str, tickers: list[str], max_minutes: float) -> in
                             [(t, m) for (t, m) in pending
                              if state.get(t, {}).get(m, {}).get("status") != "done"]))
             return 0
-        stats = backfill_month(s3, ticker, month)
+        try:
+            stats = backfill_month(s3, ticker, month)
+        except RuntimeError as exc:
+            if "OPRA" not in str(exc):
+                raise
+            # DECIDED 2026-07-02: OPRA entitlement unavailable (dashboard
+            # error on signing) — the options minute lake is frozen as-is; a
+            # missing entitlement is a known condition, not an incident.
+            # Options months stay pending and resume automatically if the
+            # entitlement ever appears; underlying bars are not OPRA-gated.
+            log.error("known condition: OPRA entitlement missing — options "
+                      "minute lake frozen; skipping options months, "
+                      "continuing with underlying bars")
+            state["opra_blocked_at"] = datetime.now(timezone.utc).isoformat()
+            r2_put_json(s3, STATE_KEY, state)
+            break
         state.setdefault(ticker, {})[month] = stats
         r2_put_json(s3, STATE_KEY, state)
 
@@ -373,9 +388,22 @@ def run_eod(tickers: list[str]) -> int:
                 frame = bars_to_frame(ticker, raw)
                 written = write_sessions(s3, ticker, frame)
                 log.info("eod %s %s: %s rows", ticker, day, written.get(str(day), 0))
+            except RuntimeError as exc:
+                if "OPRA" in str(exc):
+                    # known condition (DECIDED 2026-07-02): run stays green;
+                    # top-up resumes automatically if the entitlement appears
+                    log.error("known condition: OPRA entitlement missing — "
+                              "minute top-up skipped for tonight")
+                    failures = 0
+                    break
+                log.exception("eod top-up failed for %s %s", ticker, day)
+                failures += 1
             except Exception:
                 log.exception("eod top-up failed for %s %s", ticker, day)
                 failures += 1
+        else:
+            continue
+        break
     # refresh current month's underlying minute bars
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     start, end = month_bounds(month)

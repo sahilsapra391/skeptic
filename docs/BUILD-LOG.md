@@ -262,3 +262,20 @@ delta-adjustment via vendor delta and our underlying minute bars added.
 Final full-window run pends the Alpaca backfill (underlying minute bars
 land last). Alpaca backfill hardening: network-level exceptions
 (connection reset after ~2 h) now retried in _get.
+
+## 2026-07-02 — Alpaca minute lake frozen (owner decision); forward = Yahoo + live recorder
+
+Bulk minute-bar backfill COMPLETED inside Alpaca's new-account grace
+window: **29 months × 3 tickers (2024-02 → 2026-06), 159.4M bars**
+(SPY 81.3M / QQQ 58.6M / IWM 19.6M) — then the account hit 403 "OPRA
+agreement is not signed" and the dashboard errors when the owner tries to
+sign it. Owner decision: **keep the lake frozen as a static research
+asset; do not chase the entitlement.** Going forward the record is the
+nightly Yahoo EOD snapshot + the live intraday recorder (CBOE full-chain
+minute quotes — bid/ask/IV/greeks/OI — with Yahoo 15-min redundancy).
+Collector treats the missing OPRA entitlement as a known condition (green
+nightly, error-level log, automatic resume if it ever appears — the AV
+pattern). Underlying minute bars are stock data, not OPRA-gated: backfill
+re-dispatched for those 30 months, which also unblocks the full
+cross-source validation. July options gap: 2026-07-01 has EOD coverage
+only; the recorder covers 2026-07-02 onward.
