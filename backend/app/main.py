@@ -14,6 +14,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import load_local_env
 
@@ -23,6 +24,8 @@ from app.api import data as data_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
 
 app = FastAPI(title="Skeptic", version="0.1.0")
+
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 
 app.add_middleware(
     CORSMiddleware,

@@ -196,6 +196,7 @@ export interface BarsPayload {
   live: boolean;
   source: string;
   as_of: string | null;
+  has_more: boolean;
   bars: Bar[];
   indicators: Record<string, IndicatorSeries>;
 }

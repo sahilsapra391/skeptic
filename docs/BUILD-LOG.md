@@ -394,6 +394,45 @@ by one indicators menu and chip rows, no config trees. The old sample
 -series fallback was removed — an unreachable lake now shows an honest
 error, never a synthetic market.
 
+## 2026-07-02 — Fluid chart navigation (owner screen recording replicated)
+
+Owner supplied an 88 s Robinhood Legend recording as the interaction spec
+(frames extracted via AVFoundation and studied): grab-drag panning that
+tracks the pointer 1:1, inertia on release, cursor-anchored wheel/pinch
+zoom, continuous y auto-scale, older data streaming in as you pull back
+(their 2m chart pans Jul → Jun 26; daily pans 2025 → 1994), future
+whitespace right of the latest candle. Shipped on `design-implementation`:
+
+- **Backend paging:** /api/data/bars gains `before` + `limit`; every page
+  is computed with a 300-bar indicator lookback so SMA/RSI/MACD arrive
+  warm at page seams (verified: window-edge SMA non-null, page seams
+  contiguous for 1d and 5m). `has_more` tells the client when the lake
+  is exhausted. GZip middleware for the larger payloads.
+- **MarketChart viewport model:** buffer (grows by prepended pages) +
+  fractional view {start, span}. Pointer-capture drag, velocity-decay
+  inertia, wheel zoom anchored at the cursor frac, horizontal-wheel pan,
+  left-edge paging with a 200 ms cooldown, 12k-bar buffer ceiling per
+  interval (coarser intervals are the tool for deeper zoom-out), right
+  overscan, "→ latest" jump chip, y auto-scale over the visible slice,
+  display decimation ≥700 bars (absolute-grid-aligned so candles don't
+  shimmer while panning).
+
+Three real bugs found by driving it in the preview browser and fixed:
+(1) absolute-position view writes raced page-prepend index shifts —
+all hot-path writes are now delta-based; (2) `getBoundingClientRect()
+.width` transiently reads 0 in some environments, poisoning px→bars
+conversion — replaced with clientWidth + last-known-good caching + a
+one-screenful cap per event; (3) React's queued functional updaters get
+REPLAYED on rebase under continuous paging, livelocking the render loop —
+the viewport now lives in a ref mutated imperatively, with rAF-throttled
+plain-state snapshots (setTimeout fallback: backgrounded tabs starve rAF).
+
+Verified end-state in-browser: pan travels exactly the dragged distance
+plus glide (Jun 30 → Jun 22, span preserved), zoom out pages bounded then
+zooms back in cleanly, pin-click still compiles a chart-taught spec.
+Tick-level data remains impossible ($0 sources don't exist — intraday
+eval); 1-minute stays the honest floor.
+
 ## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
 
 The owner-requested DoltHub-vs-Alpaca validation completed its arc:

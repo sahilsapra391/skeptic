@@ -33,6 +33,8 @@ def get_bars(
     interval: str = Query(default="5m"),
     window: str = Query(default="1w"),
     indicators: str = Query(default=""),
+    before: str | None = Query(default=None, description="page: bars strictly before this ts"),
+    limit: int | None = Query(default=None, ge=50, le=5000),
 ) -> dict[str, Any]:
     ticker = ticker.upper()
     if ticker not in bars_mod.TICKERS:
@@ -47,7 +49,9 @@ def get_bars(
         raise HTTPException(status_code=422, detail=f"window must be one of {bars_mod.WINDOWS}")
     specs = [s for s in indicators.split(",") if s.strip()]
     try:
-        return bars_mod.get_bars(ticker, interval, window, specs)
+        return bars_mod.get_bars(ticker, interval, window, specs, before=before, limit=limit)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=f"bad `before` timestamp: {exc}") from exc
     except R2NotConfigured as exc:
         raise HTTPException(status_code=503, detail=f"{_R2_HINT} ({exc})") from exc
 

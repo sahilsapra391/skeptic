@@ -49,8 +49,11 @@ export function getBars(
   interval: ChartInterval,
   window: ChartWindow,
   indicators: string[],
+  opts?: { before?: string; limit?: number },
 ): Promise<BarsPayload> {
   const params = new URLSearchParams({ interval, window, indicators: indicators.join(",") });
+  if (opts?.before) params.set("before", opts.before);
+  if (opts?.limit) params.set("limit", String(opts.limit));
   return request<BarsPayload>(`/api/data/bars/${ticker}?${params}`);
 }
 

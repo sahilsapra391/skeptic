@@ -23,8 +23,9 @@ function fmtPin(iso: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
-    year: "2-digit",
-    ...(hasTime ? { hour: "2-digit", minute: "2-digit", hour12: false } : {}),
+    ...(hasTime
+      ? { hour: "2-digit", minute: "2-digit", hour12: false }
+      : { year: "2-digit" }),
     timeZone: "America/New_York",
   }).format(d);
 }

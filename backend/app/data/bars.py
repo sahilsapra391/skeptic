@@ -29,7 +29,11 @@ from app.data import indicators as ind
 from app.data import r2
 
 TICKERS = ["SPY", "QQQ", "IWM"]
-MAX_BARS = 2000
+MAX_BARS = 2500  # initial buffer size
+PAGE_MAX = 5000  # hard cap on any single response
+# indicator warmup rows computed BEFORE the returned range so paged-in older
+# bars stitch onto the buffer with correct SMA200/MACD/RSI values at the seam
+INDICATOR_LOOKBACK = 300
 MINUTE_LAKE_START = "2024-02"
 ET = "America/New_York"
 
@@ -177,20 +181,17 @@ def _resample_minutes(df: pd.DataFrame, rule: str | None) -> pd.DataFrame:
     return out.reset_index()
 
 
-def _intraday_frame(s3: Any, ticker: str, interval: str, window: str) -> tuple[pd.DataFrame, bool]:
+def _intraday_frame(
+    s3: Any, ticker: str, interval: str, window: str, before: pd.Timestamp | None, target: int
+) -> tuple[pd.DataFrame, bool, bool, int]:
+    """Returns (frame incl. indicator-lookback rows, live, has_more, keep)."""
     rule, per_bar = INTRADAY_INTERVALS[interval]
-    now = datetime.now(UTC)
-    # read only as many months (newest-first) as MAX_BARS can possibly need
+    reference_end = before.to_pydatetime() if before is not None else datetime.now(UTC)
     bars_per_month = (390 // per_bar + 1) * 21
-    months_needed = max(2, MAX_BARS // max(bars_per_month, 1) + 2)
-    all_months = _months_between(datetime(2024, 2, 1), now)
-    if window in ("1d", "1w"):
-        months_needed = 2
-    elif window == "1mo":
-        months_needed = 3
-    elif window in ("3mo", "ytd"):
-        months_needed = max(months_needed, 5)
-    months = all_months[-months_needed:] if window != "all" else all_months[-months_needed:]
+    months_needed = max(2, (target + INDICATOR_LOOKBACK) // max(bars_per_month, 1) + 2)
+    all_months = _months_between(datetime(2024, 2, 1), reference_end)
+    months = all_months[-months_needed:]
+    truncated_months = len(all_months) > len(months)
 
     frames = [m for month in months if (m := _cached_month(s3, ticker, month)) is not None]
     minutes = (
@@ -200,37 +201,48 @@ def _intraday_frame(s3: Any, ticker: str, interval: str, window: str) -> tuple[p
     )
 
     live = False
-    last = minutes["minute_ts"].max() if len(minutes) else pd.Timestamp("2024-02-01", tz="UTC")
-    if datetime.now(UTC) - last.to_pydatetime() > timedelta(minutes=2):
-        tail = _live_tail_minutes(ticker, last)
-        if tail is not None and len(tail):
-            minutes = pd.concat([minutes, tail], ignore_index=True).drop_duplicates(
-                subset="minute_ts"
-            )
+    if before is None:
+        last = minutes["minute_ts"].max() if len(minutes) else pd.Timestamp("2024-02-01", tz="UTC")
+        if datetime.now(UTC) - last.to_pydatetime() > timedelta(minutes=2):
+            tail = _live_tail_minutes(ticker, last)
+            if tail is not None and len(tail):
+                minutes = pd.concat([minutes, tail], ignore_index=True).drop_duplicates(
+                    subset="minute_ts"
+                )
+                live = True
+        else:
             live = True
-    else:
-        live = True
 
     if minutes.empty:
-        return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"]), False
+        empty = pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
+        return empty, False, False, 0
 
     bars = _resample_minutes(minutes.sort_values("minute_ts"), rule)
-    last_ts = bars["ts"].max()
-    if window == "1d":
+    if before is not None:
+        bars = bars[bars["ts"] < before]
+        count = target
+    elif window == "1d":
         # the latest session only (weekends show Friday, honestly)
         last_session = bars["ts"].dt.date.max()
-        bars = bars[bars["ts"].dt.date == last_session]
+        count = int((bars["ts"].dt.date == last_session).sum())
     else:
-        start = _window_start(window, last_ts)
-        if start is not None:
-            bars = bars[bars["ts"] >= start]
-    return bars.tail(MAX_BARS).reset_index(drop=True), live
+        start = _window_start(window, bars["ts"].max())
+        count = int((bars["ts"] >= start).sum()) if start is not None else target
+    count = min(max(count, 1), target)
+    pre_count = len(bars)
+    # keep lookback rows BEFORE the window so indicators are warm at its edge
+    bars = bars.tail(count + INDICATOR_LOOKBACK).reset_index(drop=True)
+    keep = min(count, len(bars))
+    has_more = truncated_months or pre_count > len(bars)
+    return bars, live, has_more, keep
 
 
-def _daily_frame(s3: Any, ticker: str, interval: str, window: str) -> pd.DataFrame:
+def _daily_frame(
+    s3: Any, ticker: str, interval: str, window: str, before: pd.Timestamp | None, target: int
+) -> tuple[pd.DataFrame, bool, int]:
     daily = _cached_daily(s3, ticker)
     if daily is None or daily.empty:
-        return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
+        return pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"]), False, 0
     df = daily.rename(columns={"date": "ts"}).copy()
     df["ts"] = df["ts"].dt.tz_localize(ET)
     if interval == "1w":
@@ -247,10 +259,17 @@ def _daily_frame(s3: Any, ticker: str, interval: str, window: str) -> pd.DataFra
             .dropna(subset=["open"])
             .reset_index()
         )
-    start = _window_start(window, df["ts"].max())
-    if start is not None:
-        df = df[df["ts"] >= start]
-    return df.tail(MAX_BARS).reset_index(drop=True)
+    if before is not None:
+        df = df[df["ts"] < before]
+        count = target
+    else:
+        start = _window_start(window, df["ts"].max())
+        count = int((df["ts"] >= start).sum()) if start is not None else target
+    count = min(max(count, 1), target)
+    pre_count = len(df)
+    df = df.tail(count + INDICATOR_LOOKBACK).reset_index(drop=True)
+    keep = min(count, len(df))
+    return df, pre_count > len(df), keep
 
 
 def _parse_indicator(spec: str) -> tuple[str, list[float]]:
@@ -295,19 +314,52 @@ def _attach_indicators(bars: pd.DataFrame, specs: list[str]) -> dict[str, Any]:
     return out
 
 
-def get_bars(ticker: str, interval: str, window: str, indicator_specs: list[str]) -> dict[str, Any]:
+def _slice_indicators(indicators: dict[str, Any], cut: int) -> dict[str, Any]:
+    if cut <= 0:
+        return indicators
+    out: dict[str, Any] = {}
+    for key, series in indicators.items():
+        if isinstance(series, dict):
+            out[key] = {k: v[cut:] for k, v in series.items()}
+        else:
+            out[key] = series[cut:]
+    return out
+
+
+def get_bars(
+    ticker: str,
+    interval: str,
+    window: str,
+    indicator_specs: list[str],
+    before: str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
     s3 = r2.r2_client()
+    before_ts = pd.Timestamp(before) if before else None
+    if before_ts is not None and before_ts.tzinfo is None:
+        before_ts = before_ts.tz_localize("UTC")
+    target = min(limit or MAX_BARS, PAGE_MAX)
+
     if interval in DAILY_INTERVALS:
-        bars = _daily_frame(s3, ticker, interval, window)
+        frame, has_more, keep = _daily_frame(s3, ticker, interval, window, before_ts, target)
         live = False
         source = "lake dailies 1993→ (refreshed nightly)"
     else:
-        bars, live = _intraday_frame(s3, ticker, interval, window)
+        frame, live, has_more, keep = _intraday_frame(
+            s3, ticker, interval, window, before_ts, target
+        )
         source = (
             "lake minutes 2024-02→ + live IEX tail"
             if live
             else "lake minutes 2024-02→ (nightly; add APCA_* keys for a live tail)"
         )
+
+    # indicators computed over the FULL frame (with lookback rows), then the
+    # lookback is sliced off so paged responses stitch seamlessly
+    indicators = _slice_indicators(
+        _attach_indicators(frame, indicator_specs), max(0, len(frame) - keep)
+    )
+    bars = frame.tail(keep).reset_index(drop=True) if keep else frame.iloc[0:0]
 
     volume = bars["volume"].fillna(0) if not bars.empty else pd.Series(dtype=float)
     payload_bars = [
@@ -330,6 +382,7 @@ def get_bars(ticker: str, interval: str, window: str, indicator_specs: list[str]
         "live": live,
         "source": source,
         "as_of": bars["ts"].max().isoformat() if not bars.empty else None,
+        "has_more": bool(has_more),
         "bars": payload_bars,
-        "indicators": _attach_indicators(bars, indicator_specs),
+        "indicators": indicators,
     }
