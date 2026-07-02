@@ -32,17 +32,29 @@ def main() -> None:
     print("Skeptic data lake coverage")
     print("=" * 62)
 
+    # dolthub coverage is the VERIFIED view (state.done), not raw R2 objects:
+    # quarantined stale-dated sessions stay in R2 for audit but are not
+    # coverage (guardrail #6 — honest surfaces)
+    dolthub_state = r2_get_json(s3, "state/dolthub_backfill.json", {})
+    n_quarantined = (len(dolthub_state.get("quarantined_stale", {}))
+                     + len(dolthub_state.get("quarantined_stale_shape", {})))
+
     print("\nOptions chains")
     for source in ("alphavantage", "yahoo", "dolthub"):
         for ticker in TICKERS:
-            try:
-                dates = list_chain_dates(s3, source, ticker)
-            except Exception as exc:
-                print(f"  {source:>13} {ticker}: listing failed: {exc}")
-                continue
+            if source == "dolthub" and ticker == "SPY":
+                dates = sorted(dolthub_state.get("done", []))
+                note = f"   ({n_quarantined} quarantined, excluded)" if n_quarantined else ""
+            else:
+                try:
+                    dates = list_chain_dates(s3, source, ticker)
+                except Exception as exc:
+                    print(f"  {source:>13} {ticker}: listing failed: {exc}")
+                    continue
+                note = ""
             if dates:
                 print(f"  {source:>13} {ticker}: {len(dates):>5} sessions   "
-                      f"{dates[0]} -> {dates[-1]}")
+                      f"{dates[0]} -> {dates[-1]}{note}")
             else:
                 print(f"  {source:>13} {ticker}:     0 sessions")
 
