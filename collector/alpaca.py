@@ -134,16 +134,26 @@ def contract_symbols(ticker: str, exp_gte: date, exp_lte: date) -> list[str]:
             token = payload.get("next_page_token")
             if not token:
                 break
+    # The trading API lists adjusted/non-standard series (e.g. 1SPY...,
+    # penny strikes after corporate actions) that the data API refuses
+    # with 400 "invalid symbol" — keep only standard-root contracts.
+    valid, dropped = [], 0
+    for s in symbols:
+        m = OCC_RE.match(s)
+        if m and m.group(1) == ticker:
+            valid.append(s)
+        else:
+            dropped += 1
+    if dropped:
+        log.info("%s: dropped %d non-standard/adjusted contract symbols", ticker, dropped)
     # sort by (expiration, strike) so a batch's rows cluster in time
-    return sorted(symbols, key=lambda s: (s[len(ticker):len(ticker) + 6], s))
+    return sorted(valid, key=lambda s: (s[len(ticker):len(ticker) + 6], s))
 
 
 # ----------------------------- bars ----------------------------------------
 
-def fetch_option_bars(symbols: list[str], start_iso: str, end_iso: str) -> list[dict]:
-    rows: list[dict] = []
-    for i in range(0, len(symbols), BATCH_SYMBOLS):
-        batch = symbols[i:i + BATCH_SYMBOLS]
+def _pull_batch(batch: list[str], start_iso: str, end_iso: str, rows: list[dict]) -> None:
+    try:
         token = None
         while True:
             params = {
@@ -161,7 +171,24 @@ def fetch_option_bars(symbols: list[str], start_iso: str, end_iso: str) -> list[
                     rows.append({"symbol": sym, **b})
             token = payload.get("next_page_token")
             if not token:
-                break
+                return
+    except RuntimeError as exc:
+        # armor against symbols the data API rejects despite the universe
+        # filter: bisect to isolate, skip the offender, keep the rest
+        if "invalid symbol" not in str(exc):
+            raise
+        if len(batch) == 1:
+            log.warning("skipping unqueryable symbol %s", batch[0])
+            return
+        mid = len(batch) // 2
+        _pull_batch(batch[:mid], start_iso, end_iso, rows)
+        _pull_batch(batch[mid:], start_iso, end_iso, rows)
+
+
+def fetch_option_bars(symbols: list[str], start_iso: str, end_iso: str) -> list[dict]:
+    rows: list[dict] = []
+    for i in range(0, len(symbols), BATCH_SYMBOLS):
+        _pull_batch(symbols[i:i + BATCH_SYMBOLS], start_iso, end_iso, rows)
     return rows
 
 
@@ -183,6 +210,8 @@ def bars_to_frame(ticker: str, raw: list[dict]) -> pd.DataFrame:
     })
     df["ticker"] = ticker
     df["source"] = "alpaca"
+    # bisect retries can re-fetch pages already collected
+    df = df.drop_duplicates(subset=["occ_symbol", "minute_ts"], keep="last")
     return df[MINUTE_COLUMNS]
 
 
