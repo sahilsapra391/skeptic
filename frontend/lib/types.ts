@@ -99,11 +99,17 @@ export const GAUNTLET_STAGES: { t: string; n: string }[] = [
   { t: "Verdict", n: "grounded in the numbers above" },
 ];
 
+export interface SeriesPoint {
+  t: string;
+  v: number;
+}
+
 export interface RunPayload {
   id: string;
   demo: boolean;
-  status: "running" | "done";
+  status: "running" | "done" | "error";
   stage: number; // 0..6, meaningful while running
+  error?: string;
   name: string;
   meta: string;
   spec: SpecDraft | null;
@@ -111,6 +117,9 @@ export interface RunPayload {
   mtiles: MetricTile[];
   equityPoints: string;
   drawdownPoints: string;
+  /** real runs ship raw series; the client shapes them into the charts */
+  equitySeries?: SeriesPoint[];
+  drawdownSeries?: SeriesPoint[];
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
   honesty: HonestyPanels;
   mc: { p95: string; p50: string; p05: string };

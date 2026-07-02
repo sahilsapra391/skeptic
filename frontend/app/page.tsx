@@ -91,6 +91,10 @@ export default function NewAnalysisPage() {
           if (payload.status === "done") {
             if (pollRef.current) clearInterval(pollRef.current);
             setPhase("results");
+          } else if (payload.status === "error") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setError(payload.error ?? "backtest failed");
+            setPhase("spec");
           }
         } catch {
           // keep polling; transient

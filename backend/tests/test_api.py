@@ -41,15 +41,18 @@ def test_underlying_refuses_without_r2(client: TestClient) -> None:
     assert client.get("/api/data/underlying/TSLA").status_code == 404
 
 
-def test_run_routes_are_explicit_501(client: TestClient) -> None:
+def test_unbuilt_routes_are_explicit_501(client: TestClient) -> None:
+    # parser is M4; grounded ask needs M3+M4; sweep is M3
     assert client.post("/api/parse", json={"text": "sell a put"}).status_code == 501
-    assert client.get("/api/runs").status_code == 501
-    assert client.get("/api/runs/abc").status_code == 501
-    r = client.post("/api/backtest", json={"spec": CANONICAL})
-    assert r.status_code == 501  # valid spec, engine pending
+    assert client.post("/api/runs/abc/ask", json={"question": "?"}).status_code == 501
+    assert client.post("/api/sweep", json={}).status_code == 501
 
 
-def test_backtest_validates_spec_even_before_engine(client: TestClient) -> None:
+def test_unknown_run_is_404(client: TestClient) -> None:
+    assert client.get("/api/runs/nope").status_code == 404
+
+
+def test_backtest_validates_spec(client: TestClient) -> None:
     bad = {**CANONICAL, "underlying": {"ticker": "TSLA"}}
     r = client.post("/api/backtest", json={"spec": bad})
     assert r.status_code == 422
@@ -61,5 +64,5 @@ def test_bearer_token_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
     assert client.get("/api/health").status_code == 200  # health stays open
     assert client.get("/api/runs").status_code == 401
     assert (
-        client.get("/api/runs", headers={"Authorization": "Bearer sekrit"}).status_code == 501
+        client.get("/api/runs", headers={"Authorization": "Bearer sekrit"}).status_code == 200
     )

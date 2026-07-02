@@ -31,3 +31,7 @@ node_modules/
 
 # but the template documenting the local env file is not a secret
 !.env.example
+
+# Local run storage + chain cache (backend)
+backend/runs.db
+backend/.cache/

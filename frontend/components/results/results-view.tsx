@@ -13,14 +13,37 @@
 import { useState } from "react";
 import clsx from "clsx";
 
-import { askRun } from "@/lib/api";
-import type { RunPayload } from "@/lib/types";
+import { ApiError, askRun } from "@/lib/api";
+import type { RunPayload, SeriesPoint } from "@/lib/types";
 
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
 
 const PANEL = "rounded-[14px] border border-line bg-panel";
 const PANEL_TITLE = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
+
+/** Shape a raw series into SVG polyline points (chart shaping only —
+ * the numbers come from the backend untouched). */
+function seriesToPoints(
+  series: SeriesPoint[],
+  height: number,
+  pad: number,
+  invert: boolean,
+): string {
+  if (series.length < 2) return "";
+  const values = series.map((p) => p.v);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo || 1;
+  return series
+    .map((p, i) => {
+      const x = (i / (series.length - 1)) * 860;
+      const frac = (p.v - lo) / span;
+      const y = invert ? pad + frac * (height - 2 * pad) : pad + (1 - frac) * (height - 2 * pad);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+}
 
 function MetricTiles({ run }: { run: RunPayload }) {
   return (
@@ -45,22 +68,35 @@ function MetricTiles({ run }: { run: RunPayload }) {
 }
 
 function EquityChart({ run }: { run: RunPayload }) {
+  const equityPoints = run.equitySeries?.length
+    ? seriesToPoints(run.equitySeries, 200, 14, false)
+    : run.equityPoints;
+  const drawdownPoints = run.drawdownSeries?.length
+    ? seriesToPoints(run.drawdownSeries, 54, 5, true)
+    : run.drawdownPoints;
+  const startLabel = run.equitySeries?.length
+    ? `$${Math.round(run.equitySeries[0].v).toLocaleString()} start · net of costs`
+    : "$25k start · net of costs";
   return (
     <div className={clsx(PANEL, "mt-3 px-4 py-3.5")}>
       <div className="mb-2 flex justify-between">
-        <span className={PANEL_TITLE}>EQUITY — OUT-OF-SAMPLE SHADED</span>
-        <span className="font-mono text-[11px] text-ink-4">$25k start · net of costs</span>
+        <span className={PANEL_TITLE}>
+          {run.oosShadeX < 860 ? "EQUITY — OUT-OF-SAMPLE SHADED" : "EQUITY"}
+        </span>
+        <span className="font-mono text-[11px] text-ink-4">{startLabel}</span>
       </div>
       <svg width="100%" viewBox="0 0 860 200" className="block">
-        <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
+        {run.oosShadeX < 860 && (
+          <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
+        )}
         <line x1="0" y1="50" x2="860" y2="50" stroke="#20242c" />
         <line x1="0" y1="100" x2="860" y2="100" stroke="#20242c" />
         <line x1="0" y1="150" x2="860" y2="150" stroke="#20242c" />
-        <polyline points={run.equityPoints} fill="none" stroke="#d7dde3" strokeWidth="1.8" />
+        <polyline points={equityPoints} fill="none" stroke="#d7dde3" strokeWidth="1.8" />
       </svg>
       <svg width="100%" viewBox="0 0 860 54" className="mt-1.5 block">
         <line x1="0" y1="6" x2="860" y2="6" stroke="#20242c" />
-        <polyline points={run.drawdownPoints} fill="none" stroke="#e0604f" strokeWidth="1.3" />
+        <polyline points={drawdownPoints} fill="none" stroke="#e0604f" strokeWidth="1.3" />
       </svg>
       <div className="mt-1.5 font-mono text-[10.5px] text-ink-4">
         drawdown — P/L red lives only here, never in the verdict
@@ -107,7 +143,9 @@ function HonestyPanels({ run }: { run: RunPayload }) {
       </div>
 
       <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
-        <div className={clsx(PANEL_TITLE, "mb-2.5")}>MONTE CARLO — 1,000 RESAMPLES</div>
+        <div className={clsx(PANEL_TITLE, "mb-2.5")}>
+          {run.mc.p50 ? "MONTE CARLO — 1,000 RESAMPLES" : "MONTE CARLO"}
+        </div>
         <svg width="100%" viewBox="0 0 400 100" className="block">
           <polyline points={run.mc.p95} fill="none" stroke="#4a545f" strokeWidth="1.2" />
           <polyline points={run.mc.p50} fill="none" stroke="#cdd6df" strokeWidth="1.7" />
@@ -117,7 +155,9 @@ function HonestyPanels({ run }: { run: RunPayload }) {
       </div>
 
       <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
-        <div className={clsx(PANEL_TITLE, "mb-2.5")}>SENSITIVITY — Δ 15 → 45</div>
+        <div className={clsx(PANEL_TITLE, "mb-2.5")}>
+          {run.sensitivity.length ? "SENSITIVITY — Δ 15 → 45" : "SENSITIVITY"}
+        </div>
         <div className="grid grid-cols-9 gap-1">
           {run.sensitivity.flatMap((row, ri) =>
             row.map((opacity, ci) => (
@@ -129,11 +169,13 @@ function HonestyPanels({ run }: { run: RunPayload }) {
             )),
           )}
         </div>
-        <div className="mt-1 flex justify-between font-mono text-[9.5px] text-ink-4">
-          <span>Δ.15</span>
-          <span>Δ.30</span>
-          <span>Δ.45</span>
-        </div>
+        {run.sensitivity.length > 0 && (
+          <div className="mt-1 flex justify-between font-mono text-[9.5px] text-ink-4">
+            <span>Δ.15</span>
+            <span>Δ.30</span>
+            <span>Δ.45</span>
+          </div>
+        )}
         <div className="mt-2 text-[12.5px] text-ink-2">{h.notes[3]}</div>
       </div>
     </div>
@@ -212,7 +254,7 @@ export function ResultsView({
       const res = await askRun(run.id, askText);
       setAnswer(res.answer);
     } catch (e) {
-      setAnswer(e instanceof Error ? e.message : "ask failed");
+      setAnswer(e instanceof ApiError ? e.detail : e instanceof Error ? e.message : "ask failed");
     } finally {
       setAsking(false);
     }

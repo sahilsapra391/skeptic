@@ -11,6 +11,7 @@ dependencies = [
     "pandas>=2.2,<3",
     "pyarrow>=16",
     "requests>=2.32",
+    "sqlalchemy>=2.0",
 ]
 
 [dependency-groups]
@@ -38,9 +39,9 @@ ignore_missing_imports = true
 check_untyped_defs = true
 
 # strict typing on the correctness-critical packages (CLAUDE.md conventions);
-# engine/ and honesty/ join this list when M2/M3 land
+# honesty/ joins this list when M3 lands
 [[tool.mypy.overrides]]
-module = "app.models.*"
+module = ["app.models.*", "app.engine.*"]
 strict = true
 
 [tool.pytest.ini_options]
