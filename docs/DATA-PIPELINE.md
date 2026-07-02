@@ -23,6 +23,19 @@ started BEFORE the app, because history only accrues forward.*
 > at $0, per the same eval). Implementation: BUILD-PLAN M1.5. Greeks for
 > minute data are computed, not stored per bar (§4b).**
 
+> **DECIDED (owner, 2026-07-02, late): Alpaca options minute lake is
+> FROZEN at 2024-02 → 2026-06.** Alpaca's dashboard errors on signing the
+> OPRA agreement, so the options-bars entitlement lapsed after the bulk
+> backfill completed (159.4M bars banked). The lake stays as a static
+> research asset; the nightly Alpaca top-up treats the missing entitlement
+> as a **known condition** (green run, error-level log) and resumes
+> automatically if the entitlement ever appears — same pattern as the
+> dormant AV leg. **The forward record is: nightly Yahoo EOD snapshots
+> (source of record) + the live intraday recorder (job 5: CBOE full-chain
+> minute quotes with bid/ask/IV/greeks/OI, Yahoo every 15 min as
+> redundancy).** Underlying minute bars are stock data (not OPRA-gated)
+> and continue.**
+
 ## 1. Strategy: sources and jobs
 
 **Sources**
@@ -34,6 +47,14 @@ started BEFORE the app, because history only accrues forward.*
 - **yfinance (Yahoo)**: live chain snapshots. Unofficial, no greeks, quotes
   can be stale, but unlimited-ish and intraday-capable. Role: same-day
   redundancy now, intraday collection later (Phase 2 of the PRD).
+- **DoltHub community archive** (`post-no-preference/options`, CC BY-SA
+  4.0): **SPY EOD backfill only**, 2020-01-06 → 2026-06-30, ingested
+  one-shot by `collector/dolthub.py` under the conditions of
+  docs/DOLTHUB-EVAL.md §7 (XNYS filter, duplicate guard, spot joined from
+  our dailies, vendor greeks, commit hash pinned in
+  `state/dolthub_backfill.json`). Static history — never re-collected; the
+  archive has no QQQ/IWM. M/W/F-cadence granularity before 2024-09 and the
+  2024-08-05 vol-spike outage are disclosed by coverage.
 - **Alpaca Market Data (Basic plan, free)**: historical **option 1-minute
   bars** (OPRA-trade-derived OHLCV) for full chains since **2024-02**, plus
   underlying 1-minute equity bars from the same API. Mechanics: ~200
@@ -96,6 +117,7 @@ s3://skeptic-data/
   options/
     source=alphavantage/ticker=SPY/date=2026-07-01/chain.parquet
     source=yahoo/ticker=SPY/date=2026-07-01/snap_20260701T2031Z.parquet
+    source=dolthub/ticker=SPY/date=2020-01-06/chain.parquet   (static backfill)
   underlying/ticker=SPY/daily.parquet          (full history, rewritten append)
   reference/vix_daily.parquet
   reference/exdiv_calendar.parquet
@@ -145,7 +167,9 @@ useful configuration still exceeds 10 GB within months).
 | source | str | `alphavantage` / `yahoo` |
 
 Source precedence for a given (ticker, trading_date) at query time:
-alphavantage > yahoo. The backend's `preferred_chain()` view implements this.
+alphavantage > yahoo > dolthub. The backend's `preferred_chain()` view
+implements this (dolthub exists only before 2026-07, so it never actually
+contends with the live record).
 
 ### 4b. Minute-bar schema (`options_minute/`, Alpaca)
 
@@ -215,14 +239,17 @@ Reference implementation: `reference/collector_v2.py`. Productionize as
 - Self-collected + AV data is approximate research data: no OPRA-grade
   point-in-time guarantees, EOD quotes can be wide/stale at the close.
   The Observatory and every run's methodology note say so.
-- Intraday options history exists from **2024-02 only** (Alpaca minute
-  bars, §4b) — nothing free reaches earlier at minute granularity
-  (docs/INTRADAY-OPTIONS-DATA-EVAL.md). 0DTE/1DTE strategies (the owner's
+- Intraday options history is a **fixed window plus a live tail**: Alpaca
+  minute trade bars cover **2024-02 → 2026-06 only** (lake frozen — OPRA
+  entitlement unavailable; see DECIDED block), and the live recorder's
+  minute quote snapshots run **2026-07-02 →** (best-effort uptime). The
+  gap 2026-07-01 has EOD coverage only. 0DTE/1DTE strategies (the owner's
   live style) stay refused until the engine gains a minute mode (post-M2
-  milestone); when it does, such runs are bounded to 2024-02→ and the
+  milestone); when it does, runs are bounded to those windows and the
   coverage endpoint says exactly that. Minute bars are trade-derived and
-  sparse on illiquid contracts; fills come from lazily-fetched quotes,
-  never bar closes.
+  sparse on illiquid contracts; minute fills need quote data (the
+  recorder's snapshots forward; a disclosed spread model for the frozen
+  bar window).
 
 ## 8. Definition of done for M1
 

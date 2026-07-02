@@ -21,6 +21,18 @@ statistical reports, aviation-style instrument panels. Precision, evidence,
 falsification. NOT: crypto dashboards, Robinhood confetti, WallStreetBets
 energy, "AI magic sparkle" aesthetics.
 
+> **DECIDED (owner, 2026-07-02): radical simplicity is a hard requirement.**
+> The owner evaluated Option Alpha Pro and found it confusing — that whole
+> class of product (bot-builder decision trees, dashboards of dashboards,
+> jargon-dense panels, dozens of toggles) is the explicit anti-example.
+> Skeptic is **led by chat and natural language everywhere**: English is the
+> only configuration language, the typed conversation is the primary control
+> surface, every screen holds one primary action, and detail arrives by
+> progressive disclosure (headline first, expand on demand). When a design
+> choice trades power for simplicity, choose simplicity — the honesty layer
+> supplies the power. A first-time user should run their first analysis
+> without reading anything but the screen in front of them.
+
 ## The user
 
 One primary persona: **the Burned Tinkerer.** Technical, self-taught, trades
@@ -77,9 +89,12 @@ honest verdict. Requirements:
 The entry point. A focused composer where the user describes a strategy in
 English. Include: template chips for the five v1 structures (short put,
 credit spread, iron condor, covered call, long call/put) that pre-fill
-example phrasing; a visible, honest data-coverage line ("Options data:
-2024-01 → today · Underlying: 1993 → today") so expectations are set before
-anything runs.
+example phrasing; a visible, honest data-coverage line, fed live from
+/api/data/coverage and **per-ticker asymmetric** — e.g. "SPY chains:
+2020-01 → today · QQQ/IWM chains: 2026-07 → today · minute bars (all
+three): 2024-02 → today" — so expectations are set before anything runs.
+Design the line to hold that asymmetry gracefully; it is the product being
+honest, not a bug state.
 **DECIDED (PM): hybrid input.** Chat is primary; the compiled parameters
 render as editable fields, so correcting one number never requires
 re-prompting. Design the chat composer and the editable Spec Card as one
@@ -116,11 +131,17 @@ and route to New Analysis.
 
 ### 5. Data Observatory
 The honesty dashboard, and a screen no competitor has. Shows: collection
-streak (days captured), coverage timeline per ticker per source, backfill
-progress bar walking backward through history ("backfilled to 2019-03-14, ~4
-months to reach 2008"), last collector run status, data-quality flags (bid/ask
-null rates, stale quotes). This screen turns a data limitation into visible,
-growing progress. Design it like mission telemetry, worth caring about.
+streak (days captured), a coverage timeline per ticker **per source** (four
+lanes now: SPY EOD backfill 2020→2026 from the community archive, the
+nightly Yahoo record from 2026-07, Alpaca minute bars from 2024-02, and the
+live intraday quote recorder from 2026-07-02), the intraday recorder's
+heartbeat ("last snapshot 2 min ago" — it runs on the owner's machine and
+can gap honestly), last collector run status, data-quality flags (bid/ask
+null rates, stale quotes), and **named blind spots** (e.g. "SPY EOD history
+is Mon/Wed/Fri-granular before 2024-09"; "archive outage spans the
+2024-08-05 volatility spike"). This screen turns data limitations into
+visible, honest telemetry. Design it like mission telemetry, worth caring
+about.
 
 ### Supporting screens
 - **Run-in-progress state:** the gauntlet sequence (backtest → OOS →
@@ -149,6 +170,9 @@ growing progress. Design it like mission telemetry, worth caring about.
   give a damning verdict the same visual weight as a favorable one.
 - No decorative AI iconography (sparkles, magic wands). The LLM is a
   statistician here, not a genie.
+- No bot-builder trees, rule-matrix editors, or multi-level configuration
+  UIs (the Option Alpha anti-example). If a control can be a sentence in
+  chat, it is a sentence in chat.
 - Standing footer disclaimer on every results surface: research tool, not
   financial advice, backtests overstate live results.
 

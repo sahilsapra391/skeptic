@@ -33,7 +33,7 @@ def main() -> None:
     print("=" * 62)
 
     print("\nOptions chains")
-    for source in ("alphavantage", "yahoo"):
+    for source in ("alphavantage", "yahoo", "dolthub"):
         for ticker in TICKERS:
             try:
                 dates = list_chain_dates(s3, source, ticker)
@@ -60,8 +60,10 @@ def main() -> None:
         else:
             print(f"  {ticker}:     0 sessions")
     bf_state = r2_get_json(s3, "state/alpaca_backfill.json", {})
-    done = sum(1 for t, months in bf_state.items() if t != "_underlying"
-               for st in months.values() if st.get("status") == "done")
+    done = sum(1 for t, months in bf_state.items()
+               if t != "_underlying" and isinstance(months, dict)
+               for st in months.values()
+               if isinstance(st, dict) and st.get("status") == "done")
     if bf_state:
         print(f"  backfill frontier: {done} ticker-months done")
 

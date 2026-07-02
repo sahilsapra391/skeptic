@@ -95,9 +95,15 @@ def _headers() -> dict:
 
 
 def _get(url: str, params: dict) -> dict:
-    for attempt in range(5):
+    for attempt in range(7):
         PACER.wait()
-        resp = requests.get(url, params=params, headers=_headers(), timeout=30)
+        try:
+            resp = requests.get(url, params=params, headers=_headers(), timeout=30)
+        except requests.RequestException as exc:
+            # connection resets/timeouts happen over multi-hour runs; retry
+            log.warning("network error (%s); retry %d", exc.__class__.__name__, attempt + 1)
+            time.sleep(min(10 * 2 ** attempt, 120))
+            continue
         if resp.status_code == 200:
             return resp.json()
         if resp.status_code == 429:
@@ -107,6 +113,12 @@ def _get(url: str, params: dict) -> dict:
         if resp.status_code >= 500:
             time.sleep(5 * (attempt + 1))
             continue
+        if resp.status_code == 403 and "OPRA" in resp.text:
+            raise RuntimeError(
+                "Alpaca returned 403 'OPRA agreement is not signed' — an account "
+                "entitlement, not a code failure. Sign the (free, non-professional) "
+                "OPRA data agreement in the Alpaca dashboard, then re-run; the "
+                "frontier resumes automatically.")
         raise RuntimeError(f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
     raise RuntimeError(f"GET {url}: retries exhausted")
 
@@ -230,12 +242,16 @@ def write_sessions(s3, ticker: str, frame: pd.DataFrame) -> dict[str, int]:
 def fetch_underlying_minute(month_start: date, month_end: date) -> pd.DataFrame:
     rows: list[dict] = []
     token = None
+    # free plan refuses SIP data newer than 15 min; clamp the window
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=16)
+    end_iso = min(datetime(month_end.year, month_end.month, month_end.day,
+                           23, 59, 59, tzinfo=timezone.utc), cutoff).strftime("%Y-%m-%dT%H:%M:%SZ")
     while True:
         params = {
             "symbols": ",".join(TICKERS),
             "timeframe": "1Min",
             "start": f"{month_start}T00:00:00Z",
-            "end": f"{month_end}T23:59:59Z",
+            "end": end_iso,
             "limit": PAGE_LIMIT,
         }
         if token:
@@ -317,7 +333,20 @@ def run_backfill(start_month: str, tickers: list[str], max_minutes: float) -> in
                             [(t, m) for (t, m) in pending
                              if state.get(t, {}).get(m, {}).get("status") != "done"]))
             return 0
-        stats = backfill_month(s3, ticker, month)
+        try:
+            stats = backfill_month(s3, ticker, month)
+        except RuntimeError as exc:
+            if "OPRA" not in str(exc):
+                raise
+            # DECIDED 2026-07-02: OPRA entitlement unavailable (dashboard
+            # error on signing) — the options minute lake is frozen as-is; a
+            # missing entitlement is a known condition, not an incident.
+            # Options months stay pending and resume automatically if the
+            # entitlement ever appears; underlying bars are not OPRA-gated.
+            log.error("known condition: OPRA entitlement missing — options "
+                      "minute lake frozen; skipping options months, "
+                      "continuing with underlying bars")
+            break
         state.setdefault(ticker, {})[month] = stats
         r2_put_json(s3, STATE_KEY, state)
 
@@ -361,9 +390,22 @@ def run_eod(tickers: list[str]) -> int:
                 frame = bars_to_frame(ticker, raw)
                 written = write_sessions(s3, ticker, frame)
                 log.info("eod %s %s: %s rows", ticker, day, written.get(str(day), 0))
+            except RuntimeError as exc:
+                if "OPRA" in str(exc):
+                    # known condition (DECIDED 2026-07-02): run stays green;
+                    # top-up resumes automatically if the entitlement appears
+                    log.error("known condition: OPRA entitlement missing — "
+                              "minute top-up skipped for tonight")
+                    failures = 0
+                    break
+                log.exception("eod top-up failed for %s %s", ticker, day)
+                failures += 1
             except Exception:
                 log.exception("eod top-up failed for %s %s", ticker, day)
                 failures += 1
+        else:
+            continue
+        break
     # refresh current month's underlying minute bars
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     start, end = month_bounds(month)

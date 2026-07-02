@@ -267,3 +267,42 @@ queries pin `date` values (PK prefix seeks, ~1–4 s per 15-date batch).
 *Not financial advice; backtests overstate live performance. This
 evaluation authorizes nothing by itself — ingest happens only after the
 owner accepts the conditions in §7.*
+
+---
+
+## Post-adoption addendum (2026-07-02): date-stamp integrity findings
+
+Cross-validating the ingested archive against the independent Alpaca
+minute-bar lake (collector/validate_minute_vs_eod.py, owner-requested)
+exposed a failure mode invisible to every per-session quality metric in
+§5: **some archive sessions carry quotes that do not belong to their
+labeled trading date.** The chains are internally consistent — plausible
+IV, sane greeks, clean spreads, zero crossed markets — but priced off a
+different day's underlying level (worst: 2025-03-31, quote-implied
+forward 19.9% from the actual close; late March 2025 is a wholesale
+broken scrape period) or captured intraday and stale in shape.
+
+Remediation, permanent:
+
+1. **Parity gate** (`dolthub.py --mode integrity`): quote-implied ATM
+   forward must sit within 0.75% of the session's actual close (clean
+   sessions measure ≤0.25%). Quarantined 17 sessions.
+2. **Cross-source gate** (overlap era 2024-02→): sessions whose
+   calibrated last-trade-vs-closing-quote violation rate exceeds 50%
+   are shape-stale. Quarantined 28 further sessions (concentrated in
+   late 2025 – 2026).
+3. Quarantine is **flag-and-exclude, never delete**: objects remain in
+   R2 for audit; quarantined dates leave the lake's logical view
+   (`state.done`); per-session parity deviations and cross-source scores
+   are recorded in state for the coverage layer to surface.
+
+Final lake: **1,070 verified sessions** (of 1,115 ingested; 4.0%
+quarantined). On the verified overlap, 4.5% of joined contracts sit
+outside the widened closing spread — residual attributable to
+wide-EOD-spread wings, the vendor's inexact capture minute (measured
+per-session as `capture_offset`), and first-order-only delta adjustment;
+no evidence of any defect in our own pipelines (structural joins clean
+across 24,597 contracts). Honest caveats: pre-2024-02 sessions have only
+the parity gate (no overlap source exists); the 2026 era shows the
+highest vendor staleness rate — the era where our own live recorder
+takes over anyway.

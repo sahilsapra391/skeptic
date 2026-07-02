@@ -236,3 +236,65 @@ adjusted-series symbol (1SPY…, penny strike) the data API rejects —
 universe now filters to standard roots and a bisect guard skips any
 remaining rejects (run 28566653508 failed clean, nothing written;
 re-dispatched as 28567008737).
+
+## 2026-07-02 — DoltHub SPY ingest executed; cross-source validation built
+
+`collector/dolthub.py` ran locally (owner's Mac, R2 creds in .env):
+**1,115 sessions ingested, 2020-01-06 → 2026-06-30, 158,156 rows**, 514
+archive gaps recorded (M/W/F-era weekdays + known outages), 0 duplicates,
+dead-quote flags on 2021-03-03 / 2025-03-26 — all matching DOLTHUB-EVAL's
+predictions exactly (1,116 valid sessions minus the out-of-window 2019
+stray). Archive commit pinned in state/dolthub_backfill.json. Coverage now
+shows `dolthub SPY: 1115 sessions`. Lesson: the SQL API has a response
+row cap surfaced as status "RowLimit" — deterministic, not retryable; the
+ingest bisects date batches down to per-date call/put halves. §4
+precedence extended: alphavantage > yahoo > dolthub.
+
+`collector/validate_minute_vs_eod.py` (one-off, owner-requested):
+cross-validates DoltHub EOD quotes vs Alpaca minute bars over the overlap.
+Findings so far (2024-02→08 partial, 81 sessions): joins on exact
+(expiration, right, strike) work at the expected rate — the two
+independently written pipelines agree on structure (parsing, strike
+scaling, date attribution). Raw price comparison flagged 15% → diagnosed
+as stale prints (deep-ITM strikes last traded hours before the close,
+deviation = delta x intraday move, not data error); near-close filter +
+delta-adjustment via vendor delta and our underlying minute bars added.
+Final full-window run pends the Alpaca backfill (underlying minute bars
+land last). Alpaca backfill hardening: network-level exceptions
+(connection reset after ~2 h) now retried in _get.
+
+## 2026-07-02 — Alpaca minute lake frozen (owner decision); forward = Yahoo + live recorder
+
+Bulk minute-bar backfill COMPLETED inside Alpaca's new-account grace
+window: **29 months × 3 tickers (2024-02 → 2026-06), 159.4M bars**
+(SPY 81.3M / QQQ 58.6M / IWM 19.6M) — then the account hit 403 "OPRA
+agreement is not signed" and the dashboard errors when the owner tries to
+sign it. Owner decision: **keep the lake frozen as a static research
+asset; do not chase the entitlement.** Going forward the record is the
+nightly Yahoo EOD snapshot + the live intraday recorder (CBOE full-chain
+minute quotes — bid/ask/IV/greeks/OI — with Yahoo 15-min redundancy).
+Collector treats the missing OPRA entitlement as a known condition (green
+nightly, error-level log, automatic resume if it ever appears — the AV
+pattern). Underlying minute bars are stock data, not OPRA-gated: backfill
+re-dispatched for those 30 months, which also unblocks the full
+cross-source validation. July options gap: 2026-07-01 has EOD coverage
+only; the recorder covers 2026-07-02 onward.
+
+## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
+
+The owner-requested DoltHub-vs-Alpaca validation completed its arc:
+(1) structural agreement proven — 24,597 exact (expiration, right,
+strike) joins across 506 overlap sessions, zero evidence of parsing/
+scaling/date bugs in our pipelines; (2) stale-print semantics fixed
+(near-close trades only, delta-adjusted, per-session capture-offset
+self-calibration); (3) **real vendor defect found**: archive sessions
+with quotes from the wrong date or intraday-stale in shape. Remediated
+with two permanent gates (parity ≤0.75% of close; cross-source
+violation ≤50%) — **17 + 28 = 45 sessions quarantined (flag-and-exclude,
+objects retained), lake = 1,070 verified sessions**, per-session scores
+in state/dolthub_backfill.json. Verified-overlap residual: 4.5% of
+joined contracts outside the widened spread, attributable to EOD wing
+spreads + vendor capture-minute fuzz + first-order adjustment. Full
+story in DOLTHUB-EVAL.md addendum. Also today: intraday recorder's
+first live session confirmed writing (SPY 14,124 / QQQ 11,350 /
+IWM 5,168 rows per minute snapshot).
