@@ -1,0 +1,23 @@
+name: alpaca-probe
+
+# M1.5 step-0 verification (BUILD-PLAN M1.5). Manual only; read-only probes;
+# nothing written to R2. Findings are read from the job log.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet requests pandas pyarrow
+      - name: Run step-0 probe
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python collector/alpaca_probe.py
