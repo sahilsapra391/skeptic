@@ -242,12 +242,16 @@ def write_sessions(s3, ticker: str, frame: pd.DataFrame) -> dict[str, int]:
 def fetch_underlying_minute(month_start: date, month_end: date) -> pd.DataFrame:
     rows: list[dict] = []
     token = None
+    # free plan refuses SIP data newer than 15 min; clamp the window
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=16)
+    end_iso = min(datetime(month_end.year, month_end.month, month_end.day,
+                           23, 59, 59, tzinfo=timezone.utc), cutoff).strftime("%Y-%m-%dT%H:%M:%SZ")
     while True:
         params = {
             "symbols": ",".join(TICKERS),
             "timeframe": "1Min",
             "start": f"{month_start}T00:00:00Z",
-            "end": f"{month_end}T23:59:59Z",
+            "end": end_iso,
             "limit": PAGE_LIMIT,
         }
         if token:
@@ -342,8 +346,6 @@ def run_backfill(start_month: str, tickers: list[str], max_minutes: float) -> in
             log.error("known condition: OPRA entitlement missing — options "
                       "minute lake frozen; skipping options months, "
                       "continuing with underlying bars")
-            state["opra_blocked_at"] = datetime.now(timezone.utc).isoformat()
-            r2_put_json(s3, STATE_KEY, state)
             break
         state.setdefault(ticker, {})[month] = stats
         r2_put_json(s3, STATE_KEY, state)
