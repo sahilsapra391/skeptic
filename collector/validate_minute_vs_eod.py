@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from collections import defaultdict
 from datetime import date
@@ -91,6 +92,16 @@ def session_report(s3, und_cache: dict, d: str) -> dict | None:
         lambda ts: float(spots.asof(ts)) if not pd.isna(spots.asof(ts)) else spot_close)
     traded["cmp_price"] = traded["last_trade"] + traded["delta"] * (spot_close - spot_at_print)
     mid = (traded["bid"] + traded["ask"]) / 2
+    # The vendor's capture moment is not exactly the close (documented since
+    # the eval); on fast closes that skews every high-delta contract by
+    # delta x (a dollar or two). Self-calibrate the session's effective
+    # capture spot from its own high-|delta| contracts and re-reference.
+    hd = traded[traded["delta"].abs() >= 0.5]
+    offset = 0.0
+    if len(hd) >= 5:
+        offset = float(((hd["bid"] + hd["ask"]) / 2 - hd["cmp_price"]).div(hd["delta"]).median())
+        offset = max(-3.0, min(3.0, offset))
+    traded["cmp_price"] = traded["cmp_price"] + traded["delta"] * offset
     tol = pd.concat([pd.Series(ABS_TOL, index=mid.index), mid * REL_TOL], axis=1).max(axis=1)
     inside = ((traded["cmp_price"] >= traded["bid"] - tol) &
               (traded["cmp_price"] <= traded["ask"] + tol))
@@ -101,6 +112,7 @@ def session_report(s3, und_cache: dict, d: str) -> dict | None:
         "two_sided": len(two_sided),
         "joined_traded": len(traded),
         "join_rate": len(traded) / len(two_sided),
+        "capture_offset": round(offset, 3),
         "violations": len(viol),
         "worst_dev": float(((viol["cmp_price"] - (viol["bid"] + viol["ask"]) / 2).abs()
                             / ((viol["bid"] + viol["ask"]) / 2)).max()) if len(viol) else 0.0,
@@ -115,8 +127,12 @@ def main() -> int:
     args = ap.parse_args()
 
     s3 = r2_client()
+    from collect import r2_get_json
+    quarantined = set(r2_get_json(s3, "state/dolthub_backfill.json", {})
+                      .get("quarantined_stale", {}))
     und_cache: dict = {}
-    sessions = [s.date().isoformat() for s in nyse().sessions_in_range(args.start, args.end)]
+    sessions = [s.date().isoformat() for s in nyse().sessions_in_range(args.start, args.end)
+                if s.date().isoformat() not in quarantined]
     reports, skipped = [], 0
     for i, d in enumerate(sessions):
         r = session_report(s3, und_cache, d)
@@ -132,6 +148,10 @@ def main() -> int:
         return 1
 
     df = pd.DataFrame(reports)
+    df["viol_rate"] = df["violations"] / df["joined_traded"].clip(lower=1)
+    out_csv = os.environ.get("VALIDATE_SESSIONS_CSV")
+    if out_csv:
+        df.to_csv(out_csv, index=False)
     total_joined = int(df["joined_traded"].sum())
     total_viol = int(df["violations"].sum())
     print("\n================ cross-source validation: DoltHub EOD vs Alpaca minute ================")

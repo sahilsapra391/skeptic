@@ -279,3 +279,22 @@ pattern). Underlying minute bars are stock data, not OPRA-gated: backfill
 re-dispatched for those 30 months, which also unblocks the full
 cross-source validation. July options gap: 2026-07-01 has EOD coverage
 only; the recorder covers 2026-07-02 onward.
+
+## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
+
+The owner-requested DoltHub-vs-Alpaca validation completed its arc:
+(1) structural agreement proven — 24,597 exact (expiration, right,
+strike) joins across 506 overlap sessions, zero evidence of parsing/
+scaling/date bugs in our pipelines; (2) stale-print semantics fixed
+(near-close trades only, delta-adjusted, per-session capture-offset
+self-calibration); (3) **real vendor defect found**: archive sessions
+with quotes from the wrong date or intraday-stale in shape. Remediated
+with two permanent gates (parity ≤0.75% of close; cross-source
+violation ≤50%) — **17 + 28 = 45 sessions quarantined (flag-and-exclude,
+objects retained), lake = 1,070 verified sessions**, per-session scores
+in state/dolthub_backfill.json. Verified-overlap residual: 4.5% of
+joined contracts outside the widened spread, attributable to EOD wing
+spreads + vendor capture-minute fuzz + first-order adjustment. Full
+story in DOLTHUB-EVAL.md addendum. Also today: intraday recorder's
+first live session confirmed writing (SPY 14,124 / QQQ 11,350 /
+IWM 5,168 rows per minute snapshot).

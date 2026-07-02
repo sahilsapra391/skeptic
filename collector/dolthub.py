@@ -59,6 +59,12 @@ BATCH_DATES = 5
 PACE_SECONDS = 1.0  # be polite to the free API
 STATE_KEY = "state/dolthub_backfill.json"
 FLAGGED_SESSIONS = {"2021-03-03", "2025-03-26"}  # dead-quote >20%, eval §5
+# Post-adoption finding (2026-07-02): some archive sessions carry quotes
+# that don't belong to their labeled date (caught by cross-validation vs
+# Alpaca minute bars; worst: 2025-03-31 implied-forward dev 19.9%). Guard:
+# quote-implied ATM forward must sit within this fraction of the session's
+# actual close (good sessions measure <=0.25%; threshold = 3x that).
+STALE_QUOTE_DEV = 0.0075
 
 
 class RowLimitError(Exception):
@@ -166,13 +172,63 @@ def to_canonical(d: str, rows: list[dict], spot: float, close_ts: pd.Timestamp) 
     return out[CANONICAL_COLUMNS]
 
 
+def implied_forward_dev(frame: pd.DataFrame, close: float) -> float:
+    """|quote-implied ATM forward − actual close| / close, nearest expiration."""
+    exp = sorted(frame["expiration"].astype(str).unique())[0]
+    e = frame[frame["expiration"].astype(str) == exp]
+    c = e[e["right"] == "call"].set_index("strike")[["bid", "ask"]]
+    p = e[e["right"] == "put"].set_index("strike")[["bid", "ask"]]
+    k = c.join(p, lsuffix="_c", rsuffix="_p").dropna()
+    if k.empty:
+        return 0.0
+    k = k.assign(cmid=(k["bid_c"] + k["ask_c"]) / 2, pmid=(k["bid_p"] + k["ask_p"]) / 2)
+    atm = k.assign(diff=(k["cmid"] - k["pmid"]).abs()).nsmallest(1, "diff").iloc[0]
+    fwd = atm.name + atm["cmid"] - atm["pmid"]
+    return abs(fwd - close) / close
+
+
+def run_integrity(s3) -> int:
+    """Sweep the ingested lake; quarantine sessions whose quotes fail the
+    parity-vs-close check. Flag-and-exclude, never delete: objects stay in
+    R2 as auditable evidence, but quarantined dates leave state['done'] —
+    the lake's logical view — so no consumer ever backtests on them.
+    Per-session dev is recorded for the coverage layer."""
+    state = r2_get_json(s3, STATE_KEY, {})
+    done = sorted(state.get("done", []))
+    daily = r2_get_parquet(s3, f"underlying/ticker={TICKER}/daily.parquet")
+    closes = {pd.Timestamp(r["date"]).date().isoformat(): float(r["close"])
+              for _, r in daily.iterrows()}
+    devs, quarantined = {}, dict(state.get("quarantined_stale", {}))
+    for d in done:
+        frame = r2_get_parquet(s3, f"options/source=dolthub/ticker={TICKER}/date={d}/chain.parquet")
+        if frame is None or d not in closes:
+            continue
+        dev = implied_forward_dev(frame, closes[d])
+        devs[d] = round(dev, 5)
+        if dev > STALE_QUOTE_DEV:
+            quarantined[d] = round(dev, 5)
+            log.warning("quarantined %s: implied-forward dev %.2f%%", d, 100 * dev)
+    state["done"] = [d for d in done if d not in quarantined]
+    state["quarantined_stale"] = quarantined
+    state["parity_dev"] = devs
+    r2_put_json(s3, STATE_KEY, state)
+    log.info("integrity sweep: %d sessions kept, %d quarantined (dev > %.2f%%); "
+             "objects retained in R2 for audit", len(state["done"]), len(quarantined),
+             100 * STALE_QUOTE_DEV)
+    return 0
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
     ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", choices=["backfill", "integrity"], default="backfill")
     ap.add_argument("--start", default=WINDOW_START.isoformat())
     ap.add_argument("--end", default=WINDOW_END.isoformat())
     args = ap.parse_args()
+
+    if args.mode == "integrity":
+        return run_integrity(r2_client())
 
     s3 = r2_client()
     cal = nyse()
