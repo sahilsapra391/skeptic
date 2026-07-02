@@ -1,4 +1,18 @@
 # Skeptic — Build Handoff Package
+
+> **Status addendum (2026-07-02) — read this first.** Since this document
+> was written: Alpha Vantage's options endpoints went premium and were
+> dropped (the $0 data rule held); the EOD record is the nightly Yahoo
+> snapshot; SPY EOD chains 2020-01 → 2026-06 are backfilled from the DoltHub
+> community archive (docs/DOLTHUB-EVAL.md); 1-minute option bars for
+> SPY/QQQ/IWM since 2024-02 come from Alpaca's free API (BUILD-PLAN M1.5);
+> a local agent records full-chain quote snapshots every session minute
+> going forward (docs/INTRADAY-OPTIONS-DATA-EVAL.md). QQQ/IWM EOD history
+> begins 2026-07-01 — no free source reaches earlier. UI direction is
+> locked: chat-led and radically simple (see the DECIDED block in
+> claude-design-brief.md; Option Alpha-style complexity is the named
+> anti-example). Where this document assumes Alpha Vantage, a 25/day
+> request budget, or backfill-to-2008, read it through these decisions.
 **Read this file first. It tells you exactly what to do, in what order.**
 
 This package turns the Skeptic PoC + PRD into a deployed web app with a live,

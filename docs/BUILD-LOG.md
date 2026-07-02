@@ -236,3 +236,29 @@ adjusted-series symbol (1SPY…, penny strike) the data API rejects —
 universe now filters to standard roots and a bisect guard skips any
 remaining rejects (run 28566653508 failed clean, nothing written;
 re-dispatched as 28567008737).
+
+## 2026-07-02 — DoltHub SPY ingest executed; cross-source validation built
+
+`collector/dolthub.py` ran locally (owner's Mac, R2 creds in .env):
+**1,115 sessions ingested, 2020-01-06 → 2026-06-30, 158,156 rows**, 514
+archive gaps recorded (M/W/F-era weekdays + known outages), 0 duplicates,
+dead-quote flags on 2021-03-03 / 2025-03-26 — all matching DOLTHUB-EVAL's
+predictions exactly (1,116 valid sessions minus the out-of-window 2019
+stray). Archive commit pinned in state/dolthub_backfill.json. Coverage now
+shows `dolthub SPY: 1115 sessions`. Lesson: the SQL API has a response
+row cap surfaced as status "RowLimit" — deterministic, not retryable; the
+ingest bisects date batches down to per-date call/put halves. §4
+precedence extended: alphavantage > yahoo > dolthub.
+
+`collector/validate_minute_vs_eod.py` (one-off, owner-requested):
+cross-validates DoltHub EOD quotes vs Alpaca minute bars over the overlap.
+Findings so far (2024-02→08 partial, 81 sessions): joins on exact
+(expiration, right, strike) work at the expected rate — the two
+independently written pipelines agree on structure (parsing, strike
+scaling, date attribution). Raw price comparison flagged 15% → diagnosed
+as stale prints (deep-ITM strikes last traded hours before the close,
+deviation = delta x intraday move, not data error); near-close filter +
+delta-adjustment via vendor delta and our underlying minute bars added.
+Final full-window run pends the Alpaca backfill (underlying minute bars
+land last). Alpaca backfill hardening: network-level exceptions
+(connection reset after ~2 h) now retried in _get.

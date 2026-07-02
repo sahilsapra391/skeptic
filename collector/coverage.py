@@ -33,7 +33,7 @@ def main() -> None:
     print("=" * 62)
 
     print("\nOptions chains")
-    for source in ("alphavantage", "yahoo"):
+    for source in ("alphavantage", "yahoo", "dolthub"):
         for ticker in TICKERS:
             try:
                 dates = list_chain_dates(s3, source, ticker)

@@ -34,6 +34,14 @@ started BEFORE the app, because history only accrues forward.*
 - **yfinance (Yahoo)**: live chain snapshots. Unofficial, no greeks, quotes
   can be stale, but unlimited-ish and intraday-capable. Role: same-day
   redundancy now, intraday collection later (Phase 2 of the PRD).
+- **DoltHub community archive** (`post-no-preference/options`, CC BY-SA
+  4.0): **SPY EOD backfill only**, 2020-01-06 → 2026-06-30, ingested
+  one-shot by `collector/dolthub.py` under the conditions of
+  docs/DOLTHUB-EVAL.md §7 (XNYS filter, duplicate guard, spot joined from
+  our dailies, vendor greeks, commit hash pinned in
+  `state/dolthub_backfill.json`). Static history — never re-collected; the
+  archive has no QQQ/IWM. M/W/F-cadence granularity before 2024-09 and the
+  2024-08-05 vol-spike outage are disclosed by coverage.
 - **Alpaca Market Data (Basic plan, free)**: historical **option 1-minute
   bars** (OPRA-trade-derived OHLCV) for full chains since **2024-02**, plus
   underlying 1-minute equity bars from the same API. Mechanics: ~200
@@ -96,6 +104,7 @@ s3://skeptic-data/
   options/
     source=alphavantage/ticker=SPY/date=2026-07-01/chain.parquet
     source=yahoo/ticker=SPY/date=2026-07-01/snap_20260701T2031Z.parquet
+    source=dolthub/ticker=SPY/date=2020-01-06/chain.parquet   (static backfill)
   underlying/ticker=SPY/daily.parquet          (full history, rewritten append)
   reference/vix_daily.parquet
   reference/exdiv_calendar.parquet
@@ -145,7 +154,9 @@ useful configuration still exceeds 10 GB within months).
 | source | str | `alphavantage` / `yahoo` |
 
 Source precedence for a given (ticker, trading_date) at query time:
-alphavantage > yahoo. The backend's `preferred_chain()` view implements this.
+alphavantage > yahoo > dolthub. The backend's `preferred_chain()` view
+implements this (dolthub exists only before 2026-07, so it never actually
+contends with the live record).
 
 ### 4b. Minute-bar schema (`options_minute/`, Alpaca)
 

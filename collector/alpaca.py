@@ -95,9 +95,15 @@ def _headers() -> dict:
 
 
 def _get(url: str, params: dict) -> dict:
-    for attempt in range(5):
+    for attempt in range(7):
         PACER.wait()
-        resp = requests.get(url, params=params, headers=_headers(), timeout=30)
+        try:
+            resp = requests.get(url, params=params, headers=_headers(), timeout=30)
+        except requests.RequestException as exc:
+            # connection resets/timeouts happen over multi-hour runs; retry
+            log.warning("network error (%s); retry %d", exc.__class__.__name__, attempt + 1)
+            time.sleep(min(10 * 2 ** attempt, 120))
+            continue
         if resp.status_code == 200:
             return resp.json()
         if resp.status_code == 429:
