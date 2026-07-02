@@ -113,6 +113,12 @@ def _get(url: str, params: dict) -> dict:
         if resp.status_code >= 500:
             time.sleep(5 * (attempt + 1))
             continue
+        if resp.status_code == 403 and "OPRA" in resp.text:
+            raise RuntimeError(
+                "Alpaca returned 403 'OPRA agreement is not signed' — an account "
+                "entitlement, not a code failure. Sign the (free, non-professional) "
+                "OPRA data agreement in the Alpaca dashboard, then re-run; the "
+                "frontier resumes automatically.")
         raise RuntimeError(f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
     raise RuntimeError(f"GET {url}: retries exhausted")
 
