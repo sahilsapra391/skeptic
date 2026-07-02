@@ -152,3 +152,21 @@ check pending); Databento cost-preflight to 2013-04 with $125 credit.
 Ongoing subs violate the locked $25/mo budget. Recommended: adopt the $0
 stack now (Path A), hold the one-time purchase (Path B) as owner decision.
 Nothing bought, nothing scraped, nothing ingested in this session.
+
+## 2026-07-02 — Owner decision: Alpaca minute lake for SPY/QQQ/IWM (M1.5 planned)
+
+Owner adopted the Alpaca solution for all three tickers: full 1-minute
+option-bar history 2024-02 → present plus a nightly accrual leg; option
+quotes lazy-fetched at backtest decision points only (bulk quote pulls are
+rate-limit-impossible and stay banned in code). Docs amended on the
+intraday-data-eval branch: DATA-PIPELINE.md (second DECIDED block; Alpaca
+in §1 sources + job 4; APCA_* secrets in §2; options_minute/ + quotes_cache/
++ underlying_minute/ + alpaca_backfill state in §3 with the minute-lake
+size call-out; new §4b minute-bar schema; §6 minute-lake quality flags;
+§7 honest-limits rewrite — intraday exists 2024-02→ only), BUILD-PLAN.md
+(new M1.5 with step-0 verification gate), INTRADAY-OPTIONS-DATA-EVAL.md
+(decision recorded). Verified against Alpaca docs: history since 2024-02,
+1Min bars, 100 symbols/request, 10k rows/page; expired-contract listing
+depth is step 0's job. Blocked on owner: Alpaca account + APCA_* repo
+secrets, R2 full-vs-filtered choice, PR #2/#3 merges. Implementation is
+the next session (M1.5 prompt in BUILD-PLAN).

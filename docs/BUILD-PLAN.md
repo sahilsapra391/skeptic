@@ -42,6 +42,48 @@ frontier; healthcheck pinged; coverage script output pasted into BUILD-LOG.
 Milestone M1. Secrets are configured in GitHub Actions. After implementing,
 walk me through triggering the workflow manually and verifying R2 contents."
 
+## M1.5 — Alpaca minute-bar options lake (data-only session)
+
+**Goal:** the full 2024-02 → present 1-minute option-bar history for
+SPY/QQQ/IWM in R2, accruing nightly. Data only — no engine changes, no
+bulk quote pulls.
+
+**Tasks:**
+
+- **Step 0 — verify before pulling (needs `APCA_*` keys):** with live
+  calls, confirm (a) `GET /v2/options/contracts?status=inactive` reaches
+  expiries back to 2024-02 (fallback universe source: ThetaData free-tier
+  contract lists); (b) 1-min bars return for a long-expired contract;
+  (c) whether historical option *quotes* are servable on the Basic plan
+  (entitlement/feed behavior); (d) pull one probe week per ticker and
+  measure real bar density → refined volume/runtime/storage estimate.
+  Record all four in BUILD-LOG. Owner then picks: full chains (enable R2
+  paid class, ~cents/mo) vs filtered lake (DTE ≤ 90, moneyness ±25%) —
+  before any bulk request is issued.
+- `collector/alpaca.py` + `--mode alpaca-backfill`: month×ticker frontier
+  in `state/alpaca_backfill.json`; per-month contract universe from the
+  contracts endpoint; bars pulled 100 symbols/request, `limit=10000`,
+  `page_token` pagination, paced under the ~200 req/min account budget
+  with backoff; parquet per (ticker, trading_date) per DATA-PIPELINE §4b;
+  idempotent overwrites; state written after each completed month.
+- `--mode alpaca-eod` appended to the nightly workflow: yesterday's option
+  bars + underlying minute bars for all 3 tickers.
+- Underlying 1-min equity bars backfilled for the same window →
+  `underlying_minute/`.
+- `coverage.py` extended: minute-lake date range, session count,
+  rows/session, missing sessions vs XNYS.
+
+**Accept:** `options_minute/` parquet spans 2024-02 → yesterday for all 3
+tickers with per-session bar counts ≥ the probe-week baseline; frontier
+state shows every month done; nightly dispatch green and appends the new
+session; coverage output pasted into BUILD-LOG; zero bulk quote requests
+anywhere in the code path.
+
+**Prompt:** "Read docs/DATA-PIPELINE.md (both DECIDED blocks + §4b) and
+docs/INTRADAY-OPTIONS-DATA-EVAL.md. Execute Milestone M1.5. Run step 0
+first and show me the four findings and the refined size estimate before
+any bulk pull."
+
 ## M2 — Backtest engine core (the correctness milestone; go slow)
 
 **Goal:** trustworthy EOD options engine for the 5 v1 structures.

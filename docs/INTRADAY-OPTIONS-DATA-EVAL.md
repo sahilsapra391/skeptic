@@ -10,6 +10,13 @@ contributes nothing here).*
 
 ## Verdict
 
+> **DECIDED (owner, 2026-07-02): Path A step 1 adopted for all three
+> tickers.** Alpaca minute-bar backfill 2024-02 → present for SPY/QQQ/IWM
+> + nightly accrual, quotes lazy-only. Spec: DATA-PIPELINE.md (second
+> DECIDED block, §4b); implementation milestone: BUILD-PLAN.md M1.5.
+> B-lite (OptionsDX QQQ), B-full (ThetaData) and C (QuantConnect) remain
+> open options, undecided.
+
 **Free + 5–10 years + minute granularity does not exist. Not from any
 API, not by scraping.** US options quote history is OPRA-licensed vendor
 data; nobody gives away deep minute history, and the past cannot be
@@ -174,8 +181,11 @@ $25/mo budget rule already killed a cheaper one.
 
 ## 7. Actions (pending owner)
 
-- [ ] Create free Alpaca account + API key → repo secret; verify quote
-      (not just bar) depth to 2024-02 on the free feed.
+- [x] ~~Decide adoption~~ → **DECIDED 2026-07-02: Alpaca for all three
+      tickers (see verdict block); M1.5 added to BUILD-PLAN.**
+- [ ] Create free Alpaca account + **paper API key pair** → repo secrets
+      `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY`; quote (not just bar)
+      depth is verified at M1.5 step 0.
 - [ ] Cart-quote OptionsDX QQQ: exact total for 5-min × 2012–2023 (some
       variants $0) and confirm license text; decide B-lite.
 - [ ] Decide B-full for IWM (+1-min QQQ): no / ThetaData $40 / ThetaData
