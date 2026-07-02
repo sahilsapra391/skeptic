@@ -170,3 +170,39 @@ size call-out; new §4b minute-bar schema; §6 minute-lake quality flags;
 depth is step 0's job. Blocked on owner: Alpaca account + APCA_* repo
 secrets, R2 full-vs-filtered choice, PR #2/#3 merges. Implementation is
 the next session (M1.5 prompt in BUILD-PLAN).
+
+## 2026-07-02 — M1.5 step 0 verified; minute-lake collector shipped
+
+Step-0 probe (Actions run 28566239710, collector/alpaca_probe.py) findings:
+
+- **A ✓** `/v2/options/contracts` lists expired contracts back to
+  2024-02-01 for all 3 tickers (SPY 4,816 / QQQ 5,900 / IWM 1,780 expiring
+  Feb-2024 alone) — universe source confirmed, no fallback needed.
+- **B ✓** 1-min bars return for long-expired contracts.
+- **C ✗** Historical option QUOTES are not served on Basic — HTTP 404 on
+  default/indicative/opra feeds (latest-only endpoint exists). The
+  "lazy quote cache" design is dead; §3/§4b amended: minute fills will use
+  a disclosed EOD-spread-derived model and/or forward/paid quote snapshots,
+  decided at the minute-engine milestone. quotes_cache/ prefix reserved.
+- **D ✓** Density probe (2 sessions, 2025-03): ~297k bar-rows/session all
+  3 tickers → ~178M rows ≈ **2.5 GB parquet total** → fits the R2 free
+  tier; the §3 full-vs-filtered owner choice is moot (full chain, free).
+  ~22k requests ≈ ~2h at the confirmed 200 req/min account limit.
+- **E ✓** Underlying 1-min bars served (SPY/QQQ/IWM).
+
+Shipped on main: collector/alpaca.py (`--mode backfill` resumable via
+state/alpaca_backfill.json month×ticker frontier, `--mode eod` 5-session
+self-healing top-up; both write §4b parquet per (ticker, date)),
+alpaca-backfill.yml (dispatch, wall-clock budget input, `collector`
+concurrency group so it never races the nightly for the shared rate
+limit), a minute-top-up step in collect-eod.yml, minute-lake section in
+coverage.py, collector/alpaca_probe.py + alpaca-probe.yml (kept as a
+diagnostic).
+
+Deviations from spec, and why: (1) minute-leg failures surface as red
+workflow runs, not healthcheck pages — the healthcheck stays scoped to the
+EOD record; the 5-session lookback self-heals missed nights. (2) Bars for
+expirations >400 days out are not pulled (MAX_EXP_DAYS): those batches are
+~all-empty and only burn rate limit; documented in §4b. (3)
+underlying_minute/ is keyed month=YYYY-MM (idempotent monthly unit), not
+year=.

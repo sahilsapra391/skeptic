@@ -1,0 +1,66 @@
+name: alpaca-backfill
+
+# One-shot (resumable) M1.5 bulk backfill of the Alpaca minute-bar options
+# lake, 2024-02 -> present. Re-dispatching continues from the persisted
+# frontier (state/alpaca_backfill.json); completed ticker-months are skipped.
+# Shares the `collector` concurrency group so it never competes with the
+# nightly job for the 200 req/min account budget.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Comma-separated tickers"
+        default: "SPY,QQQ,IWM"
+      start_month:
+        description: "First month to backfill (YYYY-MM)"
+        default: "2024-02"
+      max_minutes:
+        description: "Wall-clock budget before a clean stop"
+        default: "330"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collector
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Run minute-bar backfill
+        working-directory: collector
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: >
+          uv run python alpaca.py --mode backfill
+          --tickers "${{ inputs.tickers }}"
+          --start-month "${{ inputs.start_month }}"
+          --max-minutes "${{ inputs.max_minutes }}"
+
+      - name: Coverage report
+        if: always()
+        working-directory: collector
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: uv run python coverage.py

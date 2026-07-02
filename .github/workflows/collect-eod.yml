@@ -55,6 +55,18 @@ jobs:
             uv run python collect.py --mode "$MODE"
           fi
 
+      - name: Minute-lake top-up (Alpaca, DATA-PIPELINE job 4)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode == 'all' || inputs.mode == 'eod' }}
+        working-directory: collector
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: uv run python alpaca.py --mode eod
+
       - name: Coverage report
         if: always()
         working-directory: collector

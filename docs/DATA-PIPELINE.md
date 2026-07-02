@@ -39,11 +39,14 @@ started BEFORE the app, because history only accrues forward.*
   underlying 1-minute equity bars from the same API. Mechanics: ~200
   req/min account budget, 100 contract symbols per request, `limit=10000`
   rows/page with `page_token` pagination; contract universe (incl. expired)
-  via the trading API `GET /v2/options/contracts` (`status=inactive`,
-  expiration windows — expired-depth verified at M1.5 step 0). Historical
-  option **quotes** exist but are tick streams: point-lookups only, at
-  backtest decision timestamps, cached to R2. Role: the intraday options
-  history and its nightly forward accrual.
+  via the trading API `GET /v2/options/contracts` (`status=inactive`;
+  expired depth to 2024-02 verified at M1.5 step 0). **Historical option
+  quotes are NOT served on the Basic plan** (step-0 finding C: HTTP 404 on
+  every feed — only latest quotes exist), so minute-granularity fills must
+  come from a disclosed spread model (real per-contract EOD spreads from
+  our own lake) and/or forward-collected quote snapshots — designed at the
+  minute-engine milestone. Role: the intraday options history and its
+  nightly forward accrual.
 
 **Jobs**
 1. **EOD collect** (nightly, weekdays): 3 AV requests capture yesterday's/
@@ -88,9 +91,10 @@ s3://skeptic-data/
   reference/exdiv_calendar.parquet
   options_minute/
     source=alpaca/ticker=SPY/date=2026-07-01/bars.parquet
-  quotes_cache/
-    source=alpaca/ticker=SPY/date=2026-07-01/quotes.parquet   (lazy, backtest-driven)
-  underlying_minute/ticker=SPY/year=2026/bars.parquet
+  quotes_cache/                     (reserved: forward quote snapshots or a
+                                     paid source later — Alpaca serves no
+                                     historical quotes, step-0 finding C)
+  underlying_minute/ticker=SPY/month=2026-07/bars.parquet
   state/backfill_frontier.json                 {ticker: earliest_date_done}
   state/alpaca_backfill.json                   {ticker: {month: done}}
   state/trial_notes.json                       (optional pipeline metadata)
@@ -146,12 +150,16 @@ alphavantage > yahoo. The backend's `preferred_chain()` view implements this.
 | source | str | `alpaca` |
 
 Bars exist only for (contract, minute) cells with ≥1 trade — options trade
-sparsely and the lake reflects that honestly. Greeks/IV are **not** stored
-per bar: computed on demand (TECH-SPEC §4 method, `greeks_source='computed'`)
-from underlying minute closes and, where a fill is simulated, the
-lazily-fetched quote. **Minute-granularity fills must come from the quote
-cache (bid/ask), never from bar closes** — guardrail #1 applies at every
-timescale.
+sparsely and the lake reflects that honestly. Bars for expirations more
+than ~400 days out are not pulled (all-empty batches; constant
+`MAX_EXP_DAYS` in collector/alpaca.py). Greeks/IV are **not** stored per
+bar: computed on demand (TECH-SPEC §4 method, `greeks_source='computed'`)
+from underlying minute closes. **Minute-granularity fills may never use
+bar closes raw** — guardrail #1 applies at every timescale. Because Alpaca
+serves no historical quotes (step-0 finding C), the minute-engine
+milestone must pick and disclose a fill model: per-contract spread
+estimates from our own EOD lake applied around bar prices, and/or true
+quote snapshots collected forward (CBOE leg) or bought (ThetaData).
 
 ## 5. Collector implementation notes
 

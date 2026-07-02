@@ -22,6 +22,7 @@ from collect import (
     r2_client,
     r2_get_json,
     r2_get_parquet,
+    r2_list_keys,
 )
 
 
@@ -44,6 +45,25 @@ def main() -> None:
                       f"{dates[0]} -> {dates[-1]}")
             else:
                 print(f"  {source:>13} {ticker}:     0 sessions")
+
+    print("\nMinute-bar options lake (alpaca)")
+    for ticker in TICKERS:
+        prefix = f"options_minute/source=alpaca/ticker={ticker}/date="
+        try:
+            keys = r2_list_keys(s3, prefix)
+        except Exception as exc:
+            print(f"  {ticker}: listing failed: {exc}")
+            continue
+        dates = sorted(k.split("date=")[1].split("/")[0] for k in keys)
+        if dates:
+            print(f"  {ticker}: {len(dates):>5} sessions   {dates[0]} -> {dates[-1]}")
+        else:
+            print(f"  {ticker}:     0 sessions")
+    bf_state = r2_get_json(s3, "state/alpaca_backfill.json", {})
+    done = sum(1 for t, months in bf_state.items() if t != "_underlying"
+               for st in months.values() if st.get("status") == "done")
+    if bf_state:
+        print(f"  backfill frontier: {done} ticker-months done")
 
     print("\nUnderlying dailies + VIX")
     targets = [(t, f"underlying/ticker={t}/daily.parquet") for t in TICKERS]
