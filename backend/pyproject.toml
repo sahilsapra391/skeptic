@@ -1,0 +1,47 @@
+[project]
+name = "skeptic-backend"
+version = "0.1.0"
+description = "Skeptic FastAPI backend — see docs/TECH-SPEC.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "boto3>=1.34",
+    "pandas>=2.2,<3",
+    "pyarrow>=16",
+    "requests>=2.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pandas-stubs>=2.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+# strict typing on the correctness-critical packages (CLAUDE.md conventions);
+# engine/ and honesty/ join this list when M2/M3 land
+[[tool.mypy.overrides]]
+module = "app.models.*"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

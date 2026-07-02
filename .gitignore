@@ -5,13 +5,22 @@
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+*.tsbuildinfo
 
 # Secrets / env — keys never go in git
 .env
 .env.*
 
-# Market data never goes in git — R2 only (standing rule)
-data/
+# Market data never goes in git — R2 only (standing rule).
+# Root-anchored: app route folders like frontend/app/data/ are code, not data.
+/data/
 *.parquet
 
 # Local tooling

@@ -280,6 +280,159 @@ re-dispatched for those 30 months, which also unblocks the full
 cross-source validation. July options gap: 2026-07-01 has EOD coverage
 only; the recorder covers 2026-07-02 onward.
 
+## 2026-07-02 — Design handoff implemented: M0 scaffold + app frontend + real coverage API
+
+Owner delivered the approved Claude Design export ("Skeptic Options Research
+Tool-handoff.zip") and asked for it to be implemented. Imported to
+docs/design/ (Skeptic App.dc.html is the consolidated final; the Wireframes
+file is exploration iterations).
+
+**Shipped (branch `design-implementation`):**
+
+- **M0 scaffold:** `backend/` (uv + FastAPI, `/api/health`, bearer
+  middleware, CORS) with pydantic-v2 models matching
+  strategy-spec.schema.json (20 tests: canonical-spec round-trip +
+  guardrail rejections — slippage 0 = mid fills, empty exit, bad ticker,
+  extra keys); `frontend/` (Next.js 14 app router, TS, Tailwind, tokens
+  extracted from the design: Archivo + IBM Plex Mono, #14161a ground,
+  trust hue #3fc1cf family vs P/L #43c987/#e0604f as separate Tailwind
+  token families); `.github/workflows/ci.yml` (ruff/mypy/pytest +
+  lint/typecheck/build). All checks green locally; Actions run pends the
+  push.
+- **Real data routes (ahead of M2, because the lake exists):**
+  `/api/data/coverage` (port of collector/coverage.py + dolthub state,
+  both quarantine gates counted, named blind spots, 5-min cache) and
+  `/api/data/underlying/{ticker}` (daily closes for chart-teach). Verified
+  against the live lake: SPY chains 2020-01-06 → 2026-07-01 (1,071
+  sessions), QQQ/IWM 1 session, minute lake 604 frozen sessions,
+  recorder heartbeat minutes-fresh. Backend loads R2 creds from
+  collector/.env locally (recorder's pattern); refuses with 503 — never
+  fakes — when unconfigured.
+- **All design screens:** New Analysis (text + chart-teach modes; live
+  per-ticker-asymmetric coverage chips), Spec confirmation (editable dial
+  tiles, missing-exit question flow), gauntlet progress, Results
+  (Verdict Block hero with trust band; fades-oos / survives / refusal
+  states; refusal dims everything below "UNBLESSED OUTPUT"), Library
+  (mini trust bands, empty state), Data Observatory (all-real telemetry:
+  days on record, recorder heartbeat, per-source lanes, quality flags,
+  blind spots), Settings. Verdict components use trust tokens only; P/L
+  color appears only in trade-log P/L, walk-forward bars, drawdown, MAX DD.
+- **Run pipeline honesty:** backend serves explicit 501s for
+  parse/backtest/runs (M2–M4 pending) but validates specs at
+  /api/backtest already (invalid IR = 422 today, same as post-M2). The
+  Next proxy (bearer token server-side) falls back to demo fixtures for
+  those routes only; every demo payload carries `demo: true` and the UI
+  badges it "demo data — engine lands at M2". Data routes never fall back.
+- End-to-end verified in a real browser: canonical strategy → spec →
+  gauntlet → verdict; QQQ run → refusal state; Observatory live.
+
+**Deviations from spec, and why:**
+
+1. **Milestone order:** M5's visual layer landed before M2–M4 because the
+   owner asked for the design implementation now. Engine, honesty layer,
+   and parser remain the next sessions, in BUILD-PLAN order; the demo
+   fixtures (frontend/lib/demo.ts) are deleted the day they land.
+2. **Demo numbers are the design's illustrative content, labeled** — with
+   two honesty edits: refusal copy states the true coverage fact ("QQQ
+   record began 2026-07-01") instead of the mock "42 days", and demo runs
+   on QQQ/IWM always land in the refusal state because a full verdict on
+   days of data would be dishonest even as a placeholder.
+3. **Charts are bespoke SVG components** matching the mockups exactly, not
+   Recharts (TECH-SPEC §8) — reconsider when real payload shapes land.
+4. **Observatory content follows the design brief** (per-source lanes,
+   named blind spots) where the dc.html carried placeholder content from
+   a dead assumption (AV backfill runways).
+5. **Library compare-two** (brief) is absent from the final approved
+   design → not built this pass.
+6. **Pydantic models forbid unknown keys everywhere** (stricter than the
+   JSON Schema's root-only rule) so malformed IR fails loudly.
+7. The design's chart-teach input ("show it on the chart") is implemented
+   against the real underlying series from the lake; its compiled spec
+   maps pins → signal_only entry + drawdown_from_high_pct condition. The
+   real parse of pinned examples is M4 scope.
+
+## 2026-07-02 — Full market charts (owner-directed scope addition)
+
+Owner asked for brokerage-grade charts (reference: Robinhood Legend
+screenshots): any timeframe, live, candles/line, indicators, all three
+tickers. Shipped on `design-implementation`:
+
+- **Backend `/api/data/bars/{ticker}`** (app/data/bars.py): intervals
+  1m/2m/3m/5m/15m/30m/1h/4h from the lake's underlying minute bars
+  (2024-02 →, 9:30-ET-anchored resampling, extended hours included),
+  1D/1W from dailies (1993 →, W-FRI weekly); windows 1D→All, capped at
+  2,000 bars; **live tail from Alpaca's IEX feed at request time when
+  APCA_* keys are configured** (stock data — not OPRA-gated; without keys
+  the payload states its exact freshness). Verified against the live
+  lake: 5m/1h/1D/1W for SPY/QQQ/IWM all correct.
+- **Indicators server-side** (app/data/indicators.py, per the "backend
+  owns all math" rule): SMA, EMA, Wilder RSI, session-anchored VWAP,
+  Bollinger, MACD — each with a hand-computed fixture test (11 new tests;
+  31 total). Warmup values are NaN/absent, never extrapolated.
+- **frontend MarketChart** (components/charts/market-chart.tsx): candles
+  (path-batched for 2k bars) or line, crosshair with OHLCV readout +
+  price/time chips, range presets (1D 1W 1M 3M YTD 1Y 5Y All), interval
+  chips, indicator menu (Volume, SMA 20/50/200, EMA 9/21, VWAP, BB,
+  RSI + MACD subpanels), 15 s polling with a live badge when the tail is
+  live. Candle/volume up/down uses the P/L pair (market up/down is
+  P/L-family data); the trust hue appears only on pins/status.
+- **Chart-teach rebuilt on MarketChart**: pins are bar timestamps (works
+  at any interval; changing view clears pins, stated in the UI), tickets
+  and spec ANCHOR show real bar dates. Verified in-browser: All-window
+  weekly since 1993 with SMA 200 + RSI, pinning on 1Y daily, compile →
+  spec with anchor/trigger intact.
+
+**Limits stated in-product, per the data evals:** tick intervals are
+refused with the honest reason (no tick data exists at $0 —
+INTRADAY-OPTIONS-DATA-EVAL); without APCA keys charts say "through <last
+close> · nightly lake". Note: the first *scheduled* nightly containing
+the minute top-up runs tonight (2026-07-02 21:30 UTC) — July's minute
+file lands then; the two Jul-01 runs in Actions were the pre-Alpaca M1
+verification dispatches. Deviation: the design's chart area gains a
+control bar not in the dc.html mockup (owner-directed); simplicity held
+by one indicators menu and chip rows, no config trees. The old sample
+-series fallback was removed — an unreachable lake now shows an honest
+error, never a synthetic market.
+
+## 2026-07-02 — Fluid chart navigation (owner screen recording replicated)
+
+Owner supplied an 88 s Robinhood Legend recording as the interaction spec
+(frames extracted via AVFoundation and studied): grab-drag panning that
+tracks the pointer 1:1, inertia on release, cursor-anchored wheel/pinch
+zoom, continuous y auto-scale, older data streaming in as you pull back
+(their 2m chart pans Jul → Jun 26; daily pans 2025 → 1994), future
+whitespace right of the latest candle. Shipped on `design-implementation`:
+
+- **Backend paging:** /api/data/bars gains `before` + `limit`; every page
+  is computed with a 300-bar indicator lookback so SMA/RSI/MACD arrive
+  warm at page seams (verified: window-edge SMA non-null, page seams
+  contiguous for 1d and 5m). `has_more` tells the client when the lake
+  is exhausted. GZip middleware for the larger payloads.
+- **MarketChart viewport model:** buffer (grows by prepended pages) +
+  fractional view {start, span}. Pointer-capture drag, velocity-decay
+  inertia, wheel zoom anchored at the cursor frac, horizontal-wheel pan,
+  left-edge paging with a 200 ms cooldown, 12k-bar buffer ceiling per
+  interval (coarser intervals are the tool for deeper zoom-out), right
+  overscan, "→ latest" jump chip, y auto-scale over the visible slice,
+  display decimation ≥700 bars (absolute-grid-aligned so candles don't
+  shimmer while panning).
+
+Three real bugs found by driving it in the preview browser and fixed:
+(1) absolute-position view writes raced page-prepend index shifts —
+all hot-path writes are now delta-based; (2) `getBoundingClientRect()
+.width` transiently reads 0 in some environments, poisoning px→bars
+conversion — replaced with clientWidth + last-known-good caching + a
+one-screenful cap per event; (3) React's queued functional updaters get
+REPLAYED on rebase under continuous paging, livelocking the render loop —
+the viewport now lives in a ref mutated imperatively, with rAF-throttled
+plain-state snapshots (setTimeout fallback: backgrounded tabs starve rAF).
+
+Verified end-state in-browser: pan travels exactly the dragged distance
+plus glide (Jun 30 → Jun 22, span preserved), zoom out pages bounded then
+zooms back in cleanly, pin-click still compiles a chart-taught spec.
+Tick-level data remains impossible ($0 sources don't exist — intraday
+eval); 1-minute stays the honest floor.
+
 ## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
 
 The owner-requested DoltHub-vs-Alpaca validation completed its arc:

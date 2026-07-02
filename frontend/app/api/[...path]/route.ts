@@ -1,0 +1,102 @@
+/**
+ * Same-origin API proxy (TECH-SPEC §9): forwards /api/* to the FastAPI
+ * backend, attaching the bearer token server-side so it never ships to the
+ * browser.
+ *
+ * Demo fallback: the run pipeline (parse/backtest/runs/ask) answers 501
+ * until milestones M2–M4 exist. When that happens (or the backend is down in
+ * dev) and SKEPTIC_DEMO_FALLBACK != "0", those routes — and only those —
+ * fall back to labeled demo fixtures. Data routes (/api/data/*, /api/health)
+ * NEVER fall back: coverage is real or absent, never invented.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+
+import { createDemoRun, demoAskAnswer, demoParse, getDemoRun, listDemoRuns } from "@/lib/demo";
+import type { SpecDraft } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+const BACKEND = process.env.SKEPTIC_API_URL ?? "http://localhost:8000";
+
+function demoEnabled(): boolean {
+  return process.env.SKEPTIC_DEMO_FALLBACK !== "0";
+}
+
+async function forward(req: NextRequest, path: string[], body: string | null) {
+  const url = `${BACKEND}/api/${path.join("/")}${req.nextUrl.search}`;
+  const headers: Record<string, string> = {};
+  const contentType = req.headers.get("content-type");
+  if (contentType) headers["content-type"] = contentType;
+  const token = process.env.SKEPTIC_ACCESS_TOKEN;
+  if (token) headers.authorization = `Bearer ${token}`;
+  return fetch(url, {
+    method: req.method,
+    headers,
+    body,
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+}
+
+function isRunPipeline(path: string[]): boolean {
+  return path[0] === "parse" || path[0] === "backtest" || path[0] === "runs" || path[0] === "sweep";
+}
+
+function demoResponse(req: NextRequest, path: string[], body: string | null): NextResponse {
+  if (path[0] === "parse" && req.method === "POST") {
+    const { text } = JSON.parse(body ?? "{}") as { text?: string };
+    if (!text?.trim()) {
+      return NextResponse.json({ detail: "empty strategy text" }, { status: 422 });
+    }
+    return NextResponse.json({ status: "spec", demo: true, draft: demoParse(text) });
+  }
+  if (path[0] === "backtest" && req.method === "POST") {
+    const { draft } = JSON.parse(body ?? "{}") as { draft?: SpecDraft };
+    if (!draft) return NextResponse.json({ detail: "missing draft" }, { status: 422 });
+    return NextResponse.json({ run_id: createDemoRun(draft), demo: true });
+  }
+  if (path[0] === "runs" && path.length === 1 && req.method === "GET") {
+    return NextResponse.json({ runs: listDemoRuns(), demo: true });
+  }
+  if (path[0] === "runs" && path.length === 2 && req.method === "GET") {
+    const run = getDemoRun(path[1]);
+    if (!run) return NextResponse.json({ detail: "run not found" }, { status: 404 });
+    return NextResponse.json(run);
+  }
+  if (path[0] === "runs" && path[2] === "ask" && req.method === "POST") {
+    return NextResponse.json({ answer: demoAskAnswer(), demo: true });
+  }
+  return NextResponse.json(
+    { detail: "not available until milestones M2–M4 (docs/BUILD-PLAN.md)" },
+    { status: 501 },
+  );
+}
+
+async function handle(req: NextRequest, { params }: { params: { path: string[] } }) {
+  const path = params.path;
+  const body = req.method === "GET" || req.method === "HEAD" ? null : await req.text();
+
+  try {
+    const upstream = await forward(req, path, body);
+    if (upstream.status === 501 && isRunPipeline(path) && demoEnabled()) {
+      return demoResponse(req, path, body);
+    }
+    const payload = await upstream.text();
+    return new NextResponse(payload, {
+      status: upstream.status,
+      headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
+    });
+  } catch {
+    // backend unreachable — run pipeline may demo; data routes stay honest
+    if (isRunPipeline(path) && demoEnabled()) {
+      return demoResponse(req, path, body);
+    }
+    return NextResponse.json(
+      { detail: `backend unreachable at ${BACKEND} — start it with: cd backend && uv run uvicorn app.main:app` },
+      { status: 502 },
+    );
+  }
+}
+
+export { handle as GET, handle as POST };
