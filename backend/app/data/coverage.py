@@ -1,0 +1,216 @@
+"""Lake coverage — the real numbers behind /api/data/coverage.
+
+Successor to collector/coverage.py (the M1 stand-in script), returning JSON
+for the Data Observatory and the composer's coverage chips. Everything here
+is computed from the lake; nothing is asserted that an object listing can't
+prove (guardrail #6).
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from datetime import UTC, datetime
+from typing import Any
+
+from app.data import r2
+
+TICKERS = ["SPY", "QQQ", "IWM"]
+EOD_SOURCES = ["alphavantage", "yahoo", "dolthub"]
+INTRADAY_SOURCES = ["cboe_delayed", "yahoo"]
+
+_CACHE: dict[str, Any] = {"at": 0.0, "payload": None}
+CACHE_SECONDS = 300
+
+
+def _range(dates: list[str]) -> dict[str, Any] | None:
+    if not dates:
+        return None
+    return {"sessions": len(dates), "first": dates[0], "last": dates[-1]}
+
+
+def _latest_snapshot_ts(s3: Any, source: str, ticker: str, dates: list[str]) -> str | None:
+    """Timestamp of the newest snap_*.parquet under the latest date prefix."""
+    if not dates:
+        return None
+    keys = r2.list_keys(
+        s3, f"options_intraday/source={source}/ticker={ticker}/date={dates[-1]}/"
+    )
+    stamps = []
+    for k in keys:
+        m = re.search(r"snap_(\d{8}T\d{4}Z)", k)
+        if m:
+            stamps.append(m.group(1))
+    if not stamps:
+        return None
+    return datetime.strptime(max(stamps), "%Y%m%dT%H%MZ").replace(tzinfo=UTC).isoformat()
+
+
+def _quarantined_count(dolthub_state: dict[str, Any]) -> int:
+    """Both integrity gates: parity-vs-close (quarantined_stale) and
+    cross-source shape staleness (quarantined_stale_shape)."""
+    stale = dolthub_state.get("quarantined_stale") or {}
+    shape = dolthub_state.get("quarantined_stale_shape") or {}
+    return len(set(stale) | set(shape))
+
+
+def _blind_spots(dolthub_state: dict[str, Any], minute: dict[str, Any]) -> list[dict[str, str]]:
+    """Named blind spots for the Observatory. Static facts come from the data
+    evals (docs/DOLTHUB-EVAL.md, docs/DATA-PIPELINE.md §7); counts are live."""
+    spots: list[dict[str, str]] = [
+        {
+            "id": "dolthub-mwf-era",
+            "text": "SPY EOD history is Mon/Wed/Fri-granular before 2024-09 "
+            "(checkpoint marks, not daily marks)",
+        },
+        {
+            "id": "dolthub-2024-08-outage",
+            "text": "Archive outage 2024-07-31 → 2024-08-09 spans the 2024-08-05 "
+            "volatility spike",
+        },
+        {
+            "id": "qqq-iwm-eod-depth",
+            "text": "QQQ/IWM EOD chains begin 2026-07-01 — no free source reaches earlier",
+        },
+        {
+            "id": "minute-lake-frozen",
+            "text": "Alpaca minute bars are a frozen window: 2024-02 → 2026-06 "
+            "(OPRA entitlement unavailable)",
+        },
+        {
+            "id": "2026-07-01-eod-only",
+            "text": "2026-07-01 has EOD coverage only — the intraday recorder "
+            "starts 2026-07-02",
+        },
+        {
+            "id": "recorder-best-effort",
+            "text": "Intraday recorder runs on the owner's machine — uptime is "
+            "best-effort and gaps are recorded, not hidden",
+        },
+    ]
+    quarantined = _quarantined_count(dolthub_state)
+    if quarantined:
+        spots.insert(
+            2,
+            {
+                "id": "dolthub-quarantine",
+                "text": f"{quarantined} archive sessions quarantined for date-stamp "
+                "integrity (flag-and-exclude; objects retained for audit)",
+            },
+        )
+    return spots
+
+
+def build_coverage() -> dict[str, Any]:
+    s3 = r2.r2_client()
+    now = datetime.now(UTC)
+
+    eod: dict[str, dict[str, Any]] = {}
+    for source in EOD_SOURCES:
+        eod[source] = {}
+        for ticker in TICKERS:
+            eod[source][ticker] = _range(r2.list_chain_dates(s3, source, ticker))
+
+    dolthub_state = r2.get_json(s3, "state/dolthub_backfill.json", {})
+    verified = sorted(dolthub_state.get("done", []))
+    if eod["dolthub"].get("SPY") and verified:
+        # the lake's logical view excludes quarantined sessions
+        eod["dolthub"]["SPY"] = {
+            "sessions": len(verified),
+            "first": verified[0],
+            "last": verified[-1],
+            "quarantined": _quarantined_count(dolthub_state),
+        }
+
+    minute: dict[str, Any] = {}
+    for ticker in TICKERS:
+        minute[ticker] = _range(
+            r2.list_date_prefixes(s3, f"options_minute/source=alpaca/ticker={ticker}/")
+        )
+
+    intraday: dict[str, dict[str, Any]] = {}
+    for source in INTRADAY_SOURCES:
+        intraday[source] = {}
+        for ticker in TICKERS:
+            dates = r2.list_date_prefixes(
+                s3, f"options_intraday/source={source}/ticker={ticker}/"
+            )
+            entry = _range(dates)
+            if entry and source == "cboe_delayed":
+                entry["last_snapshot_ts"] = _latest_snapshot_ts(s3, source, ticker, dates)
+            intraday[source][ticker] = entry
+
+    underlying: dict[str, Any] = {}
+    targets = [(t, f"underlying/ticker={t}/daily.parquet") for t in TICKERS]
+    targets.append(("VIX", "reference/vix_daily.parquet"))
+    for symbol, key in targets:
+        df = r2.get_parquet(s3, key)
+        if df is None or df.empty:
+            underlying[symbol] = None
+        else:
+            underlying[symbol] = {
+                "rows": int(len(df)),
+                "first": str(df["date"].min().date()),
+                "last": str(df["date"].max().date()),
+            }
+
+    # the EOD record: nightly Yahoo snapshots (source of record per the
+    # DECIDED block in DATA-PIPELINE.md)
+    record = eod["yahoo"].get("SPY") or {"sessions": 0, "first": None, "last": None}
+
+    # per-ticker chain window across sources (what a backtest can actually use)
+    chains: dict[str, Any] = {}
+    for ticker in TICKERS:
+        firsts = [e["first"] for src in EOD_SOURCES if (e := eod[src].get(ticker))]
+        lasts = [e["last"] for src in EOD_SOURCES if (e := eod[src].get(ticker))]
+        sessions = sum(e["sessions"] for src in EOD_SOURCES if (e := eod[src].get(ticker)))
+        chains[ticker] = (
+            {"first": min(firsts), "last": max(lasts), "sessions": sessions} if firsts else None
+        )
+
+    return {
+        "generated_at": now.isoformat(),
+        "record_days": record["sessions"],
+        "record_latest": record["last"],
+        "chains": chains,
+        "eod": eod,
+        "minute_bars": minute,
+        "intraday": intraday,
+        "underlying": underlying,
+        "quality": r2.get_json(s3, "state/quality_flags.json", {}),
+        "dolthub": {
+            "verified_sessions": len(verified),
+            "quarantined": _quarantined_count(dolthub_state),
+            "archive_gaps": len(dolthub_state.get("missing_in_archive") or []),
+            "commit": dolthub_state.get("commit_hash"),
+        },
+        "blind_spots": _blind_spots(dolthub_state, minute),
+        "sources_status": {
+            "yahoo_eod": bool(eod["yahoo"].get("SPY")),
+            "dolthub_backfill": bool(eod["dolthub"].get("SPY")),
+            "alpaca_minute": bool(minute.get("SPY")),
+            "alphavantage": "dormant",  # premium-gated; resumes automatically if entitled
+            "intraday_recorder": bool(intraday["cboe_delayed"].get("SPY")),
+        },
+    }
+
+
+def coverage_cached() -> dict[str, Any]:
+    if _CACHE["payload"] is not None and time.time() - _CACHE["at"] < CACHE_SECONDS:
+        return _CACHE["payload"]  # type: ignore[no-any-return]
+    payload = build_coverage()
+    _CACHE.update(at=time.time(), payload=payload)
+    return payload
+
+
+def underlying_series(ticker: str, days: int) -> list[dict[str, Any]]:
+    """Last N daily closes for the chart-teach composer (real lake data)."""
+    s3 = r2.r2_client()
+    df = r2.get_parquet(s3, f"underlying/ticker={ticker}/daily.parquet")
+    if df is None or df.empty:
+        return []
+    df = df.sort_values("date").tail(days)
+    return [
+        {"date": str(row["date"].date()), "close": float(row["close"])}
+        for _, row in df.iterrows()
+    ]
