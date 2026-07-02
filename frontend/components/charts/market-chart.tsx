@@ -929,7 +929,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange }:
           </button>
         ))}
         <div className="ml-auto flex items-center gap-1">
-          <span className="mr-1 font-mono text-[10px] text-ink-5">drag to pan · scroll to zoom · 🔒 auto-scale</span>
+          <span className="mr-1 font-mono text-[10px] text-ink-5">drag to pan · scroll to zoom</span>
           <button onClick={() => setChartType("candles")} className={chipCls(chartType === "candles")} title="Candles">
             ▮
           </button>

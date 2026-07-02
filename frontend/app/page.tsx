@@ -11,6 +11,7 @@ import clsx from "clsx";
 
 import { getCoverage, getRun, parseText, startBacktest } from "@/lib/api";
 import type { RunPayload, SpecDraft } from "@/lib/types";
+import { useSpeechToText } from "@/lib/use-speech";
 
 import { CoverageChips } from "@/components/coverage-chips";
 import { ChartTeach } from "@/components/composer/chart-teach";
@@ -39,6 +40,14 @@ export default function NewAnalysisPage() {
   const [busy, setBusy] = useState(false);
   const [earliestYear, setEarliestYear] = useState("1993");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const speech = useSpeechToText((segment) => {
+    setText((t) => {
+      const sep = t && !/\s$/.test(t) ? " " : "";
+      const seg = t.trim() ? segment : segment[0].toUpperCase() + segment.slice(1);
+      return t + sep + seg;
+    });
+  });
 
   useEffect(() => {
     getCoverage()
@@ -166,8 +175,15 @@ export default function NewAnalysisPage() {
               rows={3}
               className="w-full font-mono text-[14.5px] leading-[1.6] text-ink"
               placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
+              value={
+                speech.interim
+                  ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
+                  : text
+              }
+              onChange={(e) => {
+                if (speech.listening) speech.stop();
+                setText(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -175,22 +191,49 @@ export default function NewAnalysisPage() {
                 }
               }}
             />
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[12px] text-ink-4">
-                Ambiguity gets a question, never a guess.
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className={clsx("text-[12px]", speech.error ? "text-warn" : "text-ink-4")}>
+                {speech.error ??
+                  (speech.listening
+                    ? "Listening — speak your strategy; tap the mic again to stop."
+                    : "Ambiguity gets a question, never a guess.")}
               </span>
-              <button
-                onClick={compileText}
-                disabled={!text.trim() || busy}
-                className={clsx(
-                  "rounded-[9px] border px-4 py-[7px] text-[13px] font-semibold",
-                  text.trim() && !busy
-                    ? "border-trust-border bg-trust-dim text-trust"
-                    : "cursor-not-allowed border-line bg-raised-2 text-ink-4",
+              <div className="flex items-center gap-2">
+                {speech.supported && (
+                  <button
+                    onClick={() => (speech.listening ? speech.stop() : speech.start())}
+                    title={speech.listening ? "Stop dictation" : "Dictate your strategy"}
+                    className={clsx(
+                      "flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border",
+                      speech.listening
+                        ? "border-trust-border bg-trust-dim text-trust"
+                        : "border-line text-ink-4 hover:border-line-hover hover:text-ink",
+                    )}
+                  >
+                    {speech.listening ? (
+                      <span className="inline-block h-[9px] w-[9px] animate-pin-pulse rounded-full bg-trust" />
+                    ) : (
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
+                        <path d="M3 7.5a5 5 0 0 0 10 0" />
+                        <line x1="8" y1="12.5" x2="8" y2="14.5" />
+                      </svg>
+                    )}
+                  </button>
                 )}
-              >
-                {busy ? "Compiling…" : "Compile ↵"}
-              </button>
+                <button
+                  onClick={compileText}
+                  disabled={!text.trim() || busy}
+                  className={clsx(
+                    "rounded-[9px] border px-4 py-[7px] text-[13px] font-semibold",
+                    text.trim() && !busy
+                      ? "border-trust-border bg-trust-dim text-trust"
+                      : "cursor-not-allowed border-line bg-raised-2 text-ink-4",
+                  )}
+                >
+                  {busy ? "Compiling…" : "Compile ↵"}
+                </button>
+              </div>
             </div>
           </div>
           <div className="mt-3.5 flex flex-wrap gap-2">
