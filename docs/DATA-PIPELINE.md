@@ -64,6 +64,16 @@ started BEFORE the app, because history only accrues forward.*
    1-minute option bars + underlying minute bars for the 3 tickers from
    Alpaca (small pull). The one-time `alpaca-backfill` mode walks
    2024-02 → present with a resumable month×ticker frontier.
+5. **Intraday quote recorder** (`collector/intraday.py`, launchd agent on
+   the owner's Mac — Actions free minutes cannot host a 6.75 h/day loop):
+   every session minute, the CBOE delayed-quote JSON full chain per ticker
+   (bid/ask, IV, greeks, OI; ~3 req/min; quotes ~15-min delayed —
+   `snapshot_ts` = capture, `source_ts` = feed stamp) + a Yahoo chain
+   snapshot every 15 min as cross-source redundancy (Yahoo at 1-min would
+   need ~120 req/min and endangers the nightly EOD source). These forward
+   quotes are the fill-model record the Alpaca bar history lacks (§4b).
+   Uptime is best-effort (Mac must be awake); coverage reports gaps
+   honestly.
 
 ## 2. Scheduling: GitHub Actions
 
@@ -91,9 +101,9 @@ s3://skeptic-data/
   reference/exdiv_calendar.parquet
   options_minute/
     source=alpaca/ticker=SPY/date=2026-07-01/bars.parquet
-  quotes_cache/                     (reserved: forward quote snapshots or a
-                                     paid source later — Alpaca serves no
-                                     historical quotes, step-0 finding C)
+  options_intraday/                 (forward quote record, job 5)
+    source=cboe_delayed/ticker=SPY/date=2026-07-02/snap_20260702T1330Z.parquet
+    source=yahoo/ticker=SPY/date=2026-07-02/snap_20260702T1330Z.parquet
   underlying_minute/ticker=SPY/month=2026-07/bars.parquet
   state/backfill_frontier.json                 {ticker: earliest_date_done}
   state/alpaca_backfill.json                   {ticker: {month: done}}
@@ -103,12 +113,17 @@ s3://skeptic-data/
 Yahoo keys carry a timestamp so the SAME layout absorbs future intraday
 snapshots (multiple `snap_*.parquet` per date) with zero migration. Size
 reality: EOD chains for 3 ETFs ≈ 2–6 MB/day compressed; years fit comfortably
-inside R2's 10 GB free tier. **The minute lake does not:** full-chain
-1-minute bars for 3 ETFs × 2024-02→present are estimated at 3–16 GB
-(measured precisely at M1.5 step 0). Owner choice, recorded at M1.5
-kickoff: enable R2 paid storage class (~$0.015/GB-mo — tens of cents,
-well inside budget) or filter the lake (DTE ≤ 90, moneyness ±25%) to stay
-inside the free tier.
+inside R2's 10 GB free tier. **The minute lakes do not.** Measured
+reality (M1.5 step 0 + first live snapshot): the Alpaca bar backfill is
+~2.5 GB one-time (+~1.3 GB/yr forward), and the intraday quote recorder
+writes **~430 MB/session-day ≈ 109 GB/yr** at full-chain 1-min cadence —
+the free tier's headroom lasts ~17 trading days. The recorder therefore
+ships with a hard cap (`--max-lake-gb`, default 6 GB): it pauses itself
+rather than fill the shared bucket and break the nightly EOD record.
+**Owner decision, open:** enable R2 paid storage (~$0.015/GB-mo ≈
+$1–2/mo at year-one scale — well inside budget) and raise the cap, or
+direct a thinner lake (DTE/moneyness filter and/or 5-min cadence; any
+useful configuration still exceeds 10 GB within months).
 
 ## 4. Canonical schema (normalize BOTH sources to this)
 

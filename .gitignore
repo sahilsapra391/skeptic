@@ -19,3 +19,6 @@ data/
 
 # Raw handoff copy (canonical versions live in docs/ and collector/)
 /files/
+
+# but the template documenting the local env file is not a secret
+!.env.example

@@ -206,3 +206,33 @@ expirations >400 days out are not pulled (MAX_EXP_DAYS): those batches are
 ~all-empty and only burn rate limit; documented in §4b. (3)
 underlying_minute/ is keyed month=YYYY-MM (idempotent monthly unit), not
 year=.
+
+## 2026-07-02 — Intraday quote recorder (DATA-PIPELINE job 5) + backfill fix
+
+Owner asked for minute-by-minute forward recording of options quotes.
+Shipped `collector/intraday.py`: every session minute (XNYS-aware incl.
+early closes, open → close+15 min) it captures the CBOE delayed-quote
+full chain per ticker (bid/ask/IV/greeks/OI, one request per underlying,
+~3 req/min, quotes ~15-min delayed; snapshot_ts = capture, source_ts =
+feed stamp) + a Yahoo chain snapshot every 15 min as cross-source
+redundancy — Yahoo at 1-min cadence (~120 req/min) would risk throttling
+the source the nightly EOD record depends on, so CBOE is the minute leg
+by design (owner asked "Yahoo minute-by-minute"; Yahoo rides at 15-min).
+Writes to options_intraday/source={cboe_delayed,yahoo}/… per §3. Runs as
+a launchd agent on the owner's Mac (Actions minutes math per the intraday
+eval); best-effort uptime, gaps honest in coverage.
+
+Smoke test (dry-run, live feeds): CBOE SPY 13,706 / QQQ 10,606 /
+IWM 4,890 rows per snapshot; Yahoo 3,755/3,292/1,471 (≤60 DTE). Measured
+36.2 B/row parquet → **~430 MB/session-day ≈ 109 GB/yr** — the recorder
+ships with a self-cap (--max-lake-gb, default 6) so it pauses rather
+than fill the shared free-tier bucket and break the EOD record. **Owner
+decision open: enable R2 paid (~$1–2/mo at yr-1 scale) and raise the
+cap, or direct a thinner lake.** Free-tier headroom at full cadence ≈ 17
+trading days.
+
+Also this session: first alpaca-backfill dispatch crashed on an
+adjusted-series symbol (1SPY…, penny strike) the data API rejects —
+universe now filters to standard roots and a bisect guard skips any
+remaining rejects (run 28566653508 failed clean, nothing written;
+re-dispatched as 28567008737).

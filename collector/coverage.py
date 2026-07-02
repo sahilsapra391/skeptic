@@ -65,6 +65,28 @@ def main() -> None:
     if bf_state:
         print(f"  backfill frontier: {done} ticker-months done")
 
+    print("\nIntraday quote snapshots (forward record, job 5)")
+    import os as _os
+    for source in ("cboe_delayed", "yahoo"):
+        for ticker in TICKERS:
+            prefix = f"options_intraday/source={source}/ticker={ticker}/date="
+            dates = []
+            try:
+                paginator = s3.get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=_os.environ["R2_BUCKET"],
+                                               Prefix=prefix, Delimiter="/"):
+                    for cp in page.get("CommonPrefixes", []):
+                        dates.append(cp["Prefix"].split("date=")[1].rstrip("/"))
+            except Exception as exc:
+                print(f"  {source:>13} {ticker}: listing failed: {exc}")
+                continue
+            dates.sort()
+            if dates:
+                print(f"  {source:>13} {ticker}: {len(dates):>5} sessions   "
+                      f"{dates[0]} -> {dates[-1]}")
+            else:
+                print(f"  {source:>13} {ticker}:     0 sessions")
+
     print("\nUnderlying dailies + VIX")
     targets = [(t, f"underlying/ticker={t}/daily.parquet") for t in TICKERS]
     targets.append(("^VIX", "reference/vix_daily.parquet"))
