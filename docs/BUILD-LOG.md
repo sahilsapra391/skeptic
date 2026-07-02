@@ -136,3 +136,37 @@ and each snapshot quotes only ~3 expirations (~14/~28/44–66 DTE, strikes
 Read-only evaluation over the SQL API; nothing imported to R2, no data in
 git. Ingest work (collector `--mode dolthub-backfill`) awaits owner
 acceptance of the conditions in the eval doc §7.
+
+## 2026-07-01 — Intraday (1-min) QQQ/IWM options history: acquisition evaluation
+
+Owner asked for 5–10y of minute-level QQQ/IWM options pricing, free API
+or scraped. Findings + provider matrix + verified probes:
+**docs/INTRADAY-OPTIONS-DATA-EVAL.md**. Headline: **free + 5–10y + minute
+does not exist** (OPRA-licensed; Yahoo 404s expired contracts — the past
+is unscrapeable). Best free: Alpaca 1-min bars+quotes from 2024-02 (~2.4y,
+growing) + start a $0 forward minute collector on CBOE's delayed JSON
+(full chain, greeks+OI, tested: 10,606 QQQ contracts/request) + ThetaData
+free EOD to 2023-06. The literal ask is purchasable once: ThetaData $40/mo
+→ 1-min quotes to 2020-01, $80 → 2016-01 (single-month bulk pull, ToS
+check pending); Databento cost-preflight to 2013-04 with $125 credit.
+Ongoing subs violate the locked $25/mo budget. Recommended: adopt the $0
+stack now (Path A), hold the one-time purchase (Path B) as owner decision.
+Nothing bought, nothing scraped, nothing ingested in this session.
+
+## 2026-07-02 — Owner decision: Alpaca minute lake for SPY/QQQ/IWM (M1.5 planned)
+
+Owner adopted the Alpaca solution for all three tickers: full 1-minute
+option-bar history 2024-02 → present plus a nightly accrual leg; option
+quotes lazy-fetched at backtest decision points only (bulk quote pulls are
+rate-limit-impossible and stay banned in code). Docs amended on the
+intraday-data-eval branch: DATA-PIPELINE.md (second DECIDED block; Alpaca
+in §1 sources + job 4; APCA_* secrets in §2; options_minute/ + quotes_cache/
++ underlying_minute/ + alpaca_backfill state in §3 with the minute-lake
+size call-out; new §4b minute-bar schema; §6 minute-lake quality flags;
+§7 honest-limits rewrite — intraday exists 2024-02→ only), BUILD-PLAN.md
+(new M1.5 with step-0 verification gate), INTRADAY-OPTIONS-DATA-EVAL.md
+(decision recorded). Verified against Alpaca docs: history since 2024-02,
+1Min bars, 100 symbols/request, 10k rows/page; expired-contract listing
+depth is step 0's job. Blocked on owner: Alpaca account + APCA_* repo
+secrets, R2 full-vs-filtered choice, PR #2/#3 merges. Implementation is
+the next session (M1.5 prompt in BUILD-PLAN).
