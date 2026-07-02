@@ -280,6 +280,77 @@ re-dispatched for those 30 months, which also unblocks the full
 cross-source validation. July options gap: 2026-07-01 has EOD coverage
 only; the recorder covers 2026-07-02 onward.
 
+## 2026-07-02 — Design handoff implemented: M0 scaffold + app frontend + real coverage API
+
+Owner delivered the approved Claude Design export ("Skeptic Options Research
+Tool-handoff.zip") and asked for it to be implemented. Imported to
+docs/design/ (Skeptic App.dc.html is the consolidated final; the Wireframes
+file is exploration iterations).
+
+**Shipped (branch `design-implementation`):**
+
+- **M0 scaffold:** `backend/` (uv + FastAPI, `/api/health`, bearer
+  middleware, CORS) with pydantic-v2 models matching
+  strategy-spec.schema.json (20 tests: canonical-spec round-trip +
+  guardrail rejections — slippage 0 = mid fills, empty exit, bad ticker,
+  extra keys); `frontend/` (Next.js 14 app router, TS, Tailwind, tokens
+  extracted from the design: Archivo + IBM Plex Mono, #14161a ground,
+  trust hue #3fc1cf family vs P/L #43c987/#e0604f as separate Tailwind
+  token families); `.github/workflows/ci.yml` (ruff/mypy/pytest +
+  lint/typecheck/build). All checks green locally; Actions run pends the
+  push.
+- **Real data routes (ahead of M2, because the lake exists):**
+  `/api/data/coverage` (port of collector/coverage.py + dolthub state,
+  both quarantine gates counted, named blind spots, 5-min cache) and
+  `/api/data/underlying/{ticker}` (daily closes for chart-teach). Verified
+  against the live lake: SPY chains 2020-01-06 → 2026-07-01 (1,071
+  sessions), QQQ/IWM 1 session, minute lake 604 frozen sessions,
+  recorder heartbeat minutes-fresh. Backend loads R2 creds from
+  collector/.env locally (recorder's pattern); refuses with 503 — never
+  fakes — when unconfigured.
+- **All design screens:** New Analysis (text + chart-teach modes; live
+  per-ticker-asymmetric coverage chips), Spec confirmation (editable dial
+  tiles, missing-exit question flow), gauntlet progress, Results
+  (Verdict Block hero with trust band; fades-oos / survives / refusal
+  states; refusal dims everything below "UNBLESSED OUTPUT"), Library
+  (mini trust bands, empty state), Data Observatory (all-real telemetry:
+  days on record, recorder heartbeat, per-source lanes, quality flags,
+  blind spots), Settings. Verdict components use trust tokens only; P/L
+  color appears only in trade-log P/L, walk-forward bars, drawdown, MAX DD.
+- **Run pipeline honesty:** backend serves explicit 501s for
+  parse/backtest/runs (M2–M4 pending) but validates specs at
+  /api/backtest already (invalid IR = 422 today, same as post-M2). The
+  Next proxy (bearer token server-side) falls back to demo fixtures for
+  those routes only; every demo payload carries `demo: true` and the UI
+  badges it "demo data — engine lands at M2". Data routes never fall back.
+- End-to-end verified in a real browser: canonical strategy → spec →
+  gauntlet → verdict; QQQ run → refusal state; Observatory live.
+
+**Deviations from spec, and why:**
+
+1. **Milestone order:** M5's visual layer landed before M2–M4 because the
+   owner asked for the design implementation now. Engine, honesty layer,
+   and parser remain the next sessions, in BUILD-PLAN order; the demo
+   fixtures (frontend/lib/demo.ts) are deleted the day they land.
+2. **Demo numbers are the design's illustrative content, labeled** — with
+   two honesty edits: refusal copy states the true coverage fact ("QQQ
+   record began 2026-07-01") instead of the mock "42 days", and demo runs
+   on QQQ/IWM always land in the refusal state because a full verdict on
+   days of data would be dishonest even as a placeholder.
+3. **Charts are bespoke SVG components** matching the mockups exactly, not
+   Recharts (TECH-SPEC §8) — reconsider when real payload shapes land.
+4. **Observatory content follows the design brief** (per-source lanes,
+   named blind spots) where the dc.html carried placeholder content from
+   a dead assumption (AV backfill runways).
+5. **Library compare-two** (brief) is absent from the final approved
+   design → not built this pass.
+6. **Pydantic models forbid unknown keys everywhere** (stricter than the
+   JSON Schema's root-only rule) so malformed IR fails loudly.
+7. The design's chart-teach input ("show it on the chart") is implemented
+   against the real underlying series from the lake; its compiled spec
+   maps pins → signal_only entry + drawdown_from_high_pct condition. The
+   real parse of pinned examples is M4 scope.
+
 ## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
 
 The owner-requested DoltHub-vs-Alpaca validation completed its arc:

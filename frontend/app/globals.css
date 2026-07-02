@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Accent family from the approved design (docs/design/Skeptic App.dc.html).
+   This is the TRUST hue — it never colors P/L, and P/L green/red never
+   colors trust surfaces. */
+:root {
+  --ac: #3fc1cf;
+  --acd: rgba(63, 193, 207, 0.12);
+  --acb: rgba(63, 193, 207, 0.5);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #14161a;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+textarea {
+  resize: none;
+}
+
+::placeholder {
+  color: #5f6873;
+  opacity: 1;
+}
+
+::selection {
+  background: rgba(63, 193, 207, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #2b303a transparent;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes hb {
+  to {
+    stroke-dashoffset: -240;
+  }
+}
+
+.animate-heartbeat {
+  animation: hb 3s linear infinite;
+}
+
+.animate-pin-pulse {
+  animation: pulse 1.2s infinite;
+}
