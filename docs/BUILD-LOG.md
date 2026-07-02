@@ -351,6 +351,49 @@ file is exploration iterations).
    maps pins → signal_only entry + drawdown_from_high_pct condition. The
    real parse of pinned examples is M4 scope.
 
+## 2026-07-02 — Full market charts (owner-directed scope addition)
+
+Owner asked for brokerage-grade charts (reference: Robinhood Legend
+screenshots): any timeframe, live, candles/line, indicators, all three
+tickers. Shipped on `design-implementation`:
+
+- **Backend `/api/data/bars/{ticker}`** (app/data/bars.py): intervals
+  1m/2m/3m/5m/15m/30m/1h/4h from the lake's underlying minute bars
+  (2024-02 →, 9:30-ET-anchored resampling, extended hours included),
+  1D/1W from dailies (1993 →, W-FRI weekly); windows 1D→All, capped at
+  2,000 bars; **live tail from Alpaca's IEX feed at request time when
+  APCA_* keys are configured** (stock data — not OPRA-gated; without keys
+  the payload states its exact freshness). Verified against the live
+  lake: 5m/1h/1D/1W for SPY/QQQ/IWM all correct.
+- **Indicators server-side** (app/data/indicators.py, per the "backend
+  owns all math" rule): SMA, EMA, Wilder RSI, session-anchored VWAP,
+  Bollinger, MACD — each with a hand-computed fixture test (11 new tests;
+  31 total). Warmup values are NaN/absent, never extrapolated.
+- **frontend MarketChart** (components/charts/market-chart.tsx): candles
+  (path-batched for 2k bars) or line, crosshair with OHLCV readout +
+  price/time chips, range presets (1D 1W 1M 3M YTD 1Y 5Y All), interval
+  chips, indicator menu (Volume, SMA 20/50/200, EMA 9/21, VWAP, BB,
+  RSI + MACD subpanels), 15 s polling with a live badge when the tail is
+  live. Candle/volume up/down uses the P/L pair (market up/down is
+  P/L-family data); the trust hue appears only on pins/status.
+- **Chart-teach rebuilt on MarketChart**: pins are bar timestamps (works
+  at any interval; changing view clears pins, stated in the UI), tickets
+  and spec ANCHOR show real bar dates. Verified in-browser: All-window
+  weekly since 1993 with SMA 200 + RSI, pinning on 1Y daily, compile →
+  spec with anchor/trigger intact.
+
+**Limits stated in-product, per the data evals:** tick intervals are
+refused with the honest reason (no tick data exists at $0 —
+INTRADAY-OPTIONS-DATA-EVAL); without APCA keys charts say "through <last
+close> · nightly lake". Note: the first *scheduled* nightly containing
+the minute top-up runs tonight (2026-07-02 21:30 UTC) — July's minute
+file lands then; the two Jul-01 runs in Actions were the pre-Alpaca M1
+verification dispatches. Deviation: the design's chart area gains a
+control bar not in the dc.html mockup (owner-directed); simplicity held
+by one indicators menu and chip rows, no config trees. The old sample
+-series fallback was removed — an unreachable lake now shows an honest
+error, never a synthetic market.
+
 ## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
 
 The owner-requested DoltHub-vs-Alpaca validation completed its arc:

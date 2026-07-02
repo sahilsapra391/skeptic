@@ -4,6 +4,9 @@
  */
 
 import type {
+  BarsPayload,
+  ChartInterval,
+  ChartWindow,
   CoveragePayload,
   ParseResult,
   RunPayload,
@@ -39,6 +42,16 @@ export function getCoverage(): Promise<CoveragePayload> {
 
 export function getUnderlying(ticker: string, days = 240): Promise<{ series: UnderlyingPoint[] }> {
   return request<{ series: UnderlyingPoint[] }>(`/api/data/underlying/${ticker}?days=${days}`);
+}
+
+export function getBars(
+  ticker: string,
+  interval: ChartInterval,
+  window: ChartWindow,
+  indicators: string[],
+): Promise<BarsPayload> {
+  const params = new URLSearchParams({ interval, window, indicators: indicators.join(",") });
+  return request<BarsPayload>(`/api/data/bars/${ticker}?${params}`);
 }
 
 export function parseText(text: string): Promise<ParseResult> {

@@ -164,6 +164,42 @@ export interface UnderlyingPoint {
   close: number;
 }
 
+export type ChartInterval =
+  | "1m"
+  | "2m"
+  | "3m"
+  | "5m"
+  | "15m"
+  | "30m"
+  | "1h"
+  | "4h"
+  | "1d"
+  | "1w";
+
+export type ChartWindow = "1d" | "1w" | "1mo" | "3mo" | "ytd" | "1y" | "5y" | "all";
+
+export interface Bar {
+  t: string; // ISO with offset (ET)
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+export type IndicatorSeries = (number | null)[] | Record<string, (number | null)[]>;
+
+export interface BarsPayload {
+  ticker: Ticker;
+  interval: ChartInterval;
+  window: ChartWindow;
+  live: boolean;
+  source: string;
+  as_of: string | null;
+  bars: Bar[];
+  indicators: Record<string, IndicatorSeries>;
+}
+
 export interface ParseResult {
   status: "spec";
   demo: boolean;

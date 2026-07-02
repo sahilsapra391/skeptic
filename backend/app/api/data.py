@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.data import bars as bars_mod
 from app.data import coverage
 from app.data.r2 import R2NotConfigured
 
@@ -22,6 +23,31 @@ _R2_HINT = (
 def get_coverage() -> dict[str, Any]:
     try:
         return coverage.coverage_cached()
+    except R2NotConfigured as exc:
+        raise HTTPException(status_code=503, detail=f"{_R2_HINT} ({exc})") from exc
+
+
+@router.get("/bars/{ticker}")
+def get_bars(
+    ticker: str,
+    interval: str = Query(default="5m"),
+    window: str = Query(default="1w"),
+    indicators: str = Query(default=""),
+) -> dict[str, Any]:
+    ticker = ticker.upper()
+    if ticker not in bars_mod.TICKERS:
+        raise HTTPException(status_code=404, detail=f"unsupported ticker {ticker}")
+    if interval not in bars_mod.INTERVALS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"interval must be one of {bars_mod.INTERVALS} — tick intervals "
+            "don't exist: the lake has no tick data and no $0 source provides it",
+        )
+    if window not in bars_mod.WINDOWS:
+        raise HTTPException(status_code=422, detail=f"window must be one of {bars_mod.WINDOWS}")
+    specs = [s for s in indicators.split(",") if s.strip()]
+    try:
+        return bars_mod.get_bars(ticker, interval, window, specs)
     except R2NotConfigured as exc:
         raise HTTPException(status_code=503, detail=f"{_R2_HINT} ({exc})") from exc
 
