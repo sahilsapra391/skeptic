@@ -160,7 +160,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
     <div
       className={clsx(
         "rounded-[14px] border border-line bg-panel px-5 py-4",
-        expanded ? "w-full" : "mx-auto max-w-[1130px]",
+        expanded ? "w-full" : "mx-auto max-w-[960px]",
       )}
     >
       <div className="mb-3 flex items-center gap-3">

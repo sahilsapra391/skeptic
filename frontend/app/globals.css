@@ -183,3 +183,24 @@ textarea {
 .animate-pin-pulse {
   animation: pulse 1.2s infinite;
 }
+
+/* Describe It → Show on Chart: the panel extends downward from the
+   chatbox's footprint while the chart fades in. clip-path (not
+   overflow/height) so nothing inside ever reflows mid-animation. */
+@keyframes chart-reveal {
+  0% {
+    clip-path: inset(0 0 86% 0 round 14px);
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 0 0 round 14px);
+    opacity: 1;
+  }
+}
+
+.animate-chart-reveal {
+  animation: chart-reveal 0.55s cubic-bezier(0.22, 0.7, 0.3, 1) both;
+}

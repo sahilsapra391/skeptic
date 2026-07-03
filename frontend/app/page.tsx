@@ -398,39 +398,36 @@ export default function NewAnalysisPage() {
       <div className="mb-4 flex justify-center">{modeChips}</div>
 
       {mode === "text" ? (
-        <div className="mx-auto max-w-[1130px]">
-          <div className="rounded-[22px] border border-line-soft bg-panel px-6 pb-3 pt-4 shadow-[var(--shadow-soft)] focus-within:border-line-hover">
-            <textarea
-              rows={2}
-              className="w-full text-[16.5px] leading-[1.65] text-ink placeholder:text-ink-4"
-              placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
-              value={
-                speech.interim
-                  ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
-                  : text
-              }
-              onChange={(e) => {
-                if (speech.listening) speech.stop();
-                setText(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  compileText();
+        <div className="mx-auto max-w-[960px]">
+          <div className="rounded-[22px] border border-line-soft bg-panel py-2.5 pl-6 pr-3 shadow-[var(--shadow-soft)] focus-within:border-line-hover">
+            <div className="flex items-center gap-3">
+              <textarea
+                rows={1}
+                className="w-full flex-1 text-[16.5px] leading-[1.65] text-ink placeholder:text-ink-4"
+                placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
+                value={
+                  speech.interim
+                    ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
+                    : text
                 }
-              }}
-            />
-            <div className="mt-1.5 flex items-center justify-between gap-3">
-              <span className={clsx("text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
-                {speech.error ?? (speech.listening ? "Listening — tap the mic again to stop." : "")}
-              </span>
-              <div className="flex items-center gap-2">
+                onChange={(e) => {
+                  if (speech.listening) speech.stop();
+                  setText(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    compileText();
+                  }
+                }}
+              />
+              <div className="flex items-center gap-1.5">
                 {speech.supported && (
                   <button
                     onClick={() => (speech.listening ? speech.stop() : speech.start())}
                     title={speech.listening ? "Stop dictation" : "Dictate your strategy"}
                     className={clsx(
-                      "flex h-11 w-11 items-center justify-center rounded-full",
+                      "flex h-10 w-10 items-center justify-center rounded-full",
                       speech.listening
                         ? "bg-trust-dim text-trust"
                         : "text-ink-4 hover:bg-raised-2 hover:text-ink",
@@ -453,7 +450,7 @@ export default function NewAnalysisPage() {
                   aria-label="Compile the strategy"
                   title={busy ? "Compiling…" : "Compile ↵"}
                   className={clsx(
-                    "flex h-11 w-11 items-center justify-center rounded-full transition-colors",
+                    "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
                     text.trim() && !busy
                       ? "bg-ink text-ground hover:bg-ink-2"
                       : "cursor-not-allowed bg-raised-2 text-ink-4",
@@ -470,6 +467,11 @@ export default function NewAnalysisPage() {
                 </button>
               </div>
             </div>
+            {(speech.listening || speech.error) && (
+              <div className={clsx("pb-1 pt-0.5 text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
+                {speech.error ?? "Listening — tap the mic again to stop."}
+              </div>
+            )}
           </div>
           <p className="mt-3.5 text-center text-[12.5px] text-ink-4">
             Research tool, not financial advice. Backtests overstate live results.
@@ -493,7 +495,7 @@ export default function NewAnalysisPage() {
           </div>
         </div>
       ) : (
-        <div>
+        <div className="animate-chart-reveal">
           <ChartTeach
             onCompile={(d) => {
               setDraft(d);
