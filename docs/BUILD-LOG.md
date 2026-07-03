@@ -559,3 +559,31 @@ sensitivity grid. Canonical SPY short put: full gauntlet in 2.3s
 (acceptance < 60s), 232 trades, 3 regimes. UI alongside: one-line
 headline, strike/DTE dropdowns (.05Δ–.95Δ, 0–50), per-structure exit
 preset sets. Backend 66 tests green, ruff + mypy strict clean.
+
+## 2026-07-02 — LLM narration live, grounded Q&A, verdict unlock at 15 trades, UI polish round
+
+OPENROUTER_API_KEY landed in collector/.env, so two surfaces went live at
+once. (1) **Verdict narration**: write_verdict now actually reaches the
+LLM — fixed fence-wrapped JSON (extract the outermost {...}), retry on
+non-JSON, and hardened the numeric validator's grounding set (list
+lengths are legitimate counts, calendar years in report dates are
+identifiers, integer-rounded percentages of harvested stats allowed).
+The validator earned its keep immediately: it rejected derived numbers
+("2.39×" was fine, invented "-55" was not) across three live attempts
+before a fully grounded narration shipped — template remains the
+fallback, always. (2) **Grounded Q&A**: /api/runs/{id}/ask answers from
+a stored stats bundle (engine metrics + honesty report, persisted as
+stats_json with an additive micro-migration), same validator, honest
+refusal when a number can't be grounded, 501 when no key / no stats;
+the Next proxy no longer swallows real runs' ask errors into demo
+answers. Owner-set policy change: **minimum trades for a graded verdict
+is now 15** (was 30) — MIN_TRADES constant, CLAUDE.md + TECH-SPEC
+updated. UI round: ? tooltips explaining every metric tile, honesty
+panel, and spec dial in plain English; trade log shows fills only with
+skips behind a nested toggle; ticker/structure became dropdowns;
+structured custom-exit builder (profit % / stop % / DTE); per-structure
+exit preset sets grew 25% profit; compose toggle renamed Describe It /
+Show on Chart with proper icons and centered; presets rewritten and
+ordered by the user's own run history. Backend 71 tests green, ruff +
+mypy strict clean; verified E2E in browser including a grounded answer
+to "is this just the 2020 crash?".

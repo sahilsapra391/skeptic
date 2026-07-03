@@ -31,6 +31,10 @@ from app.models.spec import StrategySpec, StrikeMethod
 _N = NormalDist()
 ANNUAL = math.sqrt(252)
 
+# Owner-set floor (2026-07-02, was 30): below this many closed trades the
+# verdict is withheld as insufficient evidence (CLAUDE.md guardrail #5).
+MIN_TRADES = 15
+
 
 def _returns(equity: list[float]) -> list[float]:
     return [b / a - 1.0 for a, b in zip(equity, equity[1:], strict=False) if a > 0]
@@ -316,8 +320,8 @@ def deflated_sharpe(result: RunResult, trials: int) -> Dsr:
 
 # ------------------------------------------- stage 6: regime & sample guard
 def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
-    """Guardrail #5: below 30 trades or a single VIX regime, trust is capped
-    at insufficient evidence no matter how good the numbers look."""
+    """Guardrail #5: below MIN_TRADES trades or a single VIX regime, trust is
+    capped at insufficient evidence no matter how good the numbers look."""
     low = mid = high = 0
     vd = store.vix_dates
     vc = store.vix_close
@@ -341,9 +345,9 @@ def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
     trades = sum(1 for t in result.trades if t.pl is not None)
     capped = False
     reason: str | None = None
-    if trades < 30:
+    if trades < MIN_TRADES:
         capped = True
-        reason = f"only {trades} closed trades — minimum is 30"
+        reason = f"only {trades} closed trades — minimum is {MIN_TRADES}"
     elif present < 2:
         capped = True
         reason = "history spans a single volatility regime"

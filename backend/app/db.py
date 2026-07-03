@@ -39,6 +39,9 @@ class Run(Base):
     seed: Mapped[int] = mapped_column(Integer, default=42)
     spec_json: Mapped[str] = mapped_column(Text)
     payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # computed stats bundle (engine metrics + honesty report) — the ONLY
+    # material grounded Q&A may draw numbers from
+    stats_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -84,6 +87,18 @@ SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
 def init_db() -> None:
     Base.metadata.create_all(_engine)
+    _ensure_columns()
+
+
+def _ensure_columns() -> None:
+    """Additive micro-migration: create_all never alters existing tables,
+    so columns added after first deploy are patched in here."""
+    from sqlalchemy import inspect, text
+
+    existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
+    with _engine.begin() as conn:
+        if "stats_json" not in existing:
+            conn.execute(text("ALTER TABLE runs ADD COLUMN stats_json TEXT"))
 
 
 def session() -> Session:

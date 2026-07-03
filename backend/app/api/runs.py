@@ -3,8 +3,9 @@
 M2+M3: POST /api/backtest runs the engine AND the full honesty gauntlet
 (OOS split, walk-forward, Monte Carlo, sensitivity, DSR, regime guard),
 then the verdict writer — trust levels computed deterministically, every
-narrated number validated against the stats payload. /api/parse (M4) and
-/api/runs/{id}/ask (M4) stay explicit 501s.
+narrated number validated against the stats payload.
+/api/runs/{id}/ask answers questions grounded in the stored stats bundle
+(same numeric validator); /api/parse (M4) stays an explicit 501.
 """
 
 from __future__ import annotations
@@ -28,9 +29,13 @@ _PENDING_PARSE = (
     "/api/parse is not built yet — the NL parser is milestone M4 "
     "(docs/BUILD-PLAN.md). Nothing is guessed server-side until it exists."
 )
-_PENDING_ASK = (
-    "grounded Q&A lands with the NL parser (M4) — "
-    "no numbers are invented in the meantime."
+_PENDING_ASK_KEY = (
+    "grounded Q&A needs OPENROUTER_API_KEY — no key, no answers, "
+    "and no numbers are invented in the meantime."
+)
+_PENDING_ASK_STATS = (
+    "this run predates grounded Q&A (no stored stats bundle) — "
+    "re-run the strategy to ask about it."
 )
 _PENDING_SWEEP = (
     "standalone sweeps arrive with the compare/sweep UI — the gauntlet already "
@@ -86,6 +91,15 @@ def _execute_run(run_id: str) -> None:
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage)
         verdict = write_verdict(report)
         payload = build_run_payload(run_id, spec, result, report, verdict)
+        # the stats bundle is the ONLY material grounded Q&A may quote from
+        stats = {
+            "metrics": result.metrics,
+            "filled": result.filled,
+            "skipped": result.skipped,
+            "initial_capital": spec.backtest.initial_capital,
+            "final_equity": result.equity[-1] if result.equity else None,
+            "honesty_report": report.model_dump(),
+        }
         with db.session() as s:
             run = s.get(db.Run, run_id)
             if run is None:
@@ -93,6 +107,7 @@ def _execute_run(run_id: str) -> None:
             run.status = "done"
             run.stage = 6
             run.payload_json = json.dumps(payload)
+            run.stats_json = json.dumps(stats)
             s.add(db.RunEvent(run_id=run_id, stage=6, label="gauntlet complete"))
             s.commit()
     except Exception as exc:
@@ -175,9 +190,27 @@ def get_run(run_id: str) -> dict[str, Any]:
     }
 
 
+class AskRequest(BaseModel):
+    question: str
+
+
 @router.post("/runs/{run_id}/ask")
-def ask(run_id: str) -> dict[str, Any]:
-    raise HTTPException(status_code=501, detail=_PENDING_ASK)
+def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
+    if not req.question.strip():
+        raise HTTPException(status_code=422, detail="empty question")
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    if run.status != "done" or not run.stats_json:
+        raise HTTPException(status_code=501, detail=_PENDING_ASK_STATS)
+
+    from app.honesty.ask import answer_question
+
+    answer = answer_question(req.question, json.loads(run.stats_json))
+    if answer is None:
+        raise HTTPException(status_code=501, detail=_PENDING_ASK_KEY)
+    return {"answer": answer, "demo": False}
 
 
 @router.post("/sweep")

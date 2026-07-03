@@ -45,24 +45,42 @@ def _harvest_numbers(obj: Any, out: set[float]) -> None:
         return
     if isinstance(obj, (int, float)):
         v = float(obj)
-        for candidate in (v, v * 100, abs(v), abs(v) * 100, round(v, 2), round(v * 100, 1)):
+        # narration may round: 2 decimals, whole numbers, or 0-1 → %
+        for candidate in (
+            v, v * 100, abs(v), abs(v) * 100,
+            round(v, 2), round(v), round(v * 100, 1), round(v * 100),
+        ):
             out.add(round(candidate, 4))
         return
     if isinstance(obj, dict):
         for item in obj.values():
             _harvest_numbers(item, out)
     elif isinstance(obj, list):
+        # the length of a list is a legitimate count ("38 windows")
+        out.add(float(len(obj)))
         for item in obj:
             _harvest_numbers(item, out)
 
 
-def allowed_numbers(report: HonestyReport) -> set[float]:
+_YEAR_RE = re.compile(r"(?<![\d.])(?:19|20)\d{2}(?![\d.])")
+
+
+def grounding_set(payload: dict[str, Any]) -> set[float]:
+    """Every number narration may contain, harvested from computed stats."""
     out: set[float] = {0.0}
-    _harvest_numbers(report.model_dump(), out)
-    # small counting numbers and fixed phrasing constants (fold counts,
-    # percentile labels, the resample count) — not statistics
+    _harvest_numbers(payload, out)
+    # small counting numbers and fixed phrasing constants (percentile
+    # labels, trading-day count, the resample count) — not statistics
     out.update(float(x) for x in range(0, 31))
-    out.update({5.0, 50.0, 95.0, 100.0, 252.0})
+    out.update({5.0, 50.0, 95.0, 100.0, 252.0, 1000.0})
+    # calendar years inside the payload's dates are identifiers ("since
+    # 2020"), not statistics
+    out.update(float(m.group(0)) for m in _YEAR_RE.finditer(json.dumps(payload, default=str)))
+    return out
+
+
+def allowed_numbers(report: HonestyReport) -> set[float]:
+    out = grounding_set(report.model_dump())
     out.add(float(report.monte_carlo.resamples))
     return out
 
@@ -163,6 +181,19 @@ def template_verdict(report: HonestyReport) -> VerdictText:
 
 
 # ------------------------------------------------------------ the LLM layer
+def _extract_json(content: str) -> dict[str, Any] | None:
+    """Models routinely wrap JSON in code fences or prose despite
+    response_format — take the outermost {...} slice and parse that."""
+    start, end = content.find("{"), content.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        data = json.loads(content[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _llm_narrate(report: HonestyReport, allowed: set[float]) -> VerdictText | None:
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
@@ -174,9 +205,11 @@ def _llm_narrate(report: HonestyReport, allowed: set[float]) -> VerdictText | No
         "You are the verdict writer for an options backtesting research tool whose "
         "entire identity is adversarial honesty. You receive ONLY computed statistics "
         "as JSON. Write the verdict: lead with the most uncomfortable finding. Plain "
-        "verbs, sentence case, no hype, no exclamation marks. EVERY number you mention "
-        "must appear in the input JSON exactly (you may round to 2 decimals or express "
-        "a 0-1 fraction as a percentage). Do not invent, extrapolate or average numbers. "
+        "verbs, sentence case, no hype, no exclamation marks. NUMBERS: copy them "
+        "verbatim from the JSON (you may round to 2 decimals or write a 0-1 fraction "
+        "as a percent). NEVER do arithmetic — no differences, ratios, averages, "
+        "annualizing, or counting of your own. A number not literally in the JSON "
+        "must not appear in your text. When in doubt, describe without the number. "
         'Respond with JSON only: {"headline": str, "evidence": [str], '
         '"breaks_where": [str], "caveats": [str]}'
     )
@@ -186,11 +219,11 @@ def _llm_narrate(report: HonestyReport, allowed: set[float]) -> VerdictText | No
             {"role": "system", "content": system},
             {"role": "user", "content": report.model_dump_json()},
         ],
-        "temperature": 0.2,
+        "temperature": 0.0,
         "response_format": {"type": "json_object"},
     }
     violation_note = ""
-    for _attempt in range(2):
+    for _attempt in range(3):
         try:
             if violation_note:
                 messages: list[dict[str, str]] = body["messages"]
@@ -208,7 +241,17 @@ def _llm_narrate(report: HonestyReport, allowed: set[float]) -> VerdictText | No
                 log.warning("verdict LLM HTTP %s", resp.status_code)
                 return None
             content = resp.json()["choices"][0]["message"]["content"]
-            data = json.loads(content)
+            data = _extract_json(str(content))
+            if data is None:
+                log.warning("verdict LLM returned non-JSON — retrying")
+                violation_note = (
+                    "\n\nRespond with the JSON object ONLY — no prose, no code fences."
+                )
+                continue
+            if not str(data.get("headline", "")).strip():
+                log.warning("verdict LLM JSON missing headline — retrying")
+                violation_note = "\n\nThe JSON must include a non-empty \"headline\"."
+                continue
             candidate = VerdictText(
                 headline=str(data["headline"]),
                 evidence=[str(x) for x in data.get("evidence", [])],

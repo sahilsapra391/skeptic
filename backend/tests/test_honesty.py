@@ -138,7 +138,7 @@ def _sample(capped: bool = False) -> RegimeSample:
     return RegimeSample(
         trades=60, days_low_vix=100, days_mid_vix=100, days_high_vix=100,
         regimes_present=3, capped=capped,
-        cap_reason="only 10 closed trades — minimum is 30" if capped else None,
+        cap_reason="only 10 closed trades — minimum is 15" if capped else None,
     )
 
 

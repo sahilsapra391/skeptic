@@ -42,9 +42,10 @@ def test_underlying_refuses_without_r2(client: TestClient) -> None:
 
 
 def test_unbuilt_routes_are_explicit_501(client: TestClient) -> None:
-    # parser is M4; grounded ask needs M3+M4; sweep is M3
+    # parser is M4; standalone sweeps await the compare UI. Grounded ask is
+    # LIVE now — an unknown run is a plain 404, never an invented answer.
     assert client.post("/api/parse", json={"text": "sell a put"}).status_code == 501
-    assert client.post("/api/runs/abc/ask", json={"question": "?"}).status_code == 501
+    assert client.post("/api/runs/abc/ask", json={"question": "?"}).status_code == 404
     assert client.post("/api/sweep", json={}).status_code == 501
 
 

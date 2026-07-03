@@ -13,6 +13,7 @@ from typing import Any
 
 from app.engine.types import RunResult, TradeEvent
 from app.honesty.report import HonestyReport
+from app.honesty.stages import MIN_TRADES
 from app.honesty.verdict import VerdictText
 from app.models.spec import StrategySpec
 
@@ -151,8 +152,8 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
 
     if trust.label == "insufficient_evidence":
         needs = []
-        if sample.trades < 30:
-            needs.append(f"≥ 30 trades (has {sample.trades})")
+        if sample.trades < MIN_TRADES:
+            needs.append(f"≥ {MIN_TRADES} trades (has {sample.trades})")
         if sample.regimes_present < 2:
             needs.append(f"≥ 2 volatility regimes (has {sample.regimes_present})")
         return {

@@ -6,7 +6,7 @@ The five attacks (matching the design's chips):
   walk_forward — meaningful AND ≥ 60% of folds profitable
   monte_carlo  — P(loss) ≤ 20%
   sensitivity  — the parameter neighborhood is a plateau, not a cliff
-  sample       — ≥ 30 trades across ≥ 2 volatility regimes
+  sample       — ≥ MIN_TRADES (15) trades across ≥ 2 volatility regimes
 
 Level = 1 + (# of the four statistical attacks survived), then gated:
   DSR < 0.5 (likely mined) caps at 2; an OOS sign flip caps at 2.
