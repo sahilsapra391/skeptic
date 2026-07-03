@@ -791,3 +791,17 @@ dash SVG, no JS) as a full-screen splash that fades into the app —
 gated at module scope after React StrictMode's double-effect consumed
 the session flag and stranded the overlay on first attempt. SVG
 masters + animation live in frontend/public/brand/.
+
+## 2026-07-03 — Favicon centering audit
+
+Owner spotted the favicon S riding high. Audited every S asset in the
+kit programmatically (glyph bbox center vs canvas center): the dark
+tile (512/180/32), light tile, and transparent-grayS all carry the S
+~10% above center; the gray tile, white circle, s-mark renders,
+apple-touch-icon and maskable are true. Rebuilt our dark tiles from
+scratch — sampled bg #101014 and the 113px corner radius from the
+original, took the glyph from the verified-centered s-mark render,
+composited at identical size, dead center (residual ≤0.5px from odd/
+even rounding at small sizes). favicon.ico regenerated from the fixed
+512. Kit source files in Downloads left untouched — worth regenerating
+upstream in kit.py someday.
