@@ -841,3 +841,15 @@ in light — derived from the white masters since the kit uses one-color
 strokes). Color contract intact in every combination: trust hue never
 colors P/L and vice versa. Persisted in the same local settings store
 as costs/verbiage.
+
+## 2026-07-03 — M6 artifacts: Dockerfile, smoke script, RUNBOOK
+
+Deploy prep (owner merged the design PR and called for M6):
+backend/Dockerfile (uv-based, python 3.13-slim, runs uvicorn on
+Railway's $PORT) + .dockerignore + railway.json (Dockerfile builder,
+/api/health gate, on-failure restarts); scripts/smoke_prod.py walks the
+canonical strategy health → parse → backtest → verdict against a prod
+URL with the bearer token and fails on any demo flag or timeout;
+docs/RUNBOOK.md covers topology, every env var for both platforms,
+token rotation, deploys and cold-start behavior, collector operations,
+the Neon fallback/quota story, and cost dashboards.
