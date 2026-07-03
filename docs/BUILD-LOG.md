@@ -704,3 +704,14 @@ stays honest; verified across dte 1/2/45/90. **Width:** shell trimmed
 rest of the app. **Chart speed:** the hero prefetches the exact bars
 request the chart issues on first mount (60s in-flight cache, failures
 never cached) — a warm mode-switch measured 24ms vs ~1s cold.
+
+## 2026-07-03 — Chart expand toggle + uniform chart chrome + sidebar always open
+
+The hero chart now defaults to the Describe It box width (1190px) with
+an expand toggle at its top-right: enlarge to full page for serious
+charting, shrink back with the same button. All the chrome around the
+chart was undersized relative to the canvas — ticker tabs, OHLC
+readout, freshness note, window/interval chips, time axis, indicator
+menu, price ticks, pin notes and the footer all bumped to a uniform,
+readable scale. Sidebar now opens on every load (collapse lasts for
+the session only — no persisted state).

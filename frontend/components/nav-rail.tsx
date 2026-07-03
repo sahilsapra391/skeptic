@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -51,29 +51,11 @@ const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   },
 ];
 
-const STORE_KEY = "skeptic-nav-open";
-
 export function NavRail() {
   const pathname = usePathname();
-  // open by default; the user's choice persists across sessions
+  // always open on load — collapsing lasts for the session only
   const [open, setOpen] = useState(true);
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(STORE_KEY) === "0") setOpen(false);
-    } catch {
-      /* private mode */
-    }
-  }, []);
-  const toggle = () => {
-    setOpen((v) => {
-      try {
-        localStorage.setItem(STORE_KEY, v ? "0" : "1");
-      } catch {
-        /* private mode */
-      }
-      return !v;
-    });
-  };
+  const toggle = () => setOpen((v) => !v);
 
   const activeFor = (href: string) =>
     href === "/" ? pathname === "/" || pathname.startsWith("/runs") : pathname.startsWith(href);
