@@ -763,3 +763,17 @@ hero headline, gauntlet heading, and now the verdict headline); body
 returns to Archivo, data returns to IBM Plex Mono (including SVG chart
 text). CLAUDE.md typography rule and session memory rewritten to the
 three-voice system — no other families, serif never in body copy.
+
+## 2026-07-03 — Sidebar drag-resize
+
+The sidebar edge is now a drag handle: resize freely up to 380px, drop
+below 120px and it snaps into the existing 56px icon rail, release
+between 120–172px and it settles at the open floor — the same collapse/
+open mechanism the toggle uses, and the toggle restores the last
+dragged-open width. Implementation is fully imperative (listeners
+attached in the pointerdown, settle computed from the release event's
+own coordinates) after an effect-based version proved race-prone.
+Verification note for the log: the preview harness freezes the CSS
+animation clock, so width transitions never advance there — assert on
+style.width or disable transitions when testing; real browsers animate
+the 150ms ease normally.

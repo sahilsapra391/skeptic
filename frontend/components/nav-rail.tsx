@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -54,12 +54,50 @@ const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   },
 ];
 
+// resizable sidebar geometry: below COLLAPSE_AT it snaps to the icon
+// rail; an open sidebar never sits narrower than SNAP_OPEN
+const RAIL_W = 56;
+const COLLAPSE_AT = 120;
+const SNAP_OPEN = 172;
+const MAX_W = 380;
+const DEFAULT_W = 196;
+
 export function NavRail() {
   const pathname = usePathname();
-  // always open on load — collapsing lasts for the session only
-  const [open, setOpen] = useState(true);
+  // always open on load — width changes last for the session only
+  const [width, setWidth] = useState(DEFAULT_W);
+  const [dragging, setDragging] = useState(false);
   const [recent, setRecent] = useState<RunSummary[]>([]);
-  const toggle = () => setOpen((v) => !v);
+  const lastOpenW = useRef(DEFAULT_W);
+  const open = width >= COLLAPSE_AT;
+
+  const toggle = () =>
+    setWidth((w) => (w >= COLLAPSE_AT ? RAIL_W : lastOpenW.current));
+
+  // fully imperative drag: listeners attach synchronously in the same
+  // pointerdown and the settle uses the event's own coordinates, so no
+  // effect timing or stale state can lose the snap
+  const startDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setDragging(true);
+    const clampX = (x: number) => Math.min(MAX_W, Math.max(RAIL_W, x));
+    const onMove = (ev: PointerEvent) => setWidth(clampX(ev.clientX));
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setDragging(false);
+      const w = clampX(ev.clientX);
+      if (w < COLLAPSE_AT) {
+        setWidth(RAIL_W);
+      } else {
+        const settled = Math.max(w, SNAP_OPEN);
+        lastOpenW.current = settled;
+        setWidth(settled);
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   useEffect(() => {
     listRuns()
@@ -77,16 +115,19 @@ export function NavRail() {
 
   return (
     <nav
+      style={{ width }}
       className={clsx(
-        "flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5 transition-[width] duration-150",
-        open ? "w-[196px] px-2.5" : "w-14 items-center",
+        "relative flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5",
+        !dragging && "transition-[width] duration-150",
+        open ? "px-2.5" : "items-center",
+        dragging && "select-none",
       )}
     >
       <div className={clsx("mb-3.5 flex items-center gap-2.5", open && "px-1")}>
         <div className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-trust-border font-mono text-[15px] font-semibold text-trust">
           S
         </div>
-        {open && <span className="text-[15px] font-[650] tracking-[-.01em]">Skeptic</span>}
+        {open && <span className="truncate text-[15px] font-[650] tracking-[-.01em]">Skeptic</span>}
       </div>
       {ITEMS.map((item) => (
         <Link
@@ -100,7 +141,7 @@ export function NavRail() {
           )}
         >
           <span className="flex-none">{item.icon}</span>
-          {open && <span className="text-[13px] font-semibold">{item.title}</span>}
+          {open && <span className="truncate text-[13px] font-semibold">{item.title}</span>}
         </Link>
       ))}
       {open && recent.length > 0 && (
@@ -151,6 +192,16 @@ export function NavRail() {
         </svg>
         {open && <span className="text-[13px] font-semibold">Collapse</span>}
       </button>
+      <div
+        onPointerDown={startDrag}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        className={clsx(
+          "absolute -right-[3px] top-0 z-20 h-full w-[7px] cursor-col-resize",
+          dragging ? "bg-trust/30" : "hover:bg-trust/20",
+        )}
+      />
     </nav>
   );
 }
