@@ -72,7 +72,7 @@ export default function DataPage() {
     return (
       <div>
         <h1 className="mb-1 font-serif text-[32px] font-medium">Data, honestly</h1>
-        <p className="mb-[22px] text-[13.5px] text-ink-3">
+        <p className="mb-[22px] text-[15px] text-ink-3">
           Every verdict is bounded by this record. It grows nightly.
         </p>
         <div className="rounded-[14px] border border-warn/50 px-4 py-4">
@@ -120,7 +120,7 @@ export default function DataPage() {
   return (
     <div>
       <h1 className="mb-1 font-serif text-[32px] font-medium">Data, honestly</h1>
-      <p className="mb-[22px] text-[13.5px] text-ink-3">
+      <p className="mb-[22px] text-[15px] text-ink-3">
         Every verdict is bounded by this record. It grows nightly.
       </p>
 
