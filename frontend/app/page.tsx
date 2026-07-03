@@ -246,7 +246,7 @@ export default function NewAnalysisPage() {
   if (phase === "clarify" && questions.length > 0) {
     const q = questions[qIndex];
     return (
-      <div className="mx-auto max-w-[640px]">
+      <div className="mx-auto max-w-[760px]">
         <button
           onClick={() => setPhase("compose")}
           className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3"
@@ -372,7 +372,7 @@ export default function NewAnalysisPage() {
       </div>
 
       {mode === "text" ? (
-        <div className="mx-auto max-w-[1080px]">
+        <div className="mx-auto max-w-[1320px]">
           <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
             <textarea
               rows={4}
@@ -439,7 +439,7 @@ export default function NewAnalysisPage() {
               </div>
             </div>
           </div>
-          <div className="mx-auto mt-6 flex max-w-[1180px] flex-wrap justify-center gap-2.5">
+          <div className="mx-auto mt-6 flex max-w-[1440px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (
               <button
                 key={p.label}

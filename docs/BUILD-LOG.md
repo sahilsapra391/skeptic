@@ -676,3 +676,14 @@ columns with larger cards. Sidebar now defaults to OPEN (choice still
 persists), labels title-cased (New Analysis, Data Observatory). The
 coverage chips row and "day 2 of collection" link are gone from the
 hero — coverage lives in the Data Observatory, where it belongs.
+
+## 2026-07-03 — Fluid width: 1800px shell
+
+Owner: wider still. The shell cap moves to 1800px, making every page
+effectively fluid on real monitors — the market chart in Show-on-Chart
+mode spans ~1430px on a 1728-wide window, library cards ~725px each,
+results panels track the full width. Composer 1320px, preset rows
+1440px. Operational lesson recorded: tailwind.config.ts edits do NOT
+hot-reload — restart the dev server or the old token values keep
+being served (the 940→1380px bumps only took effect after this
+restart).

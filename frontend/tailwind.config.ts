@@ -47,7 +47,7 @@ const config: Config = {
         mono: ["var(--font-plex-mono)", "monospace"],
       },
       maxWidth: {
-        shell: "1380px",
+        shell: "1800px",
       },
     },
   },
