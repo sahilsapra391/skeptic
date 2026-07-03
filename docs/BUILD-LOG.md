@@ -743,3 +743,14 @@ line beneath; preset cards softened. Sidebar gains a RECENT ANALYSES
 section (last 6 runs, live, highlights the open one) mirroring the
 reference's history list. Verified E2E: compile via the round submit
 still lands on the spec screen.
+
+## 2026-07-03 — Newsreader everywhere (standing owner directive)
+
+Newsreader is now THE app typeface — every word on every page, strictly:
+all three Tailwind font tokens (sans/mono/serif) resolve to it, Archivo
+and IBM Plex Mono are removed, and SVG chart text (price ticks, hover
+chips, panel labels, MC band labels, equity axis) uses the same
+variable. Verified by computed style on the verdict headline, meta
+lines, chips, and chart <text> nodes. The directive is codified in
+CLAUDE.md (Engineering conventions → Typography) and in session memory:
+no other font family may ever be introduced.

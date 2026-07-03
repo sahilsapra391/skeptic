@@ -770,7 +770,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
             {priceTicks.map((p) => (
               <g key={p}>
                 <line x1="0" y1={geom.yFor(p)} x2={W} y2={geom.yFor(p)} stroke={GRID} strokeWidth="1" />
-                <text x={W - 4} y={geom.yFor(p) - 3} textAnchor="end" fontSize="11" fill={FAINT} fontFamily="monospace">
+                <text x={W - 4} y={geom.yFor(p) - 3} textAnchor="end" fontSize="11" fill={FAINT} fontFamily="var(--font-newsreader)">
                   {p.toFixed(2)}
                 </text>
               </g>
@@ -834,7 +834,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
                 />
                 <line x1="0" y1={hover.ySvg} x2={W} y2={hover.ySvg} stroke={FAINT} strokeWidth="0.7" strokeDasharray="4 4" />
                 <rect x={W - 62} y={hover.ySvg - 9} width="58" height="15" rx="3" fill="#2b303a" />
-                <text x={W - 33} y={hover.ySvg + 2.5} textAnchor="middle" fontSize="11" fill="#e9edf1" fontFamily="monospace">
+                <text x={W - 33} y={hover.ySvg + 2.5} textAnchor="middle" fontSize="11" fill="#e9edf1" fontFamily="var(--font-newsreader)">
                   {geom.priceAt(hover.ySvg).toFixed(2)}
                 </text>
               </g>
@@ -881,7 +881,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
             strokeWidth="1.1"
             fill="none"
           />
-          <text x="6" y="12" fontSize="11" fill={FAINT} fontFamily="monospace">
+          <text x="6" y="12" fontSize="11" fill={FAINT} fontFamily="var(--font-newsreader)">
             RSI 14
           </text>
         </svg>
@@ -1020,7 +1020,7 @@ function MacdPanel({
       <path d={histDn} fill={DOWN} opacity="0.5" />
       <path d={pathFrom(xs, macdPts, yFor)} stroke="#6fd3f2" strokeWidth="1.1" fill="none" />
       <path d={pathFrom(xs, sigPts, yFor)} stroke="#d9a441" strokeWidth="1.1" fill="none" />
-      <text x="6" y="12" fontSize="11" fill={FAINT} fontFamily="monospace">
+      <text x="6" y="12" fontSize="11" fill={FAINT} fontFamily="var(--font-newsreader)">
         MACD 12·26·9
       </text>
     </svg>

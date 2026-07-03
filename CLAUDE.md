@@ -68,6 +68,10 @@ class of bug in this codebase.
   the run. Same spec + same data + same seed = identical output.
 - Frontend implements the approved mockups in `docs/design/`; do not restyle
   by taste. P/L colors never appear on verdict components and vice versa.
+- **Typography (owner directive 2026-07-03, strict):** Newsreader is the ONE
+  app typeface — every word on every page, including former mono/sans
+  surfaces and SVG chart text. Never introduce another font family; all
+  Tailwind font tokens resolve to Newsreader.
 - Secrets only via env vars; never commit keys, never log chain data rows.
 
 ## Legal / ethical rails

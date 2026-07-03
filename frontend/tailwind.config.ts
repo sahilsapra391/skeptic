@@ -42,9 +42,11 @@ const config: Config = {
         "pl-pos": "#43c987",
         "pl-neg": "#e0604f",
       },
+      // ONE typeface app-wide — every token maps to Newsreader (owner
+      // directive 2026-07-03; do not add font families)
       fontFamily: {
-        sans: ["var(--font-archivo)", "sans-serif"],
-        mono: ["var(--font-plex-mono)", "monospace"],
+        sans: ["var(--font-newsreader)", "Georgia", "serif"],
+        mono: ["var(--font-newsreader)", "Georgia", "serif"],
         serif: ["var(--font-newsreader)", "Georgia", "serif"],
       },
       maxWidth: {
