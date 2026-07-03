@@ -8,7 +8,16 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 
 import { getHealth } from "@/lib/api";
-import { DEFAULT_SETTINGS, updateSettings, useSettings } from "@/lib/settings";
+import type { Accent } from "@/lib/settings";
+import { ACCENTS, DEFAULT_SETTINGS, updateSettings, useSettings } from "@/lib/settings";
+
+/** Swatch preview colors per accent — the value each theme actually uses. */
+const ACCENT_PREVIEW: Record<Accent, { dark: string; light: string; label: string }> = {
+  cyan: { dark: "rgb(63 193 207)", light: "rgb(13 125 138)", label: "Cyan" },
+  sage: { dark: "rgb(156 204 163)", light: "rgb(58 122 72)", label: "Sage" },
+  lavender: { dark: "rgb(178 164 235)", light: "rgb(100 84 200)", label: "Lavender" },
+  rose: { dark: "rgb(232 166 180)", light: "rgb(176 71 96)", label: "Rose" },
+};
 
 const PANEL = "mb-3.5 rounded-[14px] border border-line bg-panel p-5";
 const PANEL_TITLE = "mb-3.5 font-mono text-[11px] font-medium tracking-[.12em] text-ink-4";
@@ -131,6 +140,58 @@ export default function SettingsPage() {
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className={PANEL}>
+        <div className={PANEL_TITLE}>APPEARANCE</div>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[14.5px]">Mode</span>
+            <div className="inline-flex gap-[2px] rounded-[11px] border border-line-soft p-[3px]">
+              {(["dark", "light"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => updateSettings({ theme: t })}
+                  className={clsx(
+                    "rounded-[9px] px-4 py-1.5 text-[13.5px] font-semibold capitalize",
+                    settings.theme === t ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-2",
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[14.5px]">Accent</span>
+            <div className="flex items-center gap-2.5">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a}
+                  onClick={() => updateSettings({ accent: a })}
+                  title={ACCENT_PREVIEW[a].label}
+                  aria-label={`Accent: ${ACCENT_PREVIEW[a].label}`}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[13px]",
+                    settings.accent === a
+                      ? "border-trust-border bg-trust-dim text-ink"
+                      : "border-line text-ink-4 hover:border-line-hover hover:text-ink-2",
+                  )}
+                >
+                  <span
+                    className="inline-block h-[14px] w-[14px] rounded-full"
+                    style={{ background: ACCENT_PREVIEW[a][settings.theme] }}
+                  />
+                  {ACCENT_PREVIEW[a].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[12.5px] leading-[1.55] text-ink-4">
+            The accent is the trust hue — verdicts, trust bands and controls. It never
+            colors profit or loss, in either mode.
+          </p>
         </div>
       </div>
 

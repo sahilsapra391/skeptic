@@ -12,35 +12,36 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ground: "#14161a", // page background
-        navbg: "#15181d",
-        panel: "#1b1f26",
-        "panel-deep": "#181b21", // trade-log body
-        "panel-chart": "#171a20", // chart-teach canvas
-        raised: "#20242d", // quote bubbles / tickets
-        "raised-2": "#242a34", // disabled buttons
-        "raised-3": "#262c36", // active mode toggle
-        line: "#2b303a",
-        "line-soft": "#262c36",
-        "line-softer": "#232833",
-        "line-hover": "#3a4150",
-        grid: "#20242c", // chart gridlines
-        "band-track": "#2e3440", // trust-band rail
-        ink: "#e9edf1",
-        "ink-2": "#c6cdd6",
-        "ink-3": "#98a2ad",
-        "ink-4": "#5f6873",
-        "ink-5": "#4a545f",
-        chart: "#cdd6df",
-        "chart-bright": "#d7dde3",
-        warn: "#d9a441",
+        ground: "var(--ground)",
+        navbg: "var(--navbg)",
+        panel: "var(--panel)",
+        "panel-deep": "var(--panel-deep)",
+        "panel-chart": "var(--panel-chart)",
+        raised: "var(--raised)",
+        "raised-2": "var(--raised-2)",
+        "raised-3": "var(--raised-3)",
+        line: "var(--line)",
+        "line-soft": "var(--line-soft)",
+        "line-softer": "var(--line-softer)",
+        "line-hover": "var(--line-hover)",
+        grid: "var(--grid)",
+        "band-track": "var(--band-track)",
+        ink: "var(--ink)",
+        "ink-2": "var(--ink-2)",
+        "ink-3": "var(--ink-3)",
+        "ink-4": "var(--ink-4)",
+        "ink-5": "var(--ink-5)",
+        chart: "var(--chart)",
+        "chart-bright": "var(--chart-bright)",
+        warn: "rgb(var(--warn-rgb) / <alpha-value>)",
         // trust hue family — verdict/trust surfaces ONLY
-        trust: "var(--ac)",
+        trust: "rgb(var(--ac-rgb) / <alpha-value>)",
         "trust-dim": "var(--acd)",
         "trust-border": "var(--acb)",
         // P/L pair — profit/loss data ONLY
-        "pl-pos": "#43c987",
-        "pl-neg": "#e0604f",
+        "pl-pos": "var(--pl-pos)",
+        "pl-neg": "var(--pl-neg)",
+        "on-accent": "var(--on-accent)",
       },
       // three-voice type system (owner directive 2026-07-03): Archivo for
       // body, Plex Mono for data, Newsreader serif for headings/important

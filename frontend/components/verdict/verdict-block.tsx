@@ -18,7 +18,7 @@ export function VerdictBlock({ verdict }: { verdict: VerdictPayload }) {
     <div
       className={`rounded-2xl px-7 py-7 ${
         verdict.refusal ? "border border-dashed border-trust-border" : "border border-trust-border"
-      } bg-[linear-gradient(180deg,var(--acd),rgba(63,193,207,.03))]`}
+      } bg-[linear-gradient(180deg,var(--acd),var(--ac-faint))]`}
     >
       <div className="mb-2.5 flex items-center justify-between">
         <span className="font-mono text-[11.5px] font-medium tracking-[.14em] text-trust">

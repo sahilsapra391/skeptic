@@ -19,7 +19,7 @@ export function Hint({ text, align = "center" }: { text: string; align?: "center
       </span>
       <span
         className={clsx(
-          "pointer-events-none absolute top-[calc(100%+7px)] z-30 w-[230px] rounded-[9px] border border-line bg-raised px-3 py-2 text-left font-sans text-[11.5px] font-normal normal-case leading-[1.55] tracking-normal text-ink-2 opacity-0 shadow-[0_8px_24px_rgba(0,0,0,.45)] transition-opacity duration-100 group-hover/hint:opacity-100",
+          "pointer-events-none absolute top-[calc(100%+7px)] z-30 w-[230px] rounded-[9px] border border-line bg-raised px-3 py-2 text-left font-sans text-[11.5px] font-normal normal-case leading-[1.55] tracking-normal text-ink-2 opacity-0 shadow-[var(--shadow-pop)] transition-opacity duration-100 group-hover/hint:opacity-100",
           align === "center" ? "left-1/2 -translate-x-1/2" : "right-0",
         )}
       >

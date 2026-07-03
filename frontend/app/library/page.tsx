@@ -52,7 +52,7 @@ export default function LibraryPage() {
           </p>
           <Link
             href="/"
-            className="mt-4 inline-block rounded-[10px] bg-trust px-5 py-2.5 text-[14px] font-bold text-[#0d1216]"
+            className="mt-4 inline-block rounded-[10px] bg-trust px-5 py-2.5 text-[14px] font-bold text-on-accent"
           >
             New analysis →
           </Link>

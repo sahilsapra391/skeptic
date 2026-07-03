@@ -823,3 +823,21 @@ sidebar requests the listing on every navigation. New summary_json
 column (~500B) written at run completion and backfilled lazily for old
 rows; listings now read only that. Client side, listRuns gets a 30s
 TTL cache. Estimated egress per listing drops ~99%.
+
+## 2026-07-03 — Appearance settings: light/dark mode + four accent colors
+
+Settings gains an APPEARANCE panel: Mode (Dark default / Light) and
+Accent (Cyan default, Sage, Lavender, Rose — four max per owner). Under
+the hood the whole palette moved to CSS variables: every Tailwind color
+token now reads a var, hardcoded chart/SVG colors (grids, candles,
+crosshair, MC bands, heat cells, OOS shade, overlay bars, shadows,
+gradients) were converted, and <html data-theme/data-accent> switches
+everything at runtime — an inline pre-hydration script applies the
+stored choice before first paint, so no flash. Light mode is the brand
+kit's paper palette (#F4F4F5 ground, ink text); each accent carries a
+deepened light-mode value so accent text keeps contrast on paper. The
+brand marks and boot splash follow the theme (black wordmark/S/draw-on
+in light — derived from the white masters since the kit uses one-color
+strokes). Color contract intact in every combination: trust hue never
+colors P/L and vice versa. Persisted in the same local settings store
+as costs/verbiage.

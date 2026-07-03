@@ -3,6 +3,7 @@ import { Archivo, IBM_Plex_Mono, Newsreader } from "next/font/google";
 
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
+import { ThemeApplier } from "@/components/theme-applier";
 
 import "./globals.css";
 
@@ -48,8 +49,24 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${archivo.variable} ${plexMono.variable} ${newsreader.variable}`}>
+    <html
+      lang="en"
+      className={`${archivo.variable} ${plexMono.variable} ${newsreader.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/* apply Appearance before first paint — no theme flash */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var s=JSON.parse(localStorage.getItem('skeptic-settings')||'{}');" +
+              "document.documentElement.dataset.theme=s.theme==='light'?'light':'dark';" +
+              "document.documentElement.dataset.accent=['sage','lavender','rose'].includes(s.accent)?s.accent:'cyan';}catch(e){}",
+          }}
+        />
+      </head>
       <body className="h-screen overflow-hidden bg-ground font-sans text-ink antialiased">
+        <ThemeApplier />
         <BootSplash />
         <div className="flex h-full">
           <NavRail />

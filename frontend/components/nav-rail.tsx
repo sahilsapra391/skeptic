@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 import { listRuns } from "@/lib/api";
+import { useSettings } from "@/lib/settings";
 import type { RunSummary } from "@/lib/types";
 
 const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
@@ -46,9 +47,9 @@ const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
         <line x1="3.5" y1="6.5" x2="16.5" y2="6.5" strokeLinecap="round" />
-        <circle cx="12" cy="6.5" r="2.1" fill="#15181d" />
+        <circle cx="12" cy="6.5" r="2.1" fill="var(--navbg)" />
         <line x1="3.5" y1="13.5" x2="16.5" y2="13.5" strokeLinecap="round" />
-        <circle cx="7.5" cy="13.5" r="2.1" fill="#15181d" />
+        <circle cx="7.5" cy="13.5" r="2.1" fill="var(--navbg)" />
       </svg>
     ),
   },
@@ -74,6 +75,8 @@ function saveNavState(width: number, lastOpen: number) {
 
 export function NavRail() {
   const pathname = usePathname();
+  const { theme } = useSettings();
+  const markSuffix = theme === "light" ? "black" : "white";
   // fresh sessions open at the default; within a session the adjusted
   // width survives reloads (sessionStorage)
   const [width, setWidth] = useState(DEFAULT_W);
@@ -159,10 +162,10 @@ export function NavRail() {
       <div className={clsx("mb-4 flex h-[40px] items-center", open && "px-1.5")}>
         {open ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src="/brand/wordmark-white.svg" alt="Skeptic" className="h-[28px] w-auto" draggable={false} />
+          <img src={`/brand/wordmark-${markSuffix}.svg`} alt="Skeptic" className="h-[28px] w-auto" draggable={false} />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src="/brand/s-mark-white.svg" alt="Skeptic" className="h-[32px] w-auto" draggable={false} />
+          <img src={`/brand/s-mark-${markSuffix}.svg`} alt="Skeptic" className="h-[32px] w-auto" draggable={false} />
         )}
       </div>
       {ITEMS.map((item) => (

@@ -10,6 +10,10 @@
 import { useSyncExternalStore } from "react";
 
 export type Verbiage = "institutional" | "retail";
+export type Theme = "dark" | "light";
+export type Accent = "cyan" | "sage" | "lavender" | "rose";
+
+export const ACCENTS: Accent[] = ["cyan", "sage", "lavender", "rose"];
 
 export interface AppSettings {
   /** $ per contract per side; ≥ 0 */
@@ -17,12 +21,16 @@ export interface AppSettings {
   /** fraction of the half-spread conceded, (0, 1] — 0 (mid fills) is banned */
   slippage: number;
   verbiage: Verbiage;
+  theme: Theme;
+  accent: Accent;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   commission: 0.65,
   slippage: 0.5,
   verbiage: "institutional",
+  theme: "dark",
+  accent: "cyan",
 };
 
 const KEY = "skeptic-settings";
@@ -33,6 +41,8 @@ function clampSettings(s: AppSettings): AppSettings {
     commission: Math.min(5, Math.max(0, Number.isFinite(s.commission) ? s.commission : 0.65)),
     slippage: Math.min(1, Math.max(0.05, Number.isFinite(s.slippage) ? s.slippage : 0.5)),
     verbiage: s.verbiage === "retail" ? "retail" : "institutional",
+    theme: s.theme === "light" ? "light" : "dark",
+    accent: ACCENTS.includes(s.accent) ? s.accent : "cyan",
   };
 }
 

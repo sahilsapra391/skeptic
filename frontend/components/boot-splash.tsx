@@ -9,6 +9,8 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 
+import { useSettings } from "@/lib/settings";
+
 // draw-on: last stroke starts at 0.78s and draws for 0.75s
 const ANIMATION_MS = 1650;
 const FADE_MS = 400;
@@ -27,6 +29,7 @@ const shouldShow = (() => {
 })();
 
 export function BootSplash() {
+  const { theme } = useSettings();
   const [phase, setPhase] = useState<"hidden" | "drawing" | "fading">("hidden");
 
   useEffect(() => {
@@ -52,7 +55,7 @@ export function BootSplash() {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/brand/skeptic-draw-white.svg"
+        src={theme === "light" ? "/brand/skeptic-draw-black.svg" : "/brand/skeptic-draw-white.svg"}
         alt=""
         className="w-[min(420px,60vw)]"
         draggable={false}

@@ -319,7 +319,7 @@ export default function NewAnalysisPage() {
               className={clsx(
                 "rounded-[9px] px-4 py-2 text-[13px] font-semibold",
                 qInput.trim() && !busy
-                  ? "bg-trust text-[#0d1216]"
+                  ? "bg-trust text-on-accent"
                   : "cursor-not-allowed bg-raised-2 text-ink-4",
               )}
             >
@@ -399,7 +399,7 @@ export default function NewAnalysisPage() {
 
       {mode === "text" ? (
         <div className="mx-auto max-w-[1130px]">
-          <div className="rounded-[22px] border border-line-soft bg-panel px-6 pb-3 pt-4 shadow-[0_20px_60px_rgba(0,0,0,.35)] focus-within:border-line-hover">
+          <div className="rounded-[22px] border border-line-soft bg-panel px-6 pb-3 pt-4 shadow-[var(--shadow-soft)] focus-within:border-line-hover">
             <textarea
               rows={2}
               className="w-full text-[16.5px] leading-[1.65] text-ink placeholder:text-ink-4"
