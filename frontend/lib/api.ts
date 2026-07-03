@@ -57,19 +57,26 @@ export function getBars(
   return request<BarsPayload>(`/api/data/bars/${ticker}?${params}`);
 }
 
-export function parseText(text: string): Promise<ParseResult> {
+export function parseText(
+  text: string,
+  answers?: Record<string, string>,
+): Promise<ParseResult> {
   return request<ParseResult>("/api/parse", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, answers }),
   });
 }
 
-export function startBacktest(draft: SpecDraft): Promise<{ run_id: string; demo: boolean }> {
+export function startBacktest(
+  draft: SpecDraft,
+  parsedSpec?: Record<string, unknown> | null,
+): Promise<{ run_id: string; demo: boolean }> {
+  // an unedited parser spec runs verbatim — dial edits rebuild from the dials
   return request<{ run_id: string; demo: boolean }>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ spec: draftToSpec(draft), draft }),
+    body: JSON.stringify({ spec: parsedSpec ?? draftToSpec(draft), draft }),
   });
 }
 

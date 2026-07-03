@@ -39,6 +39,10 @@ def _num(v: float | None, digits: int = 2) -> str:
     return "—" if v is None else f"{v:.{digits}f}"
 
 
+def _dollars(v: float | None) -> str:
+    return "" if v is None else f"${v:,.0f}"
+
+
 def _downsample(dates: list[date], values: list[float], cap: int = 400) -> list[dict[str, Any]]:
     n = len(values)
     idxs: list[int]
@@ -104,6 +108,114 @@ def _mc_fan(report: HonestyReport) -> dict[str, str]:
     }
 
 
+def _param_label(name: str, v: float) -> str:
+    if name == "delta":
+        return f".{int(round(v * 100)):02d}Δ"
+    if name == "dte":
+        return f"{int(v)}d"
+    return f"{v:g}%"
+
+
+def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
+    """Cell-level sweep data so the grid can explain itself on hover."""
+    out: list[dict[str, Any]] = []
+    for sweep in report.sensitivity.params:
+        valid = [s for s in sweep.sharpes if s is not None]
+        if not valid:
+            continue
+        top, bottom = max(valid), min(valid)
+        span = top - bottom or 1.0
+        cells = [
+            {
+                "label": _param_label(sweep.name, v),
+                "sharpe": "—" if s is None else f"{s:.2f}",
+                "o": 0.06 if s is None else round(0.10 + 0.82 * (s - bottom) / span, 2),
+            }
+            for v, s in zip(sweep.values, sweep.sharpes, strict=True)
+        ]
+        out.append(
+            {
+                "name": sweep.name.replace("_", " "),
+                "cls": sweep.classification or "",
+                "base": sweep.base_index,
+                "cells": cells,
+            }
+        )
+    return out
+
+
+def _recommendations(report: HonestyReport) -> list[str]:
+    """What would improve the strategy — computed ONLY from this run's own
+    gauntlet numbers (the ±20% sweeps re-ran the real engine), never from
+    opinion. Guardrail #4 applies: every number below exists in the report."""
+    sample = report.regime_sample
+    if report.trust.label == "insufficient_evidence":
+        return [
+            f"Nothing can honestly be recommended from {sample.trades} closed "
+            f"trade{'s' if sample.trades != 1 else ''} — widen the date window, "
+            "trade more frequently, or wait for more coverage before tuning anything.",
+        ]
+
+    recs: list[str] = []
+    for sweep in report.sensitivity.params:
+        base_s = sweep.sharpes[sweep.base_index]
+        pairs = [
+            (v, s) for v, s in zip(sweep.values, sweep.sharpes, strict=True) if s is not None
+        ]
+        if base_s is None or not pairs:
+            continue
+        best_v, best_s = max(pairs, key=lambda t: t[1])
+        base_v = sweep.values[sweep.base_index]
+        if best_v != base_v and best_s >= base_s + 0.05:
+            name = sweep.name.replace("_", " ")
+            recs.append(
+                f"In this run's ±20% sweep, {name} {_param_label(sweep.name, best_v)} "
+                f"beat the specced {_param_label(sweep.name, base_v)}: backtest Sharpe "
+                f"{base_s:.2f} → {best_s:.2f}. Re-run with it — the change re-enters "
+                "the gauntlet as a new trial."
+            )
+
+    oos = report.oos
+    if oos.flagged and oos.degradation is not None:
+        recs.append(
+            f"The edge concentrates in-sample (OOS keeps {oos.degradation * 100:.0f}% "
+            "of in-sample Sharpe). Fewer tuned parameters and a longer window are "
+            "the only honest fixes — more tuning will make this worse."
+        )
+
+    mc = report.monte_carlo
+    if mc.p_loss is not None and mc.p_loss > 0.20:
+        recs.append(
+            f"{mc.p_loss * 100:.0f}% of resampled paths lose money — the result "
+            "leans on trade ordering. A defined-risk structure or smaller size "
+            "survives more of the bad orderings; test it as its own run."
+        )
+
+    wf = report.walk_forward
+    if wf.meaningful and wf.consistency is not None and wf.consistency < 0.6:
+        positive = sum(1 for f in wf.folds if f.ret > 0)
+        recs.append(
+            f"Only {positive} of {len(wf.folds)} walk-forward windows were "
+            "profitable — the total return comes from a few stretches. An entry "
+            "filter (volatility or trend regime) is worth testing as a separate run."
+        )
+
+    if report.dsr.dsr is not None and report.dsr.dsr < 0.5 and report.dsr.trials > 1:
+        recs.append(
+            f"Deflated Sharpe {report.dsr.dsr:.2f} after {report.dsr.trials} trials "
+            "on this family — the remaining edge is likely mined. The recommendation "
+            "is restraint: stop tuning and let new data arrive."
+        )
+
+    if not recs:
+        recs.append(
+            "No parameter in the ±20% sweep beat the specced values by a meaningful "
+            "margin — the configuration already sits on its local plateau. The "
+            "highest-value improvement is more history, not more tuning."
+        )
+    return recs[:4]
+
+
 def _sensitivity_grid(report: HonestyReport) -> tuple[list[list[float]], list[str]]:
     rows: list[list[float]] = []
     names: list[str] = []
@@ -132,7 +244,14 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
     biggest = max(abs(f.ret) for f in folds) or 1.0
     # most recent 16 folds — recency is what the panel is for
     return [
-        {"h": round(14 + 38 * abs(f.ret) / biggest, 1), "pos": f.ret > 0}
+        {
+            "h": round(14 + 38 * abs(f.ret) / biggest, 1),
+            "pos": f.ret > 0,
+            "t": (
+                f"{_short_iso(f.start)} → {_short_iso(f.end)} · "
+                f"{f.ret * 100:+.1f}% · {f.trades} trade{'s' if f.trades != 1 else ''}"
+            ),
+        }
         for f in folds[-16:]
     ]
 
@@ -274,10 +393,18 @@ def build_run_payload(
         "equitySeries": _downsample(result.dates, result.equity),
         "drawdownSeries": _drawdown_series(result.dates, result.equity),
         "oosShadeX": round(860 * 0.7) if not refusal else 860,
+        "oosSplitDate": report.oos.split_date,
         "honesty": _honesty_panels(report),
         "mc": _mc_fan(report),
+        "mcTerm": {
+            "p95": _dollars(report.monte_carlo.terminal_p95),
+            "p50": _dollars(report.monte_carlo.terminal_p50),
+            "p05": _dollars(report.monte_carlo.terminal_p5),
+        },
         "sensitivity": sens_grid,
         "sensitivityRows": sens_rows,
+        "sensitivityDetail": _sensitivity_detail(report),
+        "recommendations": _recommendations(report),
         "tradeHeader": (
             f"Trade log — {result.filled} filled · {result.skipped} skipped, with reasons"
         ),

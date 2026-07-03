@@ -587,3 +587,53 @@ Show on Chart with proper icons and centered; presets rewritten and
 ordered by the user's own run history. Backend 71 tests green, ruff +
 mypy strict clean; verified E2E in browser including a grounded answer
 to "is this just the 2020 crash?".
+
+## 2026-07-03 — M4: the NL parser — English → spec-or-questions, never guesses
+
+`app/parser/parse.py` + real `POST /api/parse`: OpenRouter structured
+output emits either a schema-validated StrategySpec or clarifying
+questions (id + question + concrete options); `answers` converge over
+multiple turns; description_raw is overwritten server-side with the
+user's verbatim text so the model cannot paraphrase the record; failed
+validation retries once with the exact pydantic errors, then falls back
+to questions — a half-valid spec never escapes. One documented
+convention only: unstated tenor with a "close at 21 DTE"-style time
+stop uses the 45-DTE cycle (surfaced on the spec screen, where nothing
+runs unconfirmed). **Eval harness** (`evals/run_parser_eval.py` + the
+12-case set with hand-written ground truths in `evals/parser_cases.json`):
+first live run scored 3/8 clear — the model fabricated `time_exit_dte=0`
+and over-asked when one exit rule sufficed; after tightening the
+contract ("the exit object contains ONLY rules the user stated; one
+rule is a complete exit") the harness scores **8/8 clear, 4/4
+ambiguous — ACCEPTED** (bar was ≥7/8). Hermetic unit tests cover the
+server-side guarantees with the LLM mocked. Frontend: one-at-a-time
+clarifying questions ("QUESTION 1 OF 4 — I DON'T GUESS") with option
+chips + free text; an unedited parser spec runs verbatim, dial edits
+rebuild from the dials; parsed entry conditions render in the trigger
+editor; non-delta strikes ("5% below spot", ATM) keep their honest
+label in the strike dropdown.
+
+## 2026-07-03 — M5 closeout + grounded recommendations + interactive results
+
+The remaining M5 pieces plus an owner-requested UI round. **Grounded
+recommendations**: every results page now carries "WHAT WOULD IMPROVE
+IT — COMPUTED FROM THIS RUN" — suggestions derived exclusively from the
+run's own gauntlet numbers (the ±20% sweeps genuinely re-ran the
+engine: "delta .36Δ beat the specced .30Δ: Sharpe 1.01 → 1.12"), plus
+OOS/MC/walk-forward observations when flagged, refusal-aware, capped at
+4, with the standing caveat that acting on one is a new trial the
+deflated Sharpe will count. **Interactive visuals**: equity chart has a
+hover crosshair (date · $ · drawdown, OOS-aware), $-axis and date/split
+labels, an OUT-OF-SAMPLE marker; walk-forward bars carry per-fold
+tooltips (dates · return · trades); the Monte Carlo fan labels its
+bands with terminal dollars; the sensitivity grid shows the actual
+swept value in each cell with Sharpe-on-hover and a ring on the
+as-specced column. **Layout**: hero centered and scaled up, shell
+widened 940→1180px, 12 preset strategies centered and ordered by the
+user's own run history, sidebar collapsible (icon rail by default,
+labels when expanded, toggle at bottom-left, persisted). Lighthouse
+accessibility on Results: **96** (≥90 accepted; sole flag is the
+design's muted-ink contrast). Backend 76 tests, ruff, mypy strict,
+frontend tsc + lint all green; verified E2E in browser: ambiguous
+strategy → 4 questions → spec with trigger → gauntlet → LLM verdict
+leading with the walk-forward weakness.

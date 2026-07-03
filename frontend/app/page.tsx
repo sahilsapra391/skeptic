@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage, getRun, listRuns, parseText, startBacktest } from "@/lib/api";
-import type { RunPayload, SpecDraft, Structure } from "@/lib/types";
+import type { ParseQuestion, RunPayload, SpecDraft, Structure } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 import { useSpeechToText } from "@/lib/use-speech";
 
@@ -20,7 +20,7 @@ import { GauntletProgress } from "@/components/gauntlet-progress";
 import { ResultsView } from "@/components/results/results-view";
 import { SpecScreen } from "@/components/spec/spec-screen";
 
-type Phase = "compose" | "spec" | "running" | "results";
+type Phase = "compose" | "clarify" | "spec" | "running" | "results";
 type Mode = "text" | "chart";
 
 /** Starter strategies. Ordered by what the library says the user actually
@@ -32,9 +32,29 @@ const PRESETS: { label: string; structure: Structure; phrase: string }[] = [
     phrase: "sell a 30-delta put on SPY every week, close at 50% profit or 21 days",
   },
   {
+    label: "Conservative income put",
+    structure: "short_put",
+    phrase: "sell a 16-delta put on SPY monthly, 45 DTE, close at 50% profit or 21 DTE",
+  },
+  {
+    label: "Aggressive weekly put",
+    structure: "short_put",
+    phrase: "sell a 45-delta put on SPY every week, 30 DTE, close at 50% profit, stop at 2x credit",
+  },
+  {
     label: "Defined-risk put spread",
     structure: "put_credit_spread",
     phrase: "sell a 25-delta put spread on SPY, $5 wide, 45 DTE, close at 50% profit",
+  },
+  {
+    label: "Quick-cycle put spread",
+    structure: "put_credit_spread",
+    phrase: "sell a 30-delta put spread on QQQ, $5 wide, 21 DTE, close at 25% profit or stop 2x",
+  },
+  {
+    label: "Fade-the-rally call spread",
+    structure: "call_credit_spread",
+    phrase: "sell a 25-delta call spread on SPY, $5 wide, 30 DTE, close at 50% profit, stop at 2x credit",
   },
   {
     label: "Calm-market condor",
@@ -52,9 +72,19 @@ const PRESETS: { label: string; structure: Structure; phrase: string }[] = [
     phrase: "buy a 60-day SPY call after a 5% pullback, sell at +100% or stop 50%",
   },
   {
+    label: "RSI-oversold call",
+    structure: "long_call",
+    phrase: "buy a 60 DTE ATM call on QQQ when RSI(14) < 30, sell at 100% gain or 20 DTE, one at a time",
+  },
+  {
     label: "Crash-insurance put",
     structure: "long_put",
     phrase: "buy a 10-delta SPY put, 45 DTE, sell at +200% or hold to expiry",
+  },
+  {
+    label: "Momentum-fade put",
+    structure: "long_put",
+    phrase: "long put on SPY when price is 3% above its 50 SMA, 45 DTE ATM, exit 21 DTE or 75% profit",
   },
 ];
 
@@ -68,6 +98,14 @@ export default function NewAnalysisPage() {
   const [busy, setBusy] = useState(false);
   const [earliestYear, setEarliestYear] = useState("1993");
   const [presets, setPresets] = useState(PRESETS);
+  const [questions, setQuestions] = useState<ParseQuestion[]>([]);
+  const [qIndex, setQIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [qInput, setQInput] = useState("");
+  // the parser's validated spec + the draft it projected — an unedited draft
+  // runs the parser spec verbatim, dial edits rebuild from the dials
+  const parsedSpecRef = useRef<Record<string, unknown> | null>(null);
+  const parsedDraftRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const speech = useSpeechToText((segment) => {
@@ -103,27 +141,57 @@ export default function NewAnalysisPage() {
     };
   }, []);
 
-  const compileText = useCallback(async () => {
-    if (!text.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await parseText(text);
-      setDraft(res.draft);
-      setPhase("spec");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "parse failed");
-    } finally {
-      setBusy(false);
-    }
-  }, [text, busy]);
+  const compileText = useCallback(
+    async (withAnswers?: Record<string, string>) => {
+      if (!text.trim() || busy) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await parseText(text, withAnswers);
+        if (res.status === "questions") {
+          setQuestions(res.questions);
+          setQIndex(0);
+          setQInput("");
+          if (!withAnswers) setAnswers({});
+          setPhase("clarify");
+        } else {
+          parsedSpecRef.current = res.spec ?? null;
+          parsedDraftRef.current = JSON.stringify(res.draft);
+          setDraft(res.draft);
+          setPhase("spec");
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "parse failed");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [text, busy],
+  );
+
+  const answerQuestion = useCallback(
+    (answer: string) => {
+      const q = questions[qIndex];
+      if (!q || !answer.trim()) return;
+      const next = { ...answers, [q.id]: answer.trim() };
+      setAnswers(next);
+      setQInput("");
+      if (qIndex + 1 < questions.length) {
+        setQIndex(qIndex + 1);
+      } else {
+        void compileText(next);
+      }
+    },
+    [questions, qIndex, answers, compileText],
+  );
 
   const runGauntlet = useCallback(async () => {
     if (!draft?.exit || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const { run_id } = await startBacktest(draft);
+      const untouched = parsedDraftRef.current === JSON.stringify(draft);
+      const { run_id } = await startBacktest(draft, untouched ? parsedSpecRef.current : null);
       setPhase("running");
       setRun(null);
       pollRef.current = setInterval(async () => {
@@ -156,6 +224,10 @@ export default function NewAnalysisPage() {
     setDraft(null);
     setText("");
     setError(null);
+    setQuestions([]);
+    setAnswers({});
+    parsedSpecRef.current = null;
+    parsedDraftRef.current = null;
   }, []);
 
   if (phase === "results" && run) {
@@ -164,6 +236,72 @@ export default function NewAnalysisPage() {
 
   if (phase === "running") {
     return <GauntletProgress stage={run?.stage ?? 0} name={run?.name ?? draft?.quote ?? ""} />;
+  }
+
+  if (phase === "clarify" && questions.length > 0) {
+    const q = questions[qIndex];
+    return (
+      <div className="mx-auto max-w-[640px]">
+        <button
+          onClick={() => setPhase("compose")}
+          className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3"
+        >
+          ‹ edit input
+        </button>
+        <div className="mb-4 flex justify-end">
+          <div className="max-w-[75%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-ink-2">
+            “{text}”
+          </div>
+        </div>
+        <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
+          <div className="mb-1 font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
+            QUESTION {qIndex + 1} OF {questions.length} — I DON&apos;T GUESS
+          </div>
+          <div className="mb-3.5 text-[16.5px] font-semibold leading-snug">{q.question}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            {q.options.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => answerQuestion(opt)}
+                disabled={busy}
+                className="rounded-full border border-trust-border px-3.5 py-[6px] text-[13px] text-trust hover:bg-trust/10"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") answerQuestion(qInput);
+              }}
+              placeholder="or answer in your own words ↵"
+              autoFocus
+              className="flex-1 rounded-[9px] border border-line bg-panel-deep px-3 py-2 font-mono text-[13px] text-ink placeholder:text-ink-4 focus:border-trust-border focus:outline-none"
+            />
+            <button
+              onClick={() => answerQuestion(qInput)}
+              disabled={!qInput.trim() || busy}
+              className={clsx(
+                "rounded-[9px] px-4 py-2 text-[13px] font-semibold",
+                qInput.trim() && !busy
+                  ? "bg-trust text-[#0d1216]"
+                  : "cursor-not-allowed bg-raised-2 text-ink-4",
+              )}
+            >
+              {busy ? "compiling…" : "answer"}
+            </button>
+          </div>
+        </div>
+        {error && (
+          <div className="mt-3 rounded-xl border border-warn/50 px-3.5 py-3 font-mono text-[12px] text-warn">
+            {error}
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (phase === "spec" && draft) {
@@ -189,10 +327,10 @@ export default function NewAnalysisPage() {
     <div>
       <CoverageChips />
 
-      <h1 className="mb-2.5 text-[34px] font-[650] leading-[1.1] tracking-[-.02em]">
-        Describe a strategy. I'll try to break it.
+      <h1 className="mx-auto mb-3 mt-[4vh] max-w-[820px] text-center text-[clamp(34px,4.2vw,46px)] font-[650] leading-[1.08] tracking-[-.02em]">
+        Describe a strategy. I&apos;ll try to break it.
       </h1>
-      <p className="mb-[26px] max-w-[560px] text-[15px] leading-normal text-ink-3">
+      <p className="mx-auto mb-[30px] max-w-[640px] text-center text-[15.5px] leading-[1.6] text-ink-3">
         Plain English in. I compile it, backtest it, then attack the result — out-of-sample,
         walk-forward, Monte Carlo, sensitivity. The verdict leads with the uncomfortable part.
       </p>
@@ -231,7 +369,7 @@ export default function NewAnalysisPage() {
       </div>
 
       {mode === "text" ? (
-        <div>
+        <div className="mx-auto max-w-[760px]">
           <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
             <textarea
               rows={3}
@@ -284,7 +422,7 @@ export default function NewAnalysisPage() {
                   </button>
                 )}
                 <button
-                  onClick={compileText}
+                  onClick={() => compileText()}
                   disabled={!text.trim() || busy}
                   className={clsx(
                     "rounded-[9px] border px-4 py-[7px] text-[13px] font-semibold",
@@ -298,7 +436,7 @@ export default function NewAnalysisPage() {
               </div>
             </div>
           </div>
-          <div className="mt-3.5 flex flex-wrap gap-2">
+          <div className="mx-auto mt-5 flex max-w-[860px] flex-wrap justify-center gap-2">
             {presets.map((p) => (
               <button
                 key={p.label}

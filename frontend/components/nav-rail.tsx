@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -50,15 +51,45 @@ const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   },
 ];
 
+const STORE_KEY = "skeptic-nav-open";
+
 export function NavRail() {
   const pathname = usePathname();
+  // collapsed by default; the user's choice persists across sessions
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(STORE_KEY) === "1") setOpen(true);
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  const toggle = () => {
+    setOpen((v) => {
+      try {
+        localStorage.setItem(STORE_KEY, v ? "0" : "1");
+      } catch {
+        /* private mode */
+      }
+      return !v;
+    });
+  };
+
   const activeFor = (href: string) =>
     href === "/" ? pathname === "/" || pathname.startsWith("/runs") : pathname.startsWith(href);
 
   return (
-    <nav className="flex w-14 flex-none flex-col items-center gap-2 border-r border-line-softer bg-navbg py-3.5">
-      <div className="mb-3.5 flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-trust-border font-mono text-[15px] font-semibold text-trust">
-        S
+    <nav
+      className={clsx(
+        "flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5 transition-[width] duration-150",
+        open ? "w-[196px] px-2.5" : "w-14 items-center",
+      )}
+    >
+      <div className={clsx("mb-3.5 flex items-center gap-2.5", open && "px-1")}>
+        <div className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-trust-border font-mono text-[15px] font-semibold text-trust">
+          S
+        </div>
+        {open && <span className="text-[15px] font-[650] tracking-[-.01em]">Skeptic</span>}
       </div>
       {ITEMS.map((item) => (
         <Link
@@ -66,13 +97,39 @@ export function NavRail() {
           href={item.href}
           title={item.title}
           className={clsx(
-            "flex h-[38px] w-[38px] items-center justify-center rounded-[10px]",
+            "flex h-[38px] items-center rounded-[10px]",
+            open ? "w-full gap-3 px-2.5" : "w-[38px] justify-center",
             activeFor(item.href) ? "bg-trust-dim text-trust" : "text-ink-3 hover:text-ink",
           )}
         >
-          {item.icon}
+          <span className="flex-none">{item.icon}</span>
+          {open && <span className="text-[13px] font-semibold">{item.title}</span>}
         </Link>
       ))}
+      <button
+        onClick={toggle}
+        aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
+        title={open ? "Collapse sidebar" : "Expand sidebar"}
+        className={clsx(
+          "mt-auto flex h-[38px] items-center rounded-[10px] text-ink-4 hover:bg-raised-2 hover:text-ink",
+          open ? "w-full gap-3 px-2.5" : "w-[38px] justify-center",
+        )}
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={clsx("flex-none transition-transform", open && "rotate-180")}
+        >
+          <path d="M8 6l4 4-4 4" />
+        </svg>
+        {open && <span className="text-[13px] font-semibold">Collapse</span>}
+      </button>
     </nav>
   );
 }

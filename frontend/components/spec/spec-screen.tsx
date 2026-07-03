@@ -223,11 +223,15 @@ export function SpecScreen({
         <div className={TILE}>
           <TileLabel name="STRIKE ▾" />
           <select
-            value={draft.strikeDelta}
-            onChange={(e) => set({ strikeDelta: Number(e.target.value) })}
+            value={draft.strikeLabel ? "__parsed" : draft.strikeDelta}
+            onChange={(e) => {
+              if (e.target.value === "__parsed") return;
+              set({ strikeDelta: Number(e.target.value), strikeLabel: null });
+            }}
             className={TILE_SELECT_CLS}
-            title="Strike delta — .05Δ to .95Δ"
+            title="Strike selection"
           >
+            {draft.strikeLabel && <option value="__parsed">{draft.strikeLabel}</option>}
             {STRIKE_DELTAS.map((d) => (
               <option key={d} value={d}>
                 .{String(d).padStart(2, "0")}Δ
@@ -314,7 +318,7 @@ export function SpecScreen({
         </div>
       </div>
 
-      {draft.fromChart && (
+      {(draft.fromChart || draft.triggerSpec) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3">
           <span className="font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
             TRIGGER — ENTER WHEN

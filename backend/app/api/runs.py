@@ -25,9 +25,9 @@ from app.models.spec import StrategySpec
 log = logging.getLogger("runs")
 router = APIRouter()
 
-_PENDING_PARSE = (
-    "/api/parse is not built yet — the NL parser is milestone M4 "
-    "(docs/BUILD-PLAN.md). Nothing is guessed server-side until it exists."
+_PENDING_PARSE_KEY = (
+    "the NL parser needs OPENROUTER_API_KEY — without it nothing is "
+    "guessed server-side, ever."
 )
 _PENDING_ASK_KEY = (
     "grounded Q&A needs OPENROUTER_API_KEY — no key, no answers, "
@@ -122,8 +122,29 @@ def _execute_run(run_id: str) -> None:
 
 
 @router.post("/parse")
-def parse(_req: ParseRequest) -> dict[str, Any]:
-    raise HTTPException(status_code=501, detail=_PENDING_PARSE)
+def parse(req: ParseRequest) -> dict[str, Any]:
+    if not req.text.strip():
+        raise HTTPException(status_code=422, detail="empty strategy text")
+
+    from app.parser.parse import parse_strategy, spec_to_draft
+
+    answers = {str(k): str(v) for k, v in (req.answers or {}).items()}
+    outcome = parse_strategy(req.text, answers or None)
+    if outcome is None:
+        raise HTTPException(status_code=501, detail=_PENDING_PARSE_KEY)
+    if outcome.status == "questions":
+        return {
+            "status": "questions",
+            "demo": False,
+            "questions": [q.model_dump() for q in outcome.questions],
+        }
+    assert outcome.spec is not None
+    return {
+        "status": "spec",
+        "demo": False,
+        "draft": spec_to_draft(outcome.spec, req.text.strip()),
+        "spec": outcome.spec,
+    }
 
 
 @router.post("/backtest")

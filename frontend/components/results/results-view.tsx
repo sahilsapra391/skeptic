@@ -10,7 +10,7 @@
  * bars, the drawdown subchart and the MAX DD tile. Never in the verdict.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import clsx from "clsx";
 
 import { ApiError, askRun } from "@/lib/api";
@@ -104,16 +104,47 @@ function MetricTiles({ run }: { run: RunPayload }) {
   );
 }
 
+function fmtDollars(v: number): string {
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
+function fmtDate(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
+}
+
 function EquityChart({ run }: { run: RunPayload }) {
-  const equityPoints = run.equitySeries?.length
-    ? seriesToPoints(run.equitySeries, 200, 14, false)
+  const series = run.equitySeries ?? [];
+  const dd = run.drawdownSeries ?? [];
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+
+  const equityPoints = series.length
+    ? seriesToPoints(series, 200, 14, false)
     : run.equityPoints;
-  const drawdownPoints = run.drawdownSeries?.length
-    ? seriesToPoints(run.drawdownSeries, 54, 5, true)
-    : run.drawdownPoints;
-  const startLabel = run.equitySeries?.length
-    ? `$${Math.round(run.equitySeries[0].v).toLocaleString()} start · net of costs`
+  const drawdownPoints = dd.length ? seriesToPoints(dd, 54, 5, true) : run.drawdownPoints;
+  const startLabel = series.length
+    ? `${fmtDollars(series[0].v)} start · net of costs`
     : "$25k start · net of costs";
+
+  const values = series.map((p) => p.v);
+  const lo = values.length ? Math.min(...values) : 0;
+  const hi = values.length ? Math.max(...values) : 0;
+  const span = hi - lo || 1;
+  const xFor = (i: number) => (i / Math.max(series.length - 1, 1)) * 860;
+  const yFor = (v: number) => 14 + (1 - (v - lo) / span) * (200 - 28);
+
+  const onMove = (e: React.MouseEvent) => {
+    if (!series.length || !wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    setHover(Math.round(frac * (series.length - 1)));
+  };
+
+  const h = hover !== null && series[hover] ? hover : null;
+  const hoverFrac = h !== null ? h / Math.max(series.length - 1, 1) : 0;
+  const inOos = h !== null && run.oosSplitDate ? series[h].t > run.oosSplitDate : false;
+
   return (
     <div className={clsx(PANEL, "mt-3 px-4 py-3.5")}>
       <div className="mb-2 flex justify-between">
@@ -123,21 +154,78 @@ function EquityChart({ run }: { run: RunPayload }) {
         </span>
         <span className="font-mono text-[11px] text-ink-4">{startLabel}</span>
       </div>
-      <svg width="100%" viewBox="0 0 860 200" className="block">
-        {run.oosShadeX < 860 && (
-          <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
+      <div
+        ref={wrapRef}
+        className="relative cursor-crosshair"
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        <svg width="100%" viewBox="0 0 860 200" className="block">
+          {run.oosShadeX < 860 && (
+            <>
+              <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
+              <text x={run.oosShadeX + 8} y="14" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
+                OUT-OF-SAMPLE →
+              </text>
+            </>
+          )}
+          <line x1="0" y1="50" x2="860" y2="50" stroke="#20242c" />
+          <line x1="0" y1="100" x2="860" y2="100" stroke="#20242c" />
+          <line x1="0" y1="150" x2="860" y2="150" stroke="#20242c" />
+          {series.length > 0 && (
+            <>
+              <text x="4" y="12" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
+                {fmtDollars(hi)}
+              </text>
+              <text x="4" y="196" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
+                {fmtDollars(lo)}
+              </text>
+            </>
+          )}
+          <polyline points={equityPoints} fill="none" stroke="#d7dde3" strokeWidth="1.8" />
+          {h !== null && (
+            <>
+              <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="200" stroke="#3a424d" strokeWidth="1" />
+              <circle cx={xFor(h)} cy={yFor(series[h].v)} r="3.5" fill="#d7dde3" />
+            </>
+          )}
+        </svg>
+        <svg width="100%" viewBox="0 0 860 54" className="mt-1.5 block">
+          <line x1="0" y1="6" x2="860" y2="6" stroke="#20242c" />
+          <polyline points={drawdownPoints} fill="none" stroke="#e0604f" strokeWidth="1.3" />
+          {h !== null && (
+            <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="54" stroke="#3a424d" strokeWidth="1" />
+          )}
+        </svg>
+        {h !== null && (
+          <div
+            className="pointer-events-none absolute top-1 z-10 rounded-[9px] border border-line bg-raised px-3 py-2 font-mono text-[11.5px] leading-[1.6] shadow-[0_8px_24px_rgba(0,0,0,.45)]"
+            style={
+              hoverFrac > 0.62
+                ? { right: `${(1 - hoverFrac) * 100}%`, marginRight: 10 }
+                : { left: `${hoverFrac * 100}%`, marginLeft: 10 }
+            }
+          >
+            <div className="text-ink-4">
+              {fmtDate(series[h].t)}
+              {inOos && <span className="ml-1.5 text-trust">OOS</span>}
+            </div>
+            <div className="text-ink">{fmtDollars(series[h].v)}</div>
+            {dd[h] && <div className="text-pl-neg">drawdown −{dd[h].v.toFixed(1)}%</div>}
+          </div>
         )}
-        <line x1="0" y1="50" x2="860" y2="50" stroke="#20242c" />
-        <line x1="0" y1="100" x2="860" y2="100" stroke="#20242c" />
-        <line x1="0" y1="150" x2="860" y2="150" stroke="#20242c" />
-        <polyline points={equityPoints} fill="none" stroke="#d7dde3" strokeWidth="1.8" />
-      </svg>
-      <svg width="100%" viewBox="0 0 860 54" className="mt-1.5 block">
-        <line x1="0" y1="6" x2="860" y2="6" stroke="#20242c" />
-        <polyline points={drawdownPoints} fill="none" stroke="#e0604f" strokeWidth="1.3" />
-      </svg>
-      <div className="mt-1.5 font-mono text-[10.5px] text-ink-4">
-        drawdown — P/L red lives only here, never in the verdict
+      </div>
+      <div className="mt-1.5 flex items-baseline justify-between">
+        <span className="font-mono text-[10.5px] text-ink-4">
+          drawdown — P/L red lives only here, never in the verdict
+        </span>
+        {series.length > 0 && (
+          <span className="font-mono text-[10px] text-ink-4">
+            {fmtDate(series[0].t)}
+            {run.oosSplitDate ? ` · split ${fmtDate(run.oosSplitDate)} · ` : " · "}
+            {fmtDate(series[series.length - 1].t)}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -173,7 +261,12 @@ function HonestyPanels({ run }: { run: RunPayload }) {
             {h.wf.map((w, i) => (
               <div
                 key={i}
-                className={clsx("w-3.5 rounded-t-[3px]", w.pos ? "bg-pl-pos" : "bg-pl-neg")}
+                title={w.t}
+                className={clsx(
+                  "w-3.5 rounded-t-[3px] transition-opacity",
+                  w.pos ? "bg-pl-pos" : "bg-pl-neg",
+                  w.t && "cursor-help hover:opacity-75",
+                )}
                 style={{ height: `${w.h}px` }}
               />
             ))}
@@ -189,10 +282,36 @@ function HonestyPanels({ run }: { run: RunPayload }) {
           {run.mc.p50 ? "MONTE CARLO — 1,000 RESAMPLES" : "MONTE CARLO"}
           <Hint text={HINT_MC} />
         </div>
-        <svg width="100%" viewBox="0 0 400 100" className="block">
+        <svg width="100%" viewBox="0 0 400 100" className="block overflow-visible">
           <polyline points={run.mc.p95} fill="none" stroke="#4a545f" strokeWidth="1.2" />
           <polyline points={run.mc.p50} fill="none" stroke="#cdd6df" strokeWidth="1.7" />
           <polyline points={run.mc.p05} fill="none" stroke="#4a545f" strokeWidth="1.2" />
+          {run.mcTerm &&
+            (
+              [
+                ["p95", run.mc.p95, run.mcTerm.p95, "#7b8794"],
+                ["med", run.mc.p50, run.mcTerm.p50, "#cdd6df"],
+                ["p5", run.mc.p05, run.mcTerm.p05, "#7b8794"],
+              ] as const
+            ).map(([tag, pts, dollars, color]) => {
+              const last = pts.trim().split(" ").pop();
+              if (!last || !dollars) return null;
+              const y = parseFloat(last.split(",")[1] ?? "");
+              if (Number.isNaN(y)) return null;
+              return (
+                <text
+                  key={tag}
+                  x="398"
+                  y={Math.min(Math.max(y + 3, 8), 98)}
+                  textAnchor="end"
+                  fill={color}
+                  fontSize="8.5"
+                  fontFamily="var(--font-plex-mono)"
+                >
+                  {tag} {dollars}
+                </text>
+              );
+            })}
         </svg>
         <div className="mt-2 text-[12.5px] text-ink-2">{h.notes[2]}</div>
       </div>
@@ -206,8 +325,48 @@ function HonestyPanels({ run }: { run: RunPayload }) {
               : "SENSITIVITY"}
           <Hint text={HINT_SENS} align="right" />
         </div>
-        {run.sensitivityRows?.length ? (
-          // real runs: one labelled row per swept parameter, −20% → +20%
+        {run.sensitivityDetail?.length ? (
+          // real runs: labelled rows, every cell explains itself on hover,
+          // the as-specced column is ringed
+          <div className="flex flex-col gap-1">
+            {run.sensitivityDetail.map((row) => (
+              <div key={row.name} className="flex items-center gap-2">
+                <span
+                  className="w-[104px] shrink-0 truncate font-mono text-[9.5px] text-ink-4"
+                  title={row.cls ? `${row.name} — ${row.cls}` : row.name}
+                >
+                  {row.name}
+                  {row.cls ? ` · ${row.cls}` : ""}
+                </span>
+                <div
+                  className="grid flex-1 gap-1"
+                  style={{ gridTemplateColumns: `repeat(${row.cells.length}, minmax(0, 1fr))` }}
+                >
+                  {row.cells.map((cell, ci) => (
+                    <div
+                      key={ci}
+                      title={`${row.name} ${cell.label} → Sharpe ${cell.sharpe}`}
+                      className={clsx(
+                        "flex h-6 cursor-help items-center justify-center rounded font-mono text-[9px] transition-transform hover:scale-[1.06]",
+                        ci === row.base && "ring-1 ring-trust-border",
+                        cell.o > 0.55 ? "text-[#0d1216]" : "text-ink-3",
+                      )}
+                      style={{ background: `rgba(205,214,223,${cell.o})` }}
+                    >
+                      {cell.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
+              <span>−20%</span>
+              <span>as specced (ringed)</span>
+              <span>+20%</span>
+            </div>
+          </div>
+        ) : run.sensitivityRows?.length ? (
+          // older stored runs: opacity rows without cell detail
           <div className="flex flex-col gap-1">
             {run.sensitivity.map((row, ri) => (
               <div key={ri} className="flex items-center gap-2">
@@ -257,6 +416,36 @@ function HonestyPanels({ run }: { run: RunPayload }) {
           </>
         )}
         <div className="mt-2 text-[12.5px] text-ink-2">{h.notes[3]}</div>
+      </div>
+    </div>
+  );
+}
+
+function Recommendations({ run }: { run: RunPayload }) {
+  if (!run.recommendations?.length) return null;
+  return (
+    <div className={clsx(PANEL, "mt-3 px-[15px] py-[13px]")}>
+      <div className={clsx(PANEL_TITLE, "mb-2.5 flex items-center gap-2")}>
+        WHAT WOULD IMPROVE IT — COMPUTED FROM THIS RUN
+        <Hint
+          text={
+            "Each suggestion comes from this run's own gauntlet numbers — the ±20% " +
+            "sweeps really re-ran the engine. Nothing here is opinion, and acting on " +
+            "one starts a new trial that the deflated Sharpe will count against you."
+          }
+        />
+      </div>
+      <ul className="flex flex-col gap-2">
+        {run.recommendations.map((rec, i) => (
+          <li key={i} className="flex gap-2.5 text-[13px] leading-[1.55] text-ink-2">
+            <span className="font-mono text-trust">{String(i + 1).padStart(2, "0")}</span>
+            <span>{rec}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2.5 border-t border-grid pt-2 font-mono text-[10px] text-ink-4">
+        backtest-fit observations, not trading advice — every change re-enters the gauntlet
+        as a new trial
       </div>
     </div>
   );
@@ -408,6 +597,7 @@ export function ResultsView({
         <MetricTiles run={run} />
         <EquityChart run={run} />
         <HonestyPanels run={run} />
+        <Recommendations run={run} />
         <TradeLog run={run} />
       </div>
 

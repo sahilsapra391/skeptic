@@ -13,6 +13,7 @@ from tests.test_spec_roundtrip import CANONICAL
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     for var in (
         "SKEPTIC_ACCESS_TOKEN",
+        "OPENROUTER_API_KEY",  # hermetic: never live LLM calls from tests
         "R2_ACCOUNT_ID",
         "R2_ACCESS_KEY_ID",
         "R2_SECRET_ACCESS_KEY",
