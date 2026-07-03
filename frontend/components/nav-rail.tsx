@@ -123,11 +123,14 @@ export function NavRail() {
         dragging && "select-none",
       )}
     >
-      <div className={clsx("mb-3.5 flex items-center gap-2.5", open && "px-1")}>
-        <div className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-trust-border font-mono text-[15px] font-semibold text-trust">
-          S
-        </div>
-        {open && <span className="truncate text-[15px] font-[650] tracking-[-.01em]">Skeptic</span>}
+      <div className={clsx("mb-3.5 flex h-[30px] items-center", open && "px-1.5")}>
+        {open ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/wordmark-white.svg" alt="Skeptic" className="h-[17px] w-auto" draggable={false} />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/s-mark-white.svg" alt="Skeptic" className="h-[26px] w-auto" draggable={false} />
+        )}
       </div>
       {ITEMS.map((item) => (
         <Link

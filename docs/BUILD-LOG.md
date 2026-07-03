@@ -777,3 +777,17 @@ Verification note for the log: the preview harness freezes the CSS
 animation clock, so width transitions never advance there — assert on
 style.width or disable transitions when testing; real browsers animate
 the 150ms ease normally.
+
+## 2026-07-03 — Brand kit integration
+
+Owner delivered the Skeptic brand kit (SKEPT/C wordmark; the S is two
+identical hooks under 180° rotation — the same question asked from both
+sides). Wired in per the kit's usage rules for our dark surfaces:
+white wordmark in the open sidebar, standalone white S-mark when
+collapsed and above the hero headline; kit favicon.ico + gray-tile 512
++ apple-touch-icon in metadata; og-image for link previews. First boot
+per browser session plays the draw-on animation (the kit's pathLength-
+dash SVG, no JS) as a full-screen splash that fades into the app —
+gated at module scope after React StrictMode's double-effect consumed
+the session flag and stranded the overlay on first attempt. SVG
+masters + animation live in frontend/public/brand/.
