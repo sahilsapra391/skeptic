@@ -105,6 +105,21 @@ const PRESETS: { label: string; structure: Structure; phrase: string }[] = [
 export default function NewAnalysisPage() {
   const [phase, setPhase] = useState<Phase>("compose");
   const [mode, setMode] = useState<Mode>("text");
+  // What's actually on screen. Lags `mode` on chart → text so the chart can
+  // play its collapse-upward exit before the slim chatbox takes its place.
+  const [renderedMode, setRenderedMode] = useState<Mode>("text");
+  const enteredFromChart = useRef(false);
+
+  // Safety net: if the conceal animation never completes (throttled tab,
+  // animations suppressed), don't leave the UI stuck in chart mode.
+  useEffect(() => {
+    if (mode !== "text" || renderedMode !== "chart") return;
+    const id = setTimeout(() => {
+      enteredFromChart.current = true;
+      setRenderedMode("text");
+    }, 700);
+    return () => clearTimeout(id);
+  }, [mode, renderedMode]);
   const [text, setText] = useState("");
   const [draft, setDraft] = useState<SpecDraft | null>(null);
   const [run, setRun] = useState<RunPayload | null>(null);
@@ -360,9 +375,14 @@ export default function NewAnalysisPage() {
       {(["text", "chart"] as const).map((m) => (
         <button
           key={m}
-          onClick={() => setMode(m)}
+          onClick={() => {
+            setMode(m);
+            // Entering chart mode swaps immediately (the reveal plays over it);
+            // leaving it waits for the conceal animation to finish.
+            if (m === "chart") setRenderedMode("chart");
+          }}
           className={clsx(
-            "flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13.5px] font-medium",
+            "flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13.5px] font-medium transition-colors duration-200",
             mode === m ? "bg-raised-2 text-ink" : "text-ink-4 hover:text-ink-2",
           )}
         >
@@ -397,8 +417,13 @@ export default function NewAnalysisPage() {
 
       <div className="mb-4 flex justify-center">{modeChips}</div>
 
-      {mode === "text" ? (
-        <div className="mx-auto max-w-[960px]">
+      {renderedMode === "text" ? (
+        <div
+          className={clsx(
+            "mx-auto max-w-[960px]",
+            enteredFromChart.current && "animate-fade-rise",
+          )}
+        >
           <div className="rounded-[22px] border border-line-soft bg-panel py-2.5 pl-6 pr-3 shadow-[var(--shadow-soft)] focus-within:border-line-hover">
             <div className="flex items-center gap-3">
               <textarea
@@ -495,7 +520,15 @@ export default function NewAnalysisPage() {
           </div>
         </div>
       ) : (
-        <div className="animate-chart-reveal">
+        <div
+          className={mode === "chart" ? "animate-chart-reveal" : "animate-chart-conceal"}
+          onAnimationEnd={(e) => {
+            if (e.animationName === "chart-conceal") {
+              enteredFromChart.current = true;
+              setRenderedMode("text");
+            }
+          }}
+        >
           <ChartTeach
             onCompile={(d) => {
               setDraft(d);

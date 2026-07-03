@@ -145,6 +145,21 @@ textarea {
   resize: none;
 }
 
+/* Every interactive surface eases between states — hovers, selections and
+   disabled flips never hard-snap. Tailwind transition utilities still win
+   (class specificity) when a component needs its own timing. */
+button,
+a,
+select,
+summary {
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease,
+    opacity 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
 ::placeholder {
   color: var(--ink-4);
   opacity: 1;
@@ -203,4 +218,39 @@ textarea {
 
 .animate-chart-reveal {
   animation: chart-reveal 0.55s cubic-bezier(0.22, 0.7, 0.3, 1) both;
+}
+
+/* The reverse trip: the chart collapses upward into the chatbox's
+   footprint, then the slim composer fades up into place. */
+@keyframes chart-conceal {
+  0% {
+    clip-path: inset(0 0 0 0 round 14px);
+    opacity: 1;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    clip-path: inset(0 0 86% 0 round 14px);
+    opacity: 0;
+  }
+}
+
+.animate-chart-conceal {
+  animation: chart-conceal 0.4s cubic-bezier(0.4, 0, 0.7, 1) both;
+}
+
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-rise {
+  animation: fade-rise 0.25s ease-out both;
 }
