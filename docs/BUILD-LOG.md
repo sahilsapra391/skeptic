@@ -727,3 +727,117 @@ back to institutional. Saved-run pages get a "‹ Library" back button
 and keep Library highlighted in the sidebar (/runs/* is a library
 entry, not a new analysis). Describe box and hero chart trimmed ~5%
 to 1130px, still width-matched.
+
+## 2026-07-03 — Design language: calm/editorial pass (owner-directed)
+
+Owner supplied a reference (Harvey-style legal-AI app: serif display
+type, generous whitespace, floating pill composer, quiet inline
+actions) and asked for that calm in dark mode. OWNER SIGN-OFF noted:
+this consciously evolves beyond the original docs/design mockups.
+Shipped: Newsreader serif for display headings (hero, Library,
+Settings, Data, gauntlet); hero reworked — S-mark over a serif
+rotating headline, composer as a floating 26px-radius card with soft
+shadow, mode chips (Describe It / Show on Chart) INSIDE the card
+bottom-left, mic + round arrow-submit bottom-right, quiet disclaimer
+line beneath; preset cards softened. Sidebar gains a RECENT ANALYSES
+section (last 6 runs, live, highlights the open one) mirroring the
+reference's history list. Verified E2E: compile via the round submit
+still lands on the spec screen.
+
+## 2026-07-03 — Newsreader everywhere (standing owner directive)
+
+Newsreader is now THE app typeface — every word on every page, strictly:
+all three Tailwind font tokens (sans/mono/serif) resolve to it, Archivo
+and IBM Plex Mono are removed, and SVG chart text (price ticks, hover
+chips, panel labels, MC band labels, equity axis) uses the same
+variable. Verified by computed style on the verdict headline, meta
+lines, chips, and chart <text> nodes. The directive is codified in
+CLAUDE.md (Engineering conventions → Typography) and in session memory:
+no other font family may ever be introduced.
+
+## 2026-07-03 — Typography settled: serif for headings only (revised directive)
+
+Owner revised the same-day serif-everywhere directive after seeing it:
+Newsreader is RESERVED for headings and important moments (page h1s,
+hero headline, gauntlet heading, and now the verdict headline); body
+returns to Archivo, data returns to IBM Plex Mono (including SVG chart
+text). CLAUDE.md typography rule and session memory rewritten to the
+three-voice system — no other families, serif never in body copy.
+
+## 2026-07-03 — Sidebar drag-resize
+
+The sidebar edge is now a drag handle: resize freely up to 380px, drop
+below 120px and it snaps into the existing 56px icon rail, release
+between 120–172px and it settles at the open floor — the same collapse/
+open mechanism the toggle uses, and the toggle restores the last
+dragged-open width. Implementation is fully imperative (listeners
+attached in the pointerdown, settle computed from the release event's
+own coordinates) after an effect-based version proved race-prone.
+Verification note for the log: the preview harness freezes the CSS
+animation clock, so width transitions never advance there — assert on
+style.width or disable transitions when testing; real browsers animate
+the 150ms ease normally.
+
+## 2026-07-03 — Brand kit integration
+
+Owner delivered the Skeptic brand kit (SKEPT/C wordmark; the S is two
+identical hooks under 180° rotation — the same question asked from both
+sides). Wired in per the kit's usage rules for our dark surfaces:
+white wordmark in the open sidebar, standalone white S-mark when
+collapsed and above the hero headline; kit favicon.ico + gray-tile 512
++ apple-touch-icon in metadata; og-image for link previews. First boot
+per browser session plays the draw-on animation (the kit's pathLength-
+dash SVG, no JS) as a full-screen splash that fades into the app —
+gated at module scope after React StrictMode's double-effect consumed
+the session flag and stranded the overlay on first attempt. SVG
+masters + animation live in frontend/public/brand/.
+
+## 2026-07-03 — Favicon centering audit
+
+Owner spotted the favicon S riding high. Audited every S asset in the
+kit programmatically (glyph bbox center vs canvas center): the dark
+tile (512/180/32), light tile, and transparent-grayS all carry the S
+~10% above center; the gray tile, white circle, s-mark renders,
+apple-touch-icon and maskable are true. Rebuilt our dark tiles from
+scratch — sampled bg #101014 and the 113px corner radius from the
+original, took the glyph from the verified-centered s-mark render,
+composited at identical size, dead center (residual ≤0.5px from odd/
+even rounding at small sizes). favicon.ico regenerated from the fixed
+512. Kit source files in Downloads left untouched — worth regenerating
+upstream in kit.py someday.
+
+## 2026-07-03 — Neon transfer quota exhausted: graceful fallback + the fix for the cause
+
+Owner hit "backend unreachable" and asked if Neon's monthly transfer
+limit was the cause. Confirmed directly: Neon now refuses connections
+with "Your project has exceeded the data transfer quota" — and the
+backend used to DIE at startup because init_db connects at boot.
+Two fixes. (1) **Graceful degradation:** if the configured DATABASE_URL
+is unreachable at startup, the backend logs it, falls back to the local
+SQLite file, and /api/health + Settings report "local SQLite fallback —
+…quota…" honestly; charts, parser and new runs all keep working (runs
+stored during the outage live locally, not in Neon). (2) **The actual
+transfer hog:** /api/runs pulled full payload_json (equity series and
+all, ~100KB+ each) for up to 50 runs on EVERY listing — and the new
+sidebar requests the listing on every navigation. New summary_json
+column (~500B) written at run completion and backfilled lazily for old
+rows; listings now read only that. Client side, listRuns gets a 30s
+TTL cache. Estimated egress per listing drops ~99%.
+
+## 2026-07-03 — Appearance settings: light/dark mode + four accent colors
+
+Settings gains an APPEARANCE panel: Mode (Dark default / Light) and
+Accent (Cyan default, Sage, Lavender, Rose — four max per owner). Under
+the hood the whole palette moved to CSS variables: every Tailwind color
+token now reads a var, hardcoded chart/SVG colors (grids, candles,
+crosshair, MC bands, heat cells, OOS shade, overlay bars, shadows,
+gradients) were converted, and <html data-theme/data-accent> switches
+everything at runtime — an inline pre-hydration script applies the
+stored choice before first paint, so no flash. Light mode is the brand
+kit's paper palette (#F4F4F5 ground, ink text); each accent carries a
+deepened light-mode value so accent text keeps contrast on paper. The
+brand marks and boot splash follow the theme (black wordmark/S/draw-on
+in light — derived from the white masters since the kit uses one-color
+strokes). Color contract intact in every combination: trust hue never
+colors P/L and vice versa. Persisted in the same local settings store
+as costs/verbiage.

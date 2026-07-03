@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
+
+import { listRuns } from "@/lib/api";
+import { useSettings } from "@/lib/settings";
+import type { RunSummary } from "@/lib/types";
 
 const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   {
@@ -43,19 +47,100 @@ const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
         <line x1="3.5" y1="6.5" x2="16.5" y2="6.5" strokeLinecap="round" />
-        <circle cx="12" cy="6.5" r="2.1" fill="#15181d" />
+        <circle cx="12" cy="6.5" r="2.1" fill="var(--navbg)" />
         <line x1="3.5" y1="13.5" x2="16.5" y2="13.5" strokeLinecap="round" />
-        <circle cx="7.5" cy="13.5" r="2.1" fill="#15181d" />
+        <circle cx="7.5" cy="13.5" r="2.1" fill="var(--navbg)" />
       </svg>
     ),
   },
 ];
 
+// resizable sidebar geometry: below COLLAPSE_AT it snaps to the icon
+// rail; an open sidebar never sits narrower than SNAP_OPEN
+const RAIL_W = 56;
+const COLLAPSE_AT = 120;
+const SNAP_OPEN = 172;
+const MAX_W = 380;
+const DEFAULT_W = 196;
+
+const STORE_KEY = "skeptic-nav-width";
+
+function saveNavState(width: number, lastOpen: number) {
+  try {
+    sessionStorage.setItem(STORE_KEY, `${width},${lastOpen}`);
+  } catch {
+    /* private mode */
+  }
+}
+
 export function NavRail() {
   const pathname = usePathname();
-  // always open on load — collapsing lasts for the session only
-  const [open, setOpen] = useState(true);
-  const toggle = () => setOpen((v) => !v);
+  const { theme } = useSettings();
+  const markSuffix = theme === "light" ? "black" : "white";
+  // fresh sessions open at the default; within a session the adjusted
+  // width survives reloads (sessionStorage)
+  const [width, setWidth] = useState(DEFAULT_W);
+  const [dragging, setDragging] = useState(false);
+  const [recent, setRecent] = useState<RunSummary[]>([]);
+  const lastOpenW = useRef(DEFAULT_W);
+  const open = width >= COLLAPSE_AT;
+
+  useLayoutEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(STORE_KEY);
+      if (!stored) return;
+      const [w, lastOpen] = stored.split(",").map(Number);
+      if (Number.isFinite(lastOpen) && lastOpen >= SNAP_OPEN && lastOpen <= MAX_W) {
+        lastOpenW.current = lastOpen;
+      }
+      if (Number.isFinite(w) && (w === RAIL_W || (w >= SNAP_OPEN && w <= MAX_W))) {
+        setWidth(w);
+      }
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  const toggle = () =>
+    setWidth((w) => {
+      const next = w >= COLLAPSE_AT ? RAIL_W : lastOpenW.current;
+      saveNavState(next, lastOpenW.current);
+      return next;
+    });
+
+  // fully imperative drag: listeners attach synchronously in the same
+  // pointerdown and the settle uses the event's own coordinates, so no
+  // effect timing or stale state can lose the snap
+  const startDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    setDragging(true);
+    const clampX = (x: number) => Math.min(MAX_W, Math.max(RAIL_W, x));
+    const onMove = (ev: PointerEvent) => setWidth(clampX(ev.clientX));
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setDragging(false);
+      const w = clampX(ev.clientX);
+      if (w < COLLAPSE_AT) {
+        setWidth(RAIL_W);
+        saveNavState(RAIL_W, lastOpenW.current);
+      } else {
+        const settled = Math.max(w, SNAP_OPEN);
+        lastOpenW.current = settled;
+        setWidth(settled);
+        saveNavState(settled, settled);
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  useEffect(() => {
+    listRuns()
+      .then(({ runs }) => setRecent(runs.slice(0, 6)))
+      .catch(() => undefined);
+    // refreshes on navigation, so a just-finished run shows up
+  }, [pathname]);
 
   const activeFor = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -66,16 +151,22 @@ export function NavRail() {
 
   return (
     <nav
+      style={{ width }}
       className={clsx(
-        "flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5 transition-[width] duration-150",
-        open ? "w-[196px] px-2.5" : "w-14 items-center",
+        "relative flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5",
+        !dragging && "transition-[width] duration-150",
+        open ? "px-2.5" : "items-center",
+        dragging && "select-none",
       )}
     >
-      <div className={clsx("mb-3.5 flex items-center gap-2.5", open && "px-1")}>
-        <div className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-trust-border font-mono text-[15px] font-semibold text-trust">
-          S
-        </div>
-        {open && <span className="text-[15px] font-[650] tracking-[-.01em]">Skeptic</span>}
+      <div className={clsx("mb-4 flex h-[40px] items-center", open && "px-1.5")}>
+        {open ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={`/brand/wordmark-${markSuffix}.svg`} alt="Skeptic" className="h-[28px] w-auto" draggable={false} />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={`/brand/s-mark-${markSuffix}.svg`} alt="Skeptic" className="h-[32px] w-auto" draggable={false} />
+        )}
       </div>
       {ITEMS.map((item) => (
         <Link
@@ -89,9 +180,33 @@ export function NavRail() {
           )}
         >
           <span className="flex-none">{item.icon}</span>
-          {open && <span className="text-[13px] font-semibold">{item.title}</span>}
+          {open && <span className="truncate text-[13px] font-semibold">{item.title}</span>}
         </Link>
       ))}
+      {open && recent.length > 0 && (
+        <div className="mt-5 flex min-h-0 flex-col overflow-hidden">
+          <div className="mb-1.5 px-2.5 font-mono text-[10px] font-medium tracking-[.14em] text-ink-5">
+            RECENT ANALYSES
+          </div>
+          <div className="flex flex-col gap-[2px] overflow-y-auto">
+            {recent.map((r) => (
+              <Link
+                key={r.id}
+                href={`/runs/${r.id}`}
+                title={r.name}
+                className={clsx(
+                  "truncate rounded-[8px] px-2.5 py-[7px] text-[12.5px]",
+                  pathname === `/runs/${r.id}`
+                    ? "bg-raised-2 text-ink"
+                    : "text-ink-4 hover:bg-raised hover:text-ink-2",
+                )}
+              >
+                {r.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       <button
         onClick={toggle}
         aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
@@ -116,6 +231,16 @@ export function NavRail() {
         </svg>
         {open && <span className="text-[13px] font-semibold">Collapse</span>}
       </button>
+      <div
+        onPointerDown={startDrag}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        className={clsx(
+          "absolute -right-[3px] top-0 z-20 h-full w-[7px] cursor-col-resize",
+          dragging ? "bg-trust/30" : "hover:bg-trust/20",
+        )}
+      />
     </nav>
   );
 }

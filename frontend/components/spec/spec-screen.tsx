@@ -466,7 +466,7 @@ export function SpecScreen({
               className={clsx(
                 "rounded-[7px] px-3 py-[4px] text-[12px] font-semibold",
                 customExitLabel()
-                  ? "bg-trust text-[#0d1216]"
+                  ? "bg-trust text-on-accent"
                   : "cursor-not-allowed bg-raised-2 text-ink-4",
               )}
             >
@@ -499,7 +499,7 @@ export function SpecScreen({
           className={clsx(
             "rounded-[11px] px-6 py-3 text-[15.5px]",
             exitSet && !zeroDte
-              ? "bg-trust font-bold text-[#0d1216]"
+              ? "bg-trust font-bold text-on-accent"
               : "cursor-not-allowed bg-raised-2 text-ink-4",
           )}
         >

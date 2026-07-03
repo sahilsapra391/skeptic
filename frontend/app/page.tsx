@@ -319,7 +319,7 @@ export default function NewAnalysisPage() {
               className={clsx(
                 "rounded-[9px] px-4 py-2 text-[13px] font-semibold",
                 qInput.trim() && !busy
-                  ? "bg-trust text-[#0d1216]"
+                  ? "bg-trust text-on-accent"
                   : "cursor-not-allowed bg-raised-2 text-ink-4",
               )}
             >
@@ -355,51 +355,54 @@ export default function NewAnalysisPage() {
     );
   }
 
+  const modeChips = (
+    <div className="flex items-center gap-1">
+      {(["text", "chart"] as const).map((m) => (
+        <button
+          key={m}
+          onClick={() => setMode(m)}
+          className={clsx(
+            "flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13.5px] font-medium",
+            mode === m ? "bg-raised-2 text-ink" : "text-ink-4 hover:text-ink-2",
+          )}
+        >
+          {m === "text" ? (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11.1 1.9l3 3L6 13l-3.6.6L3 10z" />
+              <path d="M9.6 3.4l3 3" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+              <line x1="3.2" y1="5.2" x2="3.2" y2="13.2" />
+              <rect x="2" y="7" width="2.4" height="3.6" rx="0.5" fill="currentColor" stroke="none" />
+              <line x1="8" y1="1.8" x2="8" y2="10.4" />
+              <rect x="6.8" y="3.6" width="2.4" height="4.2" rx="0.5" fill="currentColor" stroke="none" />
+              <line x1="12.8" y1="4.4" x2="12.8" y2="14.2" />
+              <rect x="11.6" y="6.6" width="2.4" height="3.8" rx="0.5" fill="currentColor" stroke="none" />
+            </svg>
+          )}
+          {m === "text" ? "Describe It" : "Show on Chart"}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div>
-      <h1 className="mx-auto mb-[30px] mt-[4vh] max-w-[820px] text-center text-[clamp(34px,4.2vw,46px)] font-[650] leading-[1.08] tracking-[-.02em]">
-        {headline}
-      </h1>
-
-      <div className="mb-3.5 flex justify-center">
-        <div className="inline-flex gap-[2px] rounded-[11px] border border-line-soft p-[3px]">
-          {(["text", "chart"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={clsx(
-                "flex items-center gap-2 rounded-[10px] px-5 py-2.5 text-[14.5px] font-semibold",
-                mode === m ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-2",
-              )}
-            >
-              {m === "text" ? (
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11.1 1.9l3 3L6 13l-3.6.6L3 10z" />
-                  <path d="M9.6 3.4l3 3" />
-                  <line x1="2.5" y1="15" x2="13.5" y2="15" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
-                  <line x1="3.2" y1="5.2" x2="3.2" y2="13.2" />
-                  <rect x="2" y="7" width="2.4" height="3.6" rx="0.5" fill="currentColor" stroke="none" />
-                  <line x1="8" y1="1.8" x2="8" y2="10.4" />
-                  <rect x="6.8" y="3.6" width="2.4" height="4.2" rx="0.5" fill="currentColor" stroke="none" />
-                  <line x1="12.8" y1="4.4" x2="12.8" y2="14.2" />
-                  <rect x="11.6" y="6.6" width="2.4" height="3.8" rx="0.5" fill="currentColor" stroke="none" />
-                </svg>
-              )}
-              {m === "text" ? "Describe It" : "Show on Chart"}
-            </button>
-          ))}
-        </div>
+      <div className="mx-auto mb-9 mt-[9vh] flex max-w-[900px] flex-col items-center">
+        <h1 className="text-center font-serif text-[clamp(32px,3.6vw,44px)] font-medium leading-[1.12] tracking-[-.01em]">
+          {headline}
+        </h1>
       </div>
+
+      <div className="mb-4 flex justify-center">{modeChips}</div>
 
       {mode === "text" ? (
         <div className="mx-auto max-w-[1130px]">
-          <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
+          <div className="rounded-[22px] border border-line-soft bg-panel px-6 pb-3 pt-4 shadow-[var(--shadow-soft)] focus-within:border-line-hover">
             <textarea
-              rows={4}
-              className="w-full font-mono text-[16px] leading-[1.65] text-ink"
+              rows={2}
+              className="w-full text-[16.5px] leading-[1.65] text-ink placeholder:text-ink-4"
               placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
               value={
                 speech.interim
@@ -417,12 +420,9 @@ export default function NewAnalysisPage() {
                 }
               }}
             />
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <span className={clsx("text-[12px]", speech.error ? "text-warn" : "text-ink-4")}>
-                {speech.error ??
-                  (speech.listening
-                    ? "Listening — speak your strategy; tap the mic again to stop."
-                    : "")}
+            <div className="mt-1.5 flex items-center justify-between gap-3">
+              <span className={clsx("text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
+                {speech.error ?? (speech.listening ? "Listening — tap the mic again to stop." : "")}
               </span>
               <div className="flex items-center gap-2">
                 {speech.supported && (
@@ -430,16 +430,16 @@ export default function NewAnalysisPage() {
                     onClick={() => (speech.listening ? speech.stop() : speech.start())}
                     title={speech.listening ? "Stop dictation" : "Dictate your strategy"}
                     className={clsx(
-                      "flex h-[38px] w-[38px] items-center justify-center rounded-[10px] border",
+                      "flex h-11 w-11 items-center justify-center rounded-full",
                       speech.listening
-                        ? "border-trust-border bg-trust-dim text-trust"
-                        : "border-line text-ink-4 hover:border-line-hover hover:text-ink",
+                        ? "bg-trust-dim text-trust"
+                        : "text-ink-4 hover:bg-raised-2 hover:text-ink",
                     )}
                   >
                     {speech.listening ? (
                       <span className="inline-block h-[9px] w-[9px] animate-pin-pulse rounded-full bg-trust" />
                     ) : (
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
                         <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
                         <path d="M3 7.5a5 5 0 0 0 10 0" />
                         <line x1="8" y1="12.5" x2="8" y2="14.5" />
@@ -450,27 +450,39 @@ export default function NewAnalysisPage() {
                 <button
                   onClick={() => compileText()}
                   disabled={!text.trim() || busy}
+                  aria-label="Compile the strategy"
+                  title={busy ? "Compiling…" : "Compile ↵"}
                   className={clsx(
-                    "rounded-[10px] border px-5 py-2 text-[14.5px] font-semibold",
+                    "flex h-11 w-11 items-center justify-center rounded-full transition-colors",
                     text.trim() && !busy
-                      ? "border-trust-border bg-trust-dim text-trust"
-                      : "cursor-not-allowed border-line bg-raised-2 text-ink-4",
+                      ? "bg-ink text-ground hover:bg-ink-2"
+                      : "cursor-not-allowed bg-raised-2 text-ink-4",
                   )}
                 >
-                  {busy ? "Compiling…" : "Compile ↵"}
+                  {busy ? (
+                    <span className="inline-block h-[9px] w-[9px] animate-pin-pulse rounded-full bg-current" />
+                  ) : (
+                    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 8h11" />
+                      <path d="M9 3.5L13.5 8 9 12.5" />
+                    </svg>
+                  )}
                 </button>
               </div>
             </div>
           </div>
-          <div className="mx-auto mt-6 flex max-w-[1300px] flex-wrap justify-center gap-2.5">
+          <p className="mt-3.5 text-center text-[12.5px] text-ink-4">
+            Research tool, not financial advice. Backtests overstate live results.
+          </p>
+          <div className="mx-auto mt-7 flex max-w-[1300px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (
               <button
                 key={p.label}
                 onClick={() => setText(p.phrase)}
                 title={p.phrase}
-                className="group rounded-[12px] border border-line bg-panel px-4 py-2.5 text-left hover:border-trust-border hover:bg-trust-dim"
+                className="group rounded-[14px] border border-line-soft bg-panel px-4 py-2.5 text-left hover:border-line-hover hover:bg-raised"
               >
-                <div className="text-[14px] font-semibold text-ink-2 group-hover:text-ink">
+                <div className="text-[14px] font-medium text-ink-2 group-hover:text-ink">
                   {p.label}
                 </div>
                 <div className="mt-[2px] font-mono text-[11px] tracking-[.04em] text-ink-4 group-hover:text-ink-3">
@@ -481,12 +493,14 @@ export default function NewAnalysisPage() {
           </div>
         </div>
       ) : (
-        <ChartTeach
-          onCompile={(d) => {
-            setDraft(d);
-            setPhase("spec");
-          }}
-        />
+        <div>
+          <ChartTeach
+            onCompile={(d) => {
+              setDraft(d);
+              setPhase("spec");
+            }}
+          />
+        </div>
       )}
 
       {error && (

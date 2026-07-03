@@ -18,7 +18,7 @@ export function VerdictBlock({ verdict }: { verdict: VerdictPayload }) {
     <div
       className={`rounded-2xl px-7 py-7 ${
         verdict.refusal ? "border border-dashed border-trust-border" : "border border-trust-border"
-      } bg-[linear-gradient(180deg,var(--acd),rgba(63,193,207,.03))]`}
+      } bg-[linear-gradient(180deg,var(--acd),var(--ac-faint))]`}
     >
       <div className="mb-2.5 flex items-center justify-between">
         <span className="font-mono text-[11.5px] font-medium tracking-[.14em] text-trust">
@@ -26,7 +26,7 @@ export function VerdictBlock({ verdict }: { verdict: VerdictPayload }) {
         </span>
         <span className="font-mono text-[12px] font-medium text-trust">{verdict.survived}</span>
       </div>
-      <div className="max-w-[860px] text-[30px] font-[650] leading-[1.2] tracking-[-.01em]">
+      <div className="max-w-[860px] font-serif text-[32px] font-medium leading-[1.25]">
         {verdict.headline}
       </div>
 

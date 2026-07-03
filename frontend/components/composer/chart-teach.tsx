@@ -259,7 +259,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
           className={clsx(
             "ml-auto rounded-[10px] px-5 py-2.5 text-[14.5px]",
             complete.length
-              ? "bg-trust font-bold text-[#0d1216]"
+              ? "bg-trust font-bold text-on-accent"
               : "cursor-not-allowed bg-raised-2 text-ink-4",
           )}
         >

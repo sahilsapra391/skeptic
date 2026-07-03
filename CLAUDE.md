@@ -68,6 +68,11 @@ class of bug in this codebase.
   the run. Same spec + same data + same seed = identical output.
 - Frontend implements the approved mockups in `docs/design/`; do not restyle
   by taste. P/L colors never appear on verdict components and vice versa.
+- **Typography (owner directive 2026-07-03, strict):** three voices, no
+  more — Archivo (sans) for body/UI text, IBM Plex Mono for data (numbers,
+  chips, chart text), and the Newsreader serif RESERVED for headings and
+  important moments (page h1s, the hero headline, the verdict headline).
+  Never introduce another font family; never spread the serif into body copy.
 - Secrets only via env vars; never commit keys, never log chain data rows.
 
 ## Legal / ethical rails

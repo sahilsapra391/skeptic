@@ -2,20 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Accent family from the approved design (docs/design/Skeptic App.dc.html).
-   This is the TRUST hue — it never colors P/L, and P/L green/red never
-   colors trust surfaces. */
+/* ============================================================ THEME TOKENS
+   Every surface color is a CSS variable so Appearance settings can swap
+   the whole palette at runtime via data attributes on <html>:
+     data-theme:  dark (default) | light
+     data-accent: cyan (default) | sage | lavender | rose
+
+   COLOR CONTRACT (TECH-SPEC §8) still holds in every combination: the
+   trust/accent family never colors P/L, and P/L green/red never colors
+   trust surfaces. */
+
 :root {
-  --ac: #3fc1cf;
-  --acd: rgba(63, 193, 207, 0.12);
-  --acb: rgba(63, 193, 207, 0.5);
+  /* --- dark (default) neutrals */
+  --ground: #14161a;
+  --navbg: #15181d;
+  --panel: #1b1f26;
+  --panel-deep: #181b21;
+  --panel-chart: #171a20;
+  --raised: #20242d;
+  --raised-2: #242a34;
+  --raised-3: #262c36;
+  --line: #2b303a;
+  --line-soft: #262c36;
+  --line-softer: #232833;
+  --line-hover: #3a4150;
+  --grid: #20242c;
+  --band-track: #2e3440;
+  --ink: #e9edf1;
+  --ink-2: #c6cdd6;
+  --ink-3: #98a2ad;
+  --ink-4: #5f6873;
+  --ink-5: #4a545f;
+  --chart: #cdd6df;
+  --chart-bright: #d7dde3;
+  --chart-mid: #7b8794;
+  --crosshair: #3a424d;
+  --heat-rgb: 205 214 223; /* sensitivity heat cells, alpha applied per-cell */
+  --warn-rgb: 217 164 65;
+  --pl-pos: #43c987;
+  --pl-neg: #e0604f;
+  --on-accent: #0d1216; /* text sitting ON an accent-filled control */
+  --oos-shade: rgba(255, 255, 255, 0.035);
+  --overlay-panel: rgba(27, 31, 38, 0.92);
+  --shadow-soft: 0 20px 60px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  /* --- accent (cyan default; families derive from the triplet) */
+  --ac-rgb: 63 193 207;
+  --ac: rgb(var(--ac-rgb));
+  --acd: rgb(var(--ac-rgb) / 0.12);
+  --acb: rgb(var(--ac-rgb) / 0.5);
+  --ac-faint: rgb(var(--ac-rgb) / 0.03);
+}
+
+/* accents, dark values — soft pastels that read on ink */
+[data-accent="sage"] {
+  --ac-rgb: 156 204 163;
+}
+[data-accent="lavender"] {
+  --ac-rgb: 178 164 235;
+}
+[data-accent="rose"] {
+  --ac-rgb: 232 166 180;
+}
+
+[data-theme="light"] {
+  /* paper palette from the brand kit (Paper #F4F4F5 · Ink #101014) */
+  --ground: #f4f4f5;
+  --navbg: #efeff1;
+  --panel: #ffffff;
+  --panel-deep: #f7f7f8;
+  --panel-chart: #fafafa;
+  --raised: #ececee;
+  --raised-2: #e4e4e7;
+  --raised-3: #dfdfe3;
+  --line: #d9d9de;
+  --line-soft: #e2e2e6;
+  --line-softer: #e7e7ea;
+  --line-hover: #b9b9c0;
+  --grid: #e6e6ea;
+  --band-track: #d9d9de;
+  --ink: #16181d;
+  --ink-2: #34383f;
+  --ink-3: #5a616b;
+  --ink-4: #8a919b;
+  --ink-5: #a5abb4;
+  --chart: #3a4149;
+  --chart-bright: #24292f;
+  --chart-mid: #6b7480;
+  --crosshair: #b7bcc4;
+  --heat-rgb: 58 65 73;
+  --warn-rgb: 168 118 22;
+  --pl-pos: #1e9e62;
+  --pl-neg: #cc4433;
+  --on-accent: #ffffff;
+  --oos-shade: rgba(16, 16, 20, 0.045);
+  --overlay-panel: rgba(255, 255, 255, 0.92);
+  --shadow-soft: 0 20px 50px rgba(16, 16, 20, 0.12);
+  --shadow-pop: 0 8px 24px rgba(16, 16, 20, 0.16);
+}
+
+/* accents, light values — deepened so accent text keeps contrast on paper */
+[data-theme="light"] {
+  --ac-rgb: 13 125 138;
+}
+[data-theme="light"][data-accent="sage"] {
+  --ac-rgb: 58 122 72;
+}
+[data-theme="light"][data-accent="lavender"] {
+  --ac-rgb: 100 84 200;
+}
+[data-theme="light"][data-accent="rose"] {
+  --ac-rgb: 176 71 96;
 }
 
 html,
 body {
   margin: 0;
   height: 100%;
-  background: #14161a;
+  background: var(--ground);
 }
 
 button {
@@ -41,18 +146,18 @@ textarea {
 }
 
 ::placeholder {
-  color: #5f6873;
+  color: var(--ink-4);
   opacity: 1;
 }
 
 ::selection {
-  background: rgba(63, 193, 207, 0.3);
+  background: rgb(var(--ac-rgb) / 0.3);
 }
 
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: #2b303a transparent;
+  scrollbar-color: var(--line) transparent;
 }
 
 @keyframes pulse {

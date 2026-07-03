@@ -235,43 +235,43 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
         <svg width="100%" viewBox="0 0 860 200" className="block">
           {run.oosShadeX < 860 && (
             <>
-              <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
-              <text x={run.oosShadeX + 8} y="14" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
+              <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="var(--oos-shade)" />
+              <text x={run.oosShadeX + 8} y="14" fill="var(--ink-5)" fontSize="10" fontFamily="var(--font-plex-mono)">
                 {retailMode ? "UNSEEN DATA →" : "OUT-OF-SAMPLE →"}
               </text>
             </>
           )}
-          <line x1="0" y1="50" x2="860" y2="50" stroke="#20242c" />
-          <line x1="0" y1="100" x2="860" y2="100" stroke="#20242c" />
-          <line x1="0" y1="150" x2="860" y2="150" stroke="#20242c" />
+          <line x1="0" y1="50" x2="860" y2="50" stroke="var(--grid)" />
+          <line x1="0" y1="100" x2="860" y2="100" stroke="var(--grid)" />
+          <line x1="0" y1="150" x2="860" y2="150" stroke="var(--grid)" />
           {series.length > 0 && (
             <>
-              <text x="4" y="12" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
+              <text x="4" y="12" fill="var(--ink-5)" fontSize="10" fontFamily="var(--font-plex-mono)">
                 {fmtDollars(hi)}
               </text>
-              <text x="4" y="196" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
+              <text x="4" y="196" fill="var(--ink-5)" fontSize="10" fontFamily="var(--font-plex-mono)">
                 {fmtDollars(lo)}
               </text>
             </>
           )}
-          <polyline points={equityPoints} fill="none" stroke="#d7dde3" strokeWidth="1.8" />
+          <polyline points={equityPoints} fill="none" stroke="var(--chart-bright)" strokeWidth="1.8" />
           {h !== null && (
             <>
-              <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="200" stroke="#3a424d" strokeWidth="1" />
-              <circle cx={xFor(h)} cy={yFor(series[h].v)} r="3.5" fill="#d7dde3" />
+              <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="200" stroke="var(--crosshair)" strokeWidth="1" />
+              <circle cx={xFor(h)} cy={yFor(series[h].v)} r="3.5" fill="var(--chart-bright)" />
             </>
           )}
         </svg>
         <svg width="100%" viewBox="0 0 860 54" className="mt-1.5 block">
-          <line x1="0" y1="6" x2="860" y2="6" stroke="#20242c" />
-          <polyline points={drawdownPoints} fill="none" stroke="#e0604f" strokeWidth="1.3" />
+          <line x1="0" y1="6" x2="860" y2="6" stroke="var(--grid)" />
+          <polyline points={drawdownPoints} fill="none" stroke="var(--pl-neg)" strokeWidth="1.3" />
           {h !== null && (
-            <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="54" stroke="#3a424d" strokeWidth="1" />
+            <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="54" stroke="var(--crosshair)" strokeWidth="1" />
           )}
         </svg>
         {h !== null && (
           <div
-            className="pointer-events-none absolute top-1 z-10 rounded-[9px] border border-line bg-raised px-3 py-2 font-mono text-[11.5px] leading-[1.6] shadow-[0_8px_24px_rgba(0,0,0,.45)]"
+            className="pointer-events-none absolute top-1 z-10 rounded-[9px] border border-line bg-raised px-3 py-2 font-mono text-[11.5px] leading-[1.6] shadow-[var(--shadow-pop)]"
             style={
               hoverFrac > 0.62
                 ? { right: `${(1 - hoverFrac) * 100}%`, marginRight: 10 }
@@ -368,15 +368,15 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
           <Hint text={pick(HINT_MC, retailMode)} />
         </div>
         <svg width="100%" viewBox="0 0 400 100" className="block overflow-visible">
-          <polyline points={run.mc.p95} fill="none" stroke="#4a545f" strokeWidth="1.2" />
-          <polyline points={run.mc.p50} fill="none" stroke="#cdd6df" strokeWidth="1.7" />
-          <polyline points={run.mc.p05} fill="none" stroke="#4a545f" strokeWidth="1.2" />
+          <polyline points={run.mc.p95} fill="none" stroke="var(--ink-5)" strokeWidth="1.2" />
+          <polyline points={run.mc.p50} fill="none" stroke="var(--chart)" strokeWidth="1.7" />
+          <polyline points={run.mc.p05} fill="none" stroke="var(--ink-5)" strokeWidth="1.2" />
           {run.mcTerm &&
             (
               [
-                ["p95", run.mc.p95, run.mcTerm.p95, "#7b8794"],
-                ["med", run.mc.p50, run.mcTerm.p50, "#cdd6df"],
-                ["p5", run.mc.p05, run.mcTerm.p05, "#7b8794"],
+                ["p95", run.mc.p95, run.mcTerm.p95, "var(--chart-mid)"],
+                ["med", run.mc.p50, run.mcTerm.p50, "var(--chart)"],
+                ["p5", run.mc.p05, run.mcTerm.p05, "var(--chart-mid)"],
               ] as const
             ).map(([tag, pts, dollars, color]) => {
               const last = pts.trim().split(" ").pop();
@@ -436,9 +436,9 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
                       className={clsx(
                         "flex h-7 cursor-help items-center justify-center rounded font-mono text-[10px] transition-transform hover:scale-[1.06]",
                         ci === row.base && "ring-1 ring-trust-border",
-                        cell.o > 0.55 ? "text-[#0d1216]" : "text-ink-3",
+                        cell.o > 0.55 ? "text-on-accent" : "text-ink-3",
                       )}
-                      style={{ background: `rgba(205,214,223,${cell.o})` }}
+                      style={{ background: `rgb(var(--heat-rgb) / ${cell.o})` }}
                     >
                       {cell.label}
                     </div>
@@ -468,7 +468,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
                     <div
                       key={ci}
                       className="h-5 rounded"
-                      style={{ background: `rgba(205,214,223,${opacity})` }}
+                      style={{ background: `rgb(var(--heat-rgb) / ${opacity})` }}
                     />
                   ))}
                 </div>
@@ -488,7 +488,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
                   <div
                     key={`${ri}-${ci}`}
                     className="h-5 rounded"
-                    style={{ background: `rgba(205,214,223,${opacity})` }}
+                    style={{ background: `rgb(var(--heat-rgb) / ${opacity})` }}
                   />
                 )),
               )}
@@ -722,7 +722,7 @@ export function ResultsView({
         </div>
       )}
 
-      <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[rgba(27,31,38,.92)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
+      <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
         <input
           className="flex-1 font-mono text-[15px]"
           placeholder='Ask about this result… "is this just 2020?" · "widen the spread" · "worst month"'
