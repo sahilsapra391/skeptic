@@ -8,7 +8,7 @@ import clsx from "clsx";
 const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   {
     href: "/",
-    title: "New analysis",
+    title: "New Analysis",
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
         <line x1="10" y1="4.5" x2="10" y2="15.5" />
@@ -28,7 +28,7 @@ const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   },
   {
     href: "/data",
-    title: "Data observatory",
+    title: "Data Observatory",
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
         <line x1="5" y1="16" x2="5" y2="9" />
@@ -55,11 +55,11 @@ const STORE_KEY = "skeptic-nav-open";
 
 export function NavRail() {
   const pathname = usePathname();
-  // collapsed by default; the user's choice persists across sessions
-  const [open, setOpen] = useState(false);
+  // open by default; the user's choice persists across sessions
+  const [open, setOpen] = useState(true);
   useEffect(() => {
     try {
-      if (localStorage.getItem(STORE_KEY) === "1") setOpen(true);
+      if (localStorage.getItem(STORE_KEY) === "0") setOpen(false);
     } catch {
       /* private mode */
     }

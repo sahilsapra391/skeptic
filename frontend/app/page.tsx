@@ -14,7 +14,6 @@ import type { ParseQuestion, RunPayload, SpecDraft, Structure } from "@/lib/type
 import { STRUCTURE_LABEL } from "@/lib/types";
 import { useSpeechToText } from "@/lib/use-speech";
 
-import { CoverageChips } from "@/components/coverage-chips";
 import { ChartTeach } from "@/components/composer/chart-teach";
 import { GauntletProgress } from "@/components/gauntlet-progress";
 import { ResultsView } from "@/components/results/results-view";
@@ -331,8 +330,6 @@ export default function NewAnalysisPage() {
 
   return (
     <div>
-      <CoverageChips />
-
       <h1 className="mx-auto mb-3 mt-[4vh] max-w-[820px] text-center text-[clamp(34px,4.2vw,46px)] font-[650] leading-[1.08] tracking-[-.02em]">
         Describe a strategy. I&apos;ll try to break it.
       </h1>
@@ -375,7 +372,7 @@ export default function NewAnalysisPage() {
       </div>
 
       {mode === "text" ? (
-        <div className="mx-auto max-w-[860px]">
+        <div className="mx-auto max-w-[1080px]">
           <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
             <textarea
               rows={4}
@@ -442,7 +439,7 @@ export default function NewAnalysisPage() {
               </div>
             </div>
           </div>
-          <div className="mx-auto mt-6 flex max-w-[980px] flex-wrap justify-center gap-2.5">
+          <div className="mx-auto mt-6 flex max-w-[1180px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (
               <button
                 key={p.label}

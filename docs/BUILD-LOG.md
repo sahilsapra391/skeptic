@@ -667,3 +667,12 @@ tall, verdict headline 25→30px, metric tiles 19→24px, panels/text/
 buttons up across compose, spec, gauntlet, results, settings. Backend
 76 tests + ruff + mypy strict green; frontend tsc + lint green;
 verified in-browser across both registers on a single run.
+
+## 2026-07-03 — Width pass + sidebar defaults + hero cleanup
+
+Owner adjustments: content shell 1380px; composer and preset rows
+widened; results and chart mode fill the page; library becomes two wide
+columns with larger cards. Sidebar now defaults to OPEN (choice still
+persists), labels title-cased (New Analysis, Data Observatory). The
+coverage chips row and "day 2 of collection" link are gone from the
+hero — coverage lives in the Data Observatory, where it belongs.
