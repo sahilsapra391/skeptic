@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="flex h-full">
           <NavRail />
           <main className="flex-1 overflow-auto">
-            <div className="mx-auto max-w-shell px-[30px] pb-10 pt-8">{children}</div>
+            <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
           </main>
         </div>
       </body>

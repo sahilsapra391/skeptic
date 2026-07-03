@@ -11,11 +11,57 @@
 import { useState } from "react";
 import clsx from "clsx";
 
+import { Hint } from "@/components/hint";
+import { useSettings } from "@/lib/settings";
 import type { SpecDraft, Structure, Ticker, TriggerSpec } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
-const TILE = "rounded-xl border border-line bg-panel px-3 py-2.5";
-const TILE_LABEL = "mb-[5px] font-mono text-[10px] font-medium tracking-[.1em] text-ink-4";
+/** Plain-English one-liners for every dial — [institutional, retail]. */
+const SPEC_HINTS: Record<string, [string, string]> = {
+  TICKER: [
+    "Which ETF to trade options on. Coverage differs — SPY has the longest record.",
+    "Which fund to trade options on. SPY has the most history to test against.",
+  ],
+  STRUCTURE: [
+    "The option position type — what gets bought or sold at entry.",
+    "The kind of options trade to place.",
+  ],
+  STRIKE: [
+    "How far from the money, in delta. .05Δ is far out (rarely hit), .50Δ is at the money.",
+    "How far from the current price. .05Δ is far away (rarely reached), .50Δ is right at the price.",
+  ],
+  DTE: [
+    "Days to expiration when the trade opens. 0DTE needs minute data and is refused for now.",
+    "How many days until the option expires when the trade opens. Same-day (0) isn't supported yet.",
+  ],
+  ANCHOR: [
+    "The first pinned example on your chart — where the pattern was taught from.",
+    "The first example you pinned on the chart.",
+  ],
+  TRIGGER: [
+    "The market condition that must be true for a trade to enter.",
+    "The condition that has to be true before a trade opens.",
+  ],
+  CADENCE: [
+    "How often a new trade is considered.",
+    "How often a new trade is considered.",
+  ],
+  SIZE: [
+    "How many contracts each trade uses.",
+    "How many contracts each trade uses.",
+  ],
+  EXIT: [
+    "When the trade closes — a profit target, a stop loss, a time exit, or a combination.",
+    "When the trade closes — take profit, cut losses, a time limit, or a mix.",
+  ],
+  FILLS: [
+    "How fills are priced: buys toward the ask, sells toward the bid, plus slippage — never at mid.",
+    "Trades are priced like real life: buy a bit above fair value, sell a bit below, plus costs.",
+  ],
+};
+
+const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
+const TILE_LABEL = "mb-[7px] font-mono text-[11px] font-medium tracking-[.1em] text-ink-4";
 
 const TICKERS: Ticker[] = ["SPY", "QQQ", "IWM"];
 const STRUCTURES: Structure[] = [
@@ -57,30 +103,56 @@ export function triggerLabel(t: TriggerSpec): string {
   return `${name}${period} ${op?.sym ?? t.operator} ${t.value}`;
 }
 
-function Stepper({
-  render,
-  onDec,
-  onInc,
-}: {
-  render: () => string;
-  onDec: () => void;
-  onInc: () => void;
-}) {
+/** Tile header: the dial's name plus its tooltip in the chosen register. */
+function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
+  const { verbiage } = useSettings();
+  const pair = SPEC_HINTS[name.replace(/ [▾✎⌖]$/, "")];
+  const text = pair ? (verbiage === "retail" ? pair[1] : pair[0]) : name;
   return (
-    <div className="flex items-center gap-2">
-      <button onClick={onDec} className="text-[15px] text-ink-4 hover:text-ink">
-        ‹
-      </button>
-      <span className="font-mono text-[15px] font-semibold">{render()}</span>
-      <button onClick={onInc} className="text-[15px] text-ink-4 hover:text-ink">
-        ›
-      </button>
+    <div className={clsx(TILE_LABEL, "flex items-center justify-between gap-1", warn && "!text-warn")}>
+      <span>{name}</span>
+      <Hint text={text} align="right" />
     </div>
   );
 }
 
 const SELECT_CLS =
-  "rounded-[7px] border border-line bg-panel-deep px-2 py-1 font-mono text-[11.5px] text-ink";
+  "rounded-[8px] border border-line bg-panel-deep px-2.5 py-1.5 font-mono text-[13px] text-ink";
+
+/** Tile-sized dropdown — dial values pick from the full legal range. */
+const TILE_SELECT_CLS =
+  "w-full cursor-pointer appearance-none rounded-[7px] border border-transparent " +
+  "bg-transparent py-[2px] font-mono text-[17px] font-semibold text-ink " +
+  "hover:border-line focus:border-line focus:outline-none [&>option]:bg-panel-deep";
+
+// Strike: every .05Δ from .05 to .95 (stored as whole-number delta, 5..95)
+const STRIKE_DELTAS = Array.from({ length: 19 }, (_, i) => (i + 1) * 5);
+// DTE: 0–50, every day (0 = 0DTE, refused at run until the minute engine)
+const DTE_CHOICES = Array.from({ length: 51 }, (_, i) => i);
+
+/** Per-structure exit preset sets. Credit structures manage winners early
+ * and cut at a DTE; debit structures think in profit multiples and stops. */
+const CREDIT_EXITS = [
+  "50% profit",
+  "50% profit · 21 DTE",
+  "25% profit",
+  "75% profit",
+  "21 DTE",
+  "14 DTE",
+  "stop 2× credit",
+  "50% profit · stop 2×",
+  "hold to expiry",
+];
+const DEBIT_EXITS = [
+  "100% profit",
+  "100% profit · stop 50%",
+  "25% profit",
+  "50% profit",
+  "200% profit",
+  "stop 50%",
+  "50% profit · 7 DTE",
+  "hold to expiry",
+];
 
 export function SpecScreen({
   draft,
@@ -95,14 +167,35 @@ export function SpecScreen({
   onRun: () => void;
   earliestYear: string;
 }) {
+  const settings = useSettings();
   const [exitEditing, setExitEditing] = useState(false);
-  const [customExit, setCustomExit] = useState("");
+  const [customProfit, setCustomProfit] = useState("");
+  const [customStop, setCustomStop] = useState("");
+  const [customDte, setCustomDte] = useState("");
   const exitSet = !!draft.exit;
   const zeroDte = draft.dte === 0;
   const set = (patch: Partial<SpecDraft>) => onChange({ ...draft, ...patch });
 
-  const cycle = <T,>(list: T[], current: T, dir: 1 | -1): T =>
-    list[(list.indexOf(current) + dir + list.length) % list.length];
+  // structured custom exit → the same string grammar the presets use
+  const customExitLabel = (): string | null => {
+    const parts: string[] = [];
+    const p = Number(customProfit);
+    if (customProfit.trim() && p > 0) parts.push(`${p}% profit`);
+    const s = Number(customStop);
+    if (customStop.trim() && s > 0) parts.push(`stop ${s}%`);
+    const d = Number(customDte);
+    if (customDte.trim() && Number.isInteger(d) && d >= 0) parts.push(`${d} DTE`);
+    return parts.length ? parts.join(" · ") : null;
+  };
+  const applyCustomExit = () => {
+    const label = customExitLabel();
+    if (!label) return;
+    set({ exit: label });
+    setCustomProfit("");
+    setCustomStop("");
+    setCustomDte("");
+    setExitEditing(false);
+  };
 
   const trig = draft.triggerSpec;
   const trigIndicator = trig ? INDICATORS.find((i) => i.id === trig.indicator) : undefined;
@@ -113,8 +206,8 @@ export function SpecScreen({
 
   const exitChoices =
     draft.structure === "long_call" || draft.structure === "long_put"
-      ? ["100% profit", "stop 50%", "hold to expiry"]
-      : ["50% profit", "21 DTE", "hold to expiry"];
+      ? DEBIT_EXITS
+      : CREDIT_EXITS;
 
   return (
     <div>
@@ -123,79 +216,94 @@ export function SpecScreen({
       </button>
 
       <div className="mb-4 flex justify-end">
-        <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-ink-2">
+        <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-4 py-3 font-mono text-[14px] leading-[1.55] text-ink-2">
           {draft.fromChart ? `◉ ${draft.quote}` : `“${draft.quote}”`}
         </div>
       </div>
-      <p className="mb-3 text-[14.5px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+      <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
 
       <div className="grid grid-cols-4 gap-2.5">
         <div className={TILE}>
-          <div className={TILE_LABEL}>TICKER</div>
-          <Stepper
-            render={() => draft.ticker}
-            onDec={() => set({ ticker: cycle(TICKERS, draft.ticker, -1) })}
-            onInc={() => set({ ticker: cycle(TICKERS, draft.ticker, 1) })}
-          />
+          <TileLabel name="TICKER ▾" />
+          <select
+            value={draft.ticker}
+            onChange={(e) => set({ ticker: e.target.value as Ticker })}
+            className={TILE_SELECT_CLS}
+            title="Underlying ETF"
+          >
+            {TICKERS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
         </div>
         <div className={TILE}>
-          <div className={TILE_LABEL}>STRUCTURE</div>
-          <Stepper
-            render={() => STRUCTURE_LABEL[draft.structure]}
-            onDec={() => set({ structure: cycle(STRUCTURES, draft.structure, -1) })}
-            onInc={() => set({ structure: cycle(STRUCTURES, draft.structure, 1) })}
-          />
+          <TileLabel name="STRUCTURE ▾" />
+          <select
+            value={draft.structure}
+            onChange={(e) => set({ structure: e.target.value as Structure })}
+            className={TILE_SELECT_CLS}
+            title="Position type"
+          >
+            {STRUCTURES.map((s) => (
+              <option key={s} value={s}>
+                {STRUCTURE_LABEL[s]}
+              </option>
+            ))}
+          </select>
         </div>
         <div className={TILE}>
-          <div className={TILE_LABEL}>STRIKE</div>
-          <Stepper
-            render={() => `.${String(draft.strikeDelta).padStart(2, "0")}Δ`}
-            onDec={() => set({ strikeDelta: Math.max(5, draft.strikeDelta - 5) })}
-            onInc={() => set({ strikeDelta: Math.min(95, draft.strikeDelta + 5) })}
-          />
+          <TileLabel name="STRIKE ▾" />
+          <select
+            value={draft.strikeLabel ? "__parsed" : draft.strikeDelta}
+            onChange={(e) => {
+              if (e.target.value === "__parsed") return;
+              set({ strikeDelta: Number(e.target.value), strikeLabel: null });
+            }}
+            className={TILE_SELECT_CLS}
+            title="Strike selection"
+          >
+            {draft.strikeLabel && <option value="__parsed">{draft.strikeLabel}</option>}
+            {STRIKE_DELTAS.map((d) => (
+              <option key={d} value={d}>
+                .{String(d).padStart(2, "0")}Δ
+              </option>
+            ))}
+          </select>
         </div>
         <div className={clsx(TILE, zeroDte && "!border-warn/50")}>
-          <div className={clsx(TILE_LABEL, zeroDte && "!text-warn")}>DTE</div>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => set({ dte: Math.max(0, draft.dte - 1) })}
-              className="text-[15px] text-ink-4 hover:text-ink"
-            >
-              ‹
-            </button>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              value={draft.dte}
-              onChange={(e) => {
-                const v = Math.max(0, Math.min(50, Number(e.target.value) || 0));
-                set({ dte: v });
-              }}
-              className="w-[46px] rounded border border-transparent bg-transparent text-center font-mono text-[15px] font-semibold focus:border-line [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            />
-            <button
-              onClick={() => set({ dte: Math.min(50, draft.dte + 1) })}
-              className="text-[15px] text-ink-4 hover:text-ink"
-            >
-              ›
-            </button>
-          </div>
+          <TileLabel name="DTE ▾" warn={zeroDte} />
+          <select
+            value={draft.dte}
+            onChange={(e) => set({ dte: Number(e.target.value) })}
+            className={TILE_SELECT_CLS}
+            title="Days to expiration — 0 to 50"
+          >
+            {DTE_CHOICES.map((d) => (
+              <option key={d} value={d}>
+                {d === 0 ? "0 (0DTE)" : d}
+              </option>
+            ))}
+          </select>
         </div>
 
         {draft.fromChart ? (
           <>
             <div className={clsx(TILE, "!border-trust-border")}>
-              <div className={clsx(TILE_LABEL, "!text-trust")}>ANCHOR ⌖</div>
+              <div className={clsx(TILE_LABEL, "flex items-center justify-between gap-1 !text-trust")}>
+                <span>ANCHOR ⌖</span>
+                <Hint text={settings.verbiage === "retail" ? SPEC_HINTS.ANCHOR[1] : SPEC_HINTS.ANCHOR[0]} align="right" />
+              </div>
               <input
                 value={draft.anchor ?? ""}
                 onChange={(e) => set({ anchor: e.target.value })}
-                className="w-full bg-transparent font-mono text-[13px] font-semibold focus:outline-none"
+                className="w-full bg-transparent font-mono text-[15px] font-semibold focus:outline-none"
               />
             </div>
             <div className={TILE}>
-              <div className={TILE_LABEL}>TRIGGER</div>
-              <div className="pt-[3px] font-mono text-[12px] font-semibold">
+              <TileLabel name="TRIGGER" />
+              <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
                 {trig ? triggerLabel(trig) : draft.trigger ?? "—"}
               </div>
             </div>
@@ -203,12 +311,12 @@ export function SpecScreen({
         ) : (
           <>
             <div className={TILE}>
-              <div className={TILE_LABEL}>CADENCE</div>
-              <div className="pt-0.5 font-mono text-[13px] font-semibold">{draft.cadence}</div>
+              <TileLabel name="CADENCE" />
+              <div className="pt-0.5 font-mono text-[15px] font-semibold">{draft.cadence}</div>
             </div>
             <div className={TILE}>
-              <div className={TILE_LABEL}>SIZE</div>
-              <div className="pt-0.5 font-mono text-[13px] font-semibold">{draft.size}</div>
+              <TileLabel name="SIZE" />
+              <div className="pt-0.5 font-mono text-[15px] font-semibold">{draft.size}</div>
             </div>
           </>
         )}
@@ -223,18 +331,29 @@ export function SpecScreen({
           )}
           title="Edit exit rules"
         >
-          <div className={clsx(TILE_LABEL, !exitSet && "!text-trust")}>EXIT ✎</div>
-          <div className="pt-0.5 font-mono text-[13px] font-semibold">
+          <div
+            className={clsx(
+              TILE_LABEL,
+              "flex items-center justify-between gap-1",
+              !exitSet && "!text-trust",
+            )}
+          >
+            <span>EXIT ✎</span>
+            <Hint text={settings.verbiage === "retail" ? SPEC_HINTS.EXIT[1] : SPEC_HINTS.EXIT[0]} align="right" />
+          </div>
+          <div className="pt-0.5 font-mono text-[15px] font-semibold">
             {draft.exit ?? "not set"}
           </div>
         </button>
         <div className={TILE}>
-          <div className={TILE_LABEL}>FILLS</div>
-          <div className="pt-[3px] font-mono text-[12px] font-semibold">bid/ask + slip 0.5</div>
+          <TileLabel name="FILLS" />
+          <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
+            bid/ask + slip {settings.slippage} · ${settings.commission}/ct
+          </div>
         </div>
       </div>
 
-      {draft.fromChart && (
+      {(draft.fromChart || draft.triggerSpec) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3">
           <span className="font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
             TRIGGER — ENTER WHEN
@@ -310,24 +429,50 @@ export function SpecScreen({
                 set({ exit: label });
                 setExitEditing(false);
               }}
-              className="rounded-full border border-trust-border px-[13px] py-[5px] text-[12.5px] text-trust hover:bg-trust-dim"
+              className="rounded-full border border-trust-border px-4 py-[7px] text-[13.5px] text-trust hover:bg-trust-dim"
             >
               {label}
             </button>
           ))}
-          <input
-            value={customExit}
-            onChange={(e) => setCustomExit(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && customExit.trim()) {
-                set({ exit: customExit.trim() });
-                setCustomExit("");
-                setExitEditing(false);
-              }
-            }}
-            placeholder='custom: "60% profit · stop 2× · 14 DTE" ↵'
-            className="min-w-[230px] flex-1 rounded-[9px] border border-trust-border bg-transparent px-3 py-[5px] font-mono text-[12px] text-ink placeholder:text-ink-4 focus:outline-none"
-          />
+          <div className="flex flex-wrap items-center gap-2 rounded-[9px] border border-trust-border px-2.5 py-[5px]">
+            <span className="font-mono text-[10.5px] font-medium tracking-[.08em] text-ink-4">
+              CUSTOM
+            </span>
+            {(
+              [
+                ["% profit", customProfit, setCustomProfit],
+                ["% stop loss", customStop, setCustomStop],
+                ["DTE", customDte, setCustomDte],
+              ] as const
+            ).map(([suffix, value, setter]) => (
+              <label key={suffix} className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  value={value}
+                  onChange={(e) => setter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applyCustomExit();
+                  }}
+                  placeholder="—"
+                  className="w-[52px] rounded-[7px] border border-line bg-panel-deep px-2 py-[3px] text-center font-mono text-[12px] text-ink placeholder:text-ink-4 focus:border-trust-border focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <span className="font-mono text-[11px] text-ink-4">{suffix}</span>
+              </label>
+            ))}
+            <button
+              onClick={applyCustomExit}
+              disabled={!customExitLabel()}
+              className={clsx(
+                "rounded-[7px] px-3 py-[4px] text-[12px] font-semibold",
+                customExitLabel()
+                  ? "bg-trust text-[#0d1216]"
+                  : "cursor-not-allowed bg-raised-2 text-ink-4",
+              )}
+            >
+              {customExitLabel() ?? "set exit"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -352,7 +497,7 @@ export function SpecScreen({
           onClick={onRun}
           disabled={!exitSet || zeroDte}
           className={clsx(
-            "rounded-[10px] px-5 py-2.5 text-[14px]",
+            "rounded-[11px] px-6 py-3 text-[15.5px]",
             exitSet && !zeroDte
               ? "bg-trust font-bold text-[#0d1216]"
               : "cursor-not-allowed bg-raised-2 text-ink-4",

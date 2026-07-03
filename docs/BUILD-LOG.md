@@ -533,3 +533,197 @@ spreads + vendor capture-minute fuzz + first-order adjustment. Full
 story in DOLTHUB-EVAL.md addendum. Also today: intraday recorder's
 first live session confirmed writing (SPY 14,124 / QQQ 11,350 /
 IWM 5,168 rows per minute snapshot).
+
+## 2026-07-02 — M3: the honesty layer — every backtest now runs the gauntlet
+
+The product's reason to exist. `app/honesty/` lands with five attack
+stages (TECH-SPEC §6): OOS 70/30 chronological split, walk-forward on
+42-session folds, Monte Carlo circular block bootstrap (block 5, 1,000
+seeded resamples), ±20% sensitivity sweep that re-runs the real engine
+per neighbor, and deflated Sharpe with a per-family trial counter
+persisted in Postgres. Trust is computed by deterministic rules — level
+= 1 + core attacks survived, DSR < 0.5 or OOS sign-flip caps at 2, and
+thin samples (< 30 trades or single VIX regime) are never blessed
+regardless of the numbers. Verdicts are template-first and grounded by
+construction; the numeric validator rejects any narrated number absent
+from the stats payload (LLM narration auto-activates later via
+OPENROUTER_API_KEY, same validator, template fallback). The permanent
+go/no-go test now exists: an in-repo 108-combo optimizer tunes a short
+put on synthetic zero-edge GBM data (BS-priced chains), finds in-sample
+Sharpe 0.68, and `test_overfit_fixture.py` asserts the gauntlet flags
+it forever — a green run on that fixture is a failing build. Pipeline:
+`POST /api/backtest` → engine → gauntlet (staged run_events drive the
+live progress UI) → verdict → payload with real trust band, attack
+chips, IS/OOS bars, walk-forward bars, MC fan, and labelled ±20%
+sensitivity grid. Canonical SPY short put: full gauntlet in 2.3s
+(acceptance < 60s), 232 trades, 3 regimes. UI alongside: one-line
+headline, strike/DTE dropdowns (.05Δ–.95Δ, 0–50), per-structure exit
+preset sets. Backend 66 tests green, ruff + mypy strict clean.
+
+## 2026-07-02 — LLM narration live, grounded Q&A, verdict unlock at 15 trades, UI polish round
+
+OPENROUTER_API_KEY landed in collector/.env, so two surfaces went live at
+once. (1) **Verdict narration**: write_verdict now actually reaches the
+LLM — fixed fence-wrapped JSON (extract the outermost {...}), retry on
+non-JSON, and hardened the numeric validator's grounding set (list
+lengths are legitimate counts, calendar years in report dates are
+identifiers, integer-rounded percentages of harvested stats allowed).
+The validator earned its keep immediately: it rejected derived numbers
+("2.39×" was fine, invented "-55" was not) across three live attempts
+before a fully grounded narration shipped — template remains the
+fallback, always. (2) **Grounded Q&A**: /api/runs/{id}/ask answers from
+a stored stats bundle (engine metrics + honesty report, persisted as
+stats_json with an additive micro-migration), same validator, honest
+refusal when a number can't be grounded, 501 when no key / no stats;
+the Next proxy no longer swallows real runs' ask errors into demo
+answers. Owner-set policy change: **minimum trades for a graded verdict
+is now 15** (was 30) — MIN_TRADES constant, CLAUDE.md + TECH-SPEC
+updated. UI round: ? tooltips explaining every metric tile, honesty
+panel, and spec dial in plain English; trade log shows fills only with
+skips behind a nested toggle; ticker/structure became dropdowns;
+structured custom-exit builder (profit % / stop % / DTE); per-structure
+exit preset sets grew 25% profit; compose toggle renamed Describe It /
+Show on Chart with proper icons and centered; presets rewritten and
+ordered by the user's own run history. Backend 71 tests green, ruff +
+mypy strict clean; verified E2E in browser including a grounded answer
+to "is this just the 2020 crash?".
+
+## 2026-07-03 — M4: the NL parser — English → spec-or-questions, never guesses
+
+`app/parser/parse.py` + real `POST /api/parse`: OpenRouter structured
+output emits either a schema-validated StrategySpec or clarifying
+questions (id + question + concrete options); `answers` converge over
+multiple turns; description_raw is overwritten server-side with the
+user's verbatim text so the model cannot paraphrase the record; failed
+validation retries once with the exact pydantic errors, then falls back
+to questions — a half-valid spec never escapes. One documented
+convention only: unstated tenor with a "close at 21 DTE"-style time
+stop uses the 45-DTE cycle (surfaced on the spec screen, where nothing
+runs unconfirmed). **Eval harness** (`evals/run_parser_eval.py` + the
+12-case set with hand-written ground truths in `evals/parser_cases.json`):
+first live run scored 3/8 clear — the model fabricated `time_exit_dte=0`
+and over-asked when one exit rule sufficed; after tightening the
+contract ("the exit object contains ONLY rules the user stated; one
+rule is a complete exit") the harness scores **8/8 clear, 4/4
+ambiguous — ACCEPTED** (bar was ≥7/8). Hermetic unit tests cover the
+server-side guarantees with the LLM mocked. Frontend: one-at-a-time
+clarifying questions ("QUESTION 1 OF 4 — I DON'T GUESS") with option
+chips + free text; an unedited parser spec runs verbatim, dial edits
+rebuild from the dials; parsed entry conditions render in the trigger
+editor; non-delta strikes ("5% below spot", ATM) keep their honest
+label in the strike dropdown.
+
+## 2026-07-03 — M5 closeout + grounded recommendations + interactive results
+
+The remaining M5 pieces plus an owner-requested UI round. **Grounded
+recommendations**: every results page now carries "WHAT WOULD IMPROVE
+IT — COMPUTED FROM THIS RUN" — suggestions derived exclusively from the
+run's own gauntlet numbers (the ±20% sweeps genuinely re-ran the
+engine: "delta .36Δ beat the specced .30Δ: Sharpe 1.01 → 1.12"), plus
+OOS/MC/walk-forward observations when flagged, refusal-aware, capped at
+4, with the standing caveat that acting on one is a new trial the
+deflated Sharpe will count. **Interactive visuals**: equity chart has a
+hover crosshair (date · $ · drawdown, OOS-aware), $-axis and date/split
+labels, an OUT-OF-SAMPLE marker; walk-forward bars carry per-fold
+tooltips (dates · return · trades); the Monte Carlo fan labels its
+bands with terminal dollars; the sensitivity grid shows the actual
+swept value in each cell with Sharpe-on-hover and a ring on the
+as-specced column. **Layout**: hero centered and scaled up, shell
+widened 940→1180px, 12 preset strategies centered and ordered by the
+user's own run history, sidebar collapsible (icon rail by default,
+labels when expanded, toggle at bottom-left, persisted). Lighthouse
+accessibility on Results: **96** (≥90 accepted; sole flag is the
+design's muted-ink contrast). Backend 76 tests, ruff, mypy strict,
+frontend tsc + lint all green; verified E2E in browser: ambiguous
+strategy → 4 questions → spec with trigger → gauntlet → LLM verdict
+leading with the walk-forward weakness.
+
+## 2026-07-03 — Live previews, editable costs, and the Verbiage Complexity setting
+
+Owner round three. **Gauntlet previews**: "no previews, no dopamine" is
+retired — as each stage finishes, its REAL headline stat streams into a
+"LIVE FROM THE GAUNTLET" feed (fills + net equity, unseen-data Sharpe
+holding/fading, windows profitable, reshuffle loss rate, plateau/cliff),
+stored progressively in a new previews_json column and served on the
+running payload; a rotating platform-tips panel fills the quiet moments.
+**Editable costs**: commission and slippage live in Settings
+(localStorage, clamped — slippage floors at 0.05 because mid fills stay
+banned) and are stamped onto EVERY submitted spec client-side, parsed or
+dial-built; the spec screen's FILLS tile shows the live values. Verified
+E2E: slippage 0.5 → 0.75 changed the same strategy from 232 to 211
+fills. **Verbiage Complexity (Institutional | Retail)**: every run now
+ships both registers — the LLM narrates twice (retail prompt bans
+jargon: "risk-adjusted score" not Sharpe, "reshuffling the trades" not
+Monte Carlo) behind the same numeric validator, with a deterministic
+retail template fallback; payload carries a retail block (headline,
+evidence, breaks, caveat, panel notes, recommendations) and the UI
+switches instantly — panel titles ("LUCK TEST — 1,000 RESHUFFLES",
+"TRAINING DATA VS UNSEEN DATA"), metric tile names ("WORST DIP",
+"RISK SCORE"), gauntlet stage names, and grounded Q&A all follow the
+setting. Old stored runs fall back to institutional. Settings page
+rebuilt with live system status (engine/parser/narration/Q&A/model/
+min-trades from /api/health). **Sizing pass**: market chart 300→430px
+tall, verdict headline 25→30px, metric tiles 19→24px, panels/text/
+buttons up across compose, spec, gauntlet, results, settings. Backend
+76 tests + ruff + mypy strict green; frontend tsc + lint green;
+verified in-browser across both registers on a single run.
+
+## 2026-07-03 — Width pass + sidebar defaults + hero cleanup
+
+Owner adjustments: content shell 1380px; composer and preset rows
+widened; results and chart mode fill the page; library becomes two wide
+columns with larger cards. Sidebar now defaults to OPEN (choice still
+persists), labels title-cased (New Analysis, Data Observatory). The
+coverage chips row and "day 2 of collection" link are gone from the
+hero — coverage lives in the Data Observatory, where it belongs.
+
+## 2026-07-03 — Fluid width: 1800px shell
+
+Owner: wider still. The shell cap moves to 1800px, making every page
+effectively fluid on real monitors — the market chart in Show-on-Chart
+mode spans ~1430px on a 1728-wide window, library cards ~725px each,
+results panels track the full width. Composer 1320px, preset rows
+1440px. Operational lesson recorded: tailwind.config.ts edits do NOT
+hot-reload — restart the dev server or the old token values keep
+being served (the 940→1380px bumps only took effect after this
+restart).
+
+## 2026-07-03 — Two bug fixes, −10% width, library verbiage, instant chart
+
+**Bug 1 — trust band overflow:** at level 5 the ±15% band spilled past
+the track (75% + 30% = 105%). Clamped in the payload (left ≤ 70%) AND
+client-side with CSS min() so already-stored runs render correctly too.
+**Bug 2 — degenerate DTE sweep:** ±20% of a 1–2 day tenor rounds back
+to the same day, producing five identical "1d" cells and a trivially
+"plateau" classification. Short tenors now sweep whole days (1–5 for a
+2-DTE spec) with a per-sweep base index so the ringed as-specced column
+stays honest; verified across dte 1/2/45/90. **Width:** shell trimmed
+10% (1800→1620px), settings page joins the uniform full-shell width.
+**Verbiage everywhere:** library cards now carry the retail headline
+(quoteRetail in run summaries) and switch with the setting like the
+rest of the app. **Chart speed:** the hero prefetches the exact bars
+request the chart issues on first mount (60s in-flight cache, failures
+never cached) — a warm mode-switch measured 24ms vs ~1s cold.
+
+## 2026-07-03 — Chart expand toggle + uniform chart chrome + sidebar always open
+
+The hero chart now defaults to the Describe It box width (1190px) with
+an expand toggle at its top-right: enlarge to full page for serious
+charting, shrink back with the same button. All the chrome around the
+chart was undersized relative to the canvas — ticker tabs, OHLC
+readout, freshness note, window/interval chips, time axis, indicator
+menu, price ticks, pin notes and the footer all bumped to a uniform,
+readable scale. Sidebar now opens on every load (collapse lasts for
+the session only — no persisted state).
+
+## 2026-07-03 — Verbiage-aware tooltips, run back-button, Library nav highlight
+
+Every ? tooltip (metric tiles, equity, honesty panels, trade log,
+recommendations, all ten spec dials) now carries both registers and
+follows the Verbiage setting — and static UI text switches on the
+setting alone, so runs stored before the retail feature still get
+retail tooltips/tile names while their verdict text honestly falls
+back to institutional. Saved-run pages get a "‹ Library" back button
+and keep Library highlighted in the sidebar (/runs/* is a library
+entry, not a new analysis). Describe box and hero chart trimmed ~5%
+to 1130px, still width-matched.

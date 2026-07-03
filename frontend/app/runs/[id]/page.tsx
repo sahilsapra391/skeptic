@@ -43,5 +43,5 @@ export default function RunPage({ params }: { params: { id: string } }) {
     );
   }
 
-  return <ResultsView run={run} onNew={() => router.push("/")} />;
+  return <ResultsView run={run} onNew={() => router.push("/")} onBack={() => router.push("/library")} backLabel="Library" />;
 }

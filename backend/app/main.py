@@ -54,13 +54,24 @@ async def bearer_auth(
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    from app.data.r2 import r2_configured
+    import os
 
+    from app.data.r2 import r2_configured
+    from app.honesty.stages import MIN_TRADES
+    from app.honesty.verdict import DEFAULT_MODEL
+
+    llm = bool(os.environ.get("OPENROUTER_API_KEY"))
     return {
         "status": "ok",
         "r2_configured": r2_configured(),
-        "engine": "live (M2) — runs render verdict-withheld until M3",
-        "parser": "pending (M4)",
+        "engine": "live — EOD engine + full honesty gauntlet",
+        "parser": "live — English → spec, questions when ambiguous" if llm
+        else "needs OPENROUTER_API_KEY",
+        "verdict_llm": "live — validated narration, template fallback" if llm
+        else "template only (no key)",
+        "ask": "live — grounded Q&A on finished runs" if llm else "needs OPENROUTER_API_KEY",
+        "model": os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
+        "min_trades": MIN_TRADES,
     }
 
 
