@@ -754,3 +754,12 @@ variable. Verified by computed style on the verdict headline, meta
 lines, chips, and chart <text> nodes. The directive is codified in
 CLAUDE.md (Engineering conventions → Typography) and in session memory:
 no other font family may ever be introduced.
+
+## 2026-07-03 — Typography settled: serif for headings only (revised directive)
+
+Owner revised the same-day serif-everywhere directive after seeing it:
+Newsreader is RESERVED for headings and important moments (page h1s,
+hero headline, gauntlet heading, and now the verdict headline); body
+returns to Archivo, data returns to IBM Plex Mono (including SVG chart
+text). CLAUDE.md typography rule and session memory rewritten to the
+three-voice system — no other families, serif never in body copy.

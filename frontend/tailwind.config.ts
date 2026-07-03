@@ -42,11 +42,12 @@ const config: Config = {
         "pl-pos": "#43c987",
         "pl-neg": "#e0604f",
       },
-      // ONE typeface app-wide — every token maps to Newsreader (owner
-      // directive 2026-07-03; do not add font families)
+      // three-voice type system (owner directive 2026-07-03): Archivo for
+      // body, Plex Mono for data, Newsreader serif for headings/important
+      // moments only — no other families
       fontFamily: {
-        sans: ["var(--font-newsreader)", "Georgia", "serif"],
-        mono: ["var(--font-newsreader)", "Georgia", "serif"],
+        sans: ["var(--font-archivo)", "sans-serif"],
+        mono: ["var(--font-plex-mono)", "monospace"],
         serif: ["var(--font-newsreader)", "Georgia", "serif"],
       },
       maxWidth: {

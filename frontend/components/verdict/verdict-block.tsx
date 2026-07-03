@@ -26,7 +26,7 @@ export function VerdictBlock({ verdict }: { verdict: VerdictPayload }) {
         </span>
         <span className="font-mono text-[12px] font-medium text-trust">{verdict.survived}</span>
       </div>
-      <div className="max-w-[860px] text-[30px] font-[650] leading-[1.2] tracking-[-.01em]">
+      <div className="max-w-[860px] font-serif text-[32px] font-medium leading-[1.25]">
         {verdict.headline}
       </div>
 

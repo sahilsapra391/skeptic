@@ -236,7 +236,7 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
           {run.oosShadeX < 860 && (
             <>
               <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
-              <text x={run.oosShadeX + 8} y="14" fill="#4a545f" fontSize="10" fontFamily="var(--font-newsreader)">
+              <text x={run.oosShadeX + 8} y="14" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
                 {retailMode ? "UNSEEN DATA →" : "OUT-OF-SAMPLE →"}
               </text>
             </>
@@ -246,10 +246,10 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
           <line x1="0" y1="150" x2="860" y2="150" stroke="#20242c" />
           {series.length > 0 && (
             <>
-              <text x="4" y="12" fill="#4a545f" fontSize="10" fontFamily="var(--font-newsreader)">
+              <text x="4" y="12" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
                 {fmtDollars(hi)}
               </text>
-              <text x="4" y="196" fill="#4a545f" fontSize="10" fontFamily="var(--font-newsreader)">
+              <text x="4" y="196" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
                 {fmtDollars(lo)}
               </text>
             </>
@@ -391,7 +391,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
                   textAnchor="end"
                   fill={color}
                   fontSize="8.5"
-                  fontFamily="var(--font-newsreader)"
+                  fontFamily="var(--font-plex-mono)"
                 >
                   {tag} {dollars}
                 </text>
