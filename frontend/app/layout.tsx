@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Archivo, IBM_Plex_Mono } from "next/font/google";
+import { Archivo, IBM_Plex_Mono, Newsreader } from "next/font/google";
 
 import { NavRail } from "@/components/nav-rail";
 
@@ -16,6 +16,14 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-plex-mono",
 });
 
+// display serif — the calm, editorial voice for headlines
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  style: ["normal", "italic"],
+  variable: "--font-newsreader",
+});
+
 export const metadata: Metadata = {
   title: "Skeptic",
   description:
@@ -24,7 +32,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${archivo.variable} ${plexMono.variable}`}>
+    <html lang="en" className={`${archivo.variable} ${plexMono.variable} ${newsreader.variable}`}>
       <body className="h-screen overflow-hidden bg-ground font-sans text-ink antialiased">
         <div className="flex h-full">
           <NavRail />

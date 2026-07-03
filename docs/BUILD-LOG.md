@@ -727,3 +727,19 @@ back to institutional. Saved-run pages get a "‹ Library" back button
 and keep Library highlighted in the sidebar (/runs/* is a library
 entry, not a new analysis). Describe box and hero chart trimmed ~5%
 to 1130px, still width-matched.
+
+## 2026-07-03 — Design language: calm/editorial pass (owner-directed)
+
+Owner supplied a reference (Harvey-style legal-AI app: serif display
+type, generous whitespace, floating pill composer, quiet inline
+actions) and asked for that calm in dark mode. OWNER SIGN-OFF noted:
+this consciously evolves beyond the original docs/design mockups.
+Shipped: Newsreader serif for display headings (hero, Library,
+Settings, Data, gauntlet); hero reworked — S-mark over a serif
+rotating headline, composer as a floating 26px-radius card with soft
+shadow, mode chips (Describe It / Show on Chart) INSIDE the card
+bottom-left, mic + round arrow-submit bottom-right, quiet disclaimer
+line beneath; preset cards softened. Sidebar gains a RECENT ANALYSES
+section (last 6 runs, live, highlights the open one) mirroring the
+reference's history list. Verified E2E: compile via the round submit
+still lands on the spec screen.

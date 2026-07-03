@@ -33,7 +33,7 @@ export default function LibraryPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-[28px] font-[650]">Library</h1>
+      <h1 className="mb-1 font-serif text-[32px] font-medium">Library</h1>
       <div className="mb-[22px] flex items-center gap-2.5">
         <p className="text-[15px] text-ink-3">Sorted by trust, not by return.</p>
         {demo && <DemoBadge text="demo entries — engine lands at M2" />}

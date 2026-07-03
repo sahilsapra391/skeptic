@@ -88,7 +88,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <h1 className="mb-[26px] text-[28px] font-[650]">Settings</h1>
+      <h1 className="mb-[26px] font-serif text-[32px] font-medium">Settings</h1>
 
       <div className={PANEL}>
         <div className={PANEL_TITLE}>COSTS — APPLIED TO EVERY NEW RUN</div>

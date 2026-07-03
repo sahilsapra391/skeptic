@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
+
+import { listRuns } from "@/lib/api";
+import type { RunSummary } from "@/lib/types";
 
 const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   {
@@ -55,7 +58,15 @@ export function NavRail() {
   const pathname = usePathname();
   // always open on load — collapsing lasts for the session only
   const [open, setOpen] = useState(true);
+  const [recent, setRecent] = useState<RunSummary[]>([]);
   const toggle = () => setOpen((v) => !v);
+
+  useEffect(() => {
+    listRuns()
+      .then(({ runs }) => setRecent(runs.slice(0, 6)))
+      .catch(() => undefined);
+    // refreshes on navigation, so a just-finished run shows up
+  }, [pathname]);
 
   const activeFor = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -92,6 +103,30 @@ export function NavRail() {
           {open && <span className="text-[13px] font-semibold">{item.title}</span>}
         </Link>
       ))}
+      {open && recent.length > 0 && (
+        <div className="mt-5 flex min-h-0 flex-col overflow-hidden">
+          <div className="mb-1.5 px-2.5 font-mono text-[10px] font-medium tracking-[.14em] text-ink-5">
+            RECENT ANALYSES
+          </div>
+          <div className="flex flex-col gap-[2px] overflow-y-auto">
+            {recent.map((r) => (
+              <Link
+                key={r.id}
+                href={`/runs/${r.id}`}
+                title={r.name}
+                className={clsx(
+                  "truncate rounded-[8px] px-2.5 py-[7px] text-[12.5px]",
+                  pathname === `/runs/${r.id}`
+                    ? "bg-raised-2 text-ink"
+                    : "text-ink-4 hover:bg-raised hover:text-ink-2",
+                )}
+              >
+                {r.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       <button
         onClick={toggle}
         aria-label={open ? "Collapse sidebar" : "Expand sidebar"}

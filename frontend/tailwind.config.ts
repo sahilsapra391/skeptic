@@ -45,6 +45,7 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-archivo)", "sans-serif"],
         mono: ["var(--font-plex-mono)", "monospace"],
+        serif: ["var(--font-newsreader)", "Georgia", "serif"],
       },
       maxWidth: {
         shell: "1620px",
