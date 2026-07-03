@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
@@ -62,17 +62,48 @@ const SNAP_OPEN = 172;
 const MAX_W = 380;
 const DEFAULT_W = 196;
 
+const STORE_KEY = "skeptic-nav-width";
+
+function saveNavState(width: number, lastOpen: number) {
+  try {
+    sessionStorage.setItem(STORE_KEY, `${width},${lastOpen}`);
+  } catch {
+    /* private mode */
+  }
+}
+
 export function NavRail() {
   const pathname = usePathname();
-  // always open on load — width changes last for the session only
+  // fresh sessions open at the default; within a session the adjusted
+  // width survives reloads (sessionStorage)
   const [width, setWidth] = useState(DEFAULT_W);
   const [dragging, setDragging] = useState(false);
   const [recent, setRecent] = useState<RunSummary[]>([]);
   const lastOpenW = useRef(DEFAULT_W);
   const open = width >= COLLAPSE_AT;
 
+  useLayoutEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(STORE_KEY);
+      if (!stored) return;
+      const [w, lastOpen] = stored.split(",").map(Number);
+      if (Number.isFinite(lastOpen) && lastOpen >= SNAP_OPEN && lastOpen <= MAX_W) {
+        lastOpenW.current = lastOpen;
+      }
+      if (Number.isFinite(w) && (w === RAIL_W || (w >= SNAP_OPEN && w <= MAX_W))) {
+        setWidth(w);
+      }
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
   const toggle = () =>
-    setWidth((w) => (w >= COLLAPSE_AT ? RAIL_W : lastOpenW.current));
+    setWidth((w) => {
+      const next = w >= COLLAPSE_AT ? RAIL_W : lastOpenW.current;
+      saveNavState(next, lastOpenW.current);
+      return next;
+    });
 
   // fully imperative drag: listeners attach synchronously in the same
   // pointerdown and the settle uses the event's own coordinates, so no
@@ -89,10 +120,12 @@ export function NavRail() {
       const w = clampX(ev.clientX);
       if (w < COLLAPSE_AT) {
         setWidth(RAIL_W);
+        saveNavState(RAIL_W, lastOpenW.current);
       } else {
         const settled = Math.max(w, SNAP_OPEN);
         lastOpenW.current = settled;
         setWidth(settled);
+        saveNavState(settled, settled);
       }
     };
     window.addEventListener("pointermove", onMove);
