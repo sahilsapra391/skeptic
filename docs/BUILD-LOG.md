@@ -805,3 +805,21 @@ composited at identical size, dead center (residual ≤0.5px from odd/
 even rounding at small sizes). favicon.ico regenerated from the fixed
 512. Kit source files in Downloads left untouched — worth regenerating
 upstream in kit.py someday.
+
+## 2026-07-03 — Neon transfer quota exhausted: graceful fallback + the fix for the cause
+
+Owner hit "backend unreachable" and asked if Neon's monthly transfer
+limit was the cause. Confirmed directly: Neon now refuses connections
+with "Your project has exceeded the data transfer quota" — and the
+backend used to DIE at startup because init_db connects at boot.
+Two fixes. (1) **Graceful degradation:** if the configured DATABASE_URL
+is unreachable at startup, the backend logs it, falls back to the local
+SQLite file, and /api/health + Settings report "local SQLite fallback —
+…quota…" honestly; charts, parser and new runs all keep working (runs
+stored during the outage live locally, not in Neon). (2) **The actual
+transfer hog:** /api/runs pulled full payload_json (equity series and
+all, ~100KB+ each) for up to 50 runs on EVERY listing — and the new
+sidebar requests the listing on every navigation. New summary_json
+column (~500B) written at run completion and backfilled lazily for old
+rows; listings now read only that. Client side, listRuns gets a 30s
+TTL cache. Estimated egress per listing drops ~99%.

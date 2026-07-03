@@ -56,6 +56,7 @@ async def bearer_auth(
 def health() -> dict[str, object]:
     import os
 
+    from app import db
     from app.data.r2 import r2_configured
     from app.honesty.stages import MIN_TRADES
     from app.honesty.verdict import DEFAULT_MODEL
@@ -64,6 +65,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "r2_configured": r2_configured(),
+        "db": db.status(),
         "engine": "live — EOD engine + full honesty gauntlet",
         "parser": "live — English → spec, questions when ambiguous" if llm
         else "needs OPENROUTER_API_KEY",

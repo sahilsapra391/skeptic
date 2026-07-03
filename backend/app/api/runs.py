@@ -113,6 +113,8 @@ def _execute_run(run_id: str) -> None:
             run.stage = 6
             run.payload_json = json.dumps(payload)
             run.stats_json = json.dumps(stats)
+            created = run.created_at.strftime("%b %-d ’%y") if run.created_at else ""
+            run.summary_json = json.dumps(run_summary(run_id, payload, created))
             s.add(db.RunEvent(run_id=run_id, stage=6, label="gauntlet complete"))
             s.commit()
     except Exception as exc:
@@ -179,19 +181,34 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
 
 @router.get("/runs")
 def list_runs() -> dict[str, Any]:
+    """Library listing. Reads ONLY the small summary column — pulling 50
+    full payloads (equity series and all) per listing is how a database
+    transfer quota dies."""
     with db.session() as s:
         rows = (
-            s.query(db.Run)
+            s.query(db.Run.id, db.Run.created_at, db.Run.summary_json)
             .filter(db.Run.status == "done")
             .order_by(db.Run.created_at.desc())
             .limit(50)
             .all()
         )
-    runs = []
-    for row in rows:
-        payload = json.loads(row.payload_json) if row.payload_json else {}
-        created = row.created_at.strftime("%b %-d ’%y") if row.created_at else ""
-        runs.append(run_summary(row.id, payload, created))
+        runs: list[dict[str, Any]] = []
+        backfilled = False
+        for run_id, created_at, summary_json in rows:
+            if summary_json:
+                runs.append(json.loads(summary_json))
+                continue
+            # stored before summary_json existed — build once, persist, done
+            run = s.get(db.Run, run_id)
+            if run is None or not run.payload_json:
+                continue
+            created = created_at.strftime("%b %-d ’%y") if created_at else ""
+            summary = run_summary(run_id, json.loads(run.payload_json), created)
+            run.summary_json = json.dumps(summary)
+            backfilled = True
+            runs.append(summary)
+        if backfilled:
+            s.commit()
     return {"runs": runs, "demo": False}
 
 

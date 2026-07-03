@@ -108,8 +108,19 @@ export function getRun(id: string): Promise<RunPayload> {
   return request<RunPayload>(`/api/runs/${id}`);
 }
 
+// the sidebar requests the library on every navigation — cache briefly so
+// a click-around doesn't hammer the runs database
+let runsCache: { t: number; p: Promise<{ runs: RunSummary[]; demo: boolean }> } | null = null;
+const RUNS_CACHE_TTL_MS = 30_000;
+
 export function listRuns(): Promise<{ runs: RunSummary[]; demo: boolean }> {
-  return request<{ runs: RunSummary[]; demo: boolean }>("/api/runs");
+  if (runsCache && Date.now() - runsCache.t < RUNS_CACHE_TTL_MS) return runsCache.p;
+  const p = request<{ runs: RunSummary[]; demo: boolean }>("/api/runs");
+  runsCache = { t: Date.now(), p };
+  p.catch(() => {
+    runsCache = null;
+  });
+  return p;
 }
 
 export function askRun(id: string, question: string): Promise<{ answer: string; demo: boolean }> {
@@ -125,6 +136,7 @@ export function getHealth(): Promise<{
   r2_configured: boolean;
   engine: string;
   parser: string;
+  db?: string;
   verdict_llm?: string;
   ask?: string;
   model?: string;

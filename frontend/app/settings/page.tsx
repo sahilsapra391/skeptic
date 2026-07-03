@@ -170,6 +170,11 @@ export default function SettingsPage() {
             value={health ? (health.r2_configured ? "configured ✓" : "creds missing") : "—"}
             dim={!health?.r2_configured}
           />
+          <Row
+            label="Runs database"
+            value={health?.db ?? "—"}
+            dim={!!health?.db?.includes("fallback")}
+          />
           <Row label="Backtest engine + gauntlet" value={health?.engine ?? "—"} />
           <Row label="NL parser" value={health?.parser ?? "—"} />
           <Row label="Verdict narration" value={health?.verdict_llm ?? "—"} />
