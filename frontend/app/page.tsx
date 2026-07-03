@@ -332,13 +332,9 @@ export default function NewAnalysisPage() {
 
   return (
     <div>
-      <h1 className="mx-auto mb-3 mt-[4vh] max-w-[820px] text-center text-[clamp(34px,4.2vw,46px)] font-[650] leading-[1.08] tracking-[-.02em]">
+      <h1 className="mx-auto mb-[30px] mt-[4vh] max-w-[820px] text-center text-[clamp(34px,4.2vw,46px)] font-[650] leading-[1.08] tracking-[-.02em]">
         Describe a strategy. I&apos;ll try to break it.
       </h1>
-      <p className="mx-auto mb-[30px] max-w-[640px] text-center text-[15.5px] leading-[1.6] text-ink-3">
-        Plain English in. I compile it, backtest it, then attack the result — out-of-sample,
-        walk-forward, Monte Carlo, sensitivity. The verdict leads with the uncomfortable part.
-      </p>
 
       <div className="mb-3.5 flex justify-center">
         <div className="inline-flex gap-[2px] rounded-[11px] border border-line-soft p-[3px]">
