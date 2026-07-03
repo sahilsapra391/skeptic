@@ -26,19 +26,29 @@ export const STRUCTURE_LABEL: Record<Structure, string> = {
   long_put: "long put",
 };
 
+/** Structured entry trigger for chart-taught strategies — maps 1:1 onto a
+ * spec `Condition`, so what the user edits is what the engine evaluates. */
+export interface TriggerSpec {
+  indicator: string; // schema Indicator value
+  operator: string; // schema Operator value
+  value: number;
+  period?: number;
+}
+
 /** Editable display draft the composer/spec flow works with before a run. */
 export interface SpecDraft {
   ticker: Ticker;
   structure: Structure;
-  strikeDelta: number; // whole-number delta, 10..50 in steps of 5
-  dte: number; // 7..90 in steps of 5
+  strikeDelta: number; // whole-number delta, 5..95 in steps of 5 (.05Δ steps)
+  dte: number; // 0..50 (0 = 0DTE, refused at run until the minute engine)
   cadence: string; // e.g. "weekly · mon"
   size: string; // e.g. "1 contract"
   exit: string | null; // null = parser must ask, never guess
   fromChart: boolean;
   quote: string; // the user's words, verbatim — or the chart-teach summary
   anchor?: string; // chart mode: first pinned entry date
-  trigger?: string; // chart mode: inferred entry trigger
+  trigger?: string; // chart mode: display label for the trigger
+  triggerSpec?: TriggerSpec; // chart mode: the editable structured trigger
   examples?: number; // chart mode: pinned example count
 }
 
@@ -99,11 +109,17 @@ export const GAUNTLET_STAGES: { t: string; n: string }[] = [
   { t: "Verdict", n: "grounded in the numbers above" },
 ];
 
+export interface SeriesPoint {
+  t: string;
+  v: number;
+}
+
 export interface RunPayload {
   id: string;
   demo: boolean;
-  status: "running" | "done";
+  status: "running" | "done" | "error";
   stage: number; // 0..6, meaningful while running
+  error?: string;
   name: string;
   meta: string;
   spec: SpecDraft | null;
@@ -111,6 +127,9 @@ export interface RunPayload {
   mtiles: MetricTile[];
   equityPoints: string;
   drawdownPoints: string;
+  /** real runs ship raw series; the client shapes them into the charts */
+  equitySeries?: SeriesPoint[];
+  drawdownSeries?: SeriesPoint[];
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
   honesty: HonestyPanels;
   mc: { p95: string; p50: string; p05: string };

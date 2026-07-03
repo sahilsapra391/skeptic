@@ -22,8 +22,10 @@ load_local_env()
 
 from app.api import data as data_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
+from app.db import init_db  # noqa: E402
 
 app = FastAPI(title="Skeptic", version="0.1.0")
+init_db()
 
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 
@@ -57,7 +59,7 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "r2_configured": r2_configured(),
-        "engine": "pending (M2)",
+        "engine": "live (M2) — runs render verdict-withheld until M3",
         "parser": "pending (M4)",
     }
 

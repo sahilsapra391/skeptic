@@ -60,11 +60,21 @@ function demoResponse(req: NextRequest, path: string[], body: string | null): Ne
     return NextResponse.json({ runs: listDemoRuns(), demo: true });
   }
   if (path[0] === "runs" && path.length === 2 && req.method === "GET") {
+    // demo payloads only for demo ids — a REAL run id never gets fixture data
+    if (!path[1].startsWith("demo-")) {
+      return NextResponse.json({ detail: "run not found" }, { status: 404 });
+    }
     const run = getDemoRun(path[1]);
     if (!run) return NextResponse.json({ detail: "run not found" }, { status: 404 });
     return NextResponse.json(run);
   }
   if (path[0] === "runs" && path[2] === "ask" && req.method === "POST") {
+    if (!path[1].startsWith("demo-")) {
+      return NextResponse.json(
+        { detail: "grounded Q&A lands with the honesty layer (M3) and parser (M4) — no numbers are invented in the meantime." },
+        { status: 501 },
+      );
+    }
     return NextResponse.json({ answer: demoAskAnswer(), demo: true });
   }
   return NextResponse.json(

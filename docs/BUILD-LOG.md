@@ -3,6 +3,88 @@
 Session notes per milestone (cross-milestone rule in docs/BUILD-PLAN.md):
 date, what shipped, deviations from spec and why.
 
+## 2026-07-02 — M2: backtest engine core (branch m2-engine)
+
+**Shipped, fixtures first per the plan.** Six hand-computed fixtures
+(tests/fixtures/engine/, math in docstrings): short put OTM expiry, short
+put assigned, credit spread stop, iron condor profit target, covered call
+called away, skip on zero bid — the engine matches every one to the cent.
+Then the engine that passes them:
+
+- `app/engine/market.py` — `MarketView(as_of)`: every accessor hard-bounded
+  by as_of; `LookaheadError` canary tests are in the permanent required set.
+  Fixture stores and the real loader produce the identical shape, so
+  fixtures exercise the exact production path.
+- `app/engine/{fills,selection,conditions,engine,metrics,runner}.py` —
+  fill model per TECH-SPEC §5 (mid + slip toward adverse; commissions per
+  contract per side, option legs only), expiration/strike selection (delta
+  / offset % / ATM / width-from-leg), daily loop (open-stock unwinds →
+  exits by priority stop→target→time→condition → expiration settlement →
+  entries → conservative-liquidation marks), assignment modeling
+  (shares at strike, liquidated next open), full trade log with skip
+  reason codes, metrics (documented conventions: 252d annualization,
+  ddof=1, CAGR by calendar days; uncomputable ⇒ None, never 0).
+  mypy runs STRICT on app/engine/*.
+- `app/data/chains.py` — lake loader: source precedence av>yahoo>dolthub,
+  dolthub quarantine honored (state `done` list), ~1,100 per-session
+  objects fetched concurrently + local disk cache keyed by a listing
+  manifest. **Deviation:** thread-parallel object reads instead of DuckDB
+  httpfs (TECH-SPEC §4) — the one-object-per-date layout globs poorly;
+  cold load 8.9 s, warm < 1 s, engine itself 0.03 s (target < 15 s ✓).
+- Runs storage (`app/db.py`, SQLAlchemy): `runs` + `run_events`;
+  DATABASE_URL → Neon when provided, local SQLite otherwise — same code
+  path, so Neon is purely an env change. POST /api/backtest +
+  GET /api/runs{,/{id}} are real; parse/ask/sweep stay explicit 501s.
+- **Real runs render VERDICT-WITHHELD until M3** — the refusal state from
+  the approved design, templated server-side from computed numbers only
+  (guardrail #4 by construction). The frontend demo fixtures now serve
+  demo- ids exclusively; a real run id can never receive fixture data.
+
+**Acceptance:** 50 backend tests green (fixtures to the cent, canary,
+API happy path over a fixture store, determinism); canonical strategy on
+the real lake: 212 filled / 92 skipped over 1,072 chain sessions
+2020-01-06 → 2026-07-02, sane skip reasons (16 no-chain Mondays = archive
+gaps) and COVID-era assignments exactly where they belong; browser E2E:
+compose → spec → gauntlet → real verdict-withheld results.
+
+**Documented approximations (per TECH-SPEC §5):** stock legs fill at
+reference prints (strike at assignment, next session open at liquidation,
+close at covered-call entry) with no added spread/commission; long ITM
+legs cash-settle intrinsic at expiry; `time_exit_dte: 0` = hold to
+settlement. Exits requiring quotes wait for the next quoted session on
+checkpoint-marked history (DOLTHUB-EVAL §7 honored — no interpolation).
+Early-assignment-through-ex-div modeling is deferred with the ex-div
+calendar (noted for M6 methodology notes).
+
+**Also this session (owner-requested):** voice dictation in the composer
+(native SpeechRecognition: streaming interim results, silence-timeout
+auto-restart, honest permission errors) and the inert auto-scale label
+removed from the chart controls.
+
+**M2 addendum (same day, owner-requested):**
+
+- **Neon live.** Owner added DATABASE_URL to collector/.env (the line used
+  `KEY: value`; fixed to `KEY=value`); psycopg2-binary added; run storage
+  verified writing to the Neon host. Local SQLite remains the no-env
+  fallback.
+- **Chart-teach now infers the structure from the pins** instead of always
+  compiling a short put: each pinned move is z-scored against the series'
+  own same-span volatility (timeframe-adaptive), then classified — gentle
+  drift up → short put; conviction move up → long call; gentle drift down
+  → call credit spread; conviction down → long put; mixed/near-sideways →
+  iron condor. Direction threshold is deliberately permissive (a pinned
+  move is an intent signal); structure defaults set delta/exit per class.
+  Pins raised 3 → 10; tickets show each example's % move.
+- **Spec screen fully editable:** ticker + structure steppers, strike in
+  .05Δ steps down to .05Δ, DTE 0–50 with direct input, editable anchor, a
+  structured TRIGGER editor (indicator × operator × value × period —
+  maps 1:1 onto a spec Condition, so what's edited is what the engine
+  evaluates), and re-editable exit with preset chips + custom text.
+  **0DTE is refused honestly** at the run button (minute engine pending,
+  DATA-PIPELINE §7) — the dial allows it, the run explains why not yet.
+- Chart toolbar reduced to one row: presets · intervals · ƒ indicators;
+  the candles/line switch moved inside the indicators menu.
+
 ## 2026-07-01 — Phase 2 step 1: handoff docs landed
 
 PR #1: handoff package into the repo (CLAUDE.md at root, specs under docs/,

@@ -79,7 +79,12 @@ function schedule(draft: SpecDraft): Json {
 
 function conditions(draft: SpecDraft): Json[] {
   if (!draft.fromChart) return [];
-  // chart-teach trigger per the approved design: "pullback ≥2% ≤5d"
+  const t = draft.triggerSpec;
+  if (t) {
+    const cond: Json = { indicator: t.indicator, operator: t.operator, value: t.value };
+    if (t.period != null) cond.period = t.period;
+    return [cond];
+  }
   return [{ indicator: "drawdown_from_high_pct", operator: ">=", value: 2 }];
 }
 
@@ -99,6 +104,9 @@ function exitRules(draft: SpecDraft): Json {
 export function draftToSpec(draft: SpecDraft): Json {
   if (!draft.exit) {
     throw new Error("exit is unset — the spec screen must ask, never default");
+  }
+  if (draft.dte < 1) {
+    throw new Error("0DTE needs the minute engine — refused on EOD data (set DTE ≥ 1)");
   }
   return {
     spec_version: 1,
