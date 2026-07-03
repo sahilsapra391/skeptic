@@ -352,12 +352,14 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
 
     level = trust.level or 1
     marker = _MARKER[level]
+    # the ±15% band must stay inside the track (level 5 would spill past 100%)
+    band_left = min(max(marker - 15, 0), 70)
     return {
         "kind": "graded",
         "refusal": False,
         "headline": verdict.headline,
         "survived": f"{survived_count} OF 5 ATTACKS SURVIVED",
-        "band": {"left": f"{max(marker - 15, 0)}%", "width": "30%"},
+        "band": {"left": f"{band_left}%", "width": "30%"},
         "marker": f"{marker}%",
         "chips": chips,
         "evidence": verdict.evidence,
@@ -542,12 +544,15 @@ def run_summary(run_id: str, payload: dict[str, Any], created: str) -> dict[str,
     verdict = payload.get("verdict", {})
     survived = verdict.get("survived", "")
     label = "withheld" if verdict.get("refusal") else survived.split(" OF")[0] + "/5 survived"
+    retail = payload.get("retail") or {}
     return {
         "id": run_id,
         "demo": False,
         "name": payload.get("name", run_id),
         "meta": f"{created} · {label}",
         "quote": f"“{verdict.get('headline', '')}”",
+        # retail-register headline for the library card, when the run has one
+        "quoteRetail": f"“{retail['headline']}”" if retail.get("headline") else None,
         "kind": "refusal" if verdict.get("refusal") else "graded",
         "band": verdict.get("band"),
         "marker": verdict.get("marker"),

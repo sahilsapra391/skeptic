@@ -687,3 +687,20 @@ results panels track the full width. Composer 1320px, preset rows
 hot-reload — restart the dev server or the old token values keep
 being served (the 940→1380px bumps only took effect after this
 restart).
+
+## 2026-07-03 — Two bug fixes, −10% width, library verbiage, instant chart
+
+**Bug 1 — trust band overflow:** at level 5 the ±15% band spilled past
+the track (75% + 30% = 105%). Clamped in the payload (left ≤ 70%) AND
+client-side with CSS min() so already-stored runs render correctly too.
+**Bug 2 — degenerate DTE sweep:** ±20% of a 1–2 day tenor rounds back
+to the same day, producing five identical "1d" cells and a trivially
+"plateau" classification. Short tenors now sweep whole days (1–5 for a
+2-DTE spec) with a per-sweep base index so the ringed as-specced column
+stays honest; verified across dte 1/2/45/90. **Width:** shell trimmed
+10% (1800→1620px), settings page joins the uniform full-shell width.
+**Verbiage everywhere:** library cards now carry the retail headline
+(quoteRetail in run summaries) and switch with the setting like the
+rest of the app. **Chart speed:** the hero prefetches the exact bars
+request the chart issues on first mount (60s in-flight cache, failures
+never cached) — a warm mode-switch measured 24ms vs ~1s cold.

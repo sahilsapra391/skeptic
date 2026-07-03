@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
-import { getCoverage, getRun, listRuns, parseText, startBacktest } from "@/lib/api";
+import { getCoverage, getRun, listRuns, parseText, prefetchBars, startBacktest } from "@/lib/api";
 import type { ParseQuestion, RunPayload, SpecDraft, Structure } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 import { useSpeechToText } from "@/lib/use-speech";
@@ -116,6 +116,8 @@ export default function NewAnalysisPage() {
   });
 
   useEffect(() => {
+    // warm the chart's first bars request so "Show on Chart" opens instantly
+    prefetchBars();
     getCoverage()
       .then((c) => {
         const first = c.underlying.SPY?.first;
@@ -246,7 +248,7 @@ export default function NewAnalysisPage() {
   if (phase === "clarify" && questions.length > 0) {
     const q = questions[qIndex];
     return (
-      <div className="mx-auto max-w-[760px]">
+      <div className="mx-auto max-w-[684px]">
         <button
           onClick={() => setPhase("compose")}
           className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3"
@@ -372,7 +374,7 @@ export default function NewAnalysisPage() {
       </div>
 
       {mode === "text" ? (
-        <div className="mx-auto max-w-[1320px]">
+        <div className="mx-auto max-w-[1190px]">
           <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
             <textarea
               rows={4}
@@ -439,7 +441,7 @@ export default function NewAnalysisPage() {
               </div>
             </div>
           </div>
-          <div className="mx-auto mt-6 flex max-w-[1440px] flex-wrap justify-center gap-2.5">
+          <div className="mx-auto mt-6 flex max-w-[1300px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (
               <button
                 key={p.label}

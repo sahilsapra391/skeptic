@@ -52,7 +52,7 @@ export function GauntletProgress({
   }, []);
 
   return (
-    <div className="mx-auto mt-[7vh] max-w-[720px]">
+    <div className="mx-auto mt-[7vh] max-w-[650px]">
       <h2 className="mb-1.5 text-[30px] font-[650]">Attacking your strategy…</h2>
       <p className="mb-[26px] text-[15px] text-ink-3">{name}</p>
       <div className="mb-6 h-[6px] overflow-hidden rounded-[3px] bg-line-softer">

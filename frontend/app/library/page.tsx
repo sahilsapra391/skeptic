@@ -10,12 +10,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { listRuns } from "@/lib/api";
+import { useSettings } from "@/lib/settings";
 import type { RunSummary } from "@/lib/types";
 
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { TrustBandCard } from "@/components/verdict/trust-band";
 
 export default function LibraryPage() {
+  const settings = useSettings();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [demo, setDemo] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +70,9 @@ export default function LibraryPage() {
               <div className="font-mono text-[15px] font-medium">{r.name}</div>
               <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
               <TrustBandCard band={r.band} marker={r.marker} withheld={r.kind === "refusal"} />
-              <div className="text-[13.5px] italic leading-[1.55] text-ink-2">{r.quote}</div>
+              <div className="text-[13.5px] italic leading-[1.55] text-ink-2">
+                {settings.verbiage === "retail" && r.quoteRetail ? r.quoteRetail : r.quote}
+              </div>
             </Link>
           ))}
           <Link

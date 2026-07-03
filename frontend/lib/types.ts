@@ -178,6 +178,7 @@ export interface RunSummary {
   name: string;
   meta: string;
   quote: string;
+  quoteRetail?: string | null; // retail-register headline, when the run has one
   kind: VerdictKind;
   band?: { left: string; width: string };
   marker?: string;

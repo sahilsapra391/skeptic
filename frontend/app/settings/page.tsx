@@ -87,7 +87,7 @@ export default function SettingsPage() {
     settings.slippage === DEFAULT_SETTINGS.slippage;
 
   return (
-    <div className="max-w-[760px]">
+    <div>
       <h1 className="mb-[26px] text-[28px] font-[650]">Settings</h1>
 
       <div className={PANEL}>

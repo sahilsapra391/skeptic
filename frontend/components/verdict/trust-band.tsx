@@ -24,13 +24,13 @@ export function TrustBandHero({ band, marker }: BandProps) {
         {band && (
           <div
             className="absolute top-[7px] h-[18px] rounded-[5px] border border-trust-border bg-trust-dim"
-            style={{ left: band.left, width: band.width }}
+            style={{ left: `min(${band.left}, calc(100% - ${band.width}))`, width: band.width }}
           />
         )}
         {marker && (
           <div
             className="absolute top-[3px] h-[26px] w-[4px] rounded-[2px] bg-trust"
-            style={{ left: marker }}
+            style={{ left: `min(${marker}, calc(100% - 4px))` }}
           />
         )}
         <div className="absolute bottom-0 left-0 right-0 flex justify-between font-mono text-[10px] text-ink-4">
@@ -54,13 +54,13 @@ export function TrustBandCard({ band, marker, withheld }: BandProps) {
           {band && (
             <div
               className="absolute top-[2px] h-[10px] rounded-[4px] border border-trust-border bg-trust-dim"
-              style={{ left: band.left, width: band.width }}
+              style={{ left: `min(${band.left}, calc(100% - ${band.width}))`, width: band.width }}
             />
           )}
           {marker && (
             <div
               className="absolute top-0 h-[14px] w-[3px] rounded-[2px] bg-trust"
-              style={{ left: marker }}
+              style={{ left: `min(${marker}, calc(100% - 4px))` }}
             />
           )}
         </>

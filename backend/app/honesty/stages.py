@@ -189,9 +189,10 @@ def monte_carlo(
 Setter = Callable[[StrategySpec, float], None]
 
 
-def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], Setter]]:
-    """(name, values ±20% in 5 steps, setter) per numeric param present."""
-    out: list[tuple[str, list[float], Setter]] = []
+def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], int, Setter]]:
+    """(name, values ±20% in 5 steps, base index, setter) per numeric param
+    present. The base index marks the as-specced value inside `values`."""
+    out: list[tuple[str, list[float], int, Setter]] = []
     factors = [0.8, 0.9, 1.0, 1.1, 1.2]
 
     lead = spec.position.legs[0].strike_selection
@@ -204,7 +205,7 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], Setter]]:
                     leg.strike_selection.value = v
 
         values = [round(min(0.95, max(0.03, base * f)), 4) for f in factors]
-        out.append(("delta", values, set_delta))
+        out.append(("delta", values, 2, set_delta))
 
     dte = spec.position.expiration_selection.target_dte
 
@@ -214,7 +215,16 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], Setter]]:
         s.position.expiration_selection.min_dte = max(1, t - 10)
         s.position.expiration_selection.max_dte = min(120, t + 15)
 
-    out.append(("dte", [float(max(1, min(90, int(round(dte * f))))) for f in factors], set_dte))
+    dte_values = [float(max(1, min(90, int(round(dte * f))))) for f in factors]
+    dte_base = 2
+    if len(set(dte_values)) < 5:
+        # multiplicative steps collapse at short tenors (±20% of 2 days is
+        # still 2 days) — sweep whole days instead, keeping the specced
+        # value inside the window
+        start = max(1, min(dte - 2, 86))
+        dte_values = [float(start + i) for i in range(5)]
+        dte_base = dte - start
+    out.append(("dte", dte_values, dte_base, set_dte))
 
     if spec.exit.profit_target_pct is not None:
         base_pt = spec.exit.profit_target_pct
@@ -222,7 +232,7 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], Setter]]:
         def set_pt(s: StrategySpec, v: float) -> None:
             s.exit.profit_target_pct = v
 
-        out.append(("profit_target", [round(base_pt * f, 2) for f in factors], set_pt))
+        out.append(("profit_target", [round(base_pt * f, 2) for f in factors], 2, set_pt))
 
     if spec.exit.stop_loss_pct is not None:
         base_sl = spec.exit.stop_loss_pct
@@ -230,7 +240,7 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], Setter]]:
         def set_sl(s: StrategySpec, v: float) -> None:
             s.exit.stop_loss_pct = v
 
-        out.append(("stop_loss", [round(base_sl * f, 2) for f in factors], set_sl))
+        out.append(("stop_loss", [round(base_sl * f, 2) for f in factors], 2, set_sl))
 
     return out
 
@@ -240,7 +250,7 @@ def sensitivity(spec: StrategySpec, store: MarketStore) -> Sensitivity:
     classify the optimum: plateau if median neighbor Sharpe ≥ 70% of the
     peak, else cliff (TECH-SPEC §6.4). Any cliff makes the verdict cliff."""
     sweeps: list[ParamSweep] = []
-    for name, values, setter in _mutations(spec):
+    for name, values, base_index, setter in _mutations(spec):
         sharpes: list[float | None] = []
         for v in values:
             mutated = copy.deepcopy(spec)
@@ -266,7 +276,7 @@ def sensitivity(spec: StrategySpec, store: MarketStore) -> Sensitivity:
                 name=name,
                 values=[float(v) for v in values],
                 sharpes=sharpes,
-                base_index=2,
+                base_index=base_index,
                 classification=classification,
             )
         )

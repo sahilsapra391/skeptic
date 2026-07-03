@@ -45,6 +45,11 @@ export function getUnderlying(ticker: string, days = 240): Promise<{ series: Und
   return request<{ series: UnderlyingPoint[] }>(`/api/data/underlying/${ticker}?days=${days}`);
 }
 
+// short-TTL in-flight cache so the hero can warm the chart's first fetch
+// before the user opens chart mode — the switch then renders instantly
+const barsCache = new Map<string, { t: number; p: Promise<BarsPayload> }>();
+const BARS_CACHE_TTL_MS = 60_000;
+
 export function getBars(
   ticker: string,
   interval: ChartInterval,
@@ -55,7 +60,18 @@ export function getBars(
   const params = new URLSearchParams({ interval, window, indicators: indicators.join(",") });
   if (opts?.before) params.set("before", opts.before);
   if (opts?.limit) params.set("limit", String(opts.limit));
-  return request<BarsPayload>(`/api/data/bars/${ticker}?${params}`);
+  const url = `/api/data/bars/${ticker}?${params}`;
+  const hit = barsCache.get(url);
+  if (hit && Date.now() - hit.t < BARS_CACHE_TTL_MS) return hit.p;
+  const p = request<BarsPayload>(url);
+  barsCache.set(url, { t: Date.now(), p });
+  p.catch(() => barsCache.delete(url)); // never cache a failure
+  return p;
+}
+
+/** Warm the exact request MarketChart issues on first mount (SPY · 5m · 1w). */
+export function prefetchBars(): void {
+  getBars("SPY", "5m", "1w", []).catch(() => undefined);
 }
 
 export function parseText(
