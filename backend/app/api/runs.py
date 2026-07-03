@@ -70,7 +70,7 @@ def _execute_run(run_id: str) -> None:
         from app.data.chains import load_market_store
         from app.engine.runner import run_backtest
         from app.honesty.gauntlet import run_gauntlet
-        from app.honesty.verdict import write_verdict
+        from app.honesty.verdict import write_verdicts
 
         store = load_market_store(spec.underlying.ticker.value)
         result = run_backtest(spec, store)
@@ -80,17 +80,22 @@ def _execute_run(run_id: str) -> None:
         family = f"{spec.underlying.ticker.value}:{spec.position.structure.value}"
         trials = db.bump_trials(family)
 
-        def on_stage(stage: int, label: str) -> None:
+        previews: list[str] = []
+
+        def on_stage(stage: int, label: str, preview: str | None = None) -> None:
+            if preview:
+                previews.append(preview)
             with db.session() as s2:
                 r2 = s2.get(db.Run, run_id)
                 if r2 is not None:
                     r2.stage = stage
+                    r2.previews_json = json.dumps(previews)
                     s2.add(db.RunEvent(run_id=run_id, stage=stage, label=label))
                     s2.commit()
 
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage)
-        verdict = write_verdict(report)
-        payload = build_run_payload(run_id, spec, result, report, verdict)
+        verdict, retail_verdict = write_verdicts(report)
+        payload = build_run_payload(run_id, spec, result, report, verdict, retail_verdict)
         # the stats bundle is the ONLY material grounded Q&A may quote from
         stats = {
             "metrics": result.metrics,
@@ -208,11 +213,14 @@ def get_run(run_id: str) -> dict[str, Any]:
         "status": "running",
         "stage": run.stage,
         "name": spec.get("meta", {}).get("name", run_id),
+        # real intermediate stats from finished stages — the progress teasers
+        "previews": json.loads(run.previews_json) if run.previews_json else [],
     }
 
 
 class AskRequest(BaseModel):
     question: str
+    verbiage: str | None = None  # "institutional" (default) | "retail"
 
 
 @router.post("/runs/{run_id}/ask")
@@ -228,7 +236,9 @@ def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
 
     from app.honesty.ask import answer_question
 
-    answer = answer_question(req.question, json.loads(run.stats_json))
+    answer = answer_question(
+        req.question, json.loads(run.stats_json), retail=req.verbiage == "retail"
+    )
     if answer is None:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_KEY)
     return {"answer": answer, "demo": False}

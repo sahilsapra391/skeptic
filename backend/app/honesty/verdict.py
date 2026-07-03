@@ -180,6 +180,98 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     )
 
 
+def retail_template_verdict(report: HonestyReport) -> VerdictText:
+    """The same honest verdict for an everyday retail trader: short
+    sentences, everyday words, zero jargon. Every number still comes
+    straight from the report."""
+    oos, wf, mc = report.oos, report.walk_forward, report.monte_carlo
+    sens, trust, sample = report.sensitivity, report.trust, report.regime_sample
+
+    if trust.label == "insufficient_evidence":
+        plural = "s" if sample.trades != 1 else ""
+        headline = (
+            f"No verdict yet — only {sample.trades} finished trade{plural}. "
+            "That's too few to judge fairly."
+        )
+    elif not trust.survived["oos"]:
+        headline = "Looked good in training, faded on data it had never seen. Be careful."
+    elif trust.survived_count >= 4 and (trust.level or 0) >= 4:
+        headline = (
+            f"Passed {trust.survived_count} of 5 stress tests — "
+            "as solid as our data can show."
+        )
+    elif "mined" in " ".join(trust.reasons):
+        headline = "The good numbers look like luck from too many tries, not a real edge."
+    elif sens.verdict == "cliff":
+        headline = "Tiny changes to the settings wreck it — that's a bad sign."
+    else:
+        headline = (
+            f"Passed {trust.survived_count} of 5 stress tests. "
+            "Interesting, but don't bet the house."
+        )
+
+    evidence: list[str] = []
+    if oos.is_sharpe is not None and oos.oos_sharpe is not None:
+        kept = (
+            f" — it kept {_pct(oos.degradation)} of its training score"
+            if oos.degradation is not None
+            else ""
+        )
+        evidence.append(
+            f"On data it never saw, its risk-adjusted score was {oos.oos_sharpe:.2f} "
+            f"(training: {oos.is_sharpe:.2f}){kept}"
+        )
+    if wf.meaningful and wf.consistency is not None:
+        positive = sum(1 for f in wf.folds if f.ret > 0)
+        evidence.append(f"It made money in {positive} of {len(wf.folds)} time periods")
+    if mc.p_loss is not None:
+        evidence.append(
+            f"We reshuffled its trades {mc.resamples} times — {_pct(mc.p_loss)} of the "
+            f"reshuffles ended with less money than they started"
+        )
+
+    breaks_where: list[str] = []
+    if not trust.survived["oos"]:
+        breaks_where.append("The edge shrank badly on data it had never seen")
+    if oos.sign_flip:
+        breaks_where.append("It made money in training but LOST money on unseen data")
+    if wf.meaningful and not trust.survived["walk_forward"]:
+        breaks_where.append("It only won in some periods — the rest were flat or losing")
+    if mc.p_loss is not None and not trust.survived["monte_carlo"]:
+        breaks_where.append(
+            f"{_pct(mc.p_loss)} of the reshuffled versions lost money — "
+            "the original order got lucky"
+        )
+    if sens.verdict == "cliff":
+        breaks_where.append("Small changes to the settings make the results fall apart")
+    if report.dsr.dsr is not None and report.dsr.dsr < 0.5 and report.dsr.trials > 1:
+        breaks_where.append(
+            f"This is try number {report.dsr.trials} at this kind of strategy — "
+            "at some point the good numbers are just luck"
+        )
+    if not breaks_where:
+        breaks_where.append(
+            "No deal-breaker found — but we can only test the history we have"
+        )
+
+    plural = "s" if sample.regimes_present != 1 else ""
+    caveats = [
+        f"{sample.trades} finished trades · {sample.regimes_present} market mood{plural} "
+        f"covered · {report.effective_start} → {report.effective_end}",
+        "Backtests always look better than real trading. This is research, not advice.",
+    ]
+    if not wf.meaningful:
+        caveats.append("Not enough history to test period-by-period yet.")
+
+    return VerdictText(
+        headline=headline,
+        evidence=evidence,
+        breaks_where=breaks_where,
+        caveats=caveats,
+        source="template",
+    )
+
+
 # ------------------------------------------------------------ the LLM layer
 def _extract_json(content: str) -> dict[str, Any] | None:
     """Models routinely wrap JSON in code fences or prose despite
@@ -194,18 +286,36 @@ def _extract_json(content: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def _llm_narrate(report: HonestyReport, allowed: set[float]) -> VerdictText | None:
+def _llm_narrate(
+    report: HonestyReport, allowed: set[float], retail: bool = False
+) -> VerdictText | None:
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         return None
     import requests
 
     model = os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL)
+    audience = (
+        (
+            "AUDIENCE: an everyday retail trader with no finance background. Short "
+            "sentences, everyday words, zero jargon — never say 'Sharpe' (say "
+            "'risk-adjusted score'), never 'percentile' (say 'worst/typical cases'), "
+            "never 'in-sample/out-of-sample' (say 'training data' and 'data it never "
+            "saw'), never 'Monte Carlo' (say 'reshuffling the trades'). Explain what "
+            "each finding MEANS for them. "
+        )
+        if retail
+        else (
+            "AUDIENCE: a quantitative practitioner — precise statistical language "
+            "is expected. "
+        )
+    )
     system = (
         "You are the verdict writer for an options backtesting research tool whose "
         "entire identity is adversarial honesty. You receive ONLY computed statistics "
         "as JSON. Write the verdict: lead with the most uncomfortable finding. Plain "
-        "verbs, sentence case, no hype, no exclamation marks. NUMBERS: copy them "
+        "verbs, sentence case, no hype, no exclamation marks. " + audience +
+        "NUMBERS: copy them "
         "verbatim from the JSON (you may round to 2 decimals or write a 0-1 fraction "
         "as a percent). NEVER do arithmetic — no differences, ratios, averages, "
         "annualizing, or counting of your own. A number not literally in the JSON "
@@ -282,3 +392,12 @@ def write_verdict(report: HonestyReport) -> VerdictText:
     if llm is not None:
         return llm
     return template_verdict(report)
+
+
+def write_verdicts(report: HonestyReport) -> tuple[VerdictText, VerdictText]:
+    """(institutional, retail) — same numbers, two registers. Each falls
+    back to its deterministic template when the LLM can't stay grounded."""
+    allowed = allowed_numbers(report)
+    institutional = _llm_narrate(report, allowed) or template_verdict(report)
+    retail = _llm_narrate(report, allowed, retail=True) or retail_template_verdict(report)
+    return institutional, retail

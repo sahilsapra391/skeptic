@@ -14,6 +14,7 @@ import type {
   SpecDraft,
   UnderlyingPoint,
 } from "./types";
+import { getSettings } from "./settings";
 import { draftToSpec } from "./spec";
 
 export class ApiError extends Error {
@@ -73,10 +74,17 @@ export function startBacktest(
   parsedSpec?: Record<string, unknown> | null,
 ): Promise<{ run_id: string; demo: boolean }> {
   // an unedited parser spec runs verbatim — dial edits rebuild from the dials
+  const spec = { ...(parsedSpec ?? draftToSpec(draft)) } as Record<string, unknown>;
+  // cost settings apply to EVERY run — the edit in Settings is the edit here
+  const { commission, slippage } = getSettings();
+  spec.costs = {
+    commission_per_contract: commission,
+    slippage_half_spread_fraction: slippage,
+  };
   return request<{ run_id: string; demo: boolean }>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ spec: parsedSpec ?? draftToSpec(draft), draft }),
+    body: JSON.stringify({ spec, draft }),
   });
 }
 
@@ -92,7 +100,7 @@ export function askRun(id: string, question: string): Promise<{ answer: string; 
   return request<{ answer: string; demo: boolean }>(`/api/runs/${id}/ask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, verbiage: getSettings().verbiage }),
   });
 }
 
@@ -101,6 +109,10 @@ export function getHealth(): Promise<{
   r2_configured: boolean;
   engine: string;
   parser: string;
+  verdict_llm?: string;
+  ask?: string;
+  model?: string;
+  min_trades?: number;
 }> {
   return request("/api/health");
 }

@@ -52,7 +52,17 @@ def stats_numbers(stats: dict[str, Any]) -> set[float]:
     return grounding_set(stats)
 
 
-def answer_question(question: str, stats: dict[str, Any]) -> str | None:
+_RETAIL_NOTE = (
+    " AUDIENCE OVERRIDE: an everyday retail trader with no finance background — "
+    "short sentences, everyday words, zero jargon; say 'risk-adjusted score' not "
+    "'Sharpe', 'reshuffling the trades' not 'Monte Carlo', 'data it never saw' not "
+    "'out-of-sample'. Explain what the numbers mean for them."
+)
+
+
+def answer_question(
+    question: str, stats: dict[str, Any], retail: bool = False
+) -> str | None:
     """Grounded answer, or None when no LLM key is configured."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
@@ -67,7 +77,7 @@ def answer_question(question: str, stats: dict[str, Any]) -> str | None:
     body: dict[str, Any] = {
         "model": os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
         "messages": [
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": _SYSTEM + (_RETAIL_NOTE if retail else "")},
             {"role": "user", "content": user},
         ],
         "temperature": 0.2,

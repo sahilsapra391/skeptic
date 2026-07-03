@@ -42,6 +42,8 @@ class Run(Base):
     # computed stats bundle (engine metrics + honesty report) — the ONLY
     # material grounded Q&A may draw numbers from
     stats_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # real per-stage preview lines shown while the gauntlet runs
+    previews_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -97,8 +99,9 @@ def _ensure_columns() -> None:
 
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
-        if "stats_json" not in existing:
-            conn.execute(text("ALTER TABLE runs ADD COLUMN stats_json TEXT"))
+        for column in ("stats_json", "previews_json"):
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
 
 
 def session() -> Session:

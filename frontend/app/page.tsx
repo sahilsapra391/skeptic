@@ -235,7 +235,13 @@ export default function NewAnalysisPage() {
   }
 
   if (phase === "running") {
-    return <GauntletProgress stage={run?.stage ?? 0} name={run?.name ?? draft?.quote ?? ""} />;
+    return (
+      <GauntletProgress
+        stage={run?.stage ?? 0}
+        name={run?.name ?? draft?.quote ?? ""}
+        previews={run?.previews}
+      />
+    );
   }
 
   if (phase === "clarify" && questions.length > 0) {
@@ -342,7 +348,7 @@ export default function NewAnalysisPage() {
               key={m}
               onClick={() => setMode(m)}
               className={clsx(
-                "flex items-center gap-2 rounded-[9px] px-4 py-2 text-[13px] font-semibold",
+                "flex items-center gap-2 rounded-[10px] px-5 py-2.5 text-[14.5px] font-semibold",
                 mode === m ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-2",
               )}
             >
@@ -369,11 +375,11 @@ export default function NewAnalysisPage() {
       </div>
 
       {mode === "text" ? (
-        <div className="mx-auto max-w-[760px]">
+        <div className="mx-auto max-w-[860px]">
           <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
             <textarea
-              rows={3}
-              className="w-full font-mono text-[14.5px] leading-[1.6] text-ink"
+              rows={4}
+              className="w-full font-mono text-[16px] leading-[1.65] text-ink"
               placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
               value={
                 speech.interim
@@ -404,7 +410,7 @@ export default function NewAnalysisPage() {
                     onClick={() => (speech.listening ? speech.stop() : speech.start())}
                     title={speech.listening ? "Stop dictation" : "Dictate your strategy"}
                     className={clsx(
-                      "flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border",
+                      "flex h-[38px] w-[38px] items-center justify-center rounded-[10px] border",
                       speech.listening
                         ? "border-trust-border bg-trust-dim text-trust"
                         : "border-line text-ink-4 hover:border-line-hover hover:text-ink",
@@ -425,7 +431,7 @@ export default function NewAnalysisPage() {
                   onClick={() => compileText()}
                   disabled={!text.trim() || busy}
                   className={clsx(
-                    "rounded-[9px] border px-4 py-[7px] text-[13px] font-semibold",
+                    "rounded-[10px] border px-5 py-2 text-[14.5px] font-semibold",
                     text.trim() && !busy
                       ? "border-trust-border bg-trust-dim text-trust"
                       : "cursor-not-allowed border-line bg-raised-2 text-ink-4",
@@ -436,18 +442,18 @@ export default function NewAnalysisPage() {
               </div>
             </div>
           </div>
-          <div className="mx-auto mt-5 flex max-w-[860px] flex-wrap justify-center gap-2">
+          <div className="mx-auto mt-6 flex max-w-[980px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (
               <button
                 key={p.label}
                 onClick={() => setText(p.phrase)}
                 title={p.phrase}
-                className="group rounded-[11px] border border-line bg-panel px-3.5 py-2 text-left hover:border-trust-border hover:bg-trust-dim"
+                className="group rounded-[12px] border border-line bg-panel px-4 py-2.5 text-left hover:border-trust-border hover:bg-trust-dim"
               >
-                <div className="text-[12.5px] font-semibold text-ink-2 group-hover:text-ink">
+                <div className="text-[14px] font-semibold text-ink-2 group-hover:text-ink">
                   {p.label}
                 </div>
-                <div className="mt-[1px] font-mono text-[10px] tracking-[.04em] text-ink-4 group-hover:text-ink-3">
+                <div className="mt-[2px] font-mono text-[11px] tracking-[.04em] text-ink-4 group-hover:text-ink-3">
                   {STRUCTURE_LABEL[p.structure]}
                 </div>
               </button>

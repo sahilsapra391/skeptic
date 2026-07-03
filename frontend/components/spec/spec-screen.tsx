@@ -12,6 +12,7 @@ import { useState } from "react";
 import clsx from "clsx";
 
 import { Hint } from "@/components/hint";
+import { useSettings } from "@/lib/settings";
 import type { SpecDraft, Structure, Ticker, TriggerSpec } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
@@ -31,8 +32,8 @@ const SPEC_HINTS: Record<string, string> = {
     "How fills are priced: buys toward the ask, sells toward the bid, plus slippage — never at mid.",
 };
 
-const TILE = "rounded-xl border border-line bg-panel px-3 py-2.5";
-const TILE_LABEL = "mb-[5px] font-mono text-[10px] font-medium tracking-[.1em] text-ink-4";
+const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
+const TILE_LABEL = "mb-[7px] font-mono text-[11px] font-medium tracking-[.1em] text-ink-4";
 
 const TICKERS: Ticker[] = ["SPY", "QQQ", "IWM"];
 const STRUCTURES: Structure[] = [
@@ -85,12 +86,12 @@ function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
 }
 
 const SELECT_CLS =
-  "rounded-[7px] border border-line bg-panel-deep px-2 py-1 font-mono text-[11.5px] text-ink";
+  "rounded-[8px] border border-line bg-panel-deep px-2.5 py-1.5 font-mono text-[13px] text-ink";
 
 /** Tile-sized dropdown — dial values pick from the full legal range. */
 const TILE_SELECT_CLS =
   "w-full cursor-pointer appearance-none rounded-[7px] border border-transparent " +
-  "bg-transparent py-[1px] font-mono text-[15px] font-semibold text-ink " +
+  "bg-transparent py-[2px] font-mono text-[17px] font-semibold text-ink " +
   "hover:border-line focus:border-line focus:outline-none [&>option]:bg-panel-deep";
 
 // Strike: every .05Δ from .05 to .95 (stored as whole-number delta, 5..95)
@@ -135,6 +136,7 @@ export function SpecScreen({
   onRun: () => void;
   earliestYear: string;
 }) {
+  const settings = useSettings();
   const [exitEditing, setExitEditing] = useState(false);
   const [customProfit, setCustomProfit] = useState("");
   const [customStop, setCustomStop] = useState("");
@@ -183,11 +185,11 @@ export function SpecScreen({
       </button>
 
       <div className="mb-4 flex justify-end">
-        <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-ink-2">
+        <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-4 py-3 font-mono text-[14px] leading-[1.55] text-ink-2">
           {draft.fromChart ? `◉ ${draft.quote}` : `“${draft.quote}”`}
         </div>
       </div>
-      <p className="mb-3 text-[14.5px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+      <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
 
       <div className="grid grid-cols-4 gap-2.5">
         <div className={TILE}>
@@ -265,12 +267,12 @@ export function SpecScreen({
               <input
                 value={draft.anchor ?? ""}
                 onChange={(e) => set({ anchor: e.target.value })}
-                className="w-full bg-transparent font-mono text-[13px] font-semibold focus:outline-none"
+                className="w-full bg-transparent font-mono text-[15px] font-semibold focus:outline-none"
               />
             </div>
             <div className={TILE}>
               <TileLabel name="TRIGGER" />
-              <div className="pt-[3px] font-mono text-[12px] font-semibold">
+              <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
                 {trig ? triggerLabel(trig) : draft.trigger ?? "—"}
               </div>
             </div>
@@ -279,11 +281,11 @@ export function SpecScreen({
           <>
             <div className={TILE}>
               <TileLabel name="CADENCE" />
-              <div className="pt-0.5 font-mono text-[13px] font-semibold">{draft.cadence}</div>
+              <div className="pt-0.5 font-mono text-[15px] font-semibold">{draft.cadence}</div>
             </div>
             <div className={TILE}>
               <TileLabel name="SIZE" />
-              <div className="pt-0.5 font-mono text-[13px] font-semibold">{draft.size}</div>
+              <div className="pt-0.5 font-mono text-[15px] font-semibold">{draft.size}</div>
             </div>
           </>
         )}
@@ -308,13 +310,15 @@ export function SpecScreen({
             <span>EXIT ✎</span>
             <Hint text={SPEC_HINTS.EXIT} align="right" />
           </div>
-          <div className="pt-0.5 font-mono text-[13px] font-semibold">
+          <div className="pt-0.5 font-mono text-[15px] font-semibold">
             {draft.exit ?? "not set"}
           </div>
         </button>
         <div className={TILE}>
           <TileLabel name="FILLS" />
-          <div className="pt-[3px] font-mono text-[12px] font-semibold">bid/ask + slip 0.5</div>
+          <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
+            bid/ask + slip {settings.slippage} · ${settings.commission}/ct
+          </div>
         </div>
       </div>
 
@@ -394,7 +398,7 @@ export function SpecScreen({
                 set({ exit: label });
                 setExitEditing(false);
               }}
-              className="rounded-full border border-trust-border px-[13px] py-[5px] text-[12.5px] text-trust hover:bg-trust-dim"
+              className="rounded-full border border-trust-border px-4 py-[7px] text-[13.5px] text-trust hover:bg-trust-dim"
             >
               {label}
             </button>
@@ -462,7 +466,7 @@ export function SpecScreen({
           onClick={onRun}
           disabled={!exitSet || zeroDte}
           className={clsx(
-            "rounded-[10px] px-5 py-2.5 text-[14px]",
+            "rounded-[11px] px-6 py-3 text-[15.5px]",
             exitSet && !zeroDte
               ? "bg-trust font-bold text-[#0d1216]"
               : "cursor-not-allowed bg-raised-2 text-ink-4",

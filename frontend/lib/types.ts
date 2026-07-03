@@ -154,6 +154,19 @@ export interface RunPayload {
   sensitivityRows?: string[]; // real runs: swept parameter names
   sensitivityDetail?: SensitivityRow[]; // real runs: cell-level sweep data
   recommendations?: string[]; // grounded improvements computed from this run
+  previews?: string[]; // while running: real stats from finished stages
+  /** retail-register text — same numbers, everyday words */
+  retail?: {
+    headline: string;
+    survived: string;
+    evidence: string[];
+    breaks: string[];
+    caveat: string;
+    refusalBody?: string;
+    refusalUnlock?: string;
+    notes: [string, string, string, string];
+    recommendations: string[];
+  } | null;
   tradeHeader: string;
   trades: TradeRow[];
   askAnswer?: string;

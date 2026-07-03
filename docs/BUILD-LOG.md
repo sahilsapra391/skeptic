@@ -637,3 +637,33 @@ design's muted-ink contrast). Backend 76 tests, ruff, mypy strict,
 frontend tsc + lint all green; verified E2E in browser: ambiguous
 strategy → 4 questions → spec with trigger → gauntlet → LLM verdict
 leading with the walk-forward weakness.
+
+## 2026-07-03 — Live previews, editable costs, and the Verbiage Complexity setting
+
+Owner round three. **Gauntlet previews**: "no previews, no dopamine" is
+retired — as each stage finishes, its REAL headline stat streams into a
+"LIVE FROM THE GAUNTLET" feed (fills + net equity, unseen-data Sharpe
+holding/fading, windows profitable, reshuffle loss rate, plateau/cliff),
+stored progressively in a new previews_json column and served on the
+running payload; a rotating platform-tips panel fills the quiet moments.
+**Editable costs**: commission and slippage live in Settings
+(localStorage, clamped — slippage floors at 0.05 because mid fills stay
+banned) and are stamped onto EVERY submitted spec client-side, parsed or
+dial-built; the spec screen's FILLS tile shows the live values. Verified
+E2E: slippage 0.5 → 0.75 changed the same strategy from 232 to 211
+fills. **Verbiage Complexity (Institutional | Retail)**: every run now
+ships both registers — the LLM narrates twice (retail prompt bans
+jargon: "risk-adjusted score" not Sharpe, "reshuffling the trades" not
+Monte Carlo) behind the same numeric validator, with a deterministic
+retail template fallback; payload carries a retail block (headline,
+evidence, breaks, caveat, panel notes, recommendations) and the UI
+switches instantly — panel titles ("LUCK TEST — 1,000 RESHUFFLES",
+"TRAINING DATA VS UNSEEN DATA"), metric tile names ("WORST DIP",
+"RISK SCORE"), gauntlet stage names, and grounded Q&A all follow the
+setting. Old stored runs fall back to institutional. Settings page
+rebuilt with live system status (engine/parser/narration/Q&A/model/
+min-trades from /api/health). **Sizing pass**: market chart 300→430px
+tall, verdict headline 25→30px, metric tiles 19→24px, panels/text/
+buttons up across compose, spec, gauntlet, results, settings. Backend
+76 tests + ruff + mypy strict green; frontend tsc + lint green;
+verified in-browser across both registers on a single run.

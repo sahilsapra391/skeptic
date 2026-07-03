@@ -42,6 +42,11 @@ def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
     assert payload["verdict"]["refusal"] is True
     assert "1 closed trade" in payload["verdict"]["headline"]
     assert "15 trades" in payload["verdict"]["refusalUnlock"]
+    # the retail register carries the same refusal in plain words
+    retail = payload["retail"]
+    assert "too few to judge" in retail["headline"]
+    assert len(retail["notes"]) == 4
+    assert retail["recommendations"]
     # real numbers from the fixture math (final equity 9,654.35 on 10,000)
     assert payload["equitySeries"][-1]["v"] == pytest.approx(9654.35, abs=0.005)
     assert "1 filled" in payload["tradeHeader"]
@@ -92,9 +97,10 @@ def test_ask_answers_from_stored_stats(
 
     seen: dict = {}
 
-    def fake_answer(question: str, stats: dict) -> str:
+    def fake_answer(question: str, stats: dict, retail: bool = False) -> str:
         seen["question"] = question
         seen["stats"] = stats
+        seen["retail"] = retail
         return "This run closed 1 trade — too few for a verdict."
 
     monkeypatch.setattr(ask_module, "answer_question", fake_answer)

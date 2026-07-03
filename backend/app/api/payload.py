@@ -144,16 +144,26 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
     return out
 
 
-def _recommendations(report: HonestyReport) -> list[str]:
+def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
     """What would improve the strategy — computed ONLY from this run's own
     gauntlet numbers (the ±20% sweeps re-ran the real engine), never from
-    opinion. Guardrail #4 applies: every number below exists in the report."""
+    opinion. Guardrail #4 applies: every number below exists in the report.
+    `retail` swaps the register, never the numbers."""
     sample = report.regime_sample
     if report.trust.label == "insufficient_evidence":
+        plural = "s" if sample.trades != 1 else ""
         return [
-            f"Nothing can honestly be recommended from {sample.trades} closed "
-            f"trade{'s' if sample.trades != 1 else ''} — widen the date window, "
-            "trade more frequently, or wait for more coverage before tuning anything.",
+            (
+                f"With only {sample.trades} finished trade{plural} there's nothing "
+                "honest to suggest yet — test a longer date range, trade more often, "
+                "or wait for more data."
+            )
+            if retail
+            else (
+                f"Nothing can honestly be recommended from {sample.trades} closed "
+                f"trade{plural} — widen the date window, trade more frequently, "
+                "or wait for more coverage before tuning anything."
+            ),
         ]
 
     recs: list[str] = []
@@ -168,50 +178,99 @@ def _recommendations(report: HonestyReport) -> list[str]:
         base_v = sweep.values[sweep.base_index]
         if best_v != base_v and best_s >= base_s + 0.05:
             name = sweep.name.replace("_", " ")
-            recs.append(
-                f"In this run's ±20% sweep, {name} {_param_label(sweep.name, best_v)} "
-                f"beat the specced {_param_label(sweep.name, base_v)}: backtest Sharpe "
-                f"{base_s:.2f} → {best_s:.2f}. Re-run with it — the change re-enters "
-                "the gauntlet as a new trial."
-            )
+            if retail:
+                recs.append(
+                    f"When we tried {name} at {_param_label(sweep.name, best_v)} instead "
+                    f"of your {_param_label(sweep.name, base_v)}, the score improved "
+                    f"({base_s:.2f} → {best_s:.2f}). Worth a re-run — but every retry "
+                    "makes good numbers a little less trustworthy."
+                )
+            else:
+                recs.append(
+                    f"In this run's ±20% sweep, {name} {_param_label(sweep.name, best_v)} "
+                    f"beat the specced {_param_label(sweep.name, base_v)}: backtest Sharpe "
+                    f"{base_s:.2f} → {best_s:.2f}. Re-run with it — the change re-enters "
+                    "the gauntlet as a new trial."
+                )
 
     oos = report.oos
     if oos.flagged and oos.degradation is not None:
         recs.append(
-            f"The edge concentrates in-sample (OOS keeps {oos.degradation * 100:.0f}% "
-            "of in-sample Sharpe). Fewer tuned parameters and a longer window are "
-            "the only honest fixes — more tuning will make this worse."
+            (
+                f"It kept only {oos.degradation * 100:.0f}% of its training score on "
+                "data it never saw. The honest fix is simpler settings and more "
+                "history — more tweaking will make it worse."
+            )
+            if retail
+            else (
+                f"The edge concentrates in-sample (OOS keeps {oos.degradation * 100:.0f}% "
+                "of in-sample Sharpe). Fewer tuned parameters and a longer window are "
+                "the only honest fixes — more tuning will make this worse."
+            )
         )
 
     mc = report.monte_carlo
     if mc.p_loss is not None and mc.p_loss > 0.20:
         recs.append(
-            f"{mc.p_loss * 100:.0f}% of resampled paths lose money — the result "
-            "leans on trade ordering. A defined-risk structure or smaller size "
-            "survives more of the bad orderings; test it as its own run."
+            (
+                f"{mc.p_loss * 100:.0f}% of the reshuffled versions of this strategy "
+                "lost money — the original got a lucky order of trades. A version with "
+                "capped losses (a spread) or smaller size handles bad luck better; "
+                "test that as its own run."
+            )
+            if retail
+            else (
+                f"{mc.p_loss * 100:.0f}% of resampled paths lose money — the result "
+                "leans on trade ordering. A defined-risk structure or smaller size "
+                "survives more of the bad orderings; test it as its own run."
+            )
         )
 
     wf = report.walk_forward
     if wf.meaningful and wf.consistency is not None and wf.consistency < 0.6:
         positive = sum(1 for f in wf.folds if f.ret > 0)
         recs.append(
-            f"Only {positive} of {len(wf.folds)} walk-forward windows were "
-            "profitable — the total return comes from a few stretches. An entry "
-            "filter (volatility or trend regime) is worth testing as a separate run."
+            (
+                f"It only made money in {positive} of {len(wf.folds)} time periods — "
+                "a few good stretches carry everything. Adding a market-condition "
+                "filter for entries is worth testing as its own run."
+            )
+            if retail
+            else (
+                f"Only {positive} of {len(wf.folds)} walk-forward windows were "
+                "profitable — the total return comes from a few stretches. An entry "
+                "filter (volatility or trend regime) is worth testing as a separate run."
+            )
         )
 
     if report.dsr.dsr is not None and report.dsr.dsr < 0.5 and report.dsr.trials > 1:
         recs.append(
-            f"Deflated Sharpe {report.dsr.dsr:.2f} after {report.dsr.trials} trials "
-            "on this family — the remaining edge is likely mined. The recommendation "
-            "is restraint: stop tuning and let new data arrive."
+            (
+                f"This is try number {report.dsr.trials} at this kind of strategy — "
+                "the math says the good numbers now look more like luck than skill. "
+                "Best move: stop tweaking and let new market data decide."
+            )
+            if retail
+            else (
+                f"Deflated Sharpe {report.dsr.dsr:.2f} after {report.dsr.trials} trials "
+                "on this family — the remaining edge is likely mined. The recommendation "
+                "is restraint: stop tuning and let new data arrive."
+            )
         )
 
     if not recs:
         recs.append(
-            "No parameter in the ±20% sweep beat the specced values by a meaningful "
-            "margin — the configuration already sits on its local plateau. The "
-            "highest-value improvement is more history, not more tuning."
+            (
+                "None of the nearby settings we tried beat yours — the setup is "
+                "already at its local best. The most valuable improvement is simply "
+                "more market history, not more tweaking."
+            )
+            if retail
+            else (
+                "No parameter in the ±20% sweep beat the specced values by a meaningful "
+                "margin — the configuration already sits on its local plateau. The "
+                "highest-value improvement is more history, not more tuning."
+            )
         )
     return recs[:4]
 
@@ -307,43 +366,108 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
     }
 
 
-def _honesty_panels(report: HonestyReport) -> dict[str, Any]:
+def _panel_notes(report: HonestyReport, retail: bool = False) -> list[str]:
     oos, wf, mc, sens = report.oos, report.walk_forward, report.monte_carlo, report.sensitivity
+
+    if oos.degradation is not None:
+        ok = not oos.flagged
+        oos_note = (
+            f"kept {_pct(oos.degradation, 0)} of its training score on unseen data — "
+            + ("pass ✓" if ok else "fail ✗")
+            if retail
+            else f"OOS keeps {_pct(oos.degradation, 0)} of in-sample sharpe — "
+            + ("holds ✓" if ok else "fails ✗")
+        )
+    else:
+        oos_note = (
+            "not enough history to split" if retail else "not computable on this window"
+        )
+
+    if wf.meaningful and wf.consistency is not None:
+        positive = sum(1 for f in wf.folds if f.ret > 0)
+        mark = "✓" if wf.consistency >= 0.6 else "✗"
+        wf_note = (
+            f"made money in {positive} of {len(wf.folds)} time periods {mark}"
+            if retail
+            else f"{positive} / {len(wf.folds)} windows profitable {mark}"
+        )
+    else:
+        wf_note = (
+            "history too short to slice into periods"
+            if retail
+            else (wf.note or "not meaningful at this history length")
+        )
+
+    if mc.p_loss is not None:
+        mc_note = (
+            f"{_pct(mc.p_loss, 0)} of reshuffles lost money · worst realistic dip "
+            f"−{_pct(mc.max_drawdown_p95, 0)}"
+            if retail
+            else f"P(loss) {_pct(mc.p_loss, 0)} · 95th pctile drawdown "
+            f"−{_pct(mc.max_drawdown_p95, 0)}"
+        )
+    else:
+        mc_note = "needs at least 5 finished trades" if retail else "needs ≥ 5 closed trades"
+
+    if sens.verdict:
+        good = sens.verdict == "plateau"
+        sens_note = (
+            ("still works when nudged ✓" if good else "falls apart when nudged ✗")
+            if retail
+            else f"optimum is a {sens.verdict} " + ("✓" if good else "✗")
+        )
+    else:
+        sens_note = "not classifiable"
+
+    return [oos_note, wf_note, mc_note, sens_note]
+
+
+def _honesty_panels(report: HonestyReport) -> dict[str, Any]:
+    oos = report.oos
     bar1 = 88 if (oos.is_sharpe or 0) > 0 else 0
     ratio = max(0.0, min(oos.degradation if oos.degradation is not None else 0.0, 1.2))
     bar2 = round(bar1 * ratio)
-
-    oos_note = (
-        f"OOS keeps {_pct(oos.degradation, 0)} of in-sample sharpe — "
-        + ("fails ✗" if oos.flagged else "holds ✓")
-        if oos.degradation is not None
-        else "not computable on this window"
-    )
-    if wf.meaningful and wf.consistency is not None:
-        positive = sum(1 for f in wf.folds if f.ret > 0)
-        wf_note = (
-            f"{positive} / {len(wf.folds)} windows profitable "
-            + ("✓" if wf.consistency >= 0.6 else "✗")
-        )
-    else:
-        wf_note = wf.note or "not meaningful at this history length"
-    mc_note = (
-        f"P(loss) {_pct(mc.p_loss, 0)} · 95th pctile drawdown −{_pct(mc.max_drawdown_p95, 0)}"
-        if mc.p_loss is not None
-        else "needs ≥ 5 closed trades"
-    )
-    sens_note = (
-        f"optimum is a {sens.verdict} " + ("✓" if sens.verdict == "plateau" else "✗")
-        if sens.verdict
-        else "not classifiable"
-    )
     return {
         "isSharpe": _num(oos.is_sharpe),
         "oosSharpe": _num(oos.oos_sharpe),
         "bar1": f"{bar1}%",
         "bar2": f"{max(bar2, 0)}%",
         "wf": _wf_bars(report),
-        "notes": [oos_note, wf_note, mc_note, sens_note],
+        "notes": _panel_notes(report),
+    }
+
+
+def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[str, Any]:
+    """Everything the UI swaps when Verbiage Complexity = Retail — the same
+    computed numbers, everyday words."""
+    block = _verdict_block(report, retail_verdict)
+    if block["refusal"]:
+        sample = report.regime_sample
+        needs = []
+        if sample.trades < MIN_TRADES:
+            needs.append(f"at least {MIN_TRADES} finished trades (has {sample.trades})")
+        if sample.regimes_present < 2:
+            needs.append(
+                f"at least 2 kinds of market conditions (has {sample.regimes_present})"
+            )
+        block["refusalBody"] = (
+            "The tests ran, but calling this a verdict would be guessing. The raw "
+            "numbers are below, unblessed — look, but don't lean on them. "
+            + " · ".join(retail_verdict.caveats)
+        )
+        block["refusalUnlock"] = "unlocks with " + " and ".join(needs) if needs else ""
+    return {
+        **{
+            k: block[k]
+            for k in (
+                "headline", "survived", "evidence", "breaks", "caveat",
+            )
+            if k in block
+        },
+        **({"refusalBody": block["refusalBody"], "refusalUnlock": block["refusalUnlock"]}
+           if block["refusal"] else {}),
+        "notes": _panel_notes(report, retail=True),
+        "recommendations": _recommendations(report, retail=True),
     }
 
 
@@ -353,6 +477,7 @@ def build_run_payload(
     result: RunResult,
     report: HonestyReport,
     verdict: VerdictText,
+    retail_verdict: VerdictText | None = None,
 ) -> dict[str, Any]:
     m = result.metrics
     window = f"{_short(result.effective_start)} → {_short(result.effective_end)}"
@@ -405,6 +530,7 @@ def build_run_payload(
         "sensitivityRows": sens_rows,
         "sensitivityDetail": _sensitivity_detail(report),
         "recommendations": _recommendations(report),
+        "retail": _retail_block(report, retail_verdict) if retail_verdict else None,
         "tradeHeader": (
             f"Trade log — {result.filled} filled · {result.skipped} skipped, with reasons"
         ),

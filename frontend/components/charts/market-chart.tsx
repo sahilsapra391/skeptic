@@ -30,8 +30,8 @@ import type {
 } from "@/lib/types";
 
 const W = 860;
-const PRICE_H = 300;
-const VOL_H = 56;
+const PRICE_H = 430;
+const VOL_H = 72;
 const PANEL_H = 76;
 const PAD_Y = 12;
 const MAX_DRAWN = 700; // display decimation threshold
@@ -756,12 +756,12 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         }}
       >
         {error && (
-          <div className="flex h-[300px] items-center justify-center px-6 text-center font-mono text-[12px] text-warn">
+          <div className="flex h-[430px] items-center justify-center px-6 text-center font-mono text-[12px] text-warn">
             {error}
           </div>
         )}
         {!error && !n && !loading && (
-          <div className="flex h-[300px] items-center justify-center font-mono text-[12px] text-ink-4">
+          <div className="flex h-[430px] items-center justify-center font-mono text-[12px] text-ink-4">
             no bars in the lake for this view
           </div>
         )}

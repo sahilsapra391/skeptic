@@ -14,6 +14,7 @@ import { useRef, useState } from "react";
 import clsx from "clsx";
 
 import { ApiError, askRun } from "@/lib/api";
+import { useSettings } from "@/lib/settings";
 import type { RunPayload, SeriesPoint } from "@/lib/types";
 
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
@@ -21,7 +22,7 @@ import { Hint } from "@/components/hint";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
 
 const PANEL = "rounded-[14px] border border-line bg-panel";
-const PANEL_TITLE = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
+const PANEL_TITLE = "font-mono text-[11.5px] font-medium tracking-[.12em] text-ink-4";
 
 /** Plain-English one-liners for every stat surface (* = unblessed). */
 const METRIC_HINTS: Record<string, string> = {
@@ -49,6 +50,16 @@ const HINT_MC =
 const HINT_SENS =
   "Each parameter nudged ±20% and the backtest re-run. Brighter = better Sharpe. " +
   "A real edge survives nudges (plateau); a fragile one collapses (cliff).";
+/** Retail register: same tiles, everyday names. */
+const RETAIL_METRIC_LABEL: Record<string, string> = {
+  CAGR: "YEARLY GROWTH",
+  SHARPE: "RISK SCORE",
+  SORTINO: "DOWNSIDE SCORE",
+  "MAX DD": "WORST DIP",
+  "WIN RATE": "WIN RATE",
+  "P·FACTOR": "WIN/LOSS RATIO",
+};
+
 const HINT_TRADES =
   "Every simulated fill, priced at bid/ask plus slippage — never mid. Skipped " +
   "entries are listed separately with the reason each was refused.";
@@ -76,30 +87,32 @@ function seriesToPoints(
     .join(" ");
 }
 
-function MetricTiles({ run }: { run: RunPayload }) {
+function MetricTiles({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
   return (
-    <div className="mt-[18px] grid grid-cols-6 gap-2.5">
-      {run.mtiles.map((m, i) => (
-        <div key={m.l} className="rounded-xl border border-line bg-panel p-3">
-          <div
-            className={clsx(
-              "font-mono text-[19px] font-semibold",
-              m.neg ? "text-pl-neg" : "text-ink",
-            )}
-          >
-            {m.v}
+    <div className="mt-5 grid grid-cols-6 gap-3">
+      {run.mtiles.map((m, i) => {
+        const bare = m.l.replace(/\*$/, "");
+        const star = m.l.endsWith("*") ? "*" : "";
+        const label = retailMode ? (RETAIL_METRIC_LABEL[bare] ?? bare) + star : m.l;
+        return (
+          <div key={m.l} className="rounded-xl border border-line bg-panel p-4">
+            <div
+              className={clsx(
+                "font-mono text-[24px] font-semibold",
+                m.neg ? "text-pl-neg" : "text-ink",
+              )}
+            >
+              {m.v}
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-1">
+              <span className="font-mono text-[10.5px] font-medium tracking-[.08em] text-ink-4">
+                {label}
+              </span>
+              <Hint text={METRIC_HINTS[bare] ?? m.l} align={i >= 4 ? "right" : "center"} />
+            </div>
           </div>
-          <div className="mt-1 flex items-center justify-between gap-1">
-            <span className="font-mono text-[9.5px] font-medium tracking-[.1em] text-ink-4">
-              {m.l}
-            </span>
-            <Hint
-              text={METRIC_HINTS[m.l.replace(/\*$/, "")] ?? m.l}
-              align={i >= 4 ? "right" : "center"}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -113,7 +126,7 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
 }
 
-function EquityChart({ run }: { run: RunPayload }) {
+function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
   const series = run.equitySeries ?? [];
   const dd = run.drawdownSeries ?? [];
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -146,13 +159,19 @@ function EquityChart({ run }: { run: RunPayload }) {
   const inOos = h !== null && run.oosSplitDate ? series[h].t > run.oosSplitDate : false;
 
   return (
-    <div className={clsx(PANEL, "mt-3 px-4 py-3.5")}>
-      <div className="mb-2 flex justify-between">
+    <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
+      <div className="mb-2.5 flex justify-between">
         <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
-          {run.oosShadeX < 860 ? "EQUITY — OUT-OF-SAMPLE SHADED" : "EQUITY"}
+          {run.oosShadeX < 860
+            ? retailMode
+              ? "ACCOUNT VALUE — UNSEEN DATA SHADED"
+              : "EQUITY — OUT-OF-SAMPLE SHADED"
+            : retailMode
+              ? "ACCOUNT VALUE"
+              : "EQUITY"}
           <Hint text={HINT_EQUITY} />
         </span>
-        <span className="font-mono text-[11px] text-ink-4">{startLabel}</span>
+        <span className="font-mono text-[12px] text-ink-4">{startLabel}</span>
       </div>
       <div
         ref={wrapRef}
@@ -165,7 +184,7 @@ function EquityChart({ run }: { run: RunPayload }) {
             <>
               <rect x={run.oosShadeX} y="0" width={860 - run.oosShadeX} height="200" fill="rgba(255,255,255,.035)" />
               <text x={run.oosShadeX + 8} y="14" fill="#4a545f" fontSize="10" fontFamily="var(--font-plex-mono)">
-                OUT-OF-SAMPLE →
+                {retailMode ? "UNSEEN DATA →" : "OUT-OF-SAMPLE →"}
               </text>
             </>
           )}
@@ -231,39 +250,46 @@ function EquityChart({ run }: { run: RunPayload }) {
   );
 }
 
-function HonestyPanels({ run }: { run: RunPayload }) {
+function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
   const h = run.honesty;
+  const notes =
+    retailMode && run.retail ? run.retail.notes : h.notes;
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2.5">
-      <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
-        <div className={clsx(PANEL_TITLE, "mb-2.5 flex items-center gap-2")}>
-          IN-SAMPLE VS OUT-OF-SAMPLE
+    <div className="mt-3.5 grid grid-cols-2 gap-3">
+      <div className={clsx(PANEL, "px-5 py-4")}>
+        <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
+          {retailMode ? "TRAINING DATA VS UNSEEN DATA" : "IN-SAMPLE VS OUT-OF-SAMPLE"}
           <Hint text={HINT_OOS} />
         </div>
-        <div className="mb-[3px] font-mono text-[11px] text-ink-3">IS sharpe {h.isSharpe}</div>
+        <div className="mb-1 font-mono text-[12.5px] text-ink-3">
+          {retailMode ? "training score" : "IS sharpe"} {h.isSharpe}
+        </div>
         <div className="mb-2 h-[9px] overflow-hidden rounded-[3px] bg-line-softer">
           <div className="h-full rounded-[3px] bg-chart" style={{ width: h.bar1 }} />
         </div>
-        <div className="mb-[3px] font-mono text-[11px] text-ink-3">OOS sharpe {h.oosSharpe}</div>
+        <div className="mb-1 font-mono text-[12.5px] text-ink-3">
+          {retailMode ? "unseen-data score" : "OOS sharpe"} {h.oosSharpe}
+        </div>
         <div className="h-[9px] overflow-hidden rounded-[3px] bg-line-softer">
           <div className="h-full rounded-[3px] bg-chart" style={{ width: h.bar2 }} />
         </div>
-        <div className="mt-2.5 text-[12.5px] text-ink-2">{h.notes[0]}</div>
+        <div className="mt-3 text-[14px] text-ink-2">{notes[0]}</div>
       </div>
 
-      <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
-        <div className={clsx(PANEL_TITLE, "mb-2.5 flex items-center gap-2")}>
-          WALK-FORWARD{h.wf.length ? ` — LAST ${h.wf.length} WINDOWS` : ""}
+      <div className={clsx(PANEL, "px-5 py-4")}>
+        <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
+          {retailMode ? "TIME PERIODS" : "WALK-FORWARD"}
+          {h.wf.length ? ` — LAST ${h.wf.length}` : ""}
           <Hint text={HINT_WF} />
         </div>
         {h.wf.length > 0 ? (
-          <div className="flex h-14 items-end gap-[5px]">
+          <div className="flex h-16 items-end gap-[6px]">
             {h.wf.map((w, i) => (
               <div
                 key={i}
                 title={w.t}
                 className={clsx(
-                  "w-3.5 rounded-t-[3px] transition-opacity",
+                  "w-[18px] rounded-t-[3px] transition-opacity",
                   w.pos ? "bg-pl-pos" : "bg-pl-neg",
                   w.t && "cursor-help hover:opacity-75",
                 )}
@@ -272,14 +298,20 @@ function HonestyPanels({ run }: { run: RunPayload }) {
             ))}
           </div>
         ) : (
-          <div className="flex h-14 items-center font-mono text-[11px] text-ink-4">—</div>
+          <div className="flex h-16 items-center font-mono text-[12px] text-ink-4">—</div>
         )}
-        <div className="mt-2.5 text-[12.5px] text-ink-2">{h.notes[1]}</div>
+        <div className="mt-3 text-[14px] text-ink-2">{notes[1]}</div>
       </div>
 
-      <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
-        <div className={clsx(PANEL_TITLE, "mb-2.5 flex items-center gap-2")}>
-          {run.mc.p50 ? "MONTE CARLO — 1,000 RESAMPLES" : "MONTE CARLO"}
+      <div className={clsx(PANEL, "px-5 py-4")}>
+        <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
+          {retailMode
+            ? run.mc.p50
+              ? "LUCK TEST — 1,000 RESHUFFLES"
+              : "LUCK TEST"
+            : run.mc.p50
+              ? "MONTE CARLO — 1,000 RESAMPLES"
+              : "MONTE CARLO"}
           <Hint text={HINT_MC} />
         </div>
         <svg width="100%" viewBox="0 0 400 100" className="block overflow-visible">
@@ -313,16 +345,18 @@ function HonestyPanels({ run }: { run: RunPayload }) {
               );
             })}
         </svg>
-        <div className="mt-2 text-[12.5px] text-ink-2">{h.notes[2]}</div>
+        <div className="mt-2.5 text-[14px] text-ink-2">{notes[2]}</div>
       </div>
 
-      <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
-        <div className={clsx(PANEL_TITLE, "mb-2.5 flex items-center gap-2")}>
-          {run.sensitivityRows?.length
-            ? "SENSITIVITY — ±20% PER PARAMETER"
-            : run.sensitivity.length
-              ? "SENSITIVITY — Δ 15 → 45"
-              : "SENSITIVITY"}
+      <div className={clsx(PANEL, "px-5 py-4")}>
+        <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
+          {retailMode
+            ? "NUDGE TEST — SETTINGS ±20%"
+            : run.sensitivityRows?.length
+              ? "SENSITIVITY — ±20% PER PARAMETER"
+              : run.sensitivity.length
+                ? "SENSITIVITY — Δ 15 → 45"
+                : "SENSITIVITY"}
           <Hint text={HINT_SENS} align="right" />
         </div>
         {run.sensitivityDetail?.length ? (
@@ -332,7 +366,7 @@ function HonestyPanels({ run }: { run: RunPayload }) {
             {run.sensitivityDetail.map((row) => (
               <div key={row.name} className="flex items-center gap-2">
                 <span
-                  className="w-[104px] shrink-0 truncate font-mono text-[9.5px] text-ink-4"
+                  className="w-[110px] shrink-0 truncate font-mono text-[10.5px] text-ink-4"
                   title={row.cls ? `${row.name} — ${row.cls}` : row.name}
                 >
                   {row.name}
@@ -347,7 +381,7 @@ function HonestyPanels({ run }: { run: RunPayload }) {
                       key={ci}
                       title={`${row.name} ${cell.label} → Sharpe ${cell.sharpe}`}
                       className={clsx(
-                        "flex h-6 cursor-help items-center justify-center rounded font-mono text-[9px] transition-transform hover:scale-[1.06]",
+                        "flex h-7 cursor-help items-center justify-center rounded font-mono text-[10px] transition-transform hover:scale-[1.06]",
                         ci === row.base && "ring-1 ring-trust-border",
                         cell.o > 0.55 ? "text-[#0d1216]" : "text-ink-3",
                       )}
@@ -415,17 +449,19 @@ function HonestyPanels({ run }: { run: RunPayload }) {
             )}
           </>
         )}
-        <div className="mt-2 text-[12.5px] text-ink-2">{h.notes[3]}</div>
+        <div className="mt-2.5 text-[14px] text-ink-2">{notes[3]}</div>
       </div>
     </div>
   );
 }
 
-function Recommendations({ run }: { run: RunPayload }) {
-  if (!run.recommendations?.length) return null;
+function Recommendations({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
+  const recs =
+    retailMode && run.retail ? run.retail.recommendations : run.recommendations;
+  if (!recs?.length) return null;
   return (
-    <div className={clsx(PANEL, "mt-3 px-[15px] py-[13px]")}>
-      <div className={clsx(PANEL_TITLE, "mb-2.5 flex items-center gap-2")}>
+    <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
+      <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
         WHAT WOULD IMPROVE IT — COMPUTED FROM THIS RUN
         <Hint
           text={
@@ -435,15 +471,15 @@ function Recommendations({ run }: { run: RunPayload }) {
           }
         />
       </div>
-      <ul className="flex flex-col gap-2">
-        {run.recommendations.map((rec, i) => (
-          <li key={i} className="flex gap-2.5 text-[13px] leading-[1.55] text-ink-2">
+      <ul className="flex flex-col gap-2.5">
+        {recs.map((rec, i) => (
+          <li key={i} className="flex gap-3 text-[14.5px] leading-[1.6] text-ink-2">
             <span className="font-mono text-trust">{String(i + 1).padStart(2, "0")}</span>
             <span>{rec}</span>
           </li>
         ))}
       </ul>
-      <div className="mt-2.5 border-t border-grid pt-2 font-mono text-[10px] text-ink-4">
+      <div className="mt-3 border-t border-grid pt-2.5 font-mono text-[10.5px] text-ink-4">
         backtest-fit observations, not trading advice — every change re-enters the gauntlet
         as a new trial
       </div>
@@ -455,7 +491,7 @@ function TradeRowLine({ t }: { t: RunPayload["trades"][number] }) {
   return (
     <div
       className={clsx(
-        "grid items-baseline gap-2.5 border-t border-grid py-[7px] font-mono text-[12px]",
+        "grid items-baseline gap-2.5 border-t border-grid py-2 font-mono text-[13px]",
         t.skip && "opacity-55",
       )}
       style={{ gridTemplateColumns: "84px 58px 1.3fr 74px 1fr" }}
@@ -493,7 +529,7 @@ function TradeLog({ run }: { run: RunPayload }) {
         onClick={() => setOpen((v) => !v)}
         className={clsx(
           PANEL,
-          "flex w-full items-center gap-2.5 px-4 py-3 text-left font-mono text-[12.5px] text-ink-3 hover:border-line-hover hover:text-ink",
+          "flex w-full items-center gap-2.5 px-5 py-3.5 text-left font-mono text-[13.5px] text-ink-3 hover:border-line-hover hover:text-ink",
           open && "rounded-b-none",
         )}
       >
@@ -536,6 +572,21 @@ export function ResultsView({
   const [askText, setAskText] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const settings = useSettings();
+  // retail register: same computed numbers, everyday words — old runs
+  // without a stored retail block fall back to institutional text
+  const retailMode = settings.verbiage === "retail" && !!run.retail;
+  const verdict = retailMode && run.retail
+    ? {
+        ...run.verdict,
+        headline: run.retail.headline,
+        evidence: run.retail.evidence,
+        breaks: run.retail.breaks,
+        caveat: run.retail.caveat,
+        refusalBody: run.retail.refusalBody ?? run.verdict.refusalBody,
+        refusalUnlock: run.retail.refusalUnlock ?? run.verdict.refusalUnlock,
+      }
+    : run.verdict;
 
   async function submitAsk() {
     if (!askText.trim() || asking) return;
@@ -585,7 +636,7 @@ export function ResultsView({
         </div>
       </div>
 
-      <VerdictBlock verdict={run.verdict} />
+      <VerdictBlock verdict={verdict} />
 
       {run.verdict.refusal && (
         <div className="mb-1 mt-[18px] text-center font-mono text-[10.5px] font-medium tracking-[.18em] text-ink-4">
@@ -594,10 +645,10 @@ export function ResultsView({
       )}
 
       <div className={clsx(run.verdict.refusal && "opacity-[.38]")}>
-        <MetricTiles run={run} />
-        <EquityChart run={run} />
-        <HonestyPanels run={run} />
-        <Recommendations run={run} />
+        <MetricTiles run={run} retailMode={retailMode} />
+        <EquityChart run={run} retailMode={retailMode} />
+        <HonestyPanels run={run} retailMode={retailMode} />
+        <Recommendations run={run} retailMode={retailMode} />
         <TradeLog run={run} />
       </div>
 
@@ -612,7 +663,7 @@ export function ResultsView({
 
       <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[rgba(27,31,38,.92)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
         <input
-          className="flex-1 font-mono text-[13.5px]"
+          className="flex-1 font-mono text-[15px]"
           placeholder='Ask about this result… "is this just 2020?" · "widen the spread" · "worst month"'
           value={askText}
           onChange={(e) => setAskText(e.target.value)}
