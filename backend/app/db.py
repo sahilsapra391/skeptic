@@ -52,6 +52,29 @@ class RunEvent(Base):
     label: Mapped[str] = mapped_column(String(120))
 
 
+class TrialCounter(Base):
+    """Per-strategy-family test count for the deflated Sharpe correction
+    (TECH-SPEC §6.5). Family = underlying + structure; every run and every
+    sweep value increments it — trying again IS the multiple-testing bias."""
+
+    __tablename__ = "trial_counter"
+
+    family: Mapped[str] = mapped_column(String(60), primary_key=True)
+    trials: Mapped[int] = mapped_column(Integer, default=0)
+
+
+def bump_trials(family: str, n: int = 1) -> int:
+    """Increment and return the family's trial count."""
+    with SessionLocal() as s:
+        row = s.get(TrialCounter, family)
+        if row is None:
+            row = TrialCounter(family=family, trials=0)
+            s.add(row)
+        row.trials += n
+        s.commit()
+        return row.trials
+
+
 _engine = create_engine(
     _database_url(),
     connect_args={"check_same_thread": False} if _database_url().startswith("sqlite") else {},

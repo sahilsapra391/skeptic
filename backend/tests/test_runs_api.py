@@ -25,7 +25,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(app)
 
 
-def test_backtest_happy_path(client: TestClient) -> None:
+def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
     r = client.post("/api/backtest", json={"spec": fx.SPEC})
     assert r.status_code == 200
     body = r.json()
@@ -35,9 +35,11 @@ def test_backtest_happy_path(client: TestClient) -> None:
     payload = client.get(f"/api/runs/{run_id}").json()
     assert payload["status"] == "done"
     assert payload["demo"] is False
-    # the run is real but UNBLESSED until M3 — refusal state by design
+    # ONE closed trade → the sample guardrail must refuse to bless it
+    # (this is the insufficient-evidence cap, end to end)
     assert payload["verdict"]["refusal"] is True
-    assert "M3" in payload["verdict"]["headline"]
+    assert "1 closed trade" in payload["verdict"]["headline"]
+    assert "30 trades" in payload["verdict"]["refusalUnlock"]
     # real numbers from the fixture math (final equity 9,654.35 on 10,000)
     assert payload["equitySeries"][-1]["v"] == pytest.approx(9654.35, abs=0.005)
     assert "1 filled" in payload["tradeHeader"]

@@ -52,7 +52,7 @@ export interface SpecDraft {
   examples?: number; // chart mode: pinned example count
 }
 
-export type VerdictKind = "fades-oos" | "survives" | "refusal";
+export type VerdictKind = "fades-oos" | "survives" | "refusal" | "graded";
 
 export interface VerdictPayload {
   kind: VerdictKind;
@@ -133,7 +133,8 @@ export interface RunPayload {
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
   honesty: HonestyPanels;
   mc: { p95: string; p50: string; p05: string };
-  sensitivity: number[][]; // opacity grid, rows x 9
+  sensitivity: number[][]; // opacity grid (5 cols per param for real runs)
+  sensitivityRows?: string[]; // real runs: swept parameter names
   tradeHeader: string;
   trades: TradeRow[];
   askAnswer?: string;

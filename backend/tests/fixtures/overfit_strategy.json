@@ -1,0 +1,61 @@
+{
+  "spec": {
+    "spec_version": 1,
+    "meta": {
+      "name": "overfit SPY 15d 28dte 25pt 100sl",
+      "description_raw": "deliberately overfit fixture \u2014 tuned on the full sample"
+    },
+    "underlying": {
+      "ticker": "SPY"
+    },
+    "position": {
+      "structure": "short_put",
+      "legs": [
+        {
+          "right": "put",
+          "side": "short",
+          "ratio": 1,
+          "strike_selection": {
+            "method": "delta",
+            "value": 0.15
+          }
+        }
+      ],
+      "expiration_selection": {
+        "target_dte": 28,
+        "min_dte": 20,
+        "max_dte": 40
+      }
+    },
+    "entry": {
+      "schedule": {
+        "frequency": "weekly",
+        "day_of_week": "monday"
+      },
+      "conditions": [],
+      "max_concurrent_positions": 3
+    },
+    "exit": {
+      "profit_target_pct": 25.0,
+      "stop_loss_pct": 100.0
+    },
+    "sizing": {
+      "method": "fixed_contracts",
+      "value": 1
+    },
+    "costs": {
+      "commission_per_contract": 0.65,
+      "slippage_half_spread_fraction": 0.5
+    },
+    "backtest": {
+      "start": null,
+      "end": null,
+      "initial_capital": 25000,
+      "seed": 42
+    }
+  },
+  "trials": 108,
+  "data_seed": 2,
+  "in_sample_sharpe": 0.6849,
+  "note": "parameters tuned on the FULL zero-edge sample by tests/fixtures/synthetic_market.py \u2014 the gauntlet must always catch this"
+}

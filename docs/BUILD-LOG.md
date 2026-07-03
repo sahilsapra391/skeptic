@@ -533,3 +533,29 @@ spreads + vendor capture-minute fuzz + first-order adjustment. Full
 story in DOLTHUB-EVAL.md addendum. Also today: intraday recorder's
 first live session confirmed writing (SPY 14,124 / QQQ 11,350 /
 IWM 5,168 rows per minute snapshot).
+
+## 2026-07-02 — M3: the honesty layer — every backtest now runs the gauntlet
+
+The product's reason to exist. `app/honesty/` lands with five attack
+stages (TECH-SPEC §6): OOS 70/30 chronological split, walk-forward on
+42-session folds, Monte Carlo circular block bootstrap (block 5, 1,000
+seeded resamples), ±20% sensitivity sweep that re-runs the real engine
+per neighbor, and deflated Sharpe with a per-family trial counter
+persisted in Postgres. Trust is computed by deterministic rules — level
+= 1 + core attacks survived, DSR < 0.5 or OOS sign-flip caps at 2, and
+thin samples (< 30 trades or single VIX regime) are never blessed
+regardless of the numbers. Verdicts are template-first and grounded by
+construction; the numeric validator rejects any narrated number absent
+from the stats payload (LLM narration auto-activates later via
+OPENROUTER_API_KEY, same validator, template fallback). The permanent
+go/no-go test now exists: an in-repo 108-combo optimizer tunes a short
+put on synthetic zero-edge GBM data (BS-priced chains), finds in-sample
+Sharpe 0.68, and `test_overfit_fixture.py` asserts the gauntlet flags
+it forever — a green run on that fixture is a failing build. Pipeline:
+`POST /api/backtest` → engine → gauntlet (staged run_events drive the
+live progress UI) → verdict → payload with real trust band, attack
+chips, IS/OOS bars, walk-forward bars, MC fan, and labelled ±20%
+sensitivity grid. Canonical SPY short put: full gauntlet in 2.3s
+(acceptance < 60s), 232 trades, 3 regimes. UI alongside: one-line
+headline, strike/DTE dropdowns (.05Δ–.95Δ, 0–50), per-structure exit
+preset sets. Backend 66 tests green, ruff + mypy strict clean.

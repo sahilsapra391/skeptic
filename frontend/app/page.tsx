@@ -148,9 +148,7 @@ export default function NewAnalysisPage() {
       <CoverageChips />
 
       <h1 className="mb-2.5 text-[34px] font-[650] leading-[1.1] tracking-[-.02em]">
-        Describe a strategy.
-        <br />
-        I'll try to break it.
+        Describe a strategy. I'll try to break it.
       </h1>
       <p className="mb-[26px] max-w-[560px] text-[15px] leading-normal text-ink-3">
         Plain English in. I compile it, backtest it, then attack the result — out-of-sample,

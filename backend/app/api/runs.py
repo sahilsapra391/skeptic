@@ -1,10 +1,10 @@
 """Run pipeline routes.
 
-M2: POST /api/backtest and GET /api/runs{,/{id}} are REAL — the engine
-runs against the lake and results render verdict-withheld until the
-honesty gauntlet (M3). /api/parse (M4), /api/runs/{id}/ask (M3+M4) and
-/api/sweep (M3) stay explicit 501s: nothing is simulated or narrated
-before the code that owns it exists.
+M2+M3: POST /api/backtest runs the engine AND the full honesty gauntlet
+(OOS split, walk-forward, Monte Carlo, sensitivity, DSR, regime guard),
+then the verdict writer — trust levels computed deterministically, every
+narrated number validated against the stats payload. /api/parse (M4) and
+/api/runs/{id}/ask (M4) stay explicit 501s.
 """
 
 from __future__ import annotations
@@ -29,10 +29,13 @@ _PENDING_PARSE = (
     "(docs/BUILD-PLAN.md). Nothing is guessed server-side until it exists."
 )
 _PENDING_ASK = (
-    "grounded Q&A lands with the honesty layer (M3) and parser (M4) — "
+    "grounded Q&A lands with the NL parser (M4) — "
     "no numbers are invented in the meantime."
 )
-_PENDING_SWEEP = "/api/sweep arrives with the sensitivity stage of milestone M3."
+_PENDING_SWEEP = (
+    "standalone sweeps arrive with the compare/sweep UI — the gauntlet already "
+    "runs a ±20% sensitivity sweep on every backtest."
+)
 
 
 class ParseRequest(BaseModel):
@@ -61,10 +64,28 @@ def _execute_run(run_id: str) -> None:
         spec = StrategySpec.model_validate(json.loads(spec_json))
         from app.data.chains import load_market_store
         from app.engine.runner import run_backtest
+        from app.honesty.gauntlet import run_gauntlet
+        from app.honesty.verdict import write_verdict
 
         store = load_market_store(spec.underlying.ticker.value)
         result = run_backtest(spec, store)
-        payload = build_run_payload(run_id, spec, result)
+
+        # every attempt at a family is a trial — the multiple-testing bias
+        # the deflated Sharpe corrects for (TECH-SPEC §6.5)
+        family = f"{spec.underlying.ticker.value}:{spec.position.structure.value}"
+        trials = db.bump_trials(family)
+
+        def on_stage(stage: int, label: str) -> None:
+            with db.session() as s2:
+                r2 = s2.get(db.Run, run_id)
+                if r2 is not None:
+                    r2.stage = stage
+                    s2.add(db.RunEvent(run_id=run_id, stage=stage, label=label))
+                    s2.commit()
+
+        report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage)
+        verdict = write_verdict(report)
+        payload = build_run_payload(run_id, spec, result, report, verdict)
         with db.session() as s:
             run = s.get(db.Run, run_id)
             if run is None:
@@ -72,7 +93,7 @@ def _execute_run(run_id: str) -> None:
             run.status = "done"
             run.stage = 6
             run.payload_json = json.dumps(payload)
-            s.add(db.RunEvent(run_id=run_id, stage=6, label="backtest complete"))
+            s.add(db.RunEvent(run_id=run_id, stage=6, label="gauntlet complete"))
             s.commit()
     except Exception as exc:
         log.exception("run %s failed", run_id)

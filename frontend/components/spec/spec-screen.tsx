@@ -82,6 +82,40 @@ function Stepper({
 const SELECT_CLS =
   "rounded-[7px] border border-line bg-panel-deep px-2 py-1 font-mono text-[11.5px] text-ink";
 
+/** Tile-sized dropdown — dial values pick from the full legal range. */
+const TILE_SELECT_CLS =
+  "w-full cursor-pointer appearance-none rounded-[7px] border border-transparent " +
+  "bg-transparent py-[1px] font-mono text-[15px] font-semibold text-ink " +
+  "hover:border-line focus:border-line focus:outline-none [&>option]:bg-panel-deep";
+
+// Strike: every .05Δ from .05 to .95 (stored as whole-number delta, 5..95)
+const STRIKE_DELTAS = Array.from({ length: 19 }, (_, i) => (i + 1) * 5);
+// DTE: 0–50, every day (0 = 0DTE, refused at run until the minute engine)
+const DTE_CHOICES = Array.from({ length: 51 }, (_, i) => i);
+
+/** Per-structure exit preset sets. Credit structures manage winners early
+ * and cut at a DTE; debit structures think in profit multiples and stops. */
+const CREDIT_EXITS = [
+  "50% profit",
+  "50% profit · 21 DTE",
+  "25% profit",
+  "75% profit",
+  "21 DTE",
+  "14 DTE",
+  "stop 2× credit",
+  "50% profit · stop 2×",
+  "hold to expiry",
+];
+const DEBIT_EXITS = [
+  "100% profit",
+  "100% profit · stop 50%",
+  "50% profit",
+  "200% profit",
+  "stop 50%",
+  "50% profit · 7 DTE",
+  "hold to expiry",
+];
+
 export function SpecScreen({
   draft,
   onChange,
@@ -113,8 +147,8 @@ export function SpecScreen({
 
   const exitChoices =
     draft.structure === "long_call" || draft.structure === "long_put"
-      ? ["100% profit", "stop 50%", "hold to expiry"]
-      : ["50% profit", "21 DTE", "hold to expiry"];
+      ? DEBIT_EXITS
+      : CREDIT_EXITS;
 
   return (
     <div>
@@ -147,40 +181,34 @@ export function SpecScreen({
           />
         </div>
         <div className={TILE}>
-          <div className={TILE_LABEL}>STRIKE</div>
-          <Stepper
-            render={() => `.${String(draft.strikeDelta).padStart(2, "0")}Δ`}
-            onDec={() => set({ strikeDelta: Math.max(5, draft.strikeDelta - 5) })}
-            onInc={() => set({ strikeDelta: Math.min(95, draft.strikeDelta + 5) })}
-          />
+          <div className={TILE_LABEL}>STRIKE ▾</div>
+          <select
+            value={draft.strikeDelta}
+            onChange={(e) => set({ strikeDelta: Number(e.target.value) })}
+            className={TILE_SELECT_CLS}
+            title="Strike delta — .05Δ to .95Δ"
+          >
+            {STRIKE_DELTAS.map((d) => (
+              <option key={d} value={d}>
+                .{String(d).padStart(2, "0")}Δ
+              </option>
+            ))}
+          </select>
         </div>
         <div className={clsx(TILE, zeroDte && "!border-warn/50")}>
-          <div className={clsx(TILE_LABEL, zeroDte && "!text-warn")}>DTE</div>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => set({ dte: Math.max(0, draft.dte - 1) })}
-              className="text-[15px] text-ink-4 hover:text-ink"
-            >
-              ‹
-            </button>
-            <input
-              type="number"
-              min={0}
-              max={50}
-              value={draft.dte}
-              onChange={(e) => {
-                const v = Math.max(0, Math.min(50, Number(e.target.value) || 0));
-                set({ dte: v });
-              }}
-              className="w-[46px] rounded border border-transparent bg-transparent text-center font-mono text-[15px] font-semibold focus:border-line [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-            />
-            <button
-              onClick={() => set({ dte: Math.min(50, draft.dte + 1) })}
-              className="text-[15px] text-ink-4 hover:text-ink"
-            >
-              ›
-            </button>
-          </div>
+          <div className={clsx(TILE_LABEL, zeroDte && "!text-warn")}>DTE ▾</div>
+          <select
+            value={draft.dte}
+            onChange={(e) => set({ dte: Number(e.target.value) })}
+            className={TILE_SELECT_CLS}
+            title="Days to expiration — 0 to 50"
+          >
+            {DTE_CHOICES.map((d) => (
+              <option key={d} value={d}>
+                {d === 0 ? "0 (0DTE)" : d}
+              </option>
+            ))}
+          </select>
         </div>
 
         {draft.fromChart ? (

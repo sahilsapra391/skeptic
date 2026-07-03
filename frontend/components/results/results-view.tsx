@@ -124,7 +124,7 @@ function HonestyPanels({ run }: { run: RunPayload }) {
 
       <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
         <div className={clsx(PANEL_TITLE, "mb-2.5")}>
-          WALK-FORWARD{h.wf.length ? ` — ${h.wf.length} WINDOWS` : ""}
+          WALK-FORWARD{h.wf.length ? ` — LAST ${h.wf.length} WINDOWS` : ""}
         </div>
         {h.wf.length > 0 ? (
           <div className="flex h-14 items-end gap-[5px]">
@@ -156,25 +156,61 @@ function HonestyPanels({ run }: { run: RunPayload }) {
 
       <div className={clsx(PANEL, "px-[15px] py-[13px]")}>
         <div className={clsx(PANEL_TITLE, "mb-2.5")}>
-          {run.sensitivity.length ? "SENSITIVITY — Δ 15 → 45" : "SENSITIVITY"}
+          {run.sensitivityRows?.length
+            ? "SENSITIVITY — ±20% PER PARAMETER"
+            : run.sensitivity.length
+              ? "SENSITIVITY — Δ 15 → 45"
+              : "SENSITIVITY"}
         </div>
-        <div className="grid grid-cols-9 gap-1">
-          {run.sensitivity.flatMap((row, ri) =>
-            row.map((opacity, ci) => (
-              <div
-                key={`${ri}-${ci}`}
-                className="h-5 rounded"
-                style={{ background: `rgba(205,214,223,${opacity})` }}
-              />
-            )),
-          )}
-        </div>
-        {run.sensitivity.length > 0 && (
-          <div className="mt-1 flex justify-between font-mono text-[9.5px] text-ink-4">
-            <span>Δ.15</span>
-            <span>Δ.30</span>
-            <span>Δ.45</span>
+        {run.sensitivityRows?.length ? (
+          // real runs: one labelled row per swept parameter, −20% → +20%
+          <div className="flex flex-col gap-1">
+            {run.sensitivity.map((row, ri) => (
+              <div key={ri} className="flex items-center gap-2">
+                <span className="w-[104px] shrink-0 truncate font-mono text-[9.5px] text-ink-4">
+                  {run.sensitivityRows?.[ri] ?? ""}
+                </span>
+                <div
+                  className="grid flex-1 gap-1"
+                  style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+                >
+                  {row.map((opacity, ci) => (
+                    <div
+                      key={ci}
+                      className="h-5 rounded"
+                      style={{ background: `rgba(205,214,223,${opacity})` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
+              <span>−20%</span>
+              <span>as specced</span>
+              <span>+20%</span>
+            </div>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-9 gap-1">
+              {run.sensitivity.flatMap((row, ri) =>
+                row.map((opacity, ci) => (
+                  <div
+                    key={`${ri}-${ci}`}
+                    className="h-5 rounded"
+                    style={{ background: `rgba(205,214,223,${opacity})` }}
+                  />
+                )),
+              )}
+            </div>
+            {run.sensitivity.length > 0 && (
+              <div className="mt-1 flex justify-between font-mono text-[9.5px] text-ink-4">
+                <span>Δ.15</span>
+                <span>Δ.30</span>
+                <span>Δ.45</span>
+              </div>
+            )}
+          </>
         )}
         <div className="mt-2 text-[12.5px] text-ink-2">{h.notes[3]}</div>
       </div>

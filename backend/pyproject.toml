@@ -39,10 +39,9 @@ python_version = "3.12"
 ignore_missing_imports = true
 check_untyped_defs = true
 
-# strict typing on the correctness-critical packages (CLAUDE.md conventions);
-# honesty/ joins this list when M3 lands
+# strict typing on the correctness-critical packages (CLAUDE.md conventions)
 [[tool.mypy.overrides]]
-module = ["app.models.*", "app.engine.*"]
+module = ["app.models.*", "app.engine.*", "app.honesty.*"]
 strict = true
 
 [tool.pytest.ini_options]
