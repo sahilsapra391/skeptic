@@ -30,8 +30,8 @@ import type {
 } from "@/lib/types";
 
 const W = 860;
-const PRICE_H = 300;
-const VOL_H = 56;
+const PRICE_H = 330;
+const VOL_H = 72;
 const PANEL_H = 76;
 const PAD_Y = 12;
 const MAX_DRAWN = 700; // display decimation threshold
@@ -41,11 +41,11 @@ const MIN_SPAN = 12;
 // right tool (deep 5m history at full zoom-out would page in ~120k bars)
 const MAX_BUFFER = 12_000;
 
-const UP = "#43c987"; // pl-pos — market up/down is P/L-family data
-const DOWN = "#e0604f"; // pl-neg
-const LINE = "#cdd6df";
-const GRID = "#20242c";
-const FAINT = "#4a545f";
+const UP = "var(--pl-pos)"; // pl-pos — market up/down is P/L-family data
+const DOWN = "var(--pl-neg)"; // pl-neg
+const LINE = "var(--chart)";
+const GRID = "var(--grid)";
+const FAINT = "var(--ink-5)";
 
 export const INTERVALS: ChartInterval[] = ["1m", "2m", "3m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
 
@@ -70,14 +70,14 @@ interface OverlayDef {
 
 const INDICATOR_DEFS: OverlayDef[] = [
   { id: "volume", label: "Volume", color: FAINT, kind: "volume" },
-  { id: "sma:20", label: "SMA 20", color: "#d9a441", kind: "overlay" },
+  { id: "sma:20", label: "SMA 20", color: "rgb(var(--warn-rgb))", kind: "overlay" },
   { id: "sma:50", label: "SMA 50", color: "#8ab8ff", kind: "overlay" },
   { id: "sma:200", label: "SMA 200", color: "#e08fc7", kind: "overlay" },
   { id: "ema:9", label: "EMA 9", color: "#6fd3f2", kind: "overlay" },
   { id: "ema:21", label: "EMA 21", color: "#f0a45d", kind: "overlay" },
-  { id: "vwap", label: "VWAP", color: "#e9edf1", dash: "5 4", kind: "overlay" },
-  { id: "bb:20:2", label: "Bollinger 20·2", color: "#98a2ad", kind: "band" },
-  { id: "rsi:14", label: "RSI 14", color: "#d9a441", kind: "rsi" },
+  { id: "vwap", label: "VWAP", color: "var(--ink)", dash: "5 4", kind: "overlay" },
+  { id: "bb:20:2", label: "Bollinger 20·2", color: "var(--ink-3)", kind: "band" },
+  { id: "rsi:14", label: "RSI 14", color: "rgb(var(--warn-rgb))", kind: "rsi" },
   { id: "macd:12:26:9", label: "MACD 12·26·9", color: "#6fd3f2", kind: "macd" },
 ];
 
@@ -711,14 +711,14 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
 
   const chipCls = (on: boolean) =>
     clsx(
-      "rounded-[7px] px-2 py-[3px] font-mono text-[11px]",
+      "rounded-[8px] px-2.5 py-1 font-mono text-[12.5px]",
       on ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-3",
     );
 
   return (
     <div>
       {/* readout + freshness */}
-      <div className="mb-1.5 flex items-center gap-3 font-mono text-[11.5px]">
+      <div className="mb-2 flex items-center gap-3 font-mono text-[13px]">
         {readout ? (
           <span className="text-ink-4">
             O <b style={{ color: readoutUp ? UP : DOWN }}>{readout.o.toFixed(2)}</b> H{" "}
@@ -730,7 +730,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         ) : (
           <span className="text-ink-4">{loading ? "reading bars…" : "—"}</span>
         )}
-        <span className="ml-auto flex items-center gap-1.5 text-[10.5px] text-ink-4">
+        <span className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-4">
           {buffer?.live && <span className="inline-block h-[7px] w-[7px] animate-pin-pulse rounded-full bg-trust" />}
           {buffer
             ? buffer.live
@@ -756,12 +756,12 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         }}
       >
         {error && (
-          <div className="flex h-[300px] items-center justify-center px-6 text-center font-mono text-[12px] text-warn">
+          <div className="flex h-[330px] items-center justify-center px-6 text-center font-mono text-[12px] text-warn">
             {error}
           </div>
         )}
         {!error && !n && !loading && (
-          <div className="flex h-[300px] items-center justify-center font-mono text-[12px] text-ink-4">
+          <div className="flex h-[330px] items-center justify-center font-mono text-[12px] text-ink-4">
             no bars in the lake for this view
           </div>
         )}
@@ -770,7 +770,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
             {priceTicks.map((p) => (
               <g key={p}>
                 <line x1="0" y1={geom.yFor(p)} x2={W} y2={geom.yFor(p)} stroke={GRID} strokeWidth="1" />
-                <text x={W - 4} y={geom.yFor(p) - 3} textAnchor="end" fontSize="9.5" fill={FAINT} fontFamily="monospace">
+                <text x={W - 4} y={geom.yFor(p) - 3} textAnchor="end" fontSize="11" fill={FAINT} fontFamily="var(--font-plex-mono)">
                   {p.toFixed(2)}
                 </text>
               </g>
@@ -815,7 +815,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
                 )}
                 <circle cx={p.xa} cy={p.ya} r="5.5" fill="var(--ac)" />
                 {p.xb != null && p.yb != null && (
-                  <circle cx={p.xb} cy={p.yb} r="5.5" fill="#171a20" stroke="var(--ac)" strokeWidth="2" />
+                  <circle cx={p.xb} cy={p.yb} r="5.5" fill="var(--panel-chart)" stroke="var(--ac)" strokeWidth="2" />
                 )}
                 {p.xb == null && <circle cx={p.xa} cy={p.ya} r="6" fill="var(--ac)" className="animate-pin-pulse" />}
               </g>
@@ -833,8 +833,8 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
                   strokeDasharray="4 4"
                 />
                 <line x1="0" y1={hover.ySvg} x2={W} y2={hover.ySvg} stroke={FAINT} strokeWidth="0.7" strokeDasharray="4 4" />
-                <rect x={W - 62} y={hover.ySvg - 9} width="58" height="15" rx="3" fill="#2b303a" />
-                <text x={W - 33} y={hover.ySvg + 2.5} textAnchor="middle" fontSize="9.5" fill="#e9edf1" fontFamily="monospace">
+                <rect x={W - 62} y={hover.ySvg - 9} width="58" height="15" rx="3" fill="var(--line)" />
+                <text x={W - 33} y={hover.ySvg + 2.5} textAnchor="middle" fontSize="11" fill="var(--ink)" fontFamily="var(--font-plex-mono)">
                   {geom.priceAt(hover.ySvg).toFixed(2)}
                 </text>
               </g>
@@ -877,11 +877,11 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
               sampleSeries(rsiSeries, geom.sampleIdxs),
               (v) => PANEL_H - (v / 100) * PANEL_H,
             )}
-            stroke="#d9a441"
+            stroke="rgb(var(--warn-rgb))"
             strokeWidth="1.1"
             fill="none"
           />
-          <text x="6" y="12" fontSize="9.5" fill={FAINT} fontFamily="monospace">
+          <text x="6" y="12" fontSize="11" fill={FAINT} fontFamily="var(--font-plex-mono)">
             RSI 14
           </text>
         </svg>
@@ -898,11 +898,11 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
       )}
 
       {/* time axis */}
-      <div className="relative mt-0.5 h-4 overflow-hidden">
+      <div className="relative mt-1 h-5 overflow-hidden">
         {timeTicks.map((t, i) => (
           <span
             key={`${t.label}-${i}`}
-            className="absolute -translate-x-1/2 whitespace-nowrap font-mono text-[10px] text-ink-4"
+            className="absolute -translate-x-1/2 whitespace-nowrap font-mono text-[11.5px] text-ink-4"
             style={{ left: `${t.frac * 100}%` }}
           >
             {t.label}
@@ -910,7 +910,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         ))}
         {hover && hoverBar && !dragging && (
           <span
-            className="absolute -translate-x-1/2 whitespace-nowrap rounded bg-line px-1.5 font-mono text-[10px] text-ink"
+            className="absolute -translate-x-1/2 whitespace-nowrap rounded bg-line px-1.5 font-mono text-[11.5px] text-ink"
             style={{ left: `${Math.min(0.96, Math.max(0.04, (hover.i - view.start) / view.span)) * 100}%` }}
           >
             {fmtTime(hoverBar.t, intraday)}
@@ -929,7 +929,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
             {p.label}
           </button>
         ))}
-        <span className="ml-2 font-mono text-[10.5px] text-ink-4">interval:</span>
+        <span className="ml-2 font-mono text-[12px] text-ink-4">interval:</span>
         {INTERVALS.map((iv) => (
           <button key={iv} onClick={() => setViewPreset(iv, window_)} className={chipCls(interval === iv)}>
             {iv}
@@ -941,11 +941,11 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
               ƒ indicators{active.size > 1 ? ` · ${active.size - 1}` : ""}
             </button>
             {menuOpen && (
-              <div className="absolute bottom-8 right-0 z-10 w-[190px] rounded-[10px] border border-line bg-panel p-2 shadow-xl">
+              <div className="absolute bottom-9 right-0 z-10 w-[215px] rounded-[10px] border border-line bg-panel p-2 shadow-xl">
                 <button
                   onClick={() => setChartType(chartType === "line" ? "candles" : "line")}
                   className={clsx(
-                    "flex w-full items-center gap-2 rounded-md border-b border-line px-2 pb-2 pt-[5px] text-left font-mono text-[11.5px]",
+                    "flex w-full items-center gap-2 rounded-md border-b border-line px-2 pb-2 pt-[5px] text-left font-mono text-[12.5px]",
                     chartType === "line" ? "text-ink" : "text-ink-4 hover:text-ink-3",
                   )}
                 >
@@ -965,11 +965,11 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
                         setActive(next);
                       }}
                       className={clsx(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left font-mono text-[11.5px]",
+                        "flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left font-mono text-[12.5px]",
                         on ? "text-ink" : "text-ink-4 hover:text-ink-3",
                       )}
                     >
-                      <span className="inline-block h-[8px] w-[8px] rounded-sm" style={{ background: on ? def.color : "#2b303a" }} />
+                      <span className="inline-block h-[8px] w-[8px] rounded-sm" style={{ background: on ? def.color : "var(--line)" }} />
                       {def.label}
                       <span className="ml-auto">{on ? "✓" : ""}</span>
                     </button>
@@ -1019,8 +1019,8 @@ function MacdPanel({
       <path d={histUp} fill={UP} opacity="0.5" />
       <path d={histDn} fill={DOWN} opacity="0.5" />
       <path d={pathFrom(xs, macdPts, yFor)} stroke="#6fd3f2" strokeWidth="1.1" fill="none" />
-      <path d={pathFrom(xs, sigPts, yFor)} stroke="#d9a441" strokeWidth="1.1" fill="none" />
-      <text x="6" y="12" fontSize="9.5" fill={FAINT} fontFamily="monospace">
+      <path d={pathFrom(xs, sigPts, yFor)} stroke="rgb(var(--warn-rgb))" strokeWidth="1.1" fill="none" />
+      <text x="6" y="12" fontSize="11" fill={FAINT} fontFamily="var(--font-plex-mono)">
         MACD 12·26·9
       </text>
     </svg>

@@ -168,7 +168,7 @@ Runs automatically after every backtest, in stages (each stage emits a
    underlying + structure). Every parse-to-run and every sweep value
    increments trials. Report DSR and the plain-English implication.
 6. **Regime & sample guardrail (guardrail #5):** compute VIX regime coverage
-   (days in VIX <15 / 15–20 / >20 buckets) and trade count. If trades < 30 or
+   (days in VIX <15 / 15–20 / >20 buckets) and trade count. If trades < 15 or
    only one regime bucket represented, `trust_cap = "insufficient_evidence"`.
 
 Output: a single `HonestyReport` pydantic model; this JSON is the ONLY input

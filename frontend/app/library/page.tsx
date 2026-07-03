@@ -10,12 +10,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { listRuns } from "@/lib/api";
+import { useSettings } from "@/lib/settings";
 import type { RunSummary } from "@/lib/types";
 
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { TrustBandCard } from "@/components/verdict/trust-band";
 
 export default function LibraryPage() {
+  const settings = useSettings();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [demo, setDemo] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,9 +33,9 @@ export default function LibraryPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-[22px] font-[650]">Library</h1>
+      <h1 className="mb-1 font-serif text-[32px] font-medium">Library</h1>
       <div className="mb-[22px] flex items-center gap-2.5">
-        <p className="text-[13.5px] text-ink-3">Sorted by trust, not by return.</p>
+        <p className="text-[15px] text-ink-3">Sorted by trust, not by return.</p>
         {demo && <DemoBadge text="demo entries — engine lands at M2" />}
       </div>
 
@@ -50,7 +52,7 @@ export default function LibraryPage() {
           </p>
           <Link
             href="/"
-            className="mt-4 inline-block rounded-[10px] bg-trust px-5 py-2.5 text-[14px] font-bold text-[#0d1216]"
+            className="mt-4 inline-block rounded-[10px] bg-trust px-5 py-2.5 text-[14px] font-bold text-on-accent"
           >
             New analysis →
           </Link>
@@ -58,24 +60,26 @@ export default function LibraryPage() {
       )}
 
       {runs && runs.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3.5">
           {runs.map((r) => (
             <Link
               key={r.id}
               href={`/runs/${r.id}`}
-              className="rounded-[14px] border border-line bg-panel p-[15px] hover:border-line-hover"
+              className="rounded-[14px] border border-line bg-panel p-5 hover:border-line-hover"
             >
-              <div className="font-mono text-[13px] font-medium">{r.name}</div>
-              <div className="mb-3 mt-1 font-mono text-[11px] text-ink-4">{r.meta}</div>
+              <div className="font-mono text-[15px] font-medium">{r.name}</div>
+              <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
               <TrustBandCard band={r.band} marker={r.marker} withheld={r.kind === "refusal"} />
-              <div className="text-[12.5px] italic text-ink-2">{r.quote}</div>
+              <div className="text-[13.5px] italic leading-[1.55] text-ink-2">
+                {settings.verbiage === "retail" && r.quoteRetail ? r.quoteRetail : r.quote}
+              </div>
             </Link>
           ))}
           <Link
             href="/"
-            className="flex min-h-[120px] items-center justify-center rounded-[14px] border border-dashed border-line-hover p-[15px] text-[13px] text-ink-4 hover:border-trust-border hover:text-trust"
+            className="flex min-h-[140px] items-center justify-center rounded-[14px] border border-dashed border-line-hover p-5 text-[14.5px] text-ink-4 hover:border-trust-border hover:text-trust"
           >
-            + new analysis
+            + New Analysis
           </Link>
         </div>
       )}

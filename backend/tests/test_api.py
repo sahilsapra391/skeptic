@@ -13,6 +13,7 @@ from tests.test_spec_roundtrip import CANONICAL
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     for var in (
         "SKEPTIC_ACCESS_TOKEN",
+        "OPENROUTER_API_KEY",  # hermetic: never live LLM calls from tests
         "R2_ACCOUNT_ID",
         "R2_ACCESS_KEY_ID",
         "R2_SECRET_ACCESS_KEY",
@@ -42,9 +43,10 @@ def test_underlying_refuses_without_r2(client: TestClient) -> None:
 
 
 def test_unbuilt_routes_are_explicit_501(client: TestClient) -> None:
-    # parser is M4; grounded ask needs M3+M4; sweep is M3
+    # parser is M4; standalone sweeps await the compare UI. Grounded ask is
+    # LIVE now — an unknown run is a plain 404, never an invented answer.
     assert client.post("/api/parse", json={"text": "sell a put"}).status_code == 501
-    assert client.post("/api/runs/abc/ask", json={"question": "?"}).status_code == 501
+    assert client.post("/api/runs/abc/ask", json={"question": "?"}).status_code == 404
     assert client.post("/api/sweep", json={}).status_code == 501
 
 

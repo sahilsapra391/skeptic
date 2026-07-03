@@ -1,0 +1,155 @@
+{
+  "comment": "BUILD-PLAN M4 eval set — 8 clear cases with hand-written ground truth, 4 ambiguous cases that must produce questions with zero fabricated parameters. Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults and dte windows are free.",
+  "cases": [
+    {
+      "case": 1,
+      "text": "Sell a 30 delta put on SPY every Monday, close at 50% profit or 21 DTE.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "SPY",
+        "structure": "short_put",
+        "legs": [{"right": "put", "side": "short", "method": "delta", "value": 0.30}],
+        "target_dte": 45,
+        "schedule": {"frequency": ["weekly"], "day_of_week": "monday"},
+        "conditions": [],
+        "exit": {"profit_target_pct": 50, "time_exit_dte": 21}
+      }
+    },
+    {
+      "case": 2,
+      "text": "Put credit spread on QQQ, short leg 25 delta, $5 wide, 45 DTE, exit at 50% profit, stop at 2x credit, weekly entries.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "QQQ",
+        "structure": "put_credit_spread",
+        "legs": [
+          {"right": "put", "side": "short", "method": "delta", "value": 0.25},
+          {"right": "put", "side": "long", "method": "width_from_leg", "value": 5, "reference_leg": 0}
+        ],
+        "target_dte": 45,
+        "schedule": {"frequency": ["weekly"]},
+        "conditions": [],
+        "exit": {"profit_target_pct": 50, "stop_loss_pct": 200}
+      }
+    },
+    {
+      "case": 3,
+      "text": "Iron condor on IWM, 20 delta wings, shorts at 20 delta, longs $3 wider, 30 DTE, take profit 40%, time exit 10 DTE, enter monthly.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "IWM",
+        "structure": "iron_condor",
+        "legs": [
+          {"right": "put", "side": "short", "method": "delta", "value": 0.20},
+          {"right": "put", "side": "long", "method": "width_from_leg", "value": 3, "reference_leg": 0},
+          {"right": "call", "side": "short", "method": "delta", "value": 0.20},
+          {"right": "call", "side": "long", "method": "width_from_leg", "value": 3, "reference_leg": 2}
+        ],
+        "target_dte": 30,
+        "schedule": {"frequency": ["monthly"]},
+        "conditions": [],
+        "exit": {"profit_target_pct": 40, "time_exit_dte": 10}
+      }
+    },
+    {
+      "case": 4,
+      "text": "Covered call on SPY, sell the 30 DTE call at 20 delta, exit at expiration, enter monthly.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "SPY",
+        "structure": "covered_call",
+        "legs": [{"right": "call", "side": "short", "method": "delta", "value": 0.20}],
+        "target_dte": 30,
+        "schedule": {"frequency": ["monthly"]},
+        "conditions": [],
+        "exit": {"time_exit_dte": 0}
+      }
+    },
+    {
+      "case": 5,
+      "text": "Buy a 60 DTE ATM call on QQQ when RSI(14) < 30, sell at 100% gain or 20 DTE, one at a time.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "QQQ",
+        "structure": "long_call",
+        "legs": [{"right": "call", "side": "long", "method": "atm"}],
+        "target_dte": 60,
+        "schedule": {"frequency": ["signal_only", "daily"]},
+        "conditions": [
+          {"indicator": "rsi", "period": 14, "operator": ["<", "<=", "below"], "value": 30}
+        ],
+        "max_concurrent_positions": 1,
+        "exit": {"profit_target_pct": 100, "time_exit_dte": 20}
+      }
+    },
+    {
+      "case": 6,
+      "text": "Short put on SPY at 5% below spot, 30 DTE, profit target 60%, stop 300%, enter every Friday.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "SPY",
+        "structure": "short_put",
+        "legs": [{"right": "put", "side": "short", "method": "offset_pct", "value": -0.05}],
+        "target_dte": 30,
+        "schedule": {"frequency": ["weekly"], "day_of_week": "friday"},
+        "conditions": [],
+        "exit": {"profit_target_pct": 60, "stop_loss_pct": 300}
+      }
+    },
+    {
+      "case": 7,
+      "text": "When the 9 EMA is below the 20 EMA on SPY, sell a 25 delta call spread $5 wide, 21 DTE, 50% profit target, stop at 150%, daily signal.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "SPY",
+        "structure": "call_credit_spread",
+        "legs": [
+          {"right": "call", "side": "short", "method": "delta", "value": 0.25},
+          {"right": "call", "side": "long", "method": "width_from_leg", "value": 5, "reference_leg": 0}
+        ],
+        "target_dte": 21,
+        "schedule": {"frequency": ["daily", "signal_only"]},
+        "conditions": [
+          {"indicator": "ema_cross_state", "operator": ["below", "<"], "params": {"fast": 9, "slow": 20}}
+        ],
+        "exit": {"profit_target_pct": 50, "stop_loss_pct": 150}
+      }
+    },
+    {
+      "case": 8,
+      "text": "Long put on IWM when price is 3% above its 50 SMA, 45 DTE ATM, exit 21 DTE or 75% profit.",
+      "kind": "spec",
+      "expect": {
+        "ticker": "IWM",
+        "structure": "long_put",
+        "legs": [{"right": "put", "side": "long", "method": "atm"}],
+        "target_dte": 45,
+        "schedule": {"frequency": ["signal_only", "daily"]},
+        "conditions": [
+          {"indicator": "price_vs_sma_pct", "period": 50, "operator": [">", ">=", "above"], "value": 3}
+        ],
+        "exit": {"profit_target_pct": 75, "time_exit_dte": 21}
+      }
+    },
+    {
+      "case": 9,
+      "text": "Sell puts on SPY when the market dips.",
+      "kind": "questions"
+    },
+    {
+      "case": 10,
+      "text": "Iron condor every week, manage at 21 days.",
+      "kind": "questions"
+    },
+    {
+      "case": 11,
+      "text": "Do the wheel on QQQ.",
+      "kind": "questions"
+    },
+    {
+      "case": 12,
+      "text": "Buy calls when it looks oversold, sell when it recovers.",
+      "kind": "questions"
+    }
+  ]
+}

@@ -533,3 +533,323 @@ spreads + vendor capture-minute fuzz + first-order adjustment. Full
 story in DOLTHUB-EVAL.md addendum. Also today: intraday recorder's
 first live session confirmed writing (SPY 14,124 / QQQ 11,350 /
 IWM 5,168 rows per minute snapshot).
+
+## 2026-07-02 — M3: the honesty layer — every backtest now runs the gauntlet
+
+The product's reason to exist. `app/honesty/` lands with five attack
+stages (TECH-SPEC §6): OOS 70/30 chronological split, walk-forward on
+42-session folds, Monte Carlo circular block bootstrap (block 5, 1,000
+seeded resamples), ±20% sensitivity sweep that re-runs the real engine
+per neighbor, and deflated Sharpe with a per-family trial counter
+persisted in Postgres. Trust is computed by deterministic rules — level
+= 1 + core attacks survived, DSR < 0.5 or OOS sign-flip caps at 2, and
+thin samples (< 30 trades or single VIX regime) are never blessed
+regardless of the numbers. Verdicts are template-first and grounded by
+construction; the numeric validator rejects any narrated number absent
+from the stats payload (LLM narration auto-activates later via
+OPENROUTER_API_KEY, same validator, template fallback). The permanent
+go/no-go test now exists: an in-repo 108-combo optimizer tunes a short
+put on synthetic zero-edge GBM data (BS-priced chains), finds in-sample
+Sharpe 0.68, and `test_overfit_fixture.py` asserts the gauntlet flags
+it forever — a green run on that fixture is a failing build. Pipeline:
+`POST /api/backtest` → engine → gauntlet (staged run_events drive the
+live progress UI) → verdict → payload with real trust band, attack
+chips, IS/OOS bars, walk-forward bars, MC fan, and labelled ±20%
+sensitivity grid. Canonical SPY short put: full gauntlet in 2.3s
+(acceptance < 60s), 232 trades, 3 regimes. UI alongside: one-line
+headline, strike/DTE dropdowns (.05Δ–.95Δ, 0–50), per-structure exit
+preset sets. Backend 66 tests green, ruff + mypy strict clean.
+
+## 2026-07-02 — LLM narration live, grounded Q&A, verdict unlock at 15 trades, UI polish round
+
+OPENROUTER_API_KEY landed in collector/.env, so two surfaces went live at
+once. (1) **Verdict narration**: write_verdict now actually reaches the
+LLM — fixed fence-wrapped JSON (extract the outermost {...}), retry on
+non-JSON, and hardened the numeric validator's grounding set (list
+lengths are legitimate counts, calendar years in report dates are
+identifiers, integer-rounded percentages of harvested stats allowed).
+The validator earned its keep immediately: it rejected derived numbers
+("2.39×" was fine, invented "-55" was not) across three live attempts
+before a fully grounded narration shipped — template remains the
+fallback, always. (2) **Grounded Q&A**: /api/runs/{id}/ask answers from
+a stored stats bundle (engine metrics + honesty report, persisted as
+stats_json with an additive micro-migration), same validator, honest
+refusal when a number can't be grounded, 501 when no key / no stats;
+the Next proxy no longer swallows real runs' ask errors into demo
+answers. Owner-set policy change: **minimum trades for a graded verdict
+is now 15** (was 30) — MIN_TRADES constant, CLAUDE.md + TECH-SPEC
+updated. UI round: ? tooltips explaining every metric tile, honesty
+panel, and spec dial in plain English; trade log shows fills only with
+skips behind a nested toggle; ticker/structure became dropdowns;
+structured custom-exit builder (profit % / stop % / DTE); per-structure
+exit preset sets grew 25% profit; compose toggle renamed Describe It /
+Show on Chart with proper icons and centered; presets rewritten and
+ordered by the user's own run history. Backend 71 tests green, ruff +
+mypy strict clean; verified E2E in browser including a grounded answer
+to "is this just the 2020 crash?".
+
+## 2026-07-03 — M4: the NL parser — English → spec-or-questions, never guesses
+
+`app/parser/parse.py` + real `POST /api/parse`: OpenRouter structured
+output emits either a schema-validated StrategySpec or clarifying
+questions (id + question + concrete options); `answers` converge over
+multiple turns; description_raw is overwritten server-side with the
+user's verbatim text so the model cannot paraphrase the record; failed
+validation retries once with the exact pydantic errors, then falls back
+to questions — a half-valid spec never escapes. One documented
+convention only: unstated tenor with a "close at 21 DTE"-style time
+stop uses the 45-DTE cycle (surfaced on the spec screen, where nothing
+runs unconfirmed). **Eval harness** (`evals/run_parser_eval.py` + the
+12-case set with hand-written ground truths in `evals/parser_cases.json`):
+first live run scored 3/8 clear — the model fabricated `time_exit_dte=0`
+and over-asked when one exit rule sufficed; after tightening the
+contract ("the exit object contains ONLY rules the user stated; one
+rule is a complete exit") the harness scores **8/8 clear, 4/4
+ambiguous — ACCEPTED** (bar was ≥7/8). Hermetic unit tests cover the
+server-side guarantees with the LLM mocked. Frontend: one-at-a-time
+clarifying questions ("QUESTION 1 OF 4 — I DON'T GUESS") with option
+chips + free text; an unedited parser spec runs verbatim, dial edits
+rebuild from the dials; parsed entry conditions render in the trigger
+editor; non-delta strikes ("5% below spot", ATM) keep their honest
+label in the strike dropdown.
+
+## 2026-07-03 — M5 closeout + grounded recommendations + interactive results
+
+The remaining M5 pieces plus an owner-requested UI round. **Grounded
+recommendations**: every results page now carries "WHAT WOULD IMPROVE
+IT — COMPUTED FROM THIS RUN" — suggestions derived exclusively from the
+run's own gauntlet numbers (the ±20% sweeps genuinely re-ran the
+engine: "delta .36Δ beat the specced .30Δ: Sharpe 1.01 → 1.12"), plus
+OOS/MC/walk-forward observations when flagged, refusal-aware, capped at
+4, with the standing caveat that acting on one is a new trial the
+deflated Sharpe will count. **Interactive visuals**: equity chart has a
+hover crosshair (date · $ · drawdown, OOS-aware), $-axis and date/split
+labels, an OUT-OF-SAMPLE marker; walk-forward bars carry per-fold
+tooltips (dates · return · trades); the Monte Carlo fan labels its
+bands with terminal dollars; the sensitivity grid shows the actual
+swept value in each cell with Sharpe-on-hover and a ring on the
+as-specced column. **Layout**: hero centered and scaled up, shell
+widened 940→1180px, 12 preset strategies centered and ordered by the
+user's own run history, sidebar collapsible (icon rail by default,
+labels when expanded, toggle at bottom-left, persisted). Lighthouse
+accessibility on Results: **96** (≥90 accepted; sole flag is the
+design's muted-ink contrast). Backend 76 tests, ruff, mypy strict,
+frontend tsc + lint all green; verified E2E in browser: ambiguous
+strategy → 4 questions → spec with trigger → gauntlet → LLM verdict
+leading with the walk-forward weakness.
+
+## 2026-07-03 — Live previews, editable costs, and the Verbiage Complexity setting
+
+Owner round three. **Gauntlet previews**: "no previews, no dopamine" is
+retired — as each stage finishes, its REAL headline stat streams into a
+"LIVE FROM THE GAUNTLET" feed (fills + net equity, unseen-data Sharpe
+holding/fading, windows profitable, reshuffle loss rate, plateau/cliff),
+stored progressively in a new previews_json column and served on the
+running payload; a rotating platform-tips panel fills the quiet moments.
+**Editable costs**: commission and slippage live in Settings
+(localStorage, clamped — slippage floors at 0.05 because mid fills stay
+banned) and are stamped onto EVERY submitted spec client-side, parsed or
+dial-built; the spec screen's FILLS tile shows the live values. Verified
+E2E: slippage 0.5 → 0.75 changed the same strategy from 232 to 211
+fills. **Verbiage Complexity (Institutional | Retail)**: every run now
+ships both registers — the LLM narrates twice (retail prompt bans
+jargon: "risk-adjusted score" not Sharpe, "reshuffling the trades" not
+Monte Carlo) behind the same numeric validator, with a deterministic
+retail template fallback; payload carries a retail block (headline,
+evidence, breaks, caveat, panel notes, recommendations) and the UI
+switches instantly — panel titles ("LUCK TEST — 1,000 RESHUFFLES",
+"TRAINING DATA VS UNSEEN DATA"), metric tile names ("WORST DIP",
+"RISK SCORE"), gauntlet stage names, and grounded Q&A all follow the
+setting. Old stored runs fall back to institutional. Settings page
+rebuilt with live system status (engine/parser/narration/Q&A/model/
+min-trades from /api/health). **Sizing pass**: market chart 300→430px
+tall, verdict headline 25→30px, metric tiles 19→24px, panels/text/
+buttons up across compose, spec, gauntlet, results, settings. Backend
+76 tests + ruff + mypy strict green; frontend tsc + lint green;
+verified in-browser across both registers on a single run.
+
+## 2026-07-03 — Width pass + sidebar defaults + hero cleanup
+
+Owner adjustments: content shell 1380px; composer and preset rows
+widened; results and chart mode fill the page; library becomes two wide
+columns with larger cards. Sidebar now defaults to OPEN (choice still
+persists), labels title-cased (New Analysis, Data Observatory). The
+coverage chips row and "day 2 of collection" link are gone from the
+hero — coverage lives in the Data Observatory, where it belongs.
+
+## 2026-07-03 — Fluid width: 1800px shell
+
+Owner: wider still. The shell cap moves to 1800px, making every page
+effectively fluid on real monitors — the market chart in Show-on-Chart
+mode spans ~1430px on a 1728-wide window, library cards ~725px each,
+results panels track the full width. Composer 1320px, preset rows
+1440px. Operational lesson recorded: tailwind.config.ts edits do NOT
+hot-reload — restart the dev server or the old token values keep
+being served (the 940→1380px bumps only took effect after this
+restart).
+
+## 2026-07-03 — Two bug fixes, −10% width, library verbiage, instant chart
+
+**Bug 1 — trust band overflow:** at level 5 the ±15% band spilled past
+the track (75% + 30% = 105%). Clamped in the payload (left ≤ 70%) AND
+client-side with CSS min() so already-stored runs render correctly too.
+**Bug 2 — degenerate DTE sweep:** ±20% of a 1–2 day tenor rounds back
+to the same day, producing five identical "1d" cells and a trivially
+"plateau" classification. Short tenors now sweep whole days (1–5 for a
+2-DTE spec) with a per-sweep base index so the ringed as-specced column
+stays honest; verified across dte 1/2/45/90. **Width:** shell trimmed
+10% (1800→1620px), settings page joins the uniform full-shell width.
+**Verbiage everywhere:** library cards now carry the retail headline
+(quoteRetail in run summaries) and switch with the setting like the
+rest of the app. **Chart speed:** the hero prefetches the exact bars
+request the chart issues on first mount (60s in-flight cache, failures
+never cached) — a warm mode-switch measured 24ms vs ~1s cold.
+
+## 2026-07-03 — Chart expand toggle + uniform chart chrome + sidebar always open
+
+The hero chart now defaults to the Describe It box width (1190px) with
+an expand toggle at its top-right: enlarge to full page for serious
+charting, shrink back with the same button. All the chrome around the
+chart was undersized relative to the canvas — ticker tabs, OHLC
+readout, freshness note, window/interval chips, time axis, indicator
+menu, price ticks, pin notes and the footer all bumped to a uniform,
+readable scale. Sidebar now opens on every load (collapse lasts for
+the session only — no persisted state).
+
+## 2026-07-03 — Verbiage-aware tooltips, run back-button, Library nav highlight
+
+Every ? tooltip (metric tiles, equity, honesty panels, trade log,
+recommendations, all ten spec dials) now carries both registers and
+follows the Verbiage setting — and static UI text switches on the
+setting alone, so runs stored before the retail feature still get
+retail tooltips/tile names while their verdict text honestly falls
+back to institutional. Saved-run pages get a "‹ Library" back button
+and keep Library highlighted in the sidebar (/runs/* is a library
+entry, not a new analysis). Describe box and hero chart trimmed ~5%
+to 1130px, still width-matched.
+
+## 2026-07-03 — Design language: calm/editorial pass (owner-directed)
+
+Owner supplied a reference (Harvey-style legal-AI app: serif display
+type, generous whitespace, floating pill composer, quiet inline
+actions) and asked for that calm in dark mode. OWNER SIGN-OFF noted:
+this consciously evolves beyond the original docs/design mockups.
+Shipped: Newsreader serif for display headings (hero, Library,
+Settings, Data, gauntlet); hero reworked — S-mark over a serif
+rotating headline, composer as a floating 26px-radius card with soft
+shadow, mode chips (Describe It / Show on Chart) INSIDE the card
+bottom-left, mic + round arrow-submit bottom-right, quiet disclaimer
+line beneath; preset cards softened. Sidebar gains a RECENT ANALYSES
+section (last 6 runs, live, highlights the open one) mirroring the
+reference's history list. Verified E2E: compile via the round submit
+still lands on the spec screen.
+
+## 2026-07-03 — Newsreader everywhere (standing owner directive)
+
+Newsreader is now THE app typeface — every word on every page, strictly:
+all three Tailwind font tokens (sans/mono/serif) resolve to it, Archivo
+and IBM Plex Mono are removed, and SVG chart text (price ticks, hover
+chips, panel labels, MC band labels, equity axis) uses the same
+variable. Verified by computed style on the verdict headline, meta
+lines, chips, and chart <text> nodes. The directive is codified in
+CLAUDE.md (Engineering conventions → Typography) and in session memory:
+no other font family may ever be introduced.
+
+## 2026-07-03 — Typography settled: serif for headings only (revised directive)
+
+Owner revised the same-day serif-everywhere directive after seeing it:
+Newsreader is RESERVED for headings and important moments (page h1s,
+hero headline, gauntlet heading, and now the verdict headline); body
+returns to Archivo, data returns to IBM Plex Mono (including SVG chart
+text). CLAUDE.md typography rule and session memory rewritten to the
+three-voice system — no other families, serif never in body copy.
+
+## 2026-07-03 — Sidebar drag-resize
+
+The sidebar edge is now a drag handle: resize freely up to 380px, drop
+below 120px and it snaps into the existing 56px icon rail, release
+between 120–172px and it settles at the open floor — the same collapse/
+open mechanism the toggle uses, and the toggle restores the last
+dragged-open width. Implementation is fully imperative (listeners
+attached in the pointerdown, settle computed from the release event's
+own coordinates) after an effect-based version proved race-prone.
+Verification note for the log: the preview harness freezes the CSS
+animation clock, so width transitions never advance there — assert on
+style.width or disable transitions when testing; real browsers animate
+the 150ms ease normally.
+
+## 2026-07-03 — Brand kit integration
+
+Owner delivered the Skeptic brand kit (SKEPT/C wordmark; the S is two
+identical hooks under 180° rotation — the same question asked from both
+sides). Wired in per the kit's usage rules for our dark surfaces:
+white wordmark in the open sidebar, standalone white S-mark when
+collapsed and above the hero headline; kit favicon.ico + gray-tile 512
++ apple-touch-icon in metadata; og-image for link previews. First boot
+per browser session plays the draw-on animation (the kit's pathLength-
+dash SVG, no JS) as a full-screen splash that fades into the app —
+gated at module scope after React StrictMode's double-effect consumed
+the session flag and stranded the overlay on first attempt. SVG
+masters + animation live in frontend/public/brand/.
+
+## 2026-07-03 — Favicon centering audit
+
+Owner spotted the favicon S riding high. Audited every S asset in the
+kit programmatically (glyph bbox center vs canvas center): the dark
+tile (512/180/32), light tile, and transparent-grayS all carry the S
+~10% above center; the gray tile, white circle, s-mark renders,
+apple-touch-icon and maskable are true. Rebuilt our dark tiles from
+scratch — sampled bg #101014 and the 113px corner radius from the
+original, took the glyph from the verified-centered s-mark render,
+composited at identical size, dead center (residual ≤0.5px from odd/
+even rounding at small sizes). favicon.ico regenerated from the fixed
+512. Kit source files in Downloads left untouched — worth regenerating
+upstream in kit.py someday.
+
+## 2026-07-03 — Neon transfer quota exhausted: graceful fallback + the fix for the cause
+
+Owner hit "backend unreachable" and asked if Neon's monthly transfer
+limit was the cause. Confirmed directly: Neon now refuses connections
+with "Your project has exceeded the data transfer quota" — and the
+backend used to DIE at startup because init_db connects at boot.
+Two fixes. (1) **Graceful degradation:** if the configured DATABASE_URL
+is unreachable at startup, the backend logs it, falls back to the local
+SQLite file, and /api/health + Settings report "local SQLite fallback —
+…quota…" honestly; charts, parser and new runs all keep working (runs
+stored during the outage live locally, not in Neon). (2) **The actual
+transfer hog:** /api/runs pulled full payload_json (equity series and
+all, ~100KB+ each) for up to 50 runs on EVERY listing — and the new
+sidebar requests the listing on every navigation. New summary_json
+column (~500B) written at run completion and backfilled lazily for old
+rows; listings now read only that. Client side, listRuns gets a 30s
+TTL cache. Estimated egress per listing drops ~99%.
+
+## 2026-07-03 — Appearance settings: light/dark mode + four accent colors
+
+Settings gains an APPEARANCE panel: Mode (Dark default / Light) and
+Accent (Cyan default, Sage, Lavender, Rose — four max per owner). Under
+the hood the whole palette moved to CSS variables: every Tailwind color
+token now reads a var, hardcoded chart/SVG colors (grids, candles,
+crosshair, MC bands, heat cells, OOS shade, overlay bars, shadows,
+gradients) were converted, and <html data-theme/data-accent> switches
+everything at runtime — an inline pre-hydration script applies the
+stored choice before first paint, so no flash. Light mode is the brand
+kit's paper palette (#F4F4F5 ground, ink text); each accent carries a
+deepened light-mode value so accent text keeps contrast on paper. The
+brand marks and boot splash follow the theme (black wordmark/S/draw-on
+in light — derived from the white masters since the kit uses one-color
+strokes). Color contract intact in every combination: trust hue never
+colors P/L and vice versa. Persisted in the same local settings store
+as costs/verbiage.
+
+## 2026-07-03 — M6 artifacts: Dockerfile, smoke script, RUNBOOK
+
+Deploy prep (owner merged the design PR and called for M6):
+backend/Dockerfile (uv-based, python 3.13-slim, runs uvicorn on
+Railway's $PORT) + .dockerignore + railway.json (Dockerfile builder,
+/api/health gate, on-failure restarts); scripts/smoke_prod.py walks the
+canonical strategy health → parse → backtest → verdict against a prod
+URL with the bearer token and fails on any demo flag or timeout;
+docs/RUNBOOK.md covers topology, every env var for both platforms,
+token rotation, deploys and cold-start behavior, collector operations,
+the Neon fallback/quota story, and cost dashboards.

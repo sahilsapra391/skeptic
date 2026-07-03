@@ -50,7 +50,7 @@ class of bug in this codebase.
 4. **The verdict is grounded.** Every numeric token in verdict text must exist
    in the stats payload; the numeric validator rejects otherwise. The verdict
    LLM call receives ONLY computed stats, never raw user text.
-5. **Thin samples are never blessed.** Below minimum trades (30) or single
+5. **Thin samples are never blessed.** Below minimum trades (15) or single
    volatility regime, trust level is capped at "insufficient evidence" no
    matter how good the numbers look.
 6. **Data coverage is honest.** Any surface that shows results also shows the
@@ -68,6 +68,11 @@ class of bug in this codebase.
   the run. Same spec + same data + same seed = identical output.
 - Frontend implements the approved mockups in `docs/design/`; do not restyle
   by taste. P/L colors never appear on verdict components and vice versa.
+- **Typography (owner directive 2026-07-03, strict):** three voices, no
+  more — Archivo (sans) for body/UI text, IBM Plex Mono for data (numbers,
+  chips, chart text), and the Newsreader serif RESERVED for headings and
+  important moments (page h1s, the hero headline, the verdict headline).
+  Never introduce another font family; never spread the serif into body copy.
 - Secrets only via env vars; never commit keys, never log chain data rows.
 
 ## Legal / ethical rails

@@ -40,6 +40,7 @@ export interface SpecDraft {
   ticker: Ticker;
   structure: Structure;
   strikeDelta: number; // whole-number delta, 5..95 in steps of 5 (.05Δ steps)
+  strikeLabel?: string | null; // non-delta selection from the parser ("ATM", "5% below spot")
   dte: number; // 0..50 (0 = 0DTE, refused at run until the minute engine)
   cadence: string; // e.g. "weekly · mon"
   size: string; // e.g. "1 contract"
@@ -52,7 +53,7 @@ export interface SpecDraft {
   examples?: number; // chart mode: pinned example count
 }
 
-export type VerdictKind = "fades-oos" | "survives" | "refusal";
+export type VerdictKind = "fades-oos" | "survives" | "refusal" | "graded";
 
 export interface VerdictPayload {
   kind: VerdictKind;
@@ -79,6 +80,20 @@ export interface MetricTile {
 export interface WalkForwardWindow {
   h: number; // bar height px (design scale, max 56)
   pos: boolean; // profitable window? P/L tokens apply here
+  t?: string; // real runs: "Jan 3 ’24 → Mar 5 ’24 · +2.1% · 6 trades"
+}
+
+export interface SensitivityCell {
+  label: string; // the swept value, e.g. ".24Δ"
+  sharpe: string; // "0.72" or "—"
+  o: number; // heat opacity
+}
+
+export interface SensitivityRow {
+  name: string;
+  cls: string; // "plateau" | "cliff" | ""
+  base: number; // index of the as-specced column
+  cells: SensitivityCell[];
 }
 
 export interface HonestyPanels {
@@ -131,9 +146,27 @@ export interface RunPayload {
   equitySeries?: SeriesPoint[];
   drawdownSeries?: SeriesPoint[];
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
+  oosSplitDate?: string; // ISO date where the OOS window begins
   honesty: HonestyPanels;
   mc: { p95: string; p50: string; p05: string };
-  sensitivity: number[][]; // opacity grid, rows x 9
+  mcTerm?: { p95: string; p50: string; p05: string }; // terminal $ per band
+  sensitivity: number[][]; // opacity grid (5 cols per param for real runs)
+  sensitivityRows?: string[]; // real runs: swept parameter names
+  sensitivityDetail?: SensitivityRow[]; // real runs: cell-level sweep data
+  recommendations?: string[]; // grounded improvements computed from this run
+  previews?: string[]; // while running: real stats from finished stages
+  /** retail-register text — same numbers, everyday words */
+  retail?: {
+    headline: string;
+    survived: string;
+    evidence: string[];
+    breaks: string[];
+    caveat: string;
+    refusalBody?: string;
+    refusalUnlock?: string;
+    notes: [string, string, string, string];
+    recommendations: string[];
+  } | null;
   tradeHeader: string;
   trades: TradeRow[];
   askAnswer?: string;
@@ -145,6 +178,7 @@ export interface RunSummary {
   name: string;
   meta: string;
   quote: string;
+  quoteRetail?: string | null; // retail-register headline, when the run has one
   kind: VerdictKind;
   band?: { left: string; width: string };
   marker?: string;
@@ -220,8 +254,12 @@ export interface BarsPayload {
   indicators: Record<string, IndicatorSeries>;
 }
 
-export interface ParseResult {
-  status: "spec";
-  demo: boolean;
-  draft: SpecDraft;
+export interface ParseQuestion {
+  id: string;
+  question: string;
+  options: string[];
 }
+
+export type ParseResult =
+  | { status: "spec"; demo: boolean; draft: SpecDraft; spec?: Record<string, unknown> }
+  | { status: "questions"; demo: boolean; questions: ParseQuestion[] };

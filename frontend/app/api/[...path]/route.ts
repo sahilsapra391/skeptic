@@ -30,17 +30,27 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   if (contentType) headers["content-type"] = contentType;
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
   if (token) headers.authorization = `Bearer ${token}`;
+  // grounded Q&A runs an LLM round-trip (with one validation retry)
+  const timeout = path[2] === "ask" ? 100_000 : 30_000;
   return fetch(url, {
     method: req.method,
     headers,
     body,
     cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeout),
   });
 }
 
 function isRunPipeline(path: string[]): boolean {
   return path[0] === "parse" || path[0] === "backtest" || path[0] === "runs" || path[0] === "sweep";
+}
+
+function demoEligible(path: string[]): boolean {
+  if (!isRunPipeline(path)) return false;
+  // ask on a REAL run must surface the backend's honest 501 (missing key or
+  // stats bundle), never a canned demo answer
+  if (path[0] === "runs" && path[2] === "ask" && !path[1]?.startsWith("demo-")) return false;
+  return true;
 }
 
 function demoResponse(req: NextRequest, path: string[], body: string | null): NextResponse {
@@ -69,12 +79,6 @@ function demoResponse(req: NextRequest, path: string[], body: string | null): Ne
     return NextResponse.json(run);
   }
   if (path[0] === "runs" && path[2] === "ask" && req.method === "POST") {
-    if (!path[1].startsWith("demo-")) {
-      return NextResponse.json(
-        { detail: "grounded Q&A lands with the honesty layer (M3) and parser (M4) — no numbers are invented in the meantime." },
-        { status: 501 },
-      );
-    }
     return NextResponse.json({ answer: demoAskAnswer(), demo: true });
   }
   return NextResponse.json(
@@ -89,7 +93,7 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
 
   try {
     const upstream = await forward(req, path, body);
-    if (upstream.status === 501 && isRunPipeline(path) && demoEnabled()) {
+    if (upstream.status === 501 && demoEligible(path) && demoEnabled()) {
       return demoResponse(req, path, body);
     }
     const payload = await upstream.text();
@@ -99,7 +103,7 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
     });
   } catch {
     // backend unreachable — run pipeline may demo; data routes stay honest
-    if (isRunPipeline(path) && demoEnabled()) {
+    if (demoEligible(path) && demoEnabled()) {
       return demoResponse(req, path, body);
     }
     return NextResponse.json(

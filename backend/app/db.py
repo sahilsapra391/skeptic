@@ -2,17 +2,23 @@
 
 DATABASE_URL (Neon Postgres) when configured; otherwise a local SQLite
 file — identical SQLAlchemy code path, so pointing at Neon is purely an
-environment change at deploy time (M6).
+environment change at deploy time (M6). If the configured database is
+unreachable at startup (e.g. Neon transfer quota exhausted), the app
+FALLS BACK to local SQLite and says so in /api/health — a dead runs DB
+must not take the charts and parser down with it.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+
+log = logging.getLogger("db")
 
 _DEFAULT_SQLITE = f"sqlite:///{Path(__file__).resolve().parents[1] / 'runs.db'}"
 
@@ -39,6 +45,14 @@ class Run(Base):
     seed: Mapped[int] = mapped_column(Integer, default=42)
     spec_json: Mapped[str] = mapped_column(Text)
     payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # tiny library-card summary — listings read THIS, never the full
+    # payload (full payloads over the wire is how a transfer quota dies)
+    summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # computed stats bundle (engine metrics + honesty report) — the ONLY
+    # material grounded Q&A may draw numbers from
+    stats_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # real per-stage preview lines shown while the gauntlet runs
+    previews_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -52,15 +66,70 @@ class RunEvent(Base):
     label: Mapped[str] = mapped_column(String(120))
 
 
+class TrialCounter(Base):
+    """Per-strategy-family test count for the deflated Sharpe correction
+    (TECH-SPEC §6.5). Family = underlying + structure; every run and every
+    sweep value increments it — trying again IS the multiple-testing bias."""
+
+    __tablename__ = "trial_counter"
+
+    family: Mapped[str] = mapped_column(String(60), primary_key=True)
+    trials: Mapped[int] = mapped_column(Integer, default=0)
+
+
+def bump_trials(family: str, n: int = 1) -> int:
+    """Increment and return the family's trial count."""
+    with SessionLocal() as s:
+        row = s.get(TrialCounter, family)
+        if row is None:
+            row = TrialCounter(family=family, trials=0)
+            s.add(row)
+        row.trials += n
+        s.commit()
+        return row.trials
+
+
 _engine = create_engine(
     _database_url(),
     connect_args={"check_same_thread": False} if _database_url().startswith("sqlite") else {},
 )
 SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
+# set when the configured database was unreachable and we fell back
+FALLBACK_REASON: str | None = None
+
 
 def init_db() -> None:
-    Base.metadata.create_all(_engine)
+    global _engine, SessionLocal, FALLBACK_REASON
+    try:
+        Base.metadata.create_all(_engine)
+        _ensure_columns()
+    except Exception as exc:  # unreachable/refusing DB — degrade, loudly
+        reason = str(exc).strip().split("\n")[0][:200]
+        log.error("configured database unavailable (%s) — falling back to local SQLite", reason)
+        FALLBACK_REASON = reason
+        _engine = create_engine(_DEFAULT_SQLITE, connect_args={"check_same_thread": False})
+        SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+        Base.metadata.create_all(_engine)
+        _ensure_columns()
+
+
+def status() -> str:
+    if FALLBACK_REASON:
+        return f"local SQLite fallback — configured DB unavailable: {FALLBACK_REASON}"
+    return "postgres (Neon)" if not _database_url().startswith("sqlite") else "local SQLite"
+
+
+def _ensure_columns() -> None:
+    """Additive micro-migration: create_all never alters existing tables,
+    so columns added after first deploy are patched in here."""
+    from sqlalchemy import inspect, text
+
+    existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
+    with _engine.begin() as conn:
+        for column in ("stats_json", "previews_json", "summary_json"):
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
 
 
 def session() -> Session:

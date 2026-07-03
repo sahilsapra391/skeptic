@@ -70,7 +70,7 @@ function legs(draft: SpecDraft): Json[] {
 }
 
 function schedule(draft: SpecDraft): Json {
-  if (draft.fromChart) return { frequency: "signal_only" };
+  if (draft.fromChart || draft.cadence === "on signal") return { frequency: "signal_only" };
   if (draft.cadence === "daily") return { frequency: "daily" };
   if (draft.cadence === "monthly") return { frequency: "monthly" };
   const day = draft.cadence.includes("fri") ? "friday" : "monday";
@@ -78,8 +78,8 @@ function schedule(draft: SpecDraft): Json {
 }
 
 function conditions(draft: SpecDraft): Json[] {
-  if (!draft.fromChart) return [];
   const t = draft.triggerSpec;
+  if (!draft.fromChart && !t) return [];
   if (t) {
     const cond: Json = { indicator: t.indicator, operator: t.operator, value: t.value };
     if (t.period != null) cond.period = t.period;

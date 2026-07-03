@@ -107,6 +107,8 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
   const [ticker, setTicker] = useState<Ticker>("SPY");
   const [pins, setPins] = useState<ChartPin[]>([]);
   const [bars, setBars] = useState<Bar[]>([]);
+  // default width matches the Describe It box; expanded fills the page
+  const [expanded, setExpanded] = useState(false);
 
   const complete = pins.filter((p) => p.b != null);
   const pending = pins.find((p) => p.b == null) ?? null;
@@ -155,8 +157,13 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
       : "Show me 1–10 trades you’d have taken. Click where you’d enter.";
 
   return (
-    <div className="rounded-[14px] border border-line bg-panel px-4 py-3.5">
-      <div className="mb-2.5 flex items-center gap-2.5">
+    <div
+      className={clsx(
+        "rounded-[14px] border border-line bg-panel px-5 py-4",
+        expanded ? "w-full" : "mx-auto max-w-[1130px]",
+      )}
+    >
+      <div className="mb-3 flex items-center gap-3">
         <div className="inline-flex gap-[2px]">
           {TICKERS.map((t) => (
             <button
@@ -166,17 +173,39 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
                 clearPins();
               }}
               className={clsx(
-                "rounded-[7px] px-2.5 py-1 font-mono text-[11.5px]",
-                ticker === t ? "bg-raised-3 text-ink" : "text-ink-4",
+                "rounded-[8px] px-3.5 py-1.5 font-mono text-[14px] font-semibold",
+                ticker === t ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-3",
               )}
             >
               {t}
             </button>
           ))}
         </div>
-        <span className="ml-auto font-mono text-[11px] text-ink-4">
+        <span className="ml-auto font-mono text-[12.5px] text-ink-4">
           click = entry · click again = exit · up to {MAX_EXAMPLES} examples
         </span>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? "Shrink chart" : "Expand chart"}
+          title={expanded ? "Shrink chart" : "Expand chart"}
+          className="flex h-[32px] w-[32px] flex-none items-center justify-center rounded-[8px] border border-line text-ink-4 hover:border-line-hover hover:text-ink"
+        >
+          {expanded ? (
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6.5 2v4.5H2" />
+              <path d="M9.5 14V9.5H14" />
+              <path d="M6.5 6.5L1.5 1.5" />
+              <path d="M9.5 9.5l5 5" />
+            </svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.5 2H14v4.5" />
+              <path d="M6.5 14H2V9.5" />
+              <path d="M14 2L9.5 6.5" />
+              <path d="M2 14l4.5-4.5" />
+            </svg>
+          )}
+        </button>
       </div>
 
       <MarketChart
@@ -188,7 +217,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
         onDataChange={setBars}
       />
 
-      <div className="mx-0.5 mb-1 mt-[9px] font-mono text-[11.5px] text-trust">{pendingNote}</div>
+      <div className="mx-0.5 mb-1 mt-2.5 font-mono text-[13px] text-trust">{pendingNote}</div>
 
       {complete.map((pin, i) => {
         const movePct = ((pin.b!.c - pin.a.c) / pin.a.c) * 100;
@@ -197,7 +226,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
             key={pin.a.t + String(i)}
             className="mt-1.5 flex items-center justify-between rounded-[9px] border border-line bg-raised px-3 py-2"
           >
-            <span className="font-mono text-[12px] text-ink-2">
+            <span className="font-mono text-[13.5px] text-ink-2">
               example {i + 1} — {fmtPin(pin.a.t)} → {pin.b ? fmtPin(pin.b.t) : ""} ·{" "}
               {movePct >= 0 ? "+" : ""}
               {movePct.toFixed(1)}%
@@ -215,11 +244,11 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
       <div className="mt-3 flex items-center gap-2.5">
         <button
           onClick={clearPins}
-          className="rounded-full border border-line px-3 py-[5px] text-[12px] text-ink-4 hover:text-ink-3"
+          className="rounded-full border border-line px-3.5 py-1.5 text-[13px] text-ink-4 hover:text-ink-3"
         >
           clear pins
         </button>
-        <span className="font-mono text-[11.5px] text-ink-4">
+        <span className="font-mono text-[12.5px] text-ink-4">
           {complete.length
             ? `structure: ${STRUCTURE_LABEL[inference.structure]} · inferred from your pins · changing view clears pins`
             : "structure inferred from your pins · changing view clears pins"}
@@ -228,9 +257,9 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
           onClick={compile}
           disabled={!complete.length}
           className={clsx(
-            "ml-auto rounded-[9px] px-4 py-2 text-[13px]",
+            "ml-auto rounded-[10px] px-5 py-2.5 text-[14.5px]",
             complete.length
-              ? "bg-trust font-bold text-[#0d1216]"
+              ? "bg-trust font-bold text-on-accent"
               : "cursor-not-allowed bg-raised-2 text-ink-4",
           )}
         >
