@@ -92,6 +92,8 @@ interface Props {
   pins?: ChartPin[];
   onBarClick?: (t: string, close: number) => void;
   onViewChange?: (interval: ChartInterval, window: ChartWindow) => void;
+  /** fires whenever the loaded buffer changes (initial load, paging, live) */
+  onDataChange?: (bars: Bar[]) => void;
 }
 
 interface Buffer {
@@ -175,7 +177,7 @@ function mergeIndicators(
   return out;
 }
 
-export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange }: Props) {
+export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, onDataChange }: Props) {
   const [interval, setIntervalState] = useState<ChartInterval>("5m");
   const [window_, setWindow] = useState<ChartWindow>("1w");
   const [chartType, setChartType] = useState<"candles" | "line">("candles");
@@ -296,6 +298,11 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange }:
   useEffect(() => {
     hardLoad();
   }, [hardLoad]);
+
+  useEffect(() => {
+    if (buffer) onDataChange?.(buffer.bars);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buffer]);
 
   const loadOlder = useCallback(async () => {
     const buf = bufferRef.current;
@@ -929,19 +936,23 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange }:
           </button>
         ))}
         <div className="ml-auto flex items-center gap-1">
-          <span className="mr-1 font-mono text-[10px] text-ink-5">drag to pan · scroll to zoom</span>
-          <button onClick={() => setChartType("candles")} className={chipCls(chartType === "candles")} title="Candles">
-            ▮
-          </button>
-          <button onClick={() => setChartType("line")} className={chipCls(chartType === "line")} title="Line">
-            ╱
-          </button>
           <div className="relative">
             <button onClick={() => setMenuOpen((v) => !v)} className={chipCls(menuOpen || active.size > 1)}>
               ƒ indicators{active.size > 1 ? ` · ${active.size - 1}` : ""}
             </button>
             {menuOpen && (
               <div className="absolute bottom-8 right-0 z-10 w-[190px] rounded-[10px] border border-line bg-panel p-2 shadow-xl">
+                <button
+                  onClick={() => setChartType(chartType === "line" ? "candles" : "line")}
+                  className={clsx(
+                    "flex w-full items-center gap-2 rounded-md border-b border-line px-2 pb-2 pt-[5px] text-left font-mono text-[11.5px]",
+                    chartType === "line" ? "text-ink" : "text-ink-4 hover:text-ink-3",
+                  )}
+                >
+                  <span className="inline-block w-[8px] text-center">╱</span>
+                  Line chart
+                  <span className="ml-auto">{chartType === "line" ? "✓" : ""}</span>
+                </button>
                 {INDICATOR_DEFS.map((def) => {
                   const on = active.has(def.id);
                   return (

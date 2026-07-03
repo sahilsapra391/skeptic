@@ -61,6 +61,30 @@ calendar (noted for M6 methodology notes).
 auto-restart, honest permission errors) and the inert auto-scale label
 removed from the chart controls.
 
+**M2 addendum (same day, owner-requested):**
+
+- **Neon live.** Owner added DATABASE_URL to collector/.env (the line used
+  `KEY: value`; fixed to `KEY=value`); psycopg2-binary added; run storage
+  verified writing to the Neon host. Local SQLite remains the no-env
+  fallback.
+- **Chart-teach now infers the structure from the pins** instead of always
+  compiling a short put: each pinned move is z-scored against the series'
+  own same-span volatility (timeframe-adaptive), then classified — gentle
+  drift up → short put; conviction move up → long call; gentle drift down
+  → call credit spread; conviction down → long put; mixed/near-sideways →
+  iron condor. Direction threshold is deliberately permissive (a pinned
+  move is an intent signal); structure defaults set delta/exit per class.
+  Pins raised 3 → 10; tickets show each example's % move.
+- **Spec screen fully editable:** ticker + structure steppers, strike in
+  .05Δ steps down to .05Δ, DTE 0–50 with direct input, editable anchor, a
+  structured TRIGGER editor (indicator × operator × value × period —
+  maps 1:1 onto a spec Condition, so what's edited is what the engine
+  evaluates), and re-editable exit with preset chips + custom text.
+  **0DTE is refused honestly** at the run button (minute engine pending,
+  DATA-PIPELINE §7) — the dial allows it, the run explains why not yet.
+- Chart toolbar reduced to one row: presets · intervals · ƒ indicators;
+  the candles/line switch moved inside the indicators menu.
+
 ## 2026-07-01 — Phase 2 step 1: handoff docs landed
 
 PR #1: handoff package into the repo (CLAUDE.md at root, specs under docs/,
