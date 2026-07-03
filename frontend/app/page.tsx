@@ -24,6 +24,21 @@ type Mode = "text" | "chart";
 
 /** Starter strategies. Ordered by what the library says the user actually
  * runs (structure counts from past runs), most-used first. */
+/** The hero headline rotates — a different version of the same promise on
+ * every visit (sequential, persisted, so it always changes). */
+const HEADLINES = [
+  "Describe a strategy. I'll try to break it.",
+  "Tell me your edge. I'll go looking for the holes.",
+  "Pitch me a trade. I'll play the skeptic.",
+  "Bring me your best idea. I'll stress-test it.",
+  "Describe a strategy. Let's see what survives.",
+  "Got an edge? Prove it against the data.",
+  "Tell me the trade. I'll tell you where it breaks.",
+  "Describe a strategy. The data gets the last word.",
+  "Show me a winner. I'll check if it was luck.",
+  "Your idea versus six years of market data. Go.",
+];
+
 const PRESETS: { label: string; structure: Structure; phrase: string }[] = [
   {
     label: "Weekly income put",
@@ -96,6 +111,7 @@ export default function NewAnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [earliestYear, setEarliestYear] = useState("1993");
+  const [headline, setHeadline] = useState(HEADLINES[0]);
   const [presets, setPresets] = useState(PRESETS);
   const [questions, setQuestions] = useState<ParseQuestion[]>([]);
   const [qIndex, setQIndex] = useState(0);
@@ -116,6 +132,15 @@ export default function NewAnalysisPage() {
   });
 
   useEffect(() => {
+    // rotate the headline once per visit (client-only to avoid a
+    // hydration mismatch with the server-rendered default)
+    try {
+      const i = Number(localStorage.getItem("skeptic-headline") ?? "0") % HEADLINES.length;
+      setHeadline(HEADLINES[i]);
+      localStorage.setItem("skeptic-headline", String((i + 1) % HEADLINES.length));
+    } catch {
+      /* private mode — keep the default */
+    }
     // warm the chart's first bars request so "Show on Chart" opens instantly
     prefetchBars();
     getCoverage()
@@ -333,7 +358,7 @@ export default function NewAnalysisPage() {
   return (
     <div>
       <h1 className="mx-auto mb-[30px] mt-[4vh] max-w-[820px] text-center text-[clamp(34px,4.2vw,46px)] font-[650] leading-[1.08] tracking-[-.02em]">
-        Describe a strategy. I&apos;ll try to break it.
+        {headline}
       </h1>
 
       <div className="mb-3.5 flex justify-center">
