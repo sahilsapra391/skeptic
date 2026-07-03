@@ -16,20 +16,48 @@ import { useSettings } from "@/lib/settings";
 import type { SpecDraft, Structure, Ticker, TriggerSpec } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
-/** Plain-English one-liners for every dial. */
-const SPEC_HINTS: Record<string, string> = {
-  TICKER: "Which ETF to trade options on. Coverage differs — SPY has the longest record.",
-  STRUCTURE: "The option position type — what gets bought or sold at entry.",
-  STRIKE:
+/** Plain-English one-liners for every dial — [institutional, retail]. */
+const SPEC_HINTS: Record<string, [string, string]> = {
+  TICKER: [
+    "Which ETF to trade options on. Coverage differs — SPY has the longest record.",
+    "Which fund to trade options on. SPY has the most history to test against.",
+  ],
+  STRUCTURE: [
+    "The option position type — what gets bought or sold at entry.",
+    "The kind of options trade to place.",
+  ],
+  STRIKE: [
     "How far from the money, in delta. .05Δ is far out (rarely hit), .50Δ is at the money.",
-  DTE: "Days to expiration when the trade opens. 0DTE needs minute data and is refused for now.",
-  ANCHOR: "The first pinned example on your chart — where the pattern was taught from.",
-  TRIGGER: "The market condition that must be true for a trade to enter.",
-  CADENCE: "How often a new trade is considered.",
-  SIZE: "How many contracts each trade uses.",
-  EXIT: "When the trade closes — a profit target, a stop loss, a time exit, or a combination.",
-  FILLS:
+    "How far from the current price. .05Δ is far away (rarely reached), .50Δ is right at the price.",
+  ],
+  DTE: [
+    "Days to expiration when the trade opens. 0DTE needs minute data and is refused for now.",
+    "How many days until the option expires when the trade opens. Same-day (0) isn't supported yet.",
+  ],
+  ANCHOR: [
+    "The first pinned example on your chart — where the pattern was taught from.",
+    "The first example you pinned on the chart.",
+  ],
+  TRIGGER: [
+    "The market condition that must be true for a trade to enter.",
+    "The condition that has to be true before a trade opens.",
+  ],
+  CADENCE: [
+    "How often a new trade is considered.",
+    "How often a new trade is considered.",
+  ],
+  SIZE: [
+    "How many contracts each trade uses.",
+    "How many contracts each trade uses.",
+  ],
+  EXIT: [
+    "When the trade closes — a profit target, a stop loss, a time exit, or a combination.",
+    "When the trade closes — take profit, cut losses, a time limit, or a mix.",
+  ],
+  FILLS: [
     "How fills are priced: buys toward the ask, sells toward the bid, plus slippage — never at mid.",
+    "Trades are priced like real life: buy a bit above fair value, sell a bit below, plus costs.",
+  ],
 };
 
 const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
@@ -75,12 +103,15 @@ export function triggerLabel(t: TriggerSpec): string {
   return `${name}${period} ${op?.sym ?? t.operator} ${t.value}`;
 }
 
-/** Tile header: the dial's name plus its plain-English tooltip. */
+/** Tile header: the dial's name plus its tooltip in the chosen register. */
 function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
+  const { verbiage } = useSettings();
+  const pair = SPEC_HINTS[name.replace(/ [▾✎⌖]$/, "")];
+  const text = pair ? (verbiage === "retail" ? pair[1] : pair[0]) : name;
   return (
     <div className={clsx(TILE_LABEL, "flex items-center justify-between gap-1", warn && "!text-warn")}>
       <span>{name}</span>
-      <Hint text={SPEC_HINTS[name.replace(/ [▾✎⌖]$/, "")] ?? name} align="right" />
+      <Hint text={text} align="right" />
     </div>
   );
 }
@@ -262,7 +293,7 @@ export function SpecScreen({
             <div className={clsx(TILE, "!border-trust-border")}>
               <div className={clsx(TILE_LABEL, "flex items-center justify-between gap-1 !text-trust")}>
                 <span>ANCHOR ⌖</span>
-                <Hint text={SPEC_HINTS.ANCHOR} align="right" />
+                <Hint text={settings.verbiage === "retail" ? SPEC_HINTS.ANCHOR[1] : SPEC_HINTS.ANCHOR[0]} align="right" />
               </div>
               <input
                 value={draft.anchor ?? ""}
@@ -308,7 +339,7 @@ export function SpecScreen({
             )}
           >
             <span>EXIT ✎</span>
-            <Hint text={SPEC_HINTS.EXIT} align="right" />
+            <Hint text={settings.verbiage === "retail" ? SPEC_HINTS.EXIT[1] : SPEC_HINTS.EXIT[0]} align="right" />
           </div>
           <div className="pt-0.5 font-mono text-[15px] font-semibold">
             {draft.exit ?? "not set"}

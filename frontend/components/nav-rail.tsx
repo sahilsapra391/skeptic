@@ -57,8 +57,12 @@ export function NavRail() {
   const [open, setOpen] = useState(true);
   const toggle = () => setOpen((v) => !v);
 
-  const activeFor = (href: string) =>
-    href === "/" ? pathname === "/" || pathname.startsWith("/runs") : pathname.startsWith(href);
+  const activeFor = (href: string) => {
+    if (href === "/") return pathname === "/";
+    // saved runs are library entries — keep Library lit while reading one
+    if (href === "/library") return pathname.startsWith("/library") || pathname.startsWith("/runs");
+    return pathname.startsWith(href);
+  };
 
   return (
     <nav

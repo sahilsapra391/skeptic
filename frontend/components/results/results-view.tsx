@@ -24,32 +24,68 @@ import { VerdictBlock } from "@/components/verdict/verdict-block";
 const PANEL = "rounded-[14px] border border-line bg-panel";
 const PANEL_TITLE = "font-mono text-[11.5px] font-medium tracking-[.12em] text-ink-4";
 
-/** Plain-English one-liners for every stat surface (* = unblessed). */
-const METRIC_HINTS: Record<string, string> = {
-  CAGR: "Compound annual growth rate — how fast the account grew per year, on average.",
-  SHARPE: "Return earned per unit of risk taken. Under ~1 is weak; higher is better.",
-  SORTINO: "Like Sharpe, but only counts downside swings as risk — upside isn't punished.",
-  "MAX DD": "Max drawdown — the deepest peak-to-trough loss the account suffered.",
-  "WIN RATE": "Share of closed trades that made money.",
-  "P·FACTOR": "Profit factor — total gains divided by total losses. Above 1 = net profitable.",
+/** Plain-English one-liners for every stat surface (* = unblessed);
+ * [institutional, retail] — the verbiage setting picks the register. */
+type HintPair = [string, string];
+
+const METRIC_HINTS: Record<string, HintPair> = {
+  CAGR: [
+    "Compound annual growth rate — how fast the account grew per year, on average.",
+    "How fast the account grew per year, on average.",
+  ],
+  SHARPE: [
+    "Return earned per unit of risk taken. Under ~1 is weak; higher is better.",
+    "Reward earned for the risk taken. Under about 1 is weak; higher is better.",
+  ],
+  SORTINO: [
+    "Like Sharpe, but only counts downside swings as risk — upside isn't punished.",
+    "Like the risk score, but only the bad swings count against it.",
+  ],
+  "MAX DD": [
+    "Max drawdown — the deepest peak-to-trough loss the account suffered.",
+    "The deepest fall from a high point — how far down you'd have been at the worst moment.",
+  ],
+  "WIN RATE": [
+    "Share of closed trades that made money.",
+    "How many finished trades made money.",
+  ],
+  "P·FACTOR": [
+    "Profit factor — total gains divided by total losses. Above 1 = net profitable.",
+    "All the wins divided by all the losses. Above 1 means net profitable.",
+  ],
 };
 
-const HINT_EQUITY =
+const HINT_EQUITY: HintPair = [
   "Account value over time, after commissions and slippage. The shaded strip is " +
-  "out-of-sample history the strategy wasn't tuned on; the red line below is " +
-  "drawdown — how far the account sat below its previous peak.";
-const HINT_OOS =
+    "out-of-sample history the strategy wasn't tuned on; the red line below is " +
+    "drawdown — how far the account sat below its previous peak.",
+  "Your account value over time, after costs. The shaded part is data the strategy " +
+    "never saw during testing; the red line shows how far below its best the account was.",
+];
+const HINT_OOS: HintPair = [
   "The last 30% of history is judged separately from the first 70%. A real edge " +
-  "holds up on data it never saw; a curve-fit one collapses there.";
-const HINT_WF =
+    "holds up on data it never saw; a curve-fit one collapses there.",
+  "We hide the most recent 30% of history, then check whether the strategy still " +
+    "works there. A real edge does; an over-tuned one falls apart.",
+];
+const HINT_WF: HintPair = [
   "P/L in rolling ~2-month windows. A real edge wins in most windows — not just " +
-  "one lucky stretch that dominates the total.";
-const HINT_MC =
+    "one lucky stretch that dominates the total.",
+  "Profit and loss in rolling two-month chunks. A real edge wins in most chunks — " +
+    "not one lucky streak carrying everything.",
+];
+const HINT_MC: HintPair = [
   "The trade order reshuffled 1,000 times to show the range of outcomes luck alone " +
-  "could produce. If many reshuffles lose money, the original path was fortunate.";
-const HINT_SENS =
+    "could produce. If many reshuffles lose money, the original path was fortunate.",
+  "We shuffled the order of the trades 1,000 times to see how much was luck. " +
+    "If lots of shuffles lose money, the original run got lucky.",
+];
+const HINT_SENS: HintPair = [
   "Each parameter nudged ±20% and the backtest re-run. Brighter = better Sharpe. " +
-  "A real edge survives nudges (plateau); a fragile one collapses (cliff).";
+    "A real edge survives nudges (plateau); a fragile one collapses (cliff).",
+  "We nudged every setting up and down 20% and re-ran the whole test. Brighter = " +
+    "better result. A real edge survives nudges; a fragile one falls apart.",
+];
 /** Retail register: same tiles, everyday names. */
 const RETAIL_METRIC_LABEL: Record<string, string> = {
   CAGR: "YEARLY GROWTH",
@@ -60,9 +96,23 @@ const RETAIL_METRIC_LABEL: Record<string, string> = {
   "P·FACTOR": "WIN/LOSS RATIO",
 };
 
-const HINT_TRADES =
+const HINT_TRADES: HintPair = [
   "Every simulated fill, priced at bid/ask plus slippage — never mid. Skipped " +
-  "entries are listed separately with the reason each was refused.";
+    "entries are listed separately with the reason each was refused.",
+  "Every simulated trade, priced at real buy/sell quotes plus slippage. Skipped " +
+    "entries are listed separately with the reason each one was refused.",
+];
+
+const HINT_RECS: HintPair = [
+  "Each suggestion comes from this run's own gauntlet numbers — the ±20% sweeps " +
+    "really re-ran the engine. Nothing here is opinion, and acting on one starts " +
+    "a new trial that the deflated Sharpe will count against you.",
+  "Every suggestion comes from tests we actually ran on this exact strategy — " +
+    "nothing is opinion. But each retry makes good-looking numbers a little less " +
+    "trustworthy, and the math keeps score.",
+];
+
+const pick = (pair: HintPair, retail: boolean) => (retail ? pair[1] : pair[0]);
 
 /** Shape a raw series into SVG polyline points (chart shaping only —
  * the numbers come from the backend untouched). */
@@ -108,7 +158,10 @@ function MetricTiles({ run, retailMode }: { run: RunPayload; retailMode: boolean
               <span className="font-mono text-[10.5px] font-medium tracking-[.08em] text-ink-4">
                 {label}
               </span>
-              <Hint text={METRIC_HINTS[bare] ?? m.l} align={i >= 4 ? "right" : "center"} />
+              <Hint
+                text={METRIC_HINTS[bare] ? pick(METRIC_HINTS[bare], retailMode) : m.l}
+                align={i >= 4 ? "right" : "center"}
+              />
             </div>
           </div>
         );
@@ -169,7 +222,7 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
             : retailMode
               ? "ACCOUNT VALUE"
               : "EQUITY"}
-          <Hint text={HINT_EQUITY} />
+          <Hint text={pick(HINT_EQUITY, retailMode)} />
         </span>
         <span className="font-mono text-[12px] text-ink-4">{startLabel}</span>
       </div>
@@ -259,7 +312,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
       <div className={clsx(PANEL, "px-5 py-4")}>
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode ? "TRAINING DATA VS UNSEEN DATA" : "IN-SAMPLE VS OUT-OF-SAMPLE"}
-          <Hint text={HINT_OOS} />
+          <Hint text={pick(HINT_OOS, retailMode)} />
         </div>
         <div className="mb-1 font-mono text-[12.5px] text-ink-3">
           {retailMode ? "training score" : "IS sharpe"} {h.isSharpe}
@@ -280,7 +333,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode ? "TIME PERIODS" : "WALK-FORWARD"}
           {h.wf.length ? ` — LAST ${h.wf.length}` : ""}
-          <Hint text={HINT_WF} />
+          <Hint text={pick(HINT_WF, retailMode)} />
         </div>
         {h.wf.length > 0 ? (
           <div className="flex h-16 items-end gap-[6px]">
@@ -312,7 +365,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
             : run.mc.p50
               ? "MONTE CARLO — 1,000 RESAMPLES"
               : "MONTE CARLO"}
-          <Hint text={HINT_MC} />
+          <Hint text={pick(HINT_MC, retailMode)} />
         </div>
         <svg width="100%" viewBox="0 0 400 100" className="block overflow-visible">
           <polyline points={run.mc.p95} fill="none" stroke="#4a545f" strokeWidth="1.2" />
@@ -357,7 +410,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
               : run.sensitivity.length
                 ? "SENSITIVITY — Δ 15 → 45"
                 : "SENSITIVITY"}
-          <Hint text={HINT_SENS} align="right" />
+          <Hint text={pick(HINT_SENS, retailMode)} align="right" />
         </div>
         {run.sensitivityDetail?.length ? (
           // real runs: labelled rows, every cell explains itself on hover,
@@ -463,13 +516,7 @@ function Recommendations({ run, retailMode }: { run: RunPayload; retailMode: boo
     <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
       <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
         WHAT WOULD IMPROVE IT — COMPUTED FROM THIS RUN
-        <Hint
-          text={
-            "Each suggestion comes from this run's own gauntlet numbers — the ±20% " +
-            "sweeps really re-ran the engine. Nothing here is opinion, and acting on " +
-            "one starts a new trial that the deflated Sharpe will count against you."
-          }
-        />
+        <Hint text={pick(HINT_RECS, retailMode)} />
       </div>
       <ul className="flex flex-col gap-2.5">
         {recs.map((rec, i) => (
@@ -518,7 +565,7 @@ function TradeRowLine({ t }: { t: RunPayload["trades"][number] }) {
   );
 }
 
-function TradeLog({ run }: { run: RunPayload }) {
+function TradeLog({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
   const [open, setOpen] = useState(false);
   const [showSkipped, setShowSkipped] = useState(false);
   const filled = run.trades.filter((t) => !t.skip);
@@ -535,7 +582,7 @@ function TradeLog({ run }: { run: RunPayload }) {
       >
         <span>{open ? "▾" : "▸"}</span>
         <span className="flex-1">{run.tradeHeader}</span>
-        <Hint text={HINT_TRADES} align="right" />
+        <Hint text={pick(HINT_TRADES, retailMode)} align="right" />
       </button>
       {open && (
         <div className="rounded-b-xl border border-t-0 border-line bg-panel-deep px-4 pb-2.5 pt-1.5">
@@ -564,18 +611,24 @@ export function ResultsView({
   run,
   onEditSpec,
   onNew,
+  onBack,
+  backLabel,
 }: {
   run: RunPayload;
   onEditSpec?: () => void;
   onNew: () => void;
+  onBack?: () => void;
+  backLabel?: string;
 }) {
   const [askText, setAskText] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const settings = useSettings();
-  // retail register: same computed numbers, everyday words — old runs
-  // without a stored retail block fall back to institutional text
-  const retailMode = settings.verbiage === "retail" && !!run.retail;
+  // retail register: same computed numbers, everyday words. Static UI text
+  // (titles, tooltips, tile names) follows the setting alone; run-computed
+  // text (verdict, notes, recommendations) additionally needs the stored
+  // retail block — older runs fall back to institutional there.
+  const retailMode = settings.verbiage === "retail";
   const verdict = retailMode && run.retail
     ? {
         ...run.verdict,
@@ -603,6 +656,14 @@ export function ResultsView({
 
   return (
     <div>
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="mb-[18px] text-[13px] text-ink-4 hover:text-ink-3"
+        >
+          ‹ {backLabel ?? "back"}
+        </button>
+      )}
       <div className="mb-4 flex items-start gap-3">
         <div>
           <h1 className="mb-1.5 text-[21px] font-[650]">{run.name}</h1>
@@ -649,7 +710,7 @@ export function ResultsView({
         <EquityChart run={run} retailMode={retailMode} />
         <HonestyPanels run={run} retailMode={retailMode} />
         <Recommendations run={run} retailMode={retailMode} />
-        <TradeLog run={run} />
+        <TradeLog run={run} retailMode={retailMode} />
       </div>
 
       {answer && (

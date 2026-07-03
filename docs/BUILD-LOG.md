@@ -715,3 +715,15 @@ readout, freshness note, window/interval chips, time axis, indicator
 menu, price ticks, pin notes and the footer all bumped to a uniform,
 readable scale. Sidebar now opens on every load (collapse lasts for
 the session only — no persisted state).
+
+## 2026-07-03 — Verbiage-aware tooltips, run back-button, Library nav highlight
+
+Every ? tooltip (metric tiles, equity, honesty panels, trade log,
+recommendations, all ten spec dials) now carries both registers and
+follows the Verbiage setting — and static UI text switches on the
+setting alone, so runs stored before the retail feature still get
+retail tooltips/tile names while their verdict text honestly falls
+back to institutional. Saved-run pages get a "‹ Library" back button
+and keep Library highlighted in the sidebar (/runs/* is a library
+entry, not a new analysis). Describe box and hero chart trimmed ~5%
+to 1130px, still width-matched.

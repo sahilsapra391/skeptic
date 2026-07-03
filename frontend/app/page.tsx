@@ -374,7 +374,7 @@ export default function NewAnalysisPage() {
       </div>
 
       {mode === "text" ? (
-        <div className="mx-auto max-w-[1190px]">
+        <div className="mx-auto max-w-[1130px]">
           <div className="rounded-[14px] border border-line bg-panel px-4 pb-3 pt-4 focus-within:border-trust-border">
             <textarea
               rows={4}
