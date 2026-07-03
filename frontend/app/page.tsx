@@ -28,7 +28,7 @@ type Mode = "text" | "chart";
  * every visit (sequential, persisted, so it always changes). */
 const HEADLINES = [
   "Describe a strategy. I'll try to break it.",
-  "Tell me your edge. I'll go looking for the holes.",
+  "Bring your thesis. I'll bring the evidence.",
   "Pitch me a trade. I'll play the skeptic.",
   "Bring me your best idea. I'll stress-test it.",
   "Describe a strategy. Let's see what survives.",
