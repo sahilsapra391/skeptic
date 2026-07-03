@@ -389,9 +389,7 @@ export default function NewAnalysisPage() {
 
   return (
     <div>
-      <div className="mx-auto mb-9 mt-[8vh] flex max-w-[900px] flex-col items-center gap-5">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/s-mark-white.svg" alt="" className="h-[46px] w-auto" draggable={false} />
+      <div className="mx-auto mb-9 mt-[9vh] flex max-w-[900px] flex-col items-center">
         <h1 className="text-center font-serif text-[clamp(32px,3.6vw,44px)] font-medium leading-[1.12] tracking-[-.01em]">
           {headline}
         </h1>

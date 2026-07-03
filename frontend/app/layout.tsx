@@ -31,11 +31,13 @@ export const metadata: Metadata = {
   description:
     "The backtester that argues with you. Research tool, not financial advice.",
   icons: {
+    // owner-picked: the ink-black tile with the centered white S
     icon: [
       { url: "/favicon.ico", sizes: "48x48" },
-      { url: "/favicon-gray-tile-512.png", type: "image/png", sizes: "512x512" },
+      { url: "/favicon-dark-tile-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-dark-tile-512.png", type: "image/png", sizes: "512x512" },
     ],
-    apple: "/apple-touch-icon-180.png",
+    apple: "/favicon-dark-tile-180.png",
   },
   openGraph: {
     title: "Skeptic",
