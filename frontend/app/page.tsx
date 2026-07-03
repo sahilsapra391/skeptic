@@ -398,11 +398,13 @@ export default function NewAnalysisPage() {
         </h1>
       </div>
 
+      <div className="mb-4 flex justify-center">{modeChips}</div>
+
       {mode === "text" ? (
         <div className="mx-auto max-w-[1130px]">
-          <div className="rounded-[26px] border border-line-soft bg-panel px-6 pb-4 pt-5 shadow-[0_20px_60px_rgba(0,0,0,.35)] focus-within:border-line-hover">
+          <div className="rounded-[22px] border border-line-soft bg-panel px-6 pb-3 pt-4 shadow-[0_20px_60px_rgba(0,0,0,.35)] focus-within:border-line-hover">
             <textarea
-              rows={3}
+              rows={2}
               className="w-full text-[16.5px] leading-[1.65] text-ink placeholder:text-ink-4"
               placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
               value={
@@ -421,15 +423,10 @@ export default function NewAnalysisPage() {
                 }
               }}
             />
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                {modeChips}
-                {(speech.error || speech.listening) && (
-                  <span className={clsx("text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
-                    {speech.error ?? "Listening — tap the mic again to stop."}
-                  </span>
-                )}
-              </div>
+            <div className="mt-1.5 flex items-center justify-between gap-3">
+              <span className={clsx("text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
+                {speech.error ?? (speech.listening ? "Listening — tap the mic again to stop." : "")}
+              </span>
               <div className="flex items-center gap-2">
                 {speech.supported && (
                   <button
@@ -500,7 +497,6 @@ export default function NewAnalysisPage() {
         </div>
       ) : (
         <div>
-          <div className="mb-3 flex justify-center">{modeChips}</div>
           <ChartTeach
             onCompile={(d) => {
               setDraft(d);
