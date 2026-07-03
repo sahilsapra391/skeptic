@@ -132,14 +132,14 @@ export function GauntletProgress({
   }, [tipOrder.length]);
 
   useEffect(() => {
-    // fade out, swap the phrase, fade back in — every 3 seconds
+    // fade out, swap the phrase, fade back in — every 5 seconds
     const id = setInterval(() => {
       setHeadingVisible(false);
       setTimeout(() => {
         setHeadingIndex((i) => (i + 1) % HEADINGS.length);
         setHeadingVisible(true);
       }, 350);
-    }, 3000);
+    }, 5000);
     return () => clearInterval(id);
   }, []);
 
