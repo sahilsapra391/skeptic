@@ -64,8 +64,13 @@ def _drawdown_series(dates: list[date], equity: list[float]) -> list[dict[str, A
 
 
 def _trade_rows(trades: list[TradeEvent], cap: int = 250) -> list[dict[str, Any]]:
+    """Newest-first rows. Filled events and skips are capped SEPARATELY —
+    a strategy with thousands of no-signal skips must never crowd its
+    actual fills out of the log (prod bug: 17 fills shown as 4)."""
+    filled_events = [t for t in trades if t.action != "SKIP"][-max(cap, 400):]
+    skip_events = [t for t in trades if t.action == "SKIP"][-cap:]
     rows: list[dict[str, Any]] = []
-    for t in reversed(trades[-cap:]):
+    for t in reversed(filled_events + skip_events):
         pl = t.pl
         rows.append(
             {

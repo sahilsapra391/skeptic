@@ -23,7 +23,7 @@ from app.honesty.report import HonestyReport
 log = logging.getLogger("verdict")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "anthropic/claude-sonnet-4.5"
+DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 
 
 class VerdictText(BaseModel):
@@ -395,9 +395,15 @@ def write_verdict(report: HonestyReport) -> VerdictText:
 
 
 def write_verdicts(report: HonestyReport) -> tuple[VerdictText, VerdictText]:
-    """(institutional, retail) — same numbers, two registers. Each falls
-    back to its deterministic template when the LLM can't stay grounded."""
+    """(institutional, retail) — same numbers, two registers, narrated in
+    PARALLEL (halves the verdict stage's wall time). Each falls back to
+    its deterministic template when the LLM can't stay grounded."""
+    from concurrent.futures import ThreadPoolExecutor
+
     allowed = allowed_numbers(report)
-    institutional = _llm_narrate(report, allowed) or template_verdict(report)
-    retail = _llm_narrate(report, allowed, retail=True) or retail_template_verdict(report)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        inst_f = pool.submit(_llm_narrate, report, allowed, False)
+        retail_f = pool.submit(_llm_narrate, report, allowed, True)
+        institutional = inst_f.result() or template_verdict(report)
+        retail = retail_f.result() or retail_template_verdict(report)
     return institutional, retail
