@@ -76,3 +76,8 @@ class RunResult:
     metrics: dict[str, float | None] = field(default_factory=dict)
     sessions_with_chain: int = 0
     days_in_market: int = 0
+    # requested window (what the user asked for) vs the effective window
+    # (what coverage allowed) — the gap is the seventeen-fills disclosure
+    requested_start: date | None = None
+    requested_end: date | None = None
+    requested_sessions: int = 0
