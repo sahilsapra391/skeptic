@@ -13,6 +13,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { polishDictation } from "@/lib/dictation";
+
 // lib.dom omits the Web Speech API; minimal typings for what we use
 interface SpeechAlternative {
   transcript: string;
@@ -93,13 +95,15 @@ export function useSpeechToText(onSegment: (segment: string) => void): SpeechSta
         const r = e.results[i];
         const transcript = r[0]?.transcript ?? "";
         if (r.isFinal) {
-          const cleaned = transcript.replace(/\s+/g, " ").trim();
+          // polish rewrites prose-style transcription into strategy-speak:
+          // digits for spoken numbers, canonical tickers, no stray caps
+          const cleaned = polishDictation(transcript);
           if (cleaned) onSegmentRef.current(cleaned);
         } else {
           interimText += transcript;
         }
       }
-      setInterim(interimText.replace(/\s+/g, " ").trimStart());
+      setInterim(polishDictation(interimText));
     };
 
     rec.onerror = (e) => {

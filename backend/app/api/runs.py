@@ -80,9 +80,9 @@ def _execute_run(run_id: str) -> None:
         family = f"{spec.underlying.ticker.value}:{spec.position.structure.value}"
         trials = db.bump_trials(family)
 
-        previews: list[str] = []
+        previews: list[dict[str, str]] = []
 
-        def on_stage(stage: int, label: str, preview: str | None = None) -> None:
+        def on_stage(stage: int, label: str, preview: dict[str, str] | None = None) -> None:
             if preview:
                 previews.append(preview)
             with db.session() as s2:

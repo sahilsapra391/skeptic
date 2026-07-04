@@ -154,7 +154,9 @@ export interface RunPayload {
   sensitivityRows?: string[]; // real runs: swept parameter names
   sensitivityDetail?: SensitivityRow[]; // real runs: cell-level sweep data
   recommendations?: string[]; // grounded improvements computed from this run
-  previews?: string[]; // while running: real stats from finished stages
+  // while running: real stats from finished stages. New runs carry both
+  // voices; runs stored before the split are plain strings.
+  previews?: (string | { pro: string; retail: string })[];
   /** retail-register text — same numbers, everyday words */
   retail?: {
     headline: string;

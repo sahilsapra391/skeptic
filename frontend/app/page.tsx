@@ -137,14 +137,30 @@ export default function NewAnalysisPage() {
   const parsedSpecRef = useRef<Record<string, unknown> | null>(null);
   const parsedDraftRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const speech = useSpeechToText((segment) => {
+    // segments arrive already polished (lowercase, digits, canonical
+    // tickers) — join verbatim, no sentence-casing
     setText((t) => {
       const sep = t && !/\s$/.test(t) ? " " : "";
-      const seg = t.trim() ? segment : segment[0].toUpperCase() + segment.slice(1);
-      return t + sep + seg;
+      return t + sep + segment;
     });
   });
+
+  const composerValue = speech.interim
+    ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
+    : text;
+
+  // the chatbox grows a line at a time with its content (capped, then scrolls)
+  useEffect(() => {
+    const ta = composerRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const capped = Math.min(ta.scrollHeight, 200);
+    ta.style.height = `${capped}px`;
+    ta.style.overflowY = ta.scrollHeight > 200 ? "auto" : "hidden";
+  }, [composerValue, renderedMode]);
 
   useEffect(() => {
     // rotate the headline once per visit (client-only to avoid a
@@ -427,14 +443,11 @@ export default function NewAnalysisPage() {
           <div className="rounded-[22px] border border-line-soft bg-panel py-2.5 pl-6 pr-3 shadow-[var(--shadow-soft)] focus-within:border-line-hover">
             <div className="flex items-center gap-3">
               <textarea
+                ref={composerRef}
                 rows={1}
                 className="w-full flex-1 text-[16.5px] leading-[1.65] text-ink placeholder:text-ink-4"
                 placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…"
-                value={
-                  speech.interim
-                    ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
-                    : text
-                }
+                value={composerValue}
                 onChange={(e) => {
                   if (speech.listening) speech.stop();
                   setText(e.target.value);

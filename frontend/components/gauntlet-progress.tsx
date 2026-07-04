@@ -100,6 +100,61 @@ const TIPS = [
   "Trust is computed by fixed rules, not vibes — the LLM narrates the verdict; it never chooses it.",
 ];
 
+// the same 50 lessons with the jargon translated away — shown when
+// Verbiage Complexity is set to Retail
+const TIPS_RETAIL = [
+  "One stated exit rule is enough — the parser never invents the ones you didn't give.",
+  "Chart mode: pin up to 10 examples. More examples make the test stricter, not easier.",
+  "Below 15 finished trades the verdict is withheld — good-looking numbers don't override it.",
+  "Every re-run of a similar strategy raises the bar — retrying until something works gets caught.",
+  "On the results screen, ask questions — answers use only this run's computed numbers.",
+  "Commission and slippage are editable in Settings and apply to every new run.",
+  "In the settings-nudge grid, the ringed column is your exact setup — brighter neighbors did better.",
+  "The verdict leads with the most uncomfortable finding on purpose. That's the product.",
+  "Trades never fill at the perfect midpoint price — buys pay a little more, sells get a little less, like real life.",
+  "The shaded strip on the account chart is data the strategy never saw during testing.",
+  "Hover the account-value chart for the exact date, balance and loss-from-peak at any point.",
+  "Hover a time-window bar to see that window's dates, return and trade count.",
+  "You're in plain-English mode now — Settings can switch back to the technical wording any time.",
+  "Switch between light and dark mode in Settings → Appearance; the accent color is yours to pick too.",
+  "The accent color never touches profit or loss — green and red stay strictly for money.",
+  "'Stable' in the nudge test is good: small settings changes don't wreck the result.",
+  "'Fragile' is the warning: the result only works at exactly your settings. That smells like luck.",
+  "Suggestions come from tests we actually ran on your strategy — never opinion.",
+  "The trust band is a range, not a score — false precision would be dishonest.",
+  "Trust level 5 still isn't a promise. It means the strategy survived everything we could throw at it.",
+  "If the hidden-data result keeps less than half of the training result, the verdict calls it out.",
+  "The luck check reshuffles your trade order 1,000 times to see how much was just sequence.",
+  "Every run is repeatable — the same strategy on the same data always gives the identical result.",
+  "The trade log shows real trades first; skipped entries hide behind their own toggle, each with a reason.",
+  "Skip reasons matter: no buyers or huge price gaps are the market saying the trade was fantasy.",
+  "SPY has options history to 2020 here; QQQ and IWM start much later — every verdict says what data it used.",
+  "The data window is printed on every result — verdicts never pretend to more history than they have.",
+  "Speak your strategy: the mic in the chatbox does dictation, tuned for tickers and numbers.",
+  "Presets on the home page reorder by what you actually run most.",
+  "The library sorts by trustworthiness, not by biggest return. On purpose.",
+  "Old runs stay honest: their verdicts reflect the data that existed when they ran.",
+  "The parser asks rather than guesses — a vague trigger like 'when it dips' earns you a question.",
+  "Answer clarifying questions with the chips or your own words — either works.",
+  "You can edit every dial on the review screen before anything runs — nothing runs unconfirmed.",
+  "Exits stack: a profit target, a stop loss and a time limit can all apply at once.",
+  "Same-day-expiry strategies are refused for now — honest testing needs finer data than we serve yet.",
+  "The sidebar is drag-resizable — pull the edge, or push it small to snap to icons.",
+  "Backtests always look better than live trading. The disclaimer isn't boilerplate; it's math.",
+  "Retries get punished: 100 attempts at the same idea makes one good result likely luck.",
+  "All five attacks run on every single backtest — there's no express lane.",
+  "The Q&A refuses to invent: if a number wasn't computed for this run, it says so.",
+  "Every number in the verdict is checked against the computed results — made-up digits get rejected.",
+  "If the writing model misbehaves, a plain fallback ships instead. A run never fails because an AI did.",
+  "Expiration is simulated honestly: options that finish in the money become stock, sold at the next open.",
+  "The account chart already includes all costs — commissions and slippage are baked in.",
+  "Time windows are about 2 months each; one great quarter can't carry a verdict.",
+  "'Not enough evidence' isn't failure — it unlocks automatically as more data accrues.",
+  "The 'as specced' column is ringed in the nudge grid so you can see exactly where you stand.",
+  "Charts preload on the home page — Show on Chart opens instantly after the first visit.",
+  "Trust is computed by fixed rules, not vibes — the AI writes the words; it never picks the verdict.",
+];
+
 function shuffled<T>(list: T[]): T[] {
   const out = [...list];
   for (let i = out.length - 1; i > 0; i--) {
@@ -116,15 +171,26 @@ export function GauntletProgress({
 }: {
   stage: number;
   name: string;
-  previews?: string[];
+  previews?: (string | { pro: string; retail: string })[];
 }) {
   const settings = useSettings();
-  const stages = settings.verbiage === "retail" ? RETAIL_STAGES : GAUNTLET_STAGES;
-  // tips play in a shuffled order — no repeats until all 50 have shown
-  const [tipOrder] = useState(() => shuffled(TIPS));
+  const retail = settings.verbiage === "retail";
+  const stages = retail ? RETAIL_STAGES : GAUNTLET_STAGES;
+  // previews arrive in both voices; runs stored before the split are strings
+  const previewLines = previews.map((p) =>
+    typeof p === "string" ? p : retail ? p.retail : p.pro,
+  );
+  // tips play in a shuffled order — no repeats until the pool is exhausted
+  const [tipOrder, setTipOrder] = useState(() => shuffled(retail ? TIPS_RETAIL : TIPS));
   const [tipIndex, setTipIndex] = useState(0);
   const [headingIndex, setHeadingIndex] = useState(0);
   const [headingVisible, setHeadingVisible] = useState(true);
+
+  useEffect(() => {
+    // verbiage flipped mid-run (Settings in another tab): swap the pool
+    setTipOrder(shuffled(retail ? TIPS_RETAIL : TIPS));
+    setTipIndex(0);
+  }, [retail]);
 
   useEffect(() => {
     const id = setInterval(() => setTipIndex((i) => (i + 1) % tipOrder.length), 6000);
@@ -183,18 +249,20 @@ export function GauntletProgress({
         ))}
       </div>
 
-      {previews.length > 0 && (
+      {previewLines.length > 0 && (
         <div className="mt-7 rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
           <div className="mb-2.5 font-mono text-[11px] font-medium tracking-[.14em] text-trust">
-            LIVE FROM THE GAUNTLET — REAL NUMBERS, NOT A LOADING BAR
+            {retail
+              ? "LIVE RESULTS — YOUR STRATEGY'S REAL NUMBERS, AS THEY LAND"
+              : "LIVE FROM THE GAUNTLET — REAL NUMBERS, NOT A LOADING BAR"}
           </div>
           <div className="flex flex-col gap-1.5">
-            {previews.map((p, i) => (
+            {previewLines.map((p, i) => (
               <div
                 key={i}
                 className={clsx(
                   "font-mono text-[13.5px] leading-[1.55]",
-                  i === previews.length - 1 ? "text-ink" : "text-ink-3",
+                  i === previewLines.length - 1 ? "text-ink" : "text-ink-3",
                 )}
               >
                 {p}

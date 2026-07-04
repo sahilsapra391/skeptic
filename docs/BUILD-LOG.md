@@ -876,3 +876,25 @@ dropped indicator periods); two new prompt conventions ("weekly with
 no day named → monday", "the number attached to an indicator IS its
 period") brought it to 8/8+4/4 and 7/8+4/4 across two runs — ACCEPTED.
 OPENROUTER_MODEL still overrides per-deployment.
+
+## 2026-07-04 — Dictation overhaul, auto-growing chatbox, retail gauntlet previews
+
+**Dictation** (the big one): new `frontend/lib/dictation.ts` rewrites
+every transcript chunk — interim and final — from prose into
+strategy-speak. Spoken numbers become digits with full compound support
+("twenty one" → 21, "two hundred" → 200, "point oh five" → 0.05),
+"percent" fuses onto its number (50%), "five dollars" → $5, tickers and
+indicator acronyms are canonicalized whether spoken or spelled out
+("the Q's" → QQQ, "I W M" → IWM, "R S I" → RSI), domain mishears are
+repaired ("iron condo" → iron condor, "putt" → put, "seller" → sell a),
+and everything else is lowercased — no more mid-sentence capitalization.
+E2E-verified by driving a fake SpeechRecognition through the real
+pipeline: six spoken utterances landed verbatim-correct in the composer.
+**Chatbox** now grows a line at a time with its content (27 → 54 → 82px,
+capped at 200px then scrolls) — the second line is never hidden again.
+**Retail previews**: gauntlet stage previews now ship BOTH voices
+({pro, retail} per line, old string-only runs still render); the live
+feed header, preview lines and the 50-tip pool all follow the Verbiage
+setting — a fresh retail run showed zero jargon ("on data it never saw:
+risk-adjusted score 1.76 vs 0.67 — holding ✓"). Backend battery green
+(76 tests, mypy strict), tsc/lint green.

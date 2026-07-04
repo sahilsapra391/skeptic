@@ -20,42 +20,68 @@ from app.honesty.report import HonestyReport, MonteCarlo, OosSplit, WalkForward
 from app.honesty.trust import compute_trust
 from app.models.spec import StrategySpec
 
-StageHook = Callable[[int, str, str | None], None]
+# each preview carries both voices; the UI picks by the Verbiage setting
+Preview = dict[str, str]
+
+StageHook = Callable[[int, str, Preview | None], None]
 
 
-def _noop(_i: int, _label: str, _preview: str | None = None) -> None:  # pragma: no cover
+def _noop(_i: int, _label: str, _preview: Preview | None = None) -> None:  # pragma: no cover
     return None
 
 
-def _backtest_preview(result: RunResult, initial: float) -> str:
+def _both(pro: str, retail: str) -> Preview:
+    return {"pro": pro, "retail": retail}
+
+
+def _backtest_preview(result: RunResult, initial: float) -> Preview:
     final = result.equity[-1] if result.equity else initial
-    return (
+    return _both(
         f"backtest done — {result.filled} fills · "
-        f"${initial:,.0f} → ${final:,.0f} net of costs"
+        f"${initial:,.0f} → ${final:,.0f} net of costs",
+        f"backtest done — {result.filled} trades · "
+        f"started ${initial:,.0f}, ended ${final:,.0f} after costs",
     )
 
 
-def _oos_preview(oos: OosSplit) -> str:
+def _oos_preview(oos: OosSplit) -> Preview:
     if oos.is_sharpe is None or oos.oos_sharpe is None:
-        return "unseen-data check: not enough history to split honestly"
+        return _both(
+            "unseen-data check: not enough history to split honestly",
+            "hidden-data check: not enough history to split honestly",
+        )
     verdict = "fading ⚠" if oos.flagged else "holding ✓"
-    return (
+    return _both(
         f"unseen data: Sharpe {oos.oos_sharpe:.2f} vs {oos.is_sharpe:.2f} "
-        f"in training — {verdict}"
+        f"in training — {verdict}",
+        f"on data it never saw: risk-adjusted score {oos.oos_sharpe:.2f} vs "
+        f"{oos.is_sharpe:.2f} in training — {verdict}",
     )
 
 
-def _wf_preview(wf: WalkForward) -> str:
+def _wf_preview(wf: WalkForward) -> Preview:
     if not wf.meaningful or wf.consistency is None:
-        return "walk-forward: history too short to slice"
+        return _both(
+            "walk-forward: history too short to slice",
+            "time-window test: history too short to slice",
+        )
     positive = sum(1 for f in wf.folds if f.ret > 0)
-    return f"walk-forward: {positive} of {len(wf.folds)} time windows profitable"
+    return _both(
+        f"walk-forward: {positive} of {len(wf.folds)} time windows profitable",
+        f"made money in {positive} of {len(wf.folds)} time periods",
+    )
 
 
-def _mc_preview(mc: MonteCarlo) -> str:
+def _mc_preview(mc: MonteCarlo) -> Preview:
     if mc.p_loss is None:
-        return "Monte Carlo: too few trades to reshuffle"
-    return f"1,000 reshuffles: {mc.p_loss:.0%} of orderings lose money"
+        return _both(
+            "Monte Carlo: too few trades to reshuffle",
+            "luck check: too few trades to reshuffle",
+        )
+    return _both(
+        f"1,000 reshuffles: {mc.p_loss:.0%} of orderings lose money",
+        f"trade order reshuffled 1,000×: {mc.p_loss:.0%} of shuffles end losing money",
+    )
 
 
 def run_gauntlet(
@@ -81,11 +107,21 @@ def run_gauntlet(
     on_stage(4, "parameter sensitivity sweep", _mc_preview(mc))
     sens = stages.sensitivity(spec, store)
 
-    sens_preview = (
-        f"±20% nudges: the optimum is a {sens.verdict}"
-        if sens.verdict
-        else "±20% nudges: not classifiable"
-    )
+    if sens.verdict == "plateau":
+        sens_preview = _both(
+            "±20% nudges: the optimum is a plateau",
+            "settings nudged ±20%: stable — small changes don't wreck it",
+        )
+    elif sens.verdict == "cliff":
+        sens_preview = _both(
+            "±20% nudges: the optimum is a cliff",
+            "settings nudged ±20%: fragile — only works at exactly your settings",
+        )
+    else:
+        sens_preview = _both(
+            "±20% nudges: not classifiable",
+            "settings nudged ±20%: not enough data to judge",
+        )
     on_stage(5, "deflated Sharpe + regime guardrail + verdict", sens_preview)
     dsr = stages.deflated_sharpe(result, trials)
     sample = stages.regime_sample(result, store)
