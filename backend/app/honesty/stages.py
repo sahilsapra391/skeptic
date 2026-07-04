@@ -17,6 +17,7 @@ from app.engine.engine import run_engine
 from app.engine.market import MarketStore
 from app.engine.types import RunResult
 from app.honesty.report import (
+    Coverage,
     Dsr,
     MonteCarlo,
     OosSplit,
@@ -34,6 +35,13 @@ ANNUAL = math.sqrt(252)
 # Owner-set floor (2026-07-02, was 30): below this many closed trades the
 # verdict is withheld as insufficient evidence (CLAUDE.md guardrail #5).
 MIN_TRADES = 15
+
+# Below this share of the REQUESTED window carrying a usable options chain,
+# the run is a "multi-year backtest" that actually tested a handful of days —
+# the seventeen-fills self-deception. Capped at insufficient_evidence
+# (diagnostics/SEVENTEEN.md §4). Changed only in a reviewed session, never
+# at runtime (guardrail: runtime code never modifies scoring rules).
+COVERAGE_MIN_RATIO = 0.5
 
 
 def _returns(equity: list[float]) -> list[float]:
@@ -369,4 +377,34 @@ def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
         regimes_present=present,
         capped=capped,
         cap_reason=reason,
+    )
+
+
+# ------------------------------------------------ stage 6b: coverage guard
+def coverage(result: RunResult) -> Coverage:
+    """Guardrail #6 + SEVENTEEN.md: a run whose requested window is mostly
+    sessions with NO usable chain tested far less than it claims. Compute the
+    honest coverage share; `materially_short` caps trust downstream."""
+    requested = max(result.requested_sessions, 0)
+    chain_sessions = result.sessions_with_chain
+    ratio = min(chain_sessions / requested, 1.0) if requested > 0 else 1.0
+    short = requested > 0 and ratio < COVERAGE_MIN_RATIO
+    reason = (
+        f"only {chain_sessions} of {requested} requested sessions carried a usable "
+        f"options chain ({round(ratio * 100)}%) — most of the window was untested"
+        if short
+        else None
+    )
+    req_start = result.requested_start or result.effective_start
+    req_end = result.requested_end or result.effective_end
+    return Coverage(
+        requested_start=req_start.isoformat(),
+        requested_end=req_end.isoformat(),
+        effective_start=result.effective_start.isoformat(),
+        effective_end=result.effective_end.isoformat(),
+        requested_sessions=requested,
+        chain_sessions=chain_sessions,
+        coverage_ratio=ratio,
+        materially_short=short,
+        reason=reason,
     )

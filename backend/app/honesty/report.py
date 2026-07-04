@@ -97,6 +97,25 @@ class RegimeSample(BaseModel):
     cap_reason: str | None
 
 
+class Coverage(BaseModel):
+    """Requested window vs. sessions that actually carried a usable chain.
+    A multi-year request backed by a handful of chain dates is the
+    seventeen-fills self-deception (diagnostics/SEVENTEEN.md); when coverage
+    is materially short the trust level is capped at insufficient_evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requested_start: str
+    requested_end: str
+    effective_start: str
+    effective_end: str
+    requested_sessions: int  # underlying sessions in the requested window
+    chain_sessions: int  # of those, how many carried a usable options chain
+    coverage_ratio: float  # chain_sessions / requested_sessions (0..1)
+    materially_short: bool
+    reason: str | None
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -116,6 +135,7 @@ class HonestyReport(BaseModel):
     sensitivity: Sensitivity
     dsr: Dsr
     regime_sample: RegimeSample
+    coverage: Coverage
     trust: Trust
     metrics: dict[str, float | None]
     effective_start: str

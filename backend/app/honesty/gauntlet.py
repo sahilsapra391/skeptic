@@ -125,7 +125,8 @@ def run_gauntlet(
     on_stage(5, "deflated Sharpe + regime guardrail + verdict", sens_preview)
     dsr = stages.deflated_sharpe(result, trials)
     sample = stages.regime_sample(result, store)
-    trust = compute_trust(oos, wf, mc, sens, sample, dsr)
+    cov = stages.coverage(result)
+    trust = compute_trust(oos, wf, mc, sens, sample, dsr, cov)
 
     return HonestyReport(
         oos=oos,
@@ -134,6 +135,7 @@ def run_gauntlet(
         sensitivity=sens,
         dsr=dsr,
         regime_sample=sample,
+        coverage=cov,
         trust=trust,
         metrics=result.metrics,
         effective_start=result.effective_start.isoformat(),

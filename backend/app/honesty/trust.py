@@ -10,12 +10,15 @@ The five attacks (matching the design's chips):
 
 Level = 1 + (# of the four statistical attacks survived), then gated:
   DSR < 0.5 (likely mined) caps at 2; an OOS sign flip caps at 2.
-The sample guardrail overrides everything: insufficient_evidence (no level).
+Two data-integrity guardrails override everything with insufficient_evidence
+(no level): a thin sample, and materially short chain coverage of the
+requested window (the seventeen-fills case, diagnostics/SEVENTEEN.md).
 """
 
 from __future__ import annotations
 
 from app.honesty.report import (
+    Coverage,
     Dsr,
     MonteCarlo,
     OosSplit,
@@ -35,6 +38,7 @@ def compute_trust(
     sens: Sensitivity,
     sample: RegimeSample,
     dsr: Dsr,
+    coverage: Coverage | None = None,
 ) -> Trust:
     survived = {
         "oos": not oos.flagged,
@@ -43,18 +47,24 @@ def compute_trust(
         "sensitivity": sens.verdict == "plateau",
         "sample": not sample.capped,
     }
-    reasons: list[str] = []
 
+    # data-integrity caps → insufficient_evidence, most fundamental first: no
+    # amount of good statistics rescues a window that was barely tested.
+    cap_reasons: list[str] = []
+    if coverage is not None and coverage.materially_short:
+        cap_reasons.append(coverage.reason or "requested window mostly lacks chain data")
     if sample.capped:
-        reasons.append(sample.cap_reason or "sample too thin")
+        cap_reasons.append(sample.cap_reason or "sample too thin")
+    if cap_reasons:
         return Trust(
             level=None,
             label="insufficient_evidence",
             survived=survived,
             survived_count=sum(survived.values()),
-            reasons=reasons,
+            reasons=cap_reasons,
         )
 
+    reasons: list[str] = []
     core = ["oos", "walk_forward", "monte_carlo", "sensitivity"]
     level = 1 + sum(1 for k in core if survived[k])
 

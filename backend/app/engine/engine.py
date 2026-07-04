@@ -457,6 +457,10 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
     if not clock:
         raise ValueError("effective window is empty after bounding by coverage")
 
+    # what the user asked to test, so the honesty layer can compare it against
+    # the sessions that actually carried chains (the seventeen-fills gap)
+    requested_sessions = sum(1 for d in store.sessions if req_start <= d <= req_end)
+
     state = _State(cash=spec.backtest.initial_capital, positions=[], trades=[])
     slip = spec.costs.slippage_half_spread_fraction
     result = RunResult(
@@ -464,6 +468,9 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
         effective_start=clock[0],
         effective_end=clock[-1],
         seed=spec.backtest.seed,
+        requested_start=req_start,
+        requested_end=req_end,
+        requested_sessions=requested_sessions,
     )
 
     for day in clock:

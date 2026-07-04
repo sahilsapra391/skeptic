@@ -118,12 +118,19 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     sens, trust, sample = report.sensitivity, report.trust, report.regime_sample
 
     if trust.label == "insufficient_evidence":
-        plural = "s" if sample.trades != 1 else ""
-        headline = (
-            f"Verdict withheld. {sample.trades} closed trade{plural}"
-            f"{' in a single volatility regime' if sample.regimes_present < 2 else ''}"
-            " can’t answer this honestly."
-        )
+        cov = report.coverage
+        if cov.materially_short:
+            headline = (
+                f"Verdict withheld. {cov.chain_sessions} of {cov.requested_sessions} "
+                "requested sessions had usable option chains — the window is mostly untested."
+            )
+        else:
+            plural = "s" if sample.trades != 1 else ""
+            headline = (
+                f"Verdict withheld. {sample.trades} closed trade{plural}"
+                f"{' in a single volatility regime' if sample.regimes_present < 2 else ''}"
+                " can’t answer this honestly."
+            )
     elif not trust.survived["oos"]:
         headline = "Edge fades out-of-sample. What’s left is thin."
     elif trust.survived_count >= 4 and (trust.level or 0) >= 4:
@@ -168,6 +175,15 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         "Self-collected EOD data; fills modeled at bid/ask plus slippage. "
         "Backtests overstate live results.",
     ]
+    cov = report.coverage
+    if cov.coverage_ratio < 1.0:
+        caveats.insert(
+            1,
+            f"Chain coverage: {cov.chain_sessions} of {cov.requested_sessions} requested "
+            f"sessions carried usable option chains ({_pct(cov.coverage_ratio)}). "
+            f"Requested {cov.requested_start} → {cov.requested_end}; "
+            f"tested {cov.effective_start} → {cov.effective_end}.",
+        )
     if not wf.meaningful:
         caveats.append(wf.note or "walk-forward not meaningful at this history length")
 
@@ -188,11 +204,18 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     sens, trust, sample = report.sensitivity, report.trust, report.regime_sample
 
     if trust.label == "insufficient_evidence":
-        plural = "s" if sample.trades != 1 else ""
-        headline = (
-            f"No verdict yet — only {sample.trades} finished trade{plural}. "
-            "That's too few to judge fairly."
-        )
+        cov = report.coverage
+        if cov.materially_short:
+            headline = (
+                f"No verdict yet — only {cov.chain_sessions} of {cov.requested_sessions} "
+                "days in your date range actually had option prices to trade on."
+            )
+        else:
+            plural = "s" if sample.trades != 1 else ""
+            headline = (
+                f"No verdict yet — only {sample.trades} finished trade{plural}. "
+                "That's too few to judge fairly."
+            )
     elif not trust.survived["oos"]:
         headline = "Looked good in training, faded on data it had never seen. Be careful."
     elif trust.survived_count >= 4 and (trust.level or 0) >= 4:
@@ -260,6 +283,13 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         f"covered · {report.effective_start} → {report.effective_end}",
         "Backtests always look better than real trading. This is research, not advice.",
     ]
+    cov = report.coverage
+    if cov.coverage_ratio < 1.0:
+        caveats.insert(
+            1,
+            f"Only {cov.chain_sessions} of {cov.requested_sessions} days in your date range "
+            f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested.",
+        )
     if not wf.meaningful:
         caveats.append("Not enough history to test period-by-period yet.")
 

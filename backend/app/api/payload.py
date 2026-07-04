@@ -13,7 +13,7 @@ from typing import Any
 
 from app.engine.types import RunResult, TradeEvent
 from app.honesty.report import HonestyReport
-from app.honesty.stages import MIN_TRADES
+from app.honesty.stages import COVERAGE_MIN_RATIO, MIN_TRADES
 from app.honesty.verdict import VerdictText
 from app.models.spec import StrategySpec
 
@@ -338,6 +338,12 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
 
     if trust.label == "insufficient_evidence":
         needs = []
+        cov = report.coverage
+        if cov.materially_short:
+            needs.append(
+                f"chain coverage ≥ {round(COVERAGE_MIN_RATIO * 100)}% of the requested "
+                f"window (has {round(cov.coverage_ratio * 100)}%)"
+            )
         if sample.trades < MIN_TRADES:
             needs.append(f"≥ {MIN_TRADES} trades (has {sample.trades})")
         if sample.regimes_present < 2:
@@ -454,6 +460,12 @@ def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[st
     if block["refusal"]:
         sample = report.regime_sample
         needs = []
+        cov = report.coverage
+        if cov.materially_short:
+            needs.append(
+                f"option prices on more of your date range (only "
+                f"{round(cov.coverage_ratio * 100)}% of it had them)"
+            )
         if sample.trades < MIN_TRADES:
             needs.append(f"at least {MIN_TRADES} finished trades (has {sample.trades})")
         if sample.regimes_present < 2:
@@ -530,6 +542,7 @@ def build_run_payload(
         "oosShadeX": round(860 * 0.7) if not refusal else 860,
         "oosSplitDate": report.oos.split_date,
         "honesty": _honesty_panels(report),
+        "coverage": report.coverage.model_dump(),
         "mc": _mc_fan(report),
         "mcTerm": {
             "p95": _dollars(report.monte_carlo.terminal_p95),
