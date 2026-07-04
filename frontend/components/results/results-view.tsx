@@ -332,17 +332,19 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
       <div className={clsx(PANEL, "px-5 py-4")}>
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode ? "TIME PERIODS" : "WALK-FORWARD"}
-          {h.wf.length ? ` — LAST ${h.wf.length}` : ""}
+          {h.wf.length ? (retailMode ? ` — ALL ${h.wf.length}` : ` — ${h.wf.length} WINDOWS`) : ""}
           <Hint text={pick(HINT_WF, retailMode)} />
         </div>
         {h.wf.length > 0 ? (
-          <div className="flex h-16 items-end gap-[6px]">
+          // bars flex to span the panel whatever the window count — the full
+          // tested history reads as complete rather than half-empty
+          <div className="flex h-16 items-end gap-[3px]">
             {h.wf.map((w, i) => (
               <div
                 key={i}
                 title={w.t}
                 className={clsx(
-                  "w-[18px] rounded-t-[3px] transition-opacity",
+                  "min-w-[2px] flex-1 rounded-t-[2px] transition-opacity",
                   w.pos ? "bg-pl-pos" : "bg-pl-neg",
                   w.t && "cursor-help hover:opacity-75",
                 )}
@@ -368,36 +370,44 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
           <Hint text={pick(HINT_MC, retailMode)} />
         </div>
         <svg width="100%" viewBox="0 0 400 100" className="block overflow-visible">
-          <polyline points={run.mc.p95} fill="none" stroke="var(--ink-5)" strokeWidth="1.2" />
+          {/* three of the 1,000 reshuffled equity paths: the lucky one, the
+              middle one, the unlucky one. Labels live in the legend below, so
+              nothing is written over the lines. */}
+          <polyline points={run.mc.p95} fill="none" stroke="var(--chart-mid)" strokeWidth="1.2" />
           <polyline points={run.mc.p50} fill="none" stroke="var(--chart)" strokeWidth="1.7" />
-          <polyline points={run.mc.p05} fill="none" stroke="var(--ink-5)" strokeWidth="1.2" />
-          {run.mcTerm &&
-            (
-              [
-                ["p95", run.mc.p95, run.mcTerm.p95, "var(--chart-mid)"],
-                ["med", run.mc.p50, run.mcTerm.p50, "var(--chart)"],
-                ["p5", run.mc.p05, run.mcTerm.p05, "var(--chart-mid)"],
-              ] as const
-            ).map(([tag, pts, dollars, color]) => {
-              const last = pts.trim().split(" ").pop();
-              if (!last || !dollars) return null;
-              const y = parseFloat(last.split(",")[1] ?? "");
-              if (Number.isNaN(y)) return null;
-              return (
-                <text
-                  key={tag}
-                  x="398"
-                  y={Math.min(Math.max(y + 3, 8), 98)}
-                  textAnchor="end"
-                  fill={color}
-                  fontSize="8.5"
-                  fontFamily="var(--font-plex-mono)"
-                >
-                  {tag} {dollars}
-                </text>
-              );
-            })}
+          <polyline points={run.mc.p05} fill="none" stroke="var(--chart-mid)" strokeWidth="1.2" />
+          {([run.mc.p95, run.mc.p50, run.mc.p05] as const).map((pts, i) => {
+            const [x, y] = (pts.trim().split(" ").pop() ?? "").split(",").map(Number);
+            if (Number.isNaN(x) || Number.isNaN(y)) return null;
+            return (
+              <circle key={i} cx={x} cy={y} r="2.4" fill={i === 1 ? "var(--chart)" : "var(--chart-mid)"} />
+            );
+          })}
         </svg>
+        {run.mcTerm && run.mc.p50 && (
+          // plain-language legend: what $ each of the three paths ended at, so
+          // a reader who's never seen a percentile can still read the range
+          <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[11px]">
+            {(
+              [
+                [retailMode ? "good case" : "95th pct", run.mcTerm.p95, "var(--chart-mid)"],
+                [retailMode ? "most likely" : "median", run.mcTerm.p50, "var(--chart)"],
+                [retailMode ? "bad case" : "5th pct", run.mcTerm.p05, "var(--chart-mid)"],
+              ] as const
+            ).map(([label, val, color]) => (
+              <div key={label} className="flex flex-col gap-1">
+                <span className="flex items-center gap-1.5 text-ink-4">
+                  <span
+                    className="inline-block h-[3px] w-3.5 rounded-full"
+                    style={{ background: color }}
+                  />
+                  {label}
+                </span>
+                <span className="text-[13px] text-ink">{val}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt-2.5 text-[14px] text-ink-2">{notes[2]}</div>
       </div>
 

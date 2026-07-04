@@ -303,10 +303,11 @@ def _sensitivity_grid(report: HonestyReport) -> tuple[list[list[float]], list[st
 
 
 def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
-    # most recent 16 folds — recency is what the panel is for. Normalize
-    # against the DISPLAYED folds only: one wild 2020 window outside the
-    # view must not flatten the visible bars into indistinguishable nubs.
-    folds = report.walk_forward.folds[-16:]
+    # every tested window, oldest → newest: showing the full walk-forward
+    # history makes the depth of testing visible and fills the panel (the
+    # frontend flexes bar width to the count). Heights normalize against all
+    # shown folds.
+    folds = report.walk_forward.folds
     if not folds:
         return []
     biggest = max(abs(f.ret) for f in folds) or 1.0
