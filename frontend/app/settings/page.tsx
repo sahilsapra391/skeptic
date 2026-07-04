@@ -8,8 +8,20 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 
 import { getHealth } from "@/lib/api";
-import type { Accent } from "@/lib/settings";
-import { ACCENTS, DEFAULT_SETTINGS, updateSettings, useSettings } from "@/lib/settings";
+import type { Accent, Theme } from "@/lib/settings";
+import {
+  ACCENTS,
+  DEFAULT_SETTINGS,
+  updateSettings,
+  useResolvedTheme,
+  useSettings,
+} from "@/lib/settings";
+
+const THEME_LABEL: Record<Theme, string> = {
+  market: "market hours",
+  light: "light",
+  dark: "dark",
+};
 
 /** Swatch preview colors per accent — the value each theme actually uses. */
 const ACCENT_PREVIEW: Record<Accent, { dark: string; light: string; label: string }> = {
@@ -82,6 +94,7 @@ function NumberField({
 
 export default function SettingsPage() {
   const settings = useSettings();
+  const resolved = useResolvedTheme();
   const [health, setHealth] = useState<Awaited<ReturnType<typeof getHealth>> | null>(null);
   const [down, setDown] = useState(false);
 
@@ -149,20 +162,27 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <span className="text-[14.5px]">Mode</span>
             <div className="inline-flex gap-[2px] rounded-[11px] border border-line-soft p-[3px]">
-              {(["dark", "light"] as const).map((t) => (
+              {(["market", "light", "dark"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => updateSettings({ theme: t })}
                   className={clsx(
-                    "rounded-[9px] px-4 py-1.5 text-[13.5px] font-semibold capitalize",
+                    "rounded-[9px] px-3.5 py-1.5 text-[13px] font-semibold capitalize",
                     settings.theme === t ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-2",
                   )}
                 >
-                  {t}
+                  {THEME_LABEL[t]}
                 </button>
               ))}
             </div>
           </div>
+          {settings.theme === "market" && (
+            <p className="text-[12.5px] leading-[1.55] text-ink-4">
+              Market Hours follows the clock — light from 8am to 6pm New York time, dark
+              after the close. Right now it’s showing{" "}
+              <span className="font-mono text-ink-2">{resolved}</span>.
+            </p>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-[14.5px]">Accent</span>
             <div className="flex items-center gap-2.5">
@@ -181,7 +201,7 @@ export default function SettingsPage() {
                 >
                   <span
                     className="inline-block h-[14px] w-[14px] rounded-full"
-                    style={{ background: ACCENT_PREVIEW[a][settings.theme] }}
+                    style={{ background: ACCENT_PREVIEW[a][resolved] }}
                   />
                   {ACCENT_PREVIEW[a].label}
                 </button>

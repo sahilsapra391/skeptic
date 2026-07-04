@@ -7,10 +7,13 @@
  * Verbiage switches the language register of results across the app.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 export type Verbiage = "institutional" | "retail";
-export type Theme = "dark" | "light";
+/** "market" follows the clock (see resolveTheme); light/dark are pinned. */
+export type Theme = "market" | "dark" | "light";
+/** the concrete palette actually applied — what data-theme is ever set to. */
+export type ResolvedTheme = "dark" | "light";
 export type Accent = "cyan" | "sage" | "lavender" | "rose";
 
 export const ACCENTS: Accent[] = ["cyan", "sage", "lavender", "rose"];
@@ -29,7 +32,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   commission: 0.65,
   slippage: 0.5,
   verbiage: "institutional",
-  theme: "dark",
+  // Market Hours is the default for everyone: light through the trading day,
+  // dark after the close (owner directive 2026-07-04).
+  theme: "market",
   accent: "cyan",
 };
 
@@ -41,7 +46,7 @@ function clampSettings(s: AppSettings): AppSettings {
     commission: Math.min(5, Math.max(0, Number.isFinite(s.commission) ? s.commission : 0.65)),
     slippage: Math.min(1, Math.max(0.05, Number.isFinite(s.slippage) ? s.slippage : 0.5)),
     verbiage: s.verbiage === "retail" ? "retail" : "institutional",
-    theme: s.theme === "light" ? "light" : "dark",
+    theme: s.theme === "light" ? "light" : s.theme === "dark" ? "dark" : "market",
     accent: ACCENTS.includes(s.accent) ? s.accent : "cyan",
   };
 }
@@ -89,4 +94,45 @@ function subscribe(cb: () => void): () => void {
 
 export function useSettings(): AppSettings {
   return useSyncExternalStore(subscribe, getSettings, () => DEFAULT_SETTINGS);
+}
+
+// ---------------------------------------------------------- theme resolution
+
+/** Market Hours: light during the US trading day (8am–6pm New York, which
+ * tracks EST/EDT automatically), dark outside it. Pinned light/dark are
+ * returned unchanged. This is the ONLY place the clock rule lives — the
+ * inline no-flash script in layout.tsx mirrors it in plain JS. */
+export function resolveTheme(theme: Theme, now: Date = new Date()): ResolvedTheme {
+  if (theme === "light" || theme === "dark") return theme;
+  let hour: number;
+  try {
+    hour =
+      Number(
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York",
+          hour12: false,
+          hour: "2-digit",
+        }).format(now),
+      ) % 24; // "24" at midnight in some engines → 0
+  } catch {
+    hour = now.getHours(); // environment without tz data → local clock
+  }
+  return hour >= 8 && hour < 18 ? "light" : "dark";
+}
+
+/** The applied light/dark, re-evaluated each minute while on Market Hours so
+ * the palette flips at the 8am / 6pm boundaries without a reload. Returns
+ * "dark" on the server and first paint (matches the SSR default) to avoid a
+ * hydration mismatch; the effect corrects it immediately on mount. */
+export function useResolvedTheme(): ResolvedTheme {
+  const { theme } = useSettings();
+  const [resolved, setResolved] = useState<ResolvedTheme>("dark");
+  useEffect(() => {
+    const apply = () => setResolved(resolveTheme(getSettings().theme));
+    apply();
+    if (theme !== "market") return;
+    const id = window.setInterval(apply, 60_000);
+    return () => window.clearInterval(id);
+  }, [theme]);
+  return resolved;
 }
