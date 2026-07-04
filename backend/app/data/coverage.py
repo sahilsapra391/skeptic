@@ -16,7 +16,7 @@ from typing import Any
 from app.data import r2
 
 TICKERS = ["SPY", "QQQ", "IWM"]
-EOD_SOURCES = ["alphavantage", "yahoo", "dolthub"]
+EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
 INTRADAY_SOURCES = ["cboe_delayed", "yahoo"]
 
 _CACHE: dict[str, Any] = {"at": 0.0, "payload": None}

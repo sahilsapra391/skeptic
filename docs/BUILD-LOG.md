@@ -983,3 +983,15 @@ contradicts offset_pct. Eval re-ACCEPTED twice at 8/8 + 4/4.
 fromChart fallback fails loudly instead, and a chart compile clears any
 stale parsed-spec refs. 89 backend tests green (8 new), tsc/lint green,
 chart E2E re-verified (151 fills, period-20 condition in the stored spec).
+
+## 2026-07-04 — iVolatility backfill pipeline, built BEFORE the trial clock starts
+
+Decision: iVolatility Lab trial for the 20-year EOD backfill (research
+compared Massive/Polygon, Databento, iVolatility — see PR/session notes;
+iVol is the only one shipping vendor greeks in exactly our chain shape).
+Everything is pre-built so trial day one is pure downloading:
+`collector/backfill_ivol.py` (probe mode, resumable state, per-day
+validation gates, canonical-column normalization verified against the
+vendor's published OpenAPI schema on GitHub), chains loader precedence
+ivolatility > av > yahoo > dolthub (unit-tested), coverage page reports
+the new source. DATA-PIPELINE §8 documents the trial-day runbook.
