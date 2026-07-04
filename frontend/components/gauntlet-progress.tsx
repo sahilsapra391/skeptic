@@ -22,6 +22,31 @@ const RETAIL_STAGES: { t: string; n: string }[] = [
   { t: "The honest verdict", n: "grounded in the numbers above" },
 ];
 
+// the "Attacking your strategy…" heading fades into a sibling phrase
+// every few seconds — same promise, twenty ways
+const HEADINGS = [
+  "Attacking your strategy",
+  "Stress-testing your idea",
+  "Interrogating the edge",
+  "Hunting for luck in the results",
+  "Trying to break it",
+  "Poking holes in the thesis",
+  "Cross-examining the numbers",
+  "Auditing every fill",
+  "Questioning the win rate",
+  "Searching for the catch",
+  "Testing it against history",
+  "Checking if it was skill",
+  "Putting the edge on trial",
+  "Challenging every assumption",
+  "Probing for weak spots",
+  "Grilling the strategy",
+  "Second-guessing the returns",
+  "Shaking the tree",
+  "Looking for the flaw",
+  "Playing devil's advocate",
+];
+
 const TIPS = [
   "One stated exit rule is enough — the parser never invents the ones you didn't give.",
   "Chart mode: pin up to 10 examples. More examples make the test stricter, not easier.",
@@ -31,7 +56,58 @@ const TIPS = [
   "Commission and slippage are editable in Settings and apply to every new run.",
   "In the sensitivity grid, the ringed column is your spec — brighter neighbors did better.",
   "The verdict leads with the most uncomfortable finding on purpose. That's the product.",
+  "Fills never happen at mid price — buys lean toward the ask, sells toward the bid, plus slippage.",
+  "The shaded strip on the equity chart is data the strategy never saw during testing.",
+  "Hover the equity curve for the exact date, account value and drawdown at any point.",
+  "Hover a walk-forward bar to see that window's dates, return and trade count.",
+  "Verbiage Complexity in Settings rewrites everything in plain English — same numbers, zero jargon.",
+  "Switch between light and dark mode in Settings → Appearance; the accent color is yours to pick too.",
+  "The accent color never touches profit or loss — green and red stay strictly P/L.",
+  "A 'plateau' in the nudge test is good: small settings changes don't wreck the result.",
+  "A 'cliff' is the warning: the result only works at exactly your settings. That smells like luck.",
+  "Recommendations are computed from sweeps we actually ran on your strategy — never opinion.",
+  "The trust band is a range, not a score — precision would be dishonest.",
+  "Trust level 5 still isn't a promise. It means the strategy survived everything we could throw at it.",
+  "If out-of-sample keeps less than half the in-sample result, the verdict flags it as curve-fit.",
+  "The Monte Carlo test reshuffles your trade order 1,000 times to measure how much was sequence luck.",
+  "Every run is seeded — same strategy, same data, same seed gives the identical result.",
+  "The trade log shows fills first; skipped entries hide behind their own toggle, each with a reason.",
+  "SKIP reasons matter: zero bids and wide spreads are the market telling you the fill was fantasy.",
+  "SPY has options history to 2020 in the lake; QQQ and IWM start much later — coverage bounds every verdict.",
+  "The data window is printed on every result — verdicts never pretend to more history than they have.",
+  "Speak your strategy: the mic in the composer does dictation.",
+  "Presets on the home page reorder by what you actually run most.",
+  "The library sorts by trust, not by return. On purpose.",
+  "Old runs stay honest: their verdicts were computed on the coverage available at the time.",
+  "The parser asks rather than guesses — a vague trigger like 'when it dips' earns you a question.",
+  "Answer clarifying questions with the chips or your own words — either works.",
+  "You can edit every dial on the spec screen before anything runs — nothing runs unconfirmed.",
+  "Custom exits compose: profit target, stop loss and a time exit can all apply at once.",
+  "0DTE strategies are refused for now — honest simulation needs minute data we don't serve yet.",
+  "The sidebar is drag-resizable — pull the edge, or drop it below 120px to snap to icons.",
+  "Backtests systematically overstate live results. The disclaimer isn't boilerplate; it's math.",
+  "The deflated Sharpe punishes retries: 100 attempts at one family makes a good number likely luck.",
+  "The gauntlet's five attacks run on every single backtest — there's no express lane.",
+  "Grounded Q&A refuses to invent: if a number isn't in this run's stats, it says so.",
+  "Verdict text is validated number-by-number against computed stats — hallucinated digits get rejected.",
+  "If the narration model misbehaves, a deterministic template ships instead. A run never fails because an LLM did.",
+  "Expiration is simulated honestly: ITM shorts get assigned, stock unwinds at the next open.",
+  "The equity curve is net of costs — commissions and slippage are already in it.",
+  "Walk-forward windows are ~2 months each; one great quarter can't carry a verdict.",
+  "Insufficient evidence isn't failure — it unlocks automatically as more data accrues.",
+  "The 'as specced' column is ringed in the sensitivity grid so you can see exactly where you stand.",
+  "Charts prefetch on the home page — Show on Chart opens instantly after the first visit.",
+  "Trust is computed by fixed rules, not vibes — the LLM narrates the verdict; it never chooses it.",
 ];
+
+function shuffled<T>(list: T[]): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 export function GauntletProgress({
   stage,
@@ -44,16 +120,44 @@ export function GauntletProgress({
 }) {
   const settings = useSettings();
   const stages = settings.verbiage === "retail" ? RETAIL_STAGES : GAUNTLET_STAGES;
-  const [tipIndex, setTipIndex] = useState(() => Math.floor(Math.random() * TIPS.length));
+  // tips play in a shuffled order — no repeats until all 50 have shown
+  const [tipOrder] = useState(() => shuffled(TIPS));
+  const [tipIndex, setTipIndex] = useState(0);
+  const [headingIndex, setHeadingIndex] = useState(0);
+  const [headingVisible, setHeadingVisible] = useState(true);
 
   useEffect(() => {
-    const id = setInterval(() => setTipIndex((i) => (i + 1) % TIPS.length), 6000);
+    const id = setInterval(() => setTipIndex((i) => (i + 1) % tipOrder.length), 6000);
+    return () => clearInterval(id);
+  }, [tipOrder.length]);
+
+  useEffect(() => {
+    // fade out, swap the phrase, fade back in — every 5 seconds
+    const id = setInterval(() => {
+      setHeadingVisible(false);
+      setTimeout(() => {
+        setHeadingIndex((i) => (i + 1) % HEADINGS.length);
+        setHeadingVisible(true);
+      }, 350);
+    }, 5000);
     return () => clearInterval(id);
   }, []);
 
   return (
     <div className="mx-auto mt-[7vh] max-w-[650px]">
-      <h2 className="mb-1.5 font-serif text-[32px] font-medium">Attacking your strategy…</h2>
+      <h2
+        className={clsx(
+          "mb-1.5 font-serif text-[32px] font-medium transition-opacity duration-300",
+          headingVisible ? "opacity-100" : "opacity-0",
+        )}
+      >
+        {HEADINGS[headingIndex]}
+        <span className="inline-flex w-[1.4em]">
+          <span className="animate-pin-pulse">.</span>
+          <span className="animate-pin-pulse" style={{ animationDelay: "0.35s" }}>.</span>
+          <span className="animate-pin-pulse" style={{ animationDelay: "0.7s" }}>.</span>
+        </span>
+      </h2>
       <p className="mb-[26px] text-[15px] text-ink-3">{name}</p>
       <div className="mb-6 h-[6px] overflow-hidden rounded-[3px] bg-line-softer">
         <div
@@ -104,7 +208,7 @@ export function GauntletProgress({
         <div className="mb-1.5 font-mono text-[11px] font-medium tracking-[.14em] text-ink-4">
           WHILE YOU WAIT
         </div>
-        <p className="text-[14.5px] leading-[1.6] text-ink-2">{TIPS[tipIndex]}</p>
+        <p className="text-[14.5px] leading-[1.6] text-ink-2">{tipOrder[tipIndex]}</p>
       </div>
     </div>
   );

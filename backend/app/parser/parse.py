@@ -105,6 +105,11 @@ CONVENTIONS:
 - Entry conditions present but no cadence stated → frequency "signal_only";
   a stated evaluation cadence (e.g. "daily signal") keeps that frequency with the
   condition attached.
+- "weekly" with no day named → day_of_week "monday" (the standard cycle);
+  do NOT ask which day.
+- The number attached to an indicator IS its period and must be included:
+  "RSI(14)" → period 14; "its 50 SMA" / "50-day SMA" → period 50;
+  "9 EMA below the 20 EMA" → params {"fast": 9, "slow": 20}.
 - "one at a time" → max_concurrent_positions 1; otherwise 5 unless stated. Never
   ask about position count or sizing — the defaults cover them.
 - Percent profit/stop numbers are percents (50 = 50%).

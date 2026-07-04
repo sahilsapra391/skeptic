@@ -118,7 +118,30 @@ def _underlying_frames(ticker: str) -> tuple[pd.DataFrame | None, pd.DataFrame |
     return daily, vix
 
 
+# in-process store cache: the parquet parse is seconds of work a warm
+# container never needs to repeat (thread-safe enough for one writer)
+_STORE_CACHE: dict[str, MarketStore] = {}
+
+
 def load_market_store(ticker: str) -> MarketStore:
+    cached = _STORE_CACHE.get(ticker)
+    if cached is not None:
+        return cached
+    store = _build_market_store(ticker)
+    _STORE_CACHE[ticker] = store
+    return store
+
+
+def warm_store(ticker: str = "SPY") -> None:
+    """Fire-and-forget prewarm so the FIRST user run doesn't pay the cold
+    R2 pull (minutes on a fresh deploy)."""
+    try:
+        load_market_store(ticker)
+    except Exception:  # no creds / empty lake — the run path reports it
+        pass
+
+
+def _build_market_store(ticker: str) -> MarketStore:
     daily, vix = _underlying_frames(ticker)
     if daily is None or daily.empty:
         raise RuntimeError(f"no underlying dailies in the lake for {ticker}")

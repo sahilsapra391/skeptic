@@ -853,3 +853,26 @@ URL with the bearer token and fails on any demo flag or timeout;
 docs/RUNBOOK.md covers topology, every env var for both platforms,
 token rotation, deploys and cold-start behavior, collector operations,
 the Neon fallback/quota story, and cost dashboards.
+
+## 2026-07-03 — Prod polish: trade-log bug, speed, gauntlet theater, DeepSeek default
+
+Post-deploy round. **Bug:** the trade log capped the last 250 EVENTS
+before splitting fills from skips, so a signal strategy with 1,614
+skips showed 4 of its 17 fills — fills and skips now cap separately
+(all fills up to 400, last 250 skips). **Speed:** the two verdict
+narrations (institutional + retail) now run in PARALLEL; market stores
+get an in-process cache (the parquet parse happens once per container,
+not once per run); and the backend prewarms the SPY lake in a
+background thread at boot, so the first user run on a fresh Railway
+container no longer pays the cold R2 pull. Neon-paid explicitly NOT
+the fix — the DB never was the bottleneck. **Gauntlet theater:** the
+heading now fades through 20 sibling phrases ("Interrogating the
+edge", "Hunting for luck in the results"…) every 3s with an animated
+ellipsis, and the tips pool grew 8 → 50, played in shuffled order so a
+session rarely repeats one. **Model:** default LLM switched
+anthropic/claude-sonnet-4.5 → deepseek/deepseek-v4-pro (owner). The
+parser eval initially REJECTED DeepSeek (5/8 — over-asked day-of-week,
+dropped indicator periods); two new prompt conventions ("weekly with
+no day named → monday", "the number attached to an indicator IS its
+period") brought it to 8/8+4/4 and 7/8+4/4 across two runs — ACCEPTED.
+OPENROUTER_MODEL still overrides per-deployment.

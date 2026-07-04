@@ -20,6 +20,21 @@ from app.config import load_local_env
 
 load_local_env()
 
+
+def _warm_lake() -> None:
+    """Prewarm the SPY chain store in the background so the first user run
+    on a fresh container doesn't pay the cold R2 pull (minutes)."""
+    import threading
+
+    from app.data.chains import warm_store
+    from app.data.r2 import r2_configured
+
+    if r2_configured():
+        threading.Thread(target=warm_store, name="lake-warmer", daemon=True).start()
+
+
+_warm_lake()
+
 from app.api import data as data_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
 from app.db import init_db  # noqa: E402
