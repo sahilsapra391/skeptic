@@ -150,9 +150,12 @@ export default function DataPage() {
             <polyline
               points="0,20 40,20 48,6 56,34 64,20 110,20 118,6 126,34 134,20 180,20 188,6 196,34 204,20 260,20"
               fill="none"
-              stroke={recorderFresh ? "var(--ac)" : "#5f6873"}
+              stroke={recorderFresh ? "var(--ac)" : "var(--ink-4)"}
               strokeWidth="1.6"
-              strokeDasharray="240"
+              // the dash is the traveling-pulse animation; when stalled it must
+              // NOT clip the trace — a 240-unit dash on a ~372-unit path would
+              // hide the right third and read as a half-drawn (buggy) line
+              strokeDasharray={recorderFresh ? "240" : undefined}
               className={recorderFresh ? "animate-heartbeat" : undefined}
             />
           </svg>

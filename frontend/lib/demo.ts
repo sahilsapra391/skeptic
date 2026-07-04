@@ -37,6 +37,9 @@ const MC = {
   p05: "0,80 100,84 200,86 300,89 400,92",
 };
 
+// terminal $ per band — illustrative, mirrors the shape real runs now carry
+const MC_TERM = { p95: "$41,900", p50: "$32,400", p05: "$24,100" };
+
 const SENSITIVITY = [
   [0.1, 0.16, 0.28, 0.44, 0.86, 0.3, 0.14, 0.1, 0.07],
   [0.12, 0.2, 0.34, 0.5, 0.92, 0.26, 0.12, 0.08, 0.06],
@@ -318,6 +321,7 @@ export function createDemoRun(draft: SpecDraft): string {
     oosShadeX: 600,
     honesty: bundle.honesty,
     mc: MC,
+    mcTerm: MC_TERM,
     sensitivity: SENSITIVITY,
     tradeHeader: "Trade log — 412 filled · 37 skipped, with reasons",
     trades: TRADES,
@@ -365,6 +369,7 @@ function seededRun(
       oosShadeX: 600,
       honesty: bundle.honesty,
       mc: MC,
+      mcTerm: MC_TERM,
       sensitivity: SENSITIVITY,
       tradeHeader: "Trade log — 412 filled · 37 skipped, with reasons",
       trades: TRADES,
