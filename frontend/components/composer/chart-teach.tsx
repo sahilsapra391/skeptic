@@ -19,6 +19,7 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 
+import { getBars } from "@/lib/api";
 import type { Bar, SpecDraft, Structure, Ticker } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
@@ -106,28 +107,52 @@ function inferStructure(pins: ChartPin[], bars: Bar[]): Inference {
   return { structure, avgZ };
 }
 
-/** Average drawdown-from-running-high at the pinned ENTRIES — the entry
- * trigger honestly inferred from where the user actually clicked, instead
- * of a canned threshold. Rounded to 0.5%, clamped to [1, 10]; degenerate
- * pins (no context, entries at highs) fall back to the 2% floor. */
-function entryPullbackPct(complete: ChartPin[], bars: Bar[]): number {
-  const index = new Map(bars.map((b, i) => [b.t, i]));
-  const dds: number[] = [];
-  let runMax = 0;
-  const maxAt: number[] = [];
-  for (const b of bars) {
-    runMax = Math.max(runMax, b.c);
-    maxAt.push(runMax);
+// the trigger's rolling-high window, shared with the compiled condition so
+// the taught threshold and the backtested condition measure the SAME thing
+const TRIGGER_LOOKBACK_SESSIONS = 20;
+
+/** Average % below the rolling 20-session high on DAILY closes at the
+ * pinned entry dates. Measured on daily data no matter what interval the
+ * user pinned on, because that is exactly what the engine's
+ * drawdown_from_high_pct(period=20) will test — an intraday buffer's
+ * running high is a different quantity and would compile a threshold the
+ * backtest never reproduces. Values are ≥ 0 by construction (the rolling
+ * window includes the pin's own close). Rounded to 0.5%, clamped to
+ * [1, 10]; pins with no daily context fall back to 2%. */
+async function entryPullbackPct(complete: ChartPin[], ticker: Ticker): Promise<number> {
+  let bars: Bar[];
+  try {
+    bars = (await getBars(ticker, "1d", "5y", [])).bars;
+  } catch {
+    return 2;
   }
+  if (!bars.length) return 2;
+  const day = (t: string) => t.slice(0, 10);
+  const dds: number[] = [];
   for (const pin of complete) {
-    const i = index.get(pin.a.t);
-    if (i == null || maxAt[i] <= 0) continue;
-    dds.push(((maxAt[i] - pin.a.c) / maxAt[i]) * 100);
+    const pinDay = day(pin.a.t);
+    // latest daily bar at or before the pinned moment
+    let i = -1;
+    for (let j = bars.length - 1; j >= 0; j--) {
+      if (day(bars[j].t) <= pinDay) {
+        i = j;
+        break;
+      }
+    }
+    if (i < 0) continue;
+    let high = 0;
+    for (let j = Math.max(0, i - TRIGGER_LOOKBACK_SESSIONS + 1); j <= i; j++) {
+      high = Math.max(high, bars[j].c);
+    }
+    if (high <= 0) continue;
+    dds.push(((high - bars[i].c) / high) * 100);
   }
   if (!dds.length) return 2;
   const avg = dds.reduce((s, d) => s + d, 0) / dds.length;
+  // monotone: rounds-to-zero means "entered at the high" and takes the 1%
+  // floor — it must never jump ABOVE deeper-pullback pins
   const rounded = Math.round(avg * 2) / 2;
-  return Math.min(10, Math.max(1, rounded || 2));
+  return Math.min(10, Math.max(1, rounded));
 }
 
 export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => void }) {
@@ -136,6 +161,8 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
   const [bars, setBars] = useState<Bar[]>([]);
   // default width matches the Describe It box; expanded fills the page
   const [expanded, setExpanded] = useState(false);
+  // compile fetches daily bars to derive the trigger — brief async gate
+  const [compiling, setCompiling] = useState(false);
 
   const complete = pins.filter((p) => p.b != null);
   const pending = pins.find((p) => p.b == null) ?? null;
@@ -156,26 +183,36 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
     setPins([]);
   }
 
-  function compile() {
-    if (!complete.length) return;
-    const n = complete.length;
-    const threshold = entryPullbackPct(complete, bars);
-    onCompile({
-      ticker,
-      structure: inference.structure,
-      strikeDelta: DEFAULT_DELTA[inference.structure] ?? 30,
-      dte: 45,
-      cadence: "signal",
-      size: "1 contract",
-      // pins can't express an exit — the spec screen asks, never defaults
-      exit: null,
-      fromChart: true,
-      quote: `taught by ${n} pinned example${n === 1 ? "" : "s"} on the ${ticker} chart`,
-      anchor: fmtPin(complete[0].a.t),
-      trigger: `pullback ≥ ${threshold}% from high`,
-      triggerSpec: { indicator: "drawdown_from_high_pct", operator: ">=", value: threshold },
-      examples: n,
-    });
+  async function compile() {
+    if (!complete.length || compiling) return;
+    setCompiling(true);
+    try {
+      const n = complete.length;
+      const threshold = await entryPullbackPct(complete, ticker);
+      onCompile({
+        ticker,
+        structure: inference.structure,
+        strikeDelta: DEFAULT_DELTA[inference.structure] ?? 30,
+        dte: 45,
+        cadence: "signal",
+        size: "1 contract",
+        // pins can't express an exit — the spec screen asks, never defaults
+        exit: null,
+        fromChart: true,
+        quote: `taught by ${n} pinned example${n === 1 ? "" : "s"} on the ${ticker} chart`,
+        anchor: fmtPin(complete[0].a.t),
+        trigger: `pullback ≥ ${threshold}% from ${TRIGGER_LOOKBACK_SESSIONS}-day high`,
+        triggerSpec: {
+          indicator: "drawdown_from_high_pct",
+          operator: ">=",
+          value: threshold,
+          period: TRIGGER_LOOKBACK_SESSIONS,
+        },
+        examples: n,
+      });
+    } finally {
+      setCompiling(false);
+    }
   }
 
   const pendingNote = pending
@@ -282,16 +319,16 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
             : "structure inferred from your pins · changing view clears pins"}
         </span>
         <button
-          onClick={compile}
-          disabled={!complete.length}
+          onClick={() => void compile()}
+          disabled={!complete.length || compiling}
           className={clsx(
             "ml-auto rounded-[10px] px-5 py-2.5 text-[14.5px]",
-            complete.length
+            complete.length && !compiling
               ? "bg-trust font-bold text-on-accent"
               : "cursor-not-allowed bg-raised-2 text-ink-4",
           )}
         >
-          That's the idea →
+          {compiling ? "reading the pins…" : "That's the idea →"}
         </button>
       </div>
     </div>

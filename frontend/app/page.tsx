@@ -544,6 +544,10 @@ export default function NewAnalysisPage() {
         >
           <ChartTeach
             onCompile={(d) => {
+              // a chart draft supersedes any earlier chat parse — clear the
+              // verbatim-spec refs so a stale spec can never ride along
+              parsedSpecRef.current = null;
+              parsedDraftRef.current = null;
               setDraft(d);
               setPhase("spec");
             }}

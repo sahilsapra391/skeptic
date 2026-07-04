@@ -46,7 +46,7 @@
                 "properties": {
                   "method": {
                     "enum": ["delta", "offset_pct", "atm", "width_from_leg"],
-                    "description": "delta: nearest |delta|; offset_pct: strike = spot*(1+value); atm: value ignored; width_from_leg: strike = referenced leg strike +/- value dollars (spreads/condors)."
+                    "description": "delta: nearest |delta|; offset_pct: strike = spot*(1+value); atm: accepted on input, normalized to delta 0.5 during validation (ATM IS the 50-delta strike); width_from_leg: strike = referenced leg strike +/- value dollars (spreads/condors), value must be > 0, filled width may deviate from value by at most value (else the entry skips as wing_width_unavailable)."
                   },
                   "value": { "type": "number" },
                   "reference_leg": { "type": "integer", "minimum": 0, "description": "Required when method=width_from_leg." }

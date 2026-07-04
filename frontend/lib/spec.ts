@@ -79,24 +79,31 @@ function schedule(draft: SpecDraft): Json {
 
 function conditions(draft: SpecDraft): Json[] {
   const t = draft.triggerSpec;
-  if (!draft.fromChart && !t) return [];
   if (t) {
     const cond: Json = { indicator: t.indicator, operator: t.operator, value: t.value };
     if (t.period != null) cond.period = t.period;
     return [cond];
   }
-  return [{ indicator: "drawdown_from_high_pct", operator: ">=", value: 2 }];
+  if (draft.fromChart) {
+    // chart drafts always carry a pin-derived trigger — one missing is
+    // corrupted state, and failing loudly beats silently backtesting a
+    // canned trigger nobody set
+    throw new Error("chart draft lost its trigger — recompile from the chart");
+  }
+  return [];
 }
 
 function exitRules(draft: SpecDraft): Json {
   const out: Json = {};
   const label = draft.exit ?? "";
-  const profit = label.match(/(\d+)%\s*profit/);
+  // decimals are legal everywhere the label grammar carries percents —
+  // "12.5% profit" must never parse as 5%
+  const profit = label.match(/(\d+(?:\.\d+)?)%\s*profit/);
   if (profit) out.profit_target_pct = Number(profit[1]);
   const dte = label.match(/(\d+)\s*DTE/);
   if (dte) out.time_exit_dte = Number(dte[1]);
   if (label.includes("expiry")) out.time_exit_dte = 0;
-  const stop = label.match(/stop\s*(\d+)(×|%)/);
+  const stop = label.match(/stop\s*(\d+(?:\.\d+)?)(×|%)/);
   if (stop) out.stop_loss_pct = stop[2] === "×" ? Number(stop[1]) * 100 : Number(stop[1]);
   return out;
 }

@@ -86,13 +86,15 @@ def evaluate_condition(view: MarketView, cond: Condition) -> bool:
         vol = float(rets.std(ddof=1)) * math.sqrt(252) * 100.0
         return _compare(vol, cond.operator, cond.value)
     if ind_name is Indicator.DRAWDOWN_FROM_HIGH_PCT:
-        peak = float(s.cummax().iloc[-1])
-        dd_now = (1.0 - closes[-1] / peak) * 100.0
-        if len(closes) >= 2:
-            peak_prev = float(s.iloc[:-1].cummax().iloc[-1])
-            dd_prev = (1.0 - closes[-2] / peak_prev) * 100.0
-        else:
-            dd_prev = dd_now
+        # period bounds the reference high: "2% below its 20-day high" is a
+        # rolling 20-session peak, not the all-time high since data start.
+        # No period keeps the historical since-inception behavior.
+        def _dd(series: pd.Series) -> float:
+            window = series.tail(cond.period) if cond.period else series
+            return (1.0 - float(series.iloc[-1]) / float(window.max())) * 100.0
+
+        dd_now = _dd(s)
+        dd_prev = _dd(s.iloc[:-1]) if len(closes) >= 2 else dd_now
         return _series_pair([dd_prev, dd_now], cond.operator, cond.value)
     if ind_name is Indicator.VIX_LEVEL:
         vix = view.vix()

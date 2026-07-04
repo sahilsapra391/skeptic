@@ -62,7 +62,7 @@ THE SPEC (all fields required unless noted):
    "structure": "short_put" | "put_credit_spread" | "call_credit_spread" | "iron_condor"
                 | "covered_call" | "long_call" | "long_put",
    "legs": [{"right": "call"|"put", "side": "long"|"short", "ratio": 1,
-             "strike_selection": {"method": "delta"|"offset_pct"|"atm"|"width_from_leg",
+             "strike_selection": {"method": "delta"|"offset_pct"|"width_from_leg",
                                   "value": <number>, "reference_leg": <int, width_from_leg only>}}],
    "expiration_selection": {"target_dte": <1-90>, "min_dte": <int>, "max_dte": <int>}
  },
@@ -101,9 +101,13 @@ CONVENTIONS:
 - The exit object contains ONLY rules the user stated. ONE stated rule (a profit
   target, OR a stop, OR a time exit) is a COMPLETE exit — do not ask for the
   others and do not add them.
-- "close at X% profit or N days" → profit_target_pct X AND time_exit_dte N.
-  Any "N days" in an exit clause IS time_exit_dte N by definition here —
-  never ask whether it means days-to-expiration or days-after-entry.
+- "close at X% profit or N days" → profit_target_pct X AND time_exit_dte N;
+  a bare "or N days" / "at N days" / "N days left" in an exit clause means a
+  time exit at N DTE — don't ask about those forms.
+  BUT exits counted FROM ENTRY ("sell it after 10 days", "hold for two
+  weeks") are NOT expressible as DTE without knowing the tenor relationship —
+  ask ONE question offering the DTE equivalent (e.g. "exit at 35 DTE, i.e.
+  10 days after entering a 45 DTE position?"). Never silently convert.
 - "9 EMA below the 20 EMA" → {"indicator": "ema_cross_state", "operator": "below",
   "value": 0, "params": {"fast": 9, "slow": 20}}.
 - Entry conditions present but no cadence stated → frequency "signal_only";
@@ -118,8 +122,8 @@ CONVENTIONS:
   ask about position count or sizing — the defaults cover them.
 - Percent profit/stop numbers are percents (50 = 50%). The same for percent
   indicators: price_vs_sma_pct / price_vs_ema_pct / drawdown_from_high_pct
-  values are percents ("3% below its SMA" → value 3, never 0.03). Delta is
-  the ONLY decimal-valued field.
+  values are percents ("3% below its SMA" → value 3, never 0.03). Only delta
+  (0.30) and offset_pct (-0.05) take decimal values.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
 
 WHEN TO ASK (result "questions") — the tool's identity depends on this:
@@ -234,7 +238,8 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
         raw_spec.setdefault("meta", {})
         raw_spec["meta"]["description_raw"] = text
         raw_spec["spec_version"] = 1
-        _normalize_atm_legs(raw_spec)
+        # (ATM → .50Δ normalization lives on StrikeSelection itself — every
+        # ingress that validates a spec gets it, not just this one)
         try:
             spec = StrategySpec.model_validate(raw_spec)
         except ValidationError as exc:
@@ -264,21 +269,6 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
     )
 
 
-def _normalize_atm_legs(raw_spec: dict[str, Any]) -> None:
-    """ATM IS the 50-delta strike. The prompt says never to emit method
-    "atm", but the model occasionally does anyway — normalize it here so
-    the UI always shows an editable .50Δ dial and a spread's second leg
-    can never collide with its reference strike."""
-    legs = raw_spec.get("position", {}).get("legs")
-    if not isinstance(legs, list):
-        return
-    for leg in legs:
-        sel = leg.get("strike_selection") if isinstance(leg, dict) else None
-        if isinstance(sel, dict) and sel.get("method") == "atm":
-            sel["method"] = "delta"
-            sel["value"] = 0.5
-
-
 # --------------------------------------------------------- UI draft mapping
 def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     """Project a validated spec onto the UI's editable dial surface."""
@@ -287,12 +277,10 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     sel = lead["strike_selection"]
     method = sel["method"]
     if method == "delta":
+        # method "atm" can't reach here — StrikeSelection normalizes it to
+        # delta 0.5 during validation, so the dial is always a real .XXΔ
         delta = int(round(abs(sel["value"]) * 100 / 5.0) * 5) or 5
         strike_label = None
-    elif method == "atm":
-        # legacy specs stored before ATM→.50Δ normalization: show the
-        # honest, editable dial — never a value the dropdown can't hold
-        delta, strike_label = 50, None
     else:  # offset_pct / anything non-delta keeps its honest label
         delta = 30
         pct = sel["value"] * 100

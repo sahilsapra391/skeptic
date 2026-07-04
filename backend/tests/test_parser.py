@@ -80,27 +80,42 @@ def test_spec_to_draft_projects_dials() -> None:
     assert draft["exit"] == "50% profit · stop 200%"
 
 
-def test_atm_legs_normalize_to_50_delta(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ATM is the 50-delta strike. A model that emits method "atm" (even on
-    both legs of a spread — the zero-fills bug) must land as delta 0.5."""
+def test_atm_legs_normalize_to_50_delta_on_every_leg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ATM is the 50-delta strike, normalized by StrikeSelection itself so
+    EVERY ingress gets it. A model emitting method "atm" on BOTH legs of a
+    spread (the zero-fills bug: both legs collide on the spot strike) must
+    land as delta 0.5 on every leg."""
     spec = _valid_spec()
-    spec["position"]["legs"][0]["strike_selection"] = {"method": "atm", "value": 0}
+    spec["position"]["structure"] = "put_credit_spread"
+    spec["position"]["legs"] = [
+        {"right": "put", "side": "short", "ratio": 1,
+         "strike_selection": {"method": "atm", "value": 0}},
+        {"right": "put", "side": "long", "ratio": 1,
+         "strike_selection": {"method": "atm", "value": 0}},
+    ]
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         requests, "post", lambda *a, **k: _FakeResp({"result": "spec", "spec": spec})
     )
-    out = parser_module.parse_strategy("sell an ATM put on SPY, close at 50% profit")
+    out = parser_module.parse_strategy("sell an ATM put spread on SPY, close at 50% profit")
     assert out is not None and out.status == "spec" and out.spec is not None
-    sel = out.spec["position"]["legs"][0]["strike_selection"]
-    assert sel["method"] == "delta"
-    assert sel["value"] == 0.5
+    for leg in out.spec["position"]["legs"]:
+        assert leg["strike_selection"]["method"] == "delta"
+        assert leg["strike_selection"]["value"] == 0.5
 
 
-def test_legacy_atm_spec_drafts_as_editable_50_delta() -> None:
-    """Old stored specs with method "atm" must never surface an 'ATM' label
-    the strike dropdown can't hold — they draft as a plain .50Δ dial."""
-    spec = _spec(0.30, 30, 50.0, 200.0)
-    spec["position"]["legs"][0]["strike_selection"] = {"method": "atm", "value": 0}
-    draft = parser_module.spec_to_draft(spec, "sell an ATM put")
-    assert draft["strikeDelta"] == 50
-    assert draft["strikeLabel"] is None
+def test_malformed_position_falls_back_to_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model reply whose "position" is null must never escape as an
+    exception — it retries and degrades to questions like any invalid spec."""
+    spec = _valid_spec()
+    spec["position"] = None
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(
+        requests, "post", lambda *a, **k: _FakeResp({"result": "spec", "spec": spec})
+    )
+    out = parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
+    assert out is not None and out.status == "questions"

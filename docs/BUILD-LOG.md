@@ -947,3 +947,39 @@ honestly derived from the pins (average pullback-from-high at the
 pinned entries, ½%-rounded, clamped 1–10%). Verified E2E: pin → spec
 screen question → run (214 fills). Uncapped trade log stress-checked:
 1,873 rows render in 79 ms.
+
+## 2026-07-04 (review fixes) — all 15 ultrareview findings closed on PR 16
+
+The xhigh code review of this branch surfaced 15 verified findings; all
+fixed, several at a deeper layer than the original patch:
+**ATM moved into the IR.** The parse-time post-pass (which could crash on
+a malformed model reply) is gone — StrikeSelection itself normalizes
+method "atm" → delta 0.5 during validation, so EVERY ingress (parser,
+POST /api/backtest, stored specs re-validated for a run) gets it, the
+sensitivity sweep's delta axis always applies, and spec_to_draft's
+legacy branch is deleted. "atm" also left the prompt's schema line.
+**Wings got a tolerance and a bound.** Filled width may deviate from the
+requested width by at most the width itself — a $5 wing on a $25 grid
+skips as wing_width_unavailable instead of silently trading 5× the max
+loss; width ≤ 0 is now a 422 at validation, never reinterpreted
+per-entry. Call-side and iron-condor wiring gained the tests they lacked.
+**ATM stays greeks-free.** The 50Δ selection falls back to
+nearest-to-spot when a session's source carries no deltas (yahoo rows
+store none) — definitionally the same strike, so ATM strategies keep
+filling on those sessions.
+**The chart trigger now measures what the engine tests.** Threshold
+derives from DAILY closes vs the rolling 20-session high at the pinned
+entries (fetched at compile), and drawdown_from_high_pct honors period —
+"2% below its 20-day high" is no longer silently evaluated against the
+all-time high (this also fixes the chat path's period-carrying specs).
+Monotone clamp (no more 0.2%-pins → 2% while 0.4%-pins → 1%), negatives
+impossible by construction, buffer-paging no longer changes the result.
+**Parser conventions tightened, not loosened.** "or N days" stays a DTE
+exit, but exits counted FROM ENTRY ("sell after 10 days") now explicitly
+demand a clarifying question; the decimal-fields line no longer
+contradicts offset_pct. Eval re-ACCEPTED twice at 8/8 + 4/4.
+**Frontend honesty.** exitRules accepts decimals ("12.5% profit" ran as
+5% before — verified 12.5 lands in the spec now), the dead canned-2%
+fromChart fallback fails loudly instead, and a chart compile clears any
+stale parsed-spec refs. 89 backend tests green (8 new), tsc/lint green,
+chart E2E re-verified (151 fills, period-20 condition in the stored spec).

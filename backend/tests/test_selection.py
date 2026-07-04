@@ -1,6 +1,8 @@
 """Leg selection: protective wings must land strictly beyond the reference
-strike — never ON it (dead duplicate-strike skip on coarse grids) and never
-on the wrong side (an inverted spread the user didn't ask for)."""
+strike — never ON it, never on the wrong side — and within a width tolerance
+(deviation ≤ the requested width) so a coarse grid produces an honest skip,
+not a silently wider spread. Also: the 50Δ strike IS the ATM strike, so it
+stays selectable on sessions whose source carries no greeks."""
 
 from datetime import date
 
@@ -11,58 +13,113 @@ from app.models.spec import Leg
 EXP = date(2026, 3, 20)
 
 
-def _put_chain(strikes: list[float]) -> dict[ContractKey, Quote]:
-    # put deltas grow toward the money: the highest strike carries the
-    # biggest |delta|, so a 0.30-delta short resolves to the TOP strike
-    ordered = sorted(strikes)
+def _chain(
+    strikes: list[float], right: str = "put", with_delta: bool = True
+) -> dict[ContractKey, Quote]:
+    # |delta| grows toward the money: for puts the TOP strike carries the
+    # biggest |delta|; for calls the BOTTOM strike does
+    ordered = sorted(strikes, reverse=(right == "call"))
     n = max(len(ordered) - 1, 1)
     return {
-        ContractKey(expiration=EXP, right="put", strike=s): Quote(
-            bid=1.0, ask=1.2, delta=-(0.10 + 0.20 * i / n)
+        ContractKey(expiration=EXP, right=right, strike=s): Quote(
+            bid=1.0,
+            ask=1.2,
+            delta=((0.10 + 0.20 * i / n) * (-1 if right == "put" else 1))
+            if with_delta
+            else None,
         )
         for i, s in enumerate(ordered)
     }
 
 
-def _spread_legs(width: float) -> list[Leg]:
+def _leg(right: str, side: str, sel: dict) -> Leg:
+    return Leg.model_validate(
+        {"right": right, "side": side, "ratio": 1, "strike_selection": sel}
+    )
+
+
+def _spread_legs(width: float, right: str = "put") -> list[Leg]:
     return [
-        Leg.model_validate(
-            {"right": "put", "side": "short", "ratio": 1,
-             "strike_selection": {"method": "delta", "value": 0.3}}
-        ),
-        Leg.model_validate(
-            {"right": "put", "side": "long", "ratio": 1,
-             "strike_selection": {"method": "width_from_leg", "value": width,
-                                  "reference_leg": 0}}
-        ),
+        _leg(right, "short", {"method": "delta", "value": 0.3}),
+        _leg(right, "long", {"method": "width_from_leg", "value": width, "reference_leg": 0}),
     ]
 
 
-def test_wing_lands_below_reference_on_coarse_grid() -> None:
-    # $25 spacing, $5 width: nearest-by-absolute-distance would pick the
-    # reference itself (5 < 20 away) — the wing must land BELOW instead
-    chain = _put_chain([450.0, 475.0, 500.0])
-    resolved, reason = select_legs(chain, EXP, _spread_legs(width=5.0), spot=500.0)
-    assert reason is None and resolved is not None
-    short, wing = resolved
-    assert short.strike == 500.0
-    assert wing.strike == 475.0
-
-
-def test_no_strike_below_reference_is_an_honest_skip() -> None:
-    # the short resolves to the only strike; nothing sits below it — a wing
-    # on the wrong side would invert the spread, so this must be a skip
-    chain = _put_chain([500.0])
-    resolved, reason = select_legs(chain, EXP, _spread_legs(width=5.0), spot=500.0)
-    assert resolved is None
-    assert reason == "no_wing_strike"
-
-
-def test_wing_prefers_nearest_below_target() -> None:
-    # fine grid: the $5-wide wing picks exactly ref-5, not merely "below"
-    chain = _put_chain([485.0, 490.0, 495.0, 500.0])
-    resolved, reason = select_legs(chain, EXP, _spread_legs(width=5.0), spot=500.0)
+def test_put_wing_lands_below_reference_within_tolerance() -> None:
+    # fine grid: the $5-wide wing picks exactly ref-5
+    chain = _chain([485.0, 490.0, 495.0, 500.0])
+    resolved, reason = select_legs(chain, EXP, _spread_legs(5.0), spot=500.0)
     assert reason is None and resolved is not None
     short, wing = resolved
     assert short.strike == 500.0
     assert wing.strike == 495.0
+
+
+def test_call_wing_lands_above_reference() -> None:
+    # the mirrored branch: call wings go ABOVE the short call
+    chain = _chain([500.0, 505.0, 510.0, 515.0], right="call")
+    resolved, reason = select_legs(chain, EXP, _spread_legs(5.0, right="call"), spot=500.0)
+    assert reason is None and resolved is not None
+    short, wing = resolved
+    assert short.strike == 500.0
+    assert wing.strike == 505.0
+
+
+def test_coarse_grid_is_an_honest_skip_not_a_wider_spread() -> None:
+    # $25 spacing, $5 width: nearest-below sits $20 off target — filling it
+    # would trade 5× the specified max loss, so the entry must skip
+    chain = _chain([450.0, 475.0, 500.0])
+    resolved, reason = select_legs(chain, EXP, _spread_legs(5.0), spot=500.0)
+    assert resolved is None
+    assert reason == "wing_width_unavailable"
+
+
+def test_moderate_grid_within_tolerance_fills() -> None:
+    # $5 spacing, $4 width: ref-5 deviates $1 ≤ width — acceptable fill
+    chain = _chain([490.0, 495.0, 500.0])
+    resolved, reason = select_legs(chain, EXP, _spread_legs(4.0), spot=500.0)
+    assert reason is None and resolved is not None
+    assert resolved[1].strike == 495.0
+
+
+def test_no_strike_below_reference_is_an_honest_skip() -> None:
+    chain = _chain([500.0])
+    resolved, reason = select_legs(chain, EXP, _spread_legs(5.0), spot=500.0)
+    assert resolved is None
+    assert reason == "no_wing_strike"
+
+
+def test_iron_condor_wings_straddle_both_shorts() -> None:
+    chain = {
+        **_chain([480.0, 485.0, 490.0], right="put"),
+        **_chain([510.0, 515.0, 520.0], right="call"),
+    }
+    legs = [
+        _leg("put", "short", {"method": "delta", "value": 0.3}),
+        _leg("put", "long", {"method": "width_from_leg", "value": 5, "reference_leg": 0}),
+        _leg("call", "short", {"method": "delta", "value": 0.3}),
+        _leg("call", "long", {"method": "width_from_leg", "value": 5, "reference_leg": 2}),
+    ]
+    resolved, reason = select_legs(chain, EXP, legs, spot=500.0)
+    assert reason is None and resolved is not None
+    sp, lp, sc, lc = resolved
+    assert lp.strike == sp.strike - 5
+    assert lc.strike == sc.strike + 5
+
+
+def test_50_delta_falls_back_to_spot_when_chain_has_no_greeks() -> None:
+    # ATM ≡ 50Δ: yahoo-sourced sessions store delta=None on every row — the
+    # definitional nearest-to-spot pick keeps those sessions tradable
+    chain = _chain([495.0, 500.0, 505.0], with_delta=False)
+    legs = [_leg("put", "short", {"method": "delta", "value": 0.5})]
+    resolved, reason = select_legs(chain, EXP, legs, spot=501.0)
+    assert reason is None and resolved is not None
+    assert resolved[0].strike == 500.0
+
+
+def test_non_50_delta_still_skips_without_greeks() -> None:
+    chain = _chain([495.0, 500.0, 505.0], with_delta=False)
+    legs = [_leg("put", "short", {"method": "delta", "value": 0.3})]
+    resolved, reason = select_legs(chain, EXP, legs, spot=501.0)
+    assert resolved is None
+    assert reason == "no_delta_data"
