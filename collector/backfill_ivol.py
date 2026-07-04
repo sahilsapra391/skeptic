@@ -68,10 +68,13 @@ MIN_ROWS = 50
 MAX_CROSSED_FRACTION = 0.05
 
 
-def _auth_params() -> dict[str, str]:
+def _auth() -> tuple[dict[str, str], dict[str, str]]:
+    """(query_params, headers). The official client (pypi `ivolatility`)
+    sends the API key as a HEADER named apiKey — a query param 403s. The
+    header also keeps the secret out of URLs and retry logs."""
     key = os.environ.get("IVOL_API_KEY")
     if key:
-        return {"apiKey": key}
+        return {}, {"apiKey": key}
     user, pw = os.environ.get("IVOL_USERNAME"), os.environ.get("IVOL_PASSWORD")
     if user and pw:
         resp = requests.get(
@@ -79,16 +82,19 @@ def _auth_params() -> dict[str, str]:
         )
         resp.raise_for_status()
         token = resp.text.strip().strip('"')
-        return {"token": token}
+        return {"token": token}, {}
     sys.exit("set IVOL_API_KEY (or IVOL_USERNAME + IVOL_PASSWORD) in collector/.env")
 
 
-def _fetch_day(auth: dict[str, str], ticker: str, day: str) -> list[dict] | None:
+def _fetch_day(auth: tuple[dict[str, str], dict[str, str]], ticker: str, day: str) -> list[dict] | None:
     """One session's raw rows, or None after retries (caller logs + skips)."""
-    params = {"symbol": ticker, "date": day, "region": "USA", **auth}
+    auth_params, headers = auth
+    params = {"symbol": ticker, "date": day, "region": "USA", **auth_params}
     for attempt in range(RETRIES):
         try:
-            resp = requests.get(f"{BASE}{ENDPOINT}", params=params, timeout=REQUEST_TIMEOUT)
+            resp = requests.get(
+                f"{BASE}{ENDPOINT}", params=params, headers=headers, timeout=REQUEST_TIMEOUT
+            )
             if resp.status_code in (429, 500, 502, 503, 504):
                 raise requests.HTTPError(f"HTTP {resp.status_code}")
             resp.raise_for_status()
@@ -179,7 +185,7 @@ def _weekdays(start: str, end: str) -> list[str]:
     return out
 
 
-def probe(auth: dict[str, str]) -> int:
+def probe(auth: tuple[dict[str, str], dict[str, str]]) -> int:
     rows = _fetch_day(auth, "SPY", PROBE_DATE)
     if rows is None:
         print("PROBE FAILED — request errored (check the key / plan access)")
@@ -198,7 +204,7 @@ def probe(auth: dict[str, str]) -> int:
 
 
 def run(args: argparse.Namespace) -> int:
-    auth = _auth_params()
+    auth = _auth()
     if args.probe:
         return probe(auth)
 
@@ -245,8 +251,23 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_dotenv() -> None:
+    """collect.py gets its env from CI; local runs read collector/.env
+    (never `source` it — values contain shell-hostile characters)."""
+    env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_file):
+        return
+    with open(env_file) as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    _load_dotenv()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tickers", default=",".join(DEFAULT_TICKERS))
     ap.add_argument("--from", dest="start", default=DEFAULT_FROM)
