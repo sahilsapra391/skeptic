@@ -259,3 +259,30 @@ Reference implementation: `reference/collector_v2.py`. Productionize as
 3. Healthchecks receives pings; killing the workflow makes the check go red.
 4. `/api/data/coverage` (or a temporary script until M2) reports ranges,
    counts, frontier, and quality flags from the lake alone.
+
+## §8 iVolatility backfill (2026-07 — the 20-year lake)
+
+One-shot backfill via the iVolatility Data Cloud API (Lab tier trial):
+`collector/backfill_ivol.py`. Endpoint `/equities/eod/options-rawiv`
+returns EOD chains with bid/ask AND vendor-computed greeks/IV per row —
+the only source in the lake with greeks everywhere, so it takes TOP
+precedence in the engine's chain loader (ivolatility > alphavantage >
+yahoo > dolthub).
+
+Trial-day sequence:
+1. `IVOL_API_KEY=…` into collector/.env (username/password also works).
+2. `cd collector && uv run python backfill_ivol.py --probe`
+   — one known SPY session; prints contract count, sample rows, greeks
+   coverage, validation verdict. Do not proceed until this passes.
+3. `caffeinate -i uv run python backfill_ivol.py`
+   — SPY+QQQ+IWM, 2005-01-03 → yesterday, 6 workers, resumable
+   (already-written dates skipped via R2 listing; vendor-empty sessions
+   remembered in state/ivol_backfill.json). ~15,600 requests; hours.
+4. Delete backend/.cache/chains_*.parquet (or redeploy) so the manifest
+   rebuilds; coverage page should show the ivolatility ranges.
+5. Spot-check: a known SPY run's fills should be unchanged or denser;
+   QQQ/IWM effective windows jump from days to decades.
+
+Per-day gates (rejected days are logged, never written): ≥50 rows,
+≤5% crossed quotes, |delta| ≤ 1, no expirations before the trading date.
+Storage: ~3–5 GB parquet for 3 tickers × ~21 years — negligible on R2.

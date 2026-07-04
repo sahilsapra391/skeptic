@@ -1,9 +1,11 @@
 """EOD chain loader: R2 lake → MarketStore for the engine.
 
-Source precedence per (ticker, trading_date): alphavantage > yahoo >
-dolthub (DATA-PIPELINE §4). Dolthub sessions honor the quarantine — only
-dates in state/dolthub_backfill.json's `done` list are loaded (the lake's
-logical view; flag-and-exclude, DOLTHUB-EVAL addendum).
+Source precedence per (ticker, trading_date): ivolatility > alphavantage >
+yahoo > dolthub (DATA-PIPELINE §4). iVolatility outranks everything: it is
+the only source carrying vendor-computed greeks on every row, backfilled
+20 years deep. Dolthub sessions honor the quarantine — only dates in
+state/dolthub_backfill.json's `done` list are loaded (the lake's logical
+view; flag-and-exclude, DOLTHUB-EVAL addendum).
 
 The lake stores one object per session, so a full SPY window is ~1,100
 small parquet files; they are fetched concurrently and the combined frame
@@ -48,6 +50,10 @@ def _latest_yahoo_keys(s3: Any, ticker: str) -> dict[str, str]:
 
 def _chain_keys(s3: Any, ticker: str) -> dict[str, str]:
     """Winning object key per trading date, after precedence + quarantine."""
+    ivol = {
+        d: f"options/source=ivolatility/ticker={ticker}/date={d}/chain.parquet"
+        for d in r2.list_chain_dates(s3, "ivolatility", ticker)
+    }
     av = {
         d: f"options/source=alphavantage/ticker={ticker}/date={d}/chain.parquet"
         for d in r2.list_chain_dates(s3, "alphavantage", ticker)
@@ -63,7 +69,8 @@ def _chain_keys(s3: Any, ticker: str) -> dict[str, str]:
     winners: dict[str, str] = {}
     winners.update(dolthub)
     winners.update(yahoo)  # yahoo beats dolthub
-    winners.update(av)  # av beats all
+    winners.update(av)  # av beats yahoo
+    winners.update(ivol)  # ivolatility beats all — vendor greeks on every row
     return winners
 
 
