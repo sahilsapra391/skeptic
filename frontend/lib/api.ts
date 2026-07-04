@@ -113,8 +113,10 @@ export function getRun(id: string): Promise<RunPayload> {
 let runsCache: { t: number; p: Promise<{ runs: RunSummary[]; demo: boolean }> } | null = null;
 const RUNS_CACHE_TTL_MS = 30_000;
 
-export function listRuns(): Promise<{ runs: RunSummary[]; demo: boolean }> {
-  if (runsCache && Date.now() - runsCache.t < RUNS_CACHE_TTL_MS) return runsCache.p;
+export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boolean }> {
+  // `fresh` bypasses the cache — the library polls with it while a run
+  // is in progress so the card flips to its verdict without a reload
+  if (!fresh && runsCache && Date.now() - runsCache.t < RUNS_CACHE_TTL_MS) return runsCache.p;
   const p = request<{ runs: RunSummary[]; demo: boolean }>("/api/runs");
   runsCache = { t: Date.now(), p };
   p.catch(() => {

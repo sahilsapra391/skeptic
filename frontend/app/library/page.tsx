@@ -23,12 +23,29 @@ export default function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listRuns()
-      .then((r) => {
-        setRuns(r.runs);
-        setDemo(r.demo);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "library unavailable"));
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = (fresh: boolean) => {
+      listRuns(fresh)
+        .then((r) => {
+          if (cancelled) return;
+          setRuns(r.runs);
+          setDemo(r.demo);
+          // while anything is still running, keep the listing live so the
+          // card flips to its verdict without a reload
+          if (r.runs.some((x) => x.status === "running")) {
+            timer = setTimeout(() => load(true), 4000);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) setError(e instanceof Error ? e.message : "library unavailable");
+        });
+    };
+    load(false);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   return (
@@ -67,12 +84,28 @@ export default function LibraryPage() {
               href={`/runs/${r.id}`}
               className="rounded-[14px] border border-line bg-panel p-5 hover:border-line-hover"
             >
-              <div className="font-mono text-[15px] font-medium">{r.name}</div>
-              <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
-              <TrustBandCard band={r.band} marker={r.marker} withheld={r.kind === "refusal"} />
-              <div className="text-[13.5px] italic leading-[1.55] text-ink-2">
-                {settings.verbiage === "retail" && r.quoteRetail ? r.quoteRetail : r.quote}
+              <div className="flex items-center gap-2 font-mono text-[15px] font-medium">
+                {r.status === "running" && (
+                  <span className="inline-block h-[8px] w-[8px] shrink-0 animate-pin-pulse rounded-full bg-trust" />
+                )}
+                {r.name}
               </div>
+              <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
+              {r.status === "running" ? (
+                <div className="flex min-h-[72px] flex-col justify-center gap-1.5">
+                  <div className="font-mono text-[12px] tracking-[.1em] text-trust">
+                    GAUNTLET IN PROGRESS — STAGE {Math.min((r.stage ?? 0) + 1, 6)} OF 6
+                  </div>
+                  <div className="text-[13px] text-ink-4">Open to watch it live.</div>
+                </div>
+              ) : (
+                <>
+                  <TrustBandCard band={r.band} marker={r.marker} withheld={r.kind === "refusal"} />
+                  <div className="text-[13.5px] italic leading-[1.55] text-ink-2">
+                    {settings.verbiage === "retail" && r.quoteRetail ? r.quoteRetail : r.quote}
+                  </div>
+                </>
+              )}
             </Link>
           ))}
           <Link

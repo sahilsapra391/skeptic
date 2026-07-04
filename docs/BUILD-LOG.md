@@ -876,3 +876,44 @@ dropped indicator periods); two new prompt conventions ("weekly with
 no day named → monday", "the number attached to an indicator IS its
 period") brought it to 8/8+4/4 and 7/8+4/4 across two runs — ACCEPTED.
 OPENROUTER_MODEL still overrides per-deployment.
+
+## 2026-07-04 — Dictation overhaul, auto-growing chatbox, retail gauntlet previews
+
+**Dictation** (the big one): new `frontend/lib/dictation.ts` rewrites
+every transcript chunk — interim and final — from prose into
+strategy-speak. Spoken numbers become digits with full compound support
+("twenty one" → 21, "two hundred" → 200, "point oh five" → 0.05),
+"percent" fuses onto its number (50%), "five dollars" → $5, tickers and
+indicator acronyms are canonicalized whether spoken or spelled out
+("the Q's" → QQQ, "I W M" → IWM, "R S I" → RSI), domain mishears are
+repaired ("iron condo" → iron condor, "putt" → put, "seller" → sell a),
+and everything else is lowercased — no more mid-sentence capitalization.
+E2E-verified by driving a fake SpeechRecognition through the real
+pipeline: six spoken utterances landed verbatim-correct in the composer.
+**Chatbox** now grows a line at a time with its content (27 → 54 → 82px,
+capped at 200px then scrolls) — the second line is never hidden again.
+**Retail previews**: gauntlet stage previews now ship BOTH voices
+({pro, retail} per line, old string-only runs still render); the live
+feed header, preview lines and the 50-tip pool all follow the Verbiage
+setting — a fresh retail run showed zero jargon ("on data it never saw:
+risk-adjusted score 1.76 vs 0.67 — holding ✓"). Backend battery green
+(76 tests, mypy strict), tsc/lint green.
+
+## 2026-07-04 (later) — Full trade log, wf-bar fix, in-progress runs in the library
+
+Trade log is now COMPLETE: every fill event and every skip ships in the
+payload, uncapped (the old 400/250 caps hid fills on active strategies;
+rows are ~100 B and only travel when a run is opened). The walk-forward
+"time periods" panel had flat indistinguishable bars — heights were
+normalized against ALL folds while only the last 16 display, so one wild
+2020 window flattened everything visible; normalization now uses the
+displayed window (verified: heights 17.6–52 vs all ~15 before). And
+in-progress runs no longer vanish when you navigate away: the library
+lists queued/running runs with a pulsing dot + "gauntlet in progress —
+stage N of 6" card (polling every 4 s until done), the sidebar's recent
+list gets the same dot, and /runs/{id} shows the LIVE gauntlet screen
+with previews, polling until the verdict lands and flipping to results
+in place. E2E-verified: launched a run, left for the library mid-flight,
+watched the card, opened it live, saw it complete. Note: runs stored
+before this deploy keep their old capped logs and flat bars — payloads
+are frozen at write time.

@@ -154,7 +154,9 @@ export interface RunPayload {
   sensitivityRows?: string[]; // real runs: swept parameter names
   sensitivityDetail?: SensitivityRow[]; // real runs: cell-level sweep data
   recommendations?: string[]; // grounded improvements computed from this run
-  previews?: string[]; // while running: real stats from finished stages
+  // while running: real stats from finished stages. New runs carry both
+  // voices; runs stored before the split are plain strings.
+  previews?: (string | { pro: string; retail: string })[];
   /** retail-register text — same numbers, everyday words */
   retail?: {
     headline: string;
@@ -182,6 +184,8 @@ export interface RunSummary {
   kind: VerdictKind;
   band?: { left: string; width: string };
   marker?: string;
+  status?: "running"; // gauntlet still in progress — no verdict fields yet
+  stage?: number; // 0-based current gauntlet stage while running
 }
 
 export interface CoverageRange {

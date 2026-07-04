@@ -63,12 +63,13 @@ def _drawdown_series(dates: list[date], equity: list[float]) -> list[dict[str, A
     return _downsample(dates, dd)
 
 
-def _trade_rows(trades: list[TradeEvent], cap: int = 250) -> list[dict[str, Any]]:
-    """Newest-first rows. Filled events and skips are capped SEPARATELY —
-    a strategy with thousands of no-signal skips must never crowd its
-    actual fills out of the log (prod bug: 17 fills shown as 4)."""
-    filled_events = [t for t in trades if t.action != "SKIP"][-max(cap, 400):]
-    skip_events = [t for t in trades if t.action == "SKIP"][-cap:]
+def _trade_rows(trades: list[TradeEvent]) -> list[dict[str, Any]]:
+    """Newest-first rows, fills before skips — the COMPLETE log, uncapped
+    (owner directive: every fill and every skip must be inspectable).
+    Rows are ~100 bytes each and only travel when a run is opened, so even
+    a daily-cadence strategy's log stays well under a megabyte."""
+    filled_events = [t for t in trades if t.action != "SKIP"]
+    skip_events = [t for t in trades if t.action == "SKIP"]
     rows: list[dict[str, Any]] = []
     for t in reversed(filled_events + skip_events):
         pl = t.pl
@@ -302,11 +303,13 @@ def _sensitivity_grid(report: HonestyReport) -> tuple[list[list[float]], list[st
 
 
 def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
-    folds = report.walk_forward.folds
+    # most recent 16 folds — recency is what the panel is for. Normalize
+    # against the DISPLAYED folds only: one wild 2020 window outside the
+    # view must not flatten the visible bars into indistinguishable nubs.
+    folds = report.walk_forward.folds[-16:]
     if not folds:
         return []
     biggest = max(abs(f.ret) for f in folds) or 1.0
-    # most recent 16 folds — recency is what the panel is for
     return [
         {
             "h": round(14 + 38 * abs(f.ret) / biggest, 1),
@@ -316,7 +319,7 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
                 f"{f.ret * 100:+.1f}% · {f.trades} trade{'s' if f.trades != 1 else ''}"
             ),
         }
-        for f in folds[-16:]
+        for f in folds
     ]
 
 
