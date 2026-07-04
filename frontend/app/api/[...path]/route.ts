@@ -106,8 +106,15 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
     if (demoEligible(path) && demoEnabled()) {
       return demoResponse(req, path, body);
     }
+    // the dev hint only makes sense against a local backend; in prod the
+    // usual cause is a redeploy window — say so instead of leaking dev docs
+    const local = /localhost|127\.0\.0\.1/.test(BACKEND);
     return NextResponse.json(
-      { detail: `backend unreachable at ${BACKEND} — start it with: cd backend && uv run uvicorn app.main:app` },
+      {
+        detail: local
+          ? `backend unreachable at ${BACKEND} — start it with: cd backend && uv run uvicorn app.main:app`
+          : "the engine is unreachable — it may be redeploying; try again in a minute",
+      },
       { status: 502 },
     );
   }
