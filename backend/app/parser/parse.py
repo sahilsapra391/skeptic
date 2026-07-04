@@ -86,7 +86,8 @@ THE SPEC (all fields required unless noted):
 CONVENTIONS:
 - "30 delta" → {"method": "delta", "value": 0.30}. Delta values are decimals in (0, 1).
 - "5% below spot" (a put) → {"method": "offset_pct", "value": -0.05}; above spot → positive.
-- "ATM" / "at the money" → {"method": "atm", "value": 0}.
+- "ATM" / "at the money" → {"method": "delta", "value": 0.50} — an at-the-money
+  option IS the 50-delta strike; never emit method "atm".
 - "$5 wide" spread long leg →
   {"method": "width_from_leg", "value": 5, "reference_leg": <short leg index>}.
 - Iron condor leg order: short put, long put (width ref 0), short call, long call (width ref 2).
@@ -100,6 +101,9 @@ CONVENTIONS:
 - The exit object contains ONLY rules the user stated. ONE stated rule (a profit
   target, OR a stop, OR a time exit) is a COMPLETE exit — do not ask for the
   others and do not add them.
+- "close at X% profit or N days" → profit_target_pct X AND time_exit_dte N.
+  Any "N days" in an exit clause IS time_exit_dte N by definition here —
+  never ask whether it means days-to-expiration or days-after-entry.
 - "9 EMA below the 20 EMA" → {"indicator": "ema_cross_state", "operator": "below",
   "value": 0, "params": {"fast": 9, "slow": 20}}.
 - Entry conditions present but no cadence stated → frequency "signal_only";
@@ -112,7 +116,10 @@ CONVENTIONS:
   "9 EMA below the 20 EMA" → params {"fast": 9, "slow": 20}.
 - "one at a time" → max_concurrent_positions 1; otherwise 5 unless stated. Never
   ask about position count or sizing — the defaults cover them.
-- Percent profit/stop numbers are percents (50 = 50%).
+- Percent profit/stop numbers are percents (50 = 50%). The same for percent
+  indicators: price_vs_sma_pct / price_vs_ema_pct / drawdown_from_high_pct
+  values are percents ("3% below its SMA" → value 3, never 0.03). Delta is
+  the ONLY decimal-valued field.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
 
 WHEN TO ASK (result "questions") — the tool's identity depends on this:
@@ -227,6 +234,7 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
         raw_spec.setdefault("meta", {})
         raw_spec["meta"]["description_raw"] = text
         raw_spec["spec_version"] = 1
+        _normalize_atm_legs(raw_spec)
         try:
             spec = StrategySpec.model_validate(raw_spec)
         except ValidationError as exc:
@@ -256,6 +264,21 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
     )
 
 
+def _normalize_atm_legs(raw_spec: dict[str, Any]) -> None:
+    """ATM IS the 50-delta strike. The prompt says never to emit method
+    "atm", but the model occasionally does anyway — normalize it here so
+    the UI always shows an editable .50Δ dial and a spread's second leg
+    can never collide with its reference strike."""
+    legs = raw_spec.get("position", {}).get("legs")
+    if not isinstance(legs, list):
+        return
+    for leg in legs:
+        sel = leg.get("strike_selection") if isinstance(leg, dict) else None
+        if isinstance(sel, dict) and sel.get("method") == "atm":
+            sel["method"] = "delta"
+            sel["value"] = 0.5
+
+
 # --------------------------------------------------------- UI draft mapping
 def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     """Project a validated spec onto the UI's editable dial surface."""
@@ -267,7 +290,9 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         delta = int(round(abs(sel["value"]) * 100 / 5.0) * 5) or 5
         strike_label = None
     elif method == "atm":
-        delta, strike_label = 50, "ATM"
+        # legacy specs stored before ATM→.50Δ normalization: show the
+        # honest, editable dial — never a value the dropdown can't hold
+        delta, strike_label = 50, None
     else:  # offset_pct / anything non-delta keeps its honest label
         delta = 30
         pct = sel["value"] * 100

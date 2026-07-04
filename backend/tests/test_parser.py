@@ -78,3 +78,29 @@ def test_spec_to_draft_projects_dials() -> None:
     assert draft["dte"] == 45
     assert draft["cadence"] == "weekly · mon"
     assert draft["exit"] == "50% profit · stop 200%"
+
+
+def test_atm_legs_normalize_to_50_delta(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ATM is the 50-delta strike. A model that emits method "atm" (even on
+    both legs of a spread — the zero-fills bug) must land as delta 0.5."""
+    spec = _valid_spec()
+    spec["position"]["legs"][0]["strike_selection"] = {"method": "atm", "value": 0}
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(
+        requests, "post", lambda *a, **k: _FakeResp({"result": "spec", "spec": spec})
+    )
+    out = parser_module.parse_strategy("sell an ATM put on SPY, close at 50% profit")
+    assert out is not None and out.status == "spec" and out.spec is not None
+    sel = out.spec["position"]["legs"][0]["strike_selection"]
+    assert sel["method"] == "delta"
+    assert sel["value"] == 0.5
+
+
+def test_legacy_atm_spec_drafts_as_editable_50_delta() -> None:
+    """Old stored specs with method "atm" must never surface an 'ATM' label
+    the strike dropdown can't hold — they draft as a plain .50Δ dial."""
+    spec = _spec(0.30, 30, 50.0, 200.0)
+    spec["position"]["legs"][0]["strike_selection"] = {"method": "atm", "value": 0}
+    draft = parser_module.spec_to_draft(spec, "sell an ATM put")
+    assert draft["strikeDelta"] == 50
+    assert draft["strikeLabel"] is None

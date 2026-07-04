@@ -61,12 +61,20 @@ def select_legs(
             if ref_index is None or ref_index >= len(resolved):
                 return None, "bad_reference_leg"
             ref = resolved[ref_index]
-            # protective wings: puts sit BELOW the reference, calls ABOVE
+            # protective wings: puts sit BELOW the reference, calls ABOVE —
+            # candidates come only from that side, so a coarse strike grid
+            # can never resolve the wing onto the reference (a dead
+            # duplicate-strike skip) or onto the wrong side (an inverted
+            # spread that isn't the strategy the user asked for)
             if leg.right.value == "put":
                 target_strike = ref.strike - sel.value
+                side_pool = [k for k in pool if k.strike < ref.strike]
             else:
                 target_strike = ref.strike + sel.value
-            pick = min(pool, key=lambda k: (abs(k.strike - target_strike), k.strike))
+                side_pool = [k for k in pool if k.strike > ref.strike]
+            if not side_pool:
+                return None, "no_wing_strike"
+            pick = min(side_pool, key=lambda k: (abs(k.strike - target_strike), k.strike))
         else:  # pragma: no cover — enum is exhaustive
             return None, "unknown_strike_method"
         resolved.append(pick)

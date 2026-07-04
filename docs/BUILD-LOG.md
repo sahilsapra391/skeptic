@@ -917,3 +917,33 @@ in place. E2E-verified: launched a run, left for the library mid-flight,
 watched the card, opened it live, saw it complete. Note: runs stored
 before this deploy keep their old capped logs and flat bars — payloads
 are frozen at write time.
+
+## 2026-07-04 (bug sweep) — ATM zero-fills, wing selection, parser over-asks, chart/chat parity
+
+Owner-directed bug hunt: automated battery (12 utterances → real parse →
+engine) plus browser E2E on both compose modes. Found and fixed:
+**ATM (the reported bug).** "at the money" parsed to method "atm" —
+shown as an "ATM" value the strike dropdown doesn't hold, and when a
+spread's second leg also came back "atm" both legs resolved to the same
+strike, so EVERY entry died as duplicate_leg_strikes → zero fills. ATM
+now normalizes to .50Δ at the parser (prompt convention + deterministic
+post-pass; legacy atm specs draft as an editable .50Δ). Verified E2E:
+the dictated ATM strategy now runs 211 fills.
+**Wing selection.** width_from_leg picked nearest-by-absolute-distance —
+on coarse strike grids the wing could land ON the reference (dead skip;
+53 of them in one ATM spread run) or the WRONG SIDE (an inverted
+spread). Wings now select only from strikes strictly beyond the
+reference; no candidates → honest "no_wing_strike" skip. 3 new tests.
+**Parser over-asking.** Two flakes seen in the battery: "what does 21
+days refer to" (now a stated convention: exit-clause days ARE
+time_exit_dte) and percent-indicator units (0.03 vs 3 — now stated:
+delta is the only decimal field). Eval ground truths updated for the
+ATM change; harness re-ACCEPTED twice (7/8+4/4, 8/8+4/4).
+**Chart/chat parity.** Chart compile invented an exit ("50% profit ·
+21 DTE"), delta and a canned 2% trigger — the exact silent-guess the
+chat path refuses. Now: exit ships UNSET so the spec screen asks its
+one question exactly like the chat path, and the trigger threshold is
+honestly derived from the pins (average pullback-from-high at the
+pinned entries, ½%-rounded, clamped 1–10%). Verified E2E: pin → spec
+screen question → run (214 fills). Uncapped trade log stress-checked:
+1,873 rows render in 79 ms.

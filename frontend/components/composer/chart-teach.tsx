@@ -34,12 +34,15 @@ const MAX_EXAMPLES = 10;
 const Z_DIRECTION = 0.35;
 const Z_STRONG = 1.8;
 
-const DEFAULTS: Record<string, { delta: number; exit: string }> = {
-  short_put: { delta: 30, exit: "50% profit · 21 DTE" },
-  call_credit_spread: { delta: 30, exit: "50% profit · stop 150%" },
-  long_call: { delta: 50, exit: "100% profit · stop 50%" },
-  long_put: { delta: 50, exit: "100% profit · stop 50%" },
-  iron_condor: { delta: 20, exit: "50% profit · 21 DTE" },
+// starting strike dial per inferred structure — a visible, editable dial on
+// the spec screen. The EXIT is never defaulted: pins can't express one, so
+// the spec screen asks its one question, exactly like the chat path.
+const DEFAULT_DELTA: Record<string, number> = {
+  short_put: 30,
+  call_credit_spread: 30,
+  long_call: 50,
+  long_put: 50,
+  iron_condor: 20,
 };
 
 function fmtPin(iso: string): string {
@@ -103,6 +106,30 @@ function inferStructure(pins: ChartPin[], bars: Bar[]): Inference {
   return { structure, avgZ };
 }
 
+/** Average drawdown-from-running-high at the pinned ENTRIES — the entry
+ * trigger honestly inferred from where the user actually clicked, instead
+ * of a canned threshold. Rounded to 0.5%, clamped to [1, 10]; degenerate
+ * pins (no context, entries at highs) fall back to the 2% floor. */
+function entryPullbackPct(complete: ChartPin[], bars: Bar[]): number {
+  const index = new Map(bars.map((b, i) => [b.t, i]));
+  const dds: number[] = [];
+  let runMax = 0;
+  const maxAt: number[] = [];
+  for (const b of bars) {
+    runMax = Math.max(runMax, b.c);
+    maxAt.push(runMax);
+  }
+  for (const pin of complete) {
+    const i = index.get(pin.a.t);
+    if (i == null || maxAt[i] <= 0) continue;
+    dds.push(((maxAt[i] - pin.a.c) / maxAt[i]) * 100);
+  }
+  if (!dds.length) return 2;
+  const avg = dds.reduce((s, d) => s + d, 0) / dds.length;
+  const rounded = Math.round(avg * 2) / 2;
+  return Math.min(10, Math.max(1, rounded || 2));
+}
+
 export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => void }) {
   const [ticker, setTicker] = useState<Ticker>("SPY");
   const [pins, setPins] = useState<ChartPin[]>([]);
@@ -132,20 +159,21 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
   function compile() {
     if (!complete.length) return;
     const n = complete.length;
-    const defaults = DEFAULTS[inference.structure] ?? DEFAULTS.short_put;
+    const threshold = entryPullbackPct(complete, bars);
     onCompile({
       ticker,
       structure: inference.structure,
-      strikeDelta: defaults.delta,
+      strikeDelta: DEFAULT_DELTA[inference.structure] ?? 30,
       dte: 45,
       cadence: "signal",
       size: "1 contract",
-      exit: defaults.exit,
+      // pins can't express an exit — the spec screen asks, never defaults
+      exit: null,
       fromChart: true,
       quote: `taught by ${n} pinned example${n === 1 ? "" : "s"} on the ${ticker} chart`,
       anchor: fmtPin(complete[0].a.t),
-      trigger: "pullback ≥ 2% from high",
-      triggerSpec: { indicator: "drawdown_from_high_pct", operator: ">=", value: 2 },
+      trigger: `pullback ≥ ${threshold}% from high`,
+      triggerSpec: { indicator: "drawdown_from_high_pct", operator: ">=", value: threshold },
       examples: n,
     });
   }
