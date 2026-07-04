@@ -46,6 +46,7 @@ class ParseOutcome(BaseModel):
 
 _SYSTEM = """You compile plain-English options strategies into a strict JSON spec for a
 backtesting research tool, or you ask clarifying questions. You NEVER guess.
+Write every clarifying question and any prose you emit in English.
 
 Respond with JSON only, one of:
   {"result": "spec", "spec": { ...full spec... }}

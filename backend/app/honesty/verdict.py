@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -105,6 +106,42 @@ def validate_numbers(text: str, allowed: set[float]) -> list[str]:
         if not ok:
             violations.append(token)
     return violations
+
+
+# ------------------------------------------------ language grounding (English)
+# The numeric validator proves every number is real, but it is blind to
+# LANGUAGE. A DeepSeek-class model handed a numbers-only JSON payload with no
+# English prose to anchor on will happily write a fully-grounded verdict in
+# Chinese (observed 2026-07). For a tool whose product is an honest, READABLE
+# verdict, "is this even English" is as load-bearing as "is this number real".
+# We reject on SCRIPT, not vocabulary: count the alphabetic characters that are
+# not Latin. Punctuation, digits, and the template's — · → ’ glyphs are not
+# letters, so they never count — only a real language switch trips the guard.
+_NON_LATIN_TOLERANCE = 0.10
+
+
+def non_latin_ratio(text: str) -> float:
+    """Fraction of the alphabetic characters in `text` that are not Latin
+    script. 0.0 for English; ~1.0 for Chinese/Cyrillic/etc."""
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return 0.0
+    non_latin = 0
+    for c in letters:
+        try:
+            if not unicodedata.name(c).startswith("LATIN"):
+                non_latin += 1
+        except ValueError:  # unnamed / private-use codepoint → not Latin
+            non_latin += 1
+    return non_latin / len(letters)
+
+
+def is_english(text: str) -> bool:
+    """Latin-script heuristic: True unless a meaningful fraction of the letters
+    are non-Latin. Guards the verdict against a model that silently switches
+    languages on numbers-only input; the deterministic template is always
+    English by construction, so only the LLM narration is checked."""
+    return non_latin_ratio(text) <= _NON_LATIN_TOLERANCE
 
 
 # ------------------------------------------------------------- the template
@@ -350,6 +387,7 @@ def _llm_narrate(
         "as a percent). NEVER do arithmetic — no differences, ratios, averages, "
         "annualizing, or counting of your own. A number not literally in the JSON "
         "must not appear in your text. When in doubt, describe without the number. "
+        "Write every field in English, regardless of the field names in the JSON. "
         'Respond with JSON only: {"headline": str, "evidence": [str], '
         '"breaks_where": [str], "caveats": [str]}'
     )
@@ -402,6 +440,14 @@ def _llm_narrate(
             parts = [candidate.headline, *candidate.evidence]
             parts += [*candidate.breaks_where, *candidate.caveats]
             joined = " ".join(parts)
+            if not is_english(joined):
+                log.warning("verdict LLM returned non-English — retrying")
+                violation_note = (
+                    "\n\nYour previous answer was not written in English. Write "
+                    "every field — headline, evidence, breaks_where, caveats — in "
+                    "English."
+                )
+                continue
             violations = validate_numbers(joined, allowed)
             if not violations:
                 return candidate
