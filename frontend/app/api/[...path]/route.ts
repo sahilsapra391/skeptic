@@ -30,8 +30,12 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   if (contentType) headers["content-type"] = contentType;
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
   if (token) headers.authorization = `Bearer ${token}`;
-  // grounded Q&A runs an LLM round-trip (with one validation retry)
-  const timeout = path[2] === "ask" ? 100_000 : 30_000;
+  // LLM round-trips get long leashes: the parser's upstream call is allowed
+  // 60s backend-side (clarify-loop re-parses on DeepSeek regularly pass 30s)
+  // and grounded Q&A runs a validation retry — a proxy that aborts under the
+  // backend's own budget reports a healthy engine as "unreachable"
+  const llmRoute = path[0] === "parse" || path[2] === "ask";
+  const timeout = llmRoute ? 100_000 : 30_000;
   return fetch(url, {
     method: req.method,
     headers,
@@ -101,10 +105,20 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
       status: upstream.status,
       headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
     });
-  } catch {
+  } catch (err) {
     // backend unreachable — run pipeline may demo; data routes stay honest
     if (demoEligible(path) && demoEnabled()) {
       return demoResponse(req, path, body);
+    }
+    // a timed-out request is NOT an unreachable backend — the engine was
+    // healthy and still working when the proxy gave up; say that honestly
+    const timedOut =
+      err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    if (timedOut) {
+      return NextResponse.json(
+        { detail: "the engine took too long to answer — it's still up; try again" },
+        { status: 504 },
+      );
     }
     // the dev hint only makes sense against a local backend; in prod the
     // usual cause is a redeploy window — say so instead of leaking dev docs
