@@ -55,12 +55,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <head>
-        {/* apply Appearance before first paint — no theme flash */}
+        {/* apply Appearance before first paint — no theme flash. Mirrors
+            resolveTheme() in lib/settings.ts: Market Hours (default/unset) is
+            light 8am–6pm New York, dark otherwise. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
               "try{var s=JSON.parse(localStorage.getItem('skeptic-settings')||'{}');" +
-              "document.documentElement.dataset.theme=s.theme==='light'?'light':'dark';" +
+              "var t=s.theme,eff;" +
+              "if(t==='light'||t==='dark'){eff=t;}else{" +
+              "var h=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York'," +
+              "hour12:false,hour:'2-digit'}).format(new Date()))%24;" +
+              "eff=(h>=8&&h<18)?'light':'dark';}" +
+              "document.documentElement.dataset.theme=eff;" +
               "document.documentElement.dataset.accent=['sage','lavender','rose'].includes(s.accent)?s.accent:'cyan';}catch(e){}",
           }}
         />

@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 
-import { useSettings } from "@/lib/settings";
+import { useResolvedTheme } from "@/lib/settings";
 
 // draw-on: last stroke starts at 0.78s and draws for 0.75s
 const ANIMATION_MS = 1650;
@@ -29,7 +29,7 @@ const shouldShow = (() => {
 })();
 
 export function BootSplash() {
-  const { theme } = useSettings();
+  const theme = useResolvedTheme();
   const [phase, setPhase] = useState<"hidden" | "drawing" | "fading">("hidden");
 
   useEffect(() => {

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 import { listRuns } from "@/lib/api";
-import { useSettings } from "@/lib/settings";
+import { useResolvedTheme } from "@/lib/settings";
 import type { RunSummary } from "@/lib/types";
 
 const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
@@ -75,7 +75,7 @@ function saveNavState(width: number, lastOpen: number) {
 
 export function NavRail() {
   const pathname = usePathname();
-  const { theme } = useSettings();
+  const theme = useResolvedTheme();
   const markSuffix = theme === "light" ? "black" : "white";
   // fresh sessions open at the default; within a session the adjusted
   // width survives reloads (sessionStorage)
