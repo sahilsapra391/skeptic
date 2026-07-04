@@ -112,12 +112,29 @@ class StrikeSelection(BaseModel):
     value: float
     reference_leg: int | None = Field(default=None, ge=0)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _atm_is_50_delta(cls, data: Any) -> Any:
+        # ATM IS the 50-delta strike (owner directive). Normalizing at the
+        # model means EVERY ingress — parser, POST /api/backtest, stored
+        # specs re-validated for a run — lands on the same editable .50Δ,
+        # and a spread can never collide both legs onto the spot strike.
+        if isinstance(data, dict) and data.get("method") == "atm":
+            return {**data, "method": "delta", "value": 0.5}
+        return data
+
     @model_validator(mode="after")
     def _width_needs_reference(self) -> StrikeSelection:
-        if self.method is StrikeMethod.WIDTH_FROM_LEG and self.reference_leg is None:
-            raise ValueError(
-                "strike_selection.reference_leg is required when method=width_from_leg"
-            )
+        if self.method is StrikeMethod.WIDTH_FROM_LEG:
+            if self.reference_leg is None:
+                raise ValueError(
+                    "strike_selection.reference_leg is required when method=width_from_leg"
+                )
+            if self.value <= 0:
+                raise ValueError(
+                    "strike_selection.value must be a positive dollar width "
+                    "when method=width_from_leg"
+                )
         return self
 
 

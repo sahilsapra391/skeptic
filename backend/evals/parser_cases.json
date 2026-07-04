@@ -8,11 +8,26 @@
       "expect": {
         "ticker": "SPY",
         "structure": "short_put",
-        "legs": [{"right": "put", "side": "short", "method": "delta", "value": 0.30}],
+        "legs": [
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.3
+          }
+        ],
         "target_dte": 45,
-        "schedule": {"frequency": ["weekly"], "day_of_week": "monday"},
+        "schedule": {
+          "frequency": [
+            "weekly"
+          ],
+          "day_of_week": "monday"
+        },
         "conditions": [],
-        "exit": {"profit_target_pct": 50, "time_exit_dte": 21}
+        "exit": {
+          "profit_target_pct": 50,
+          "time_exit_dte": 21
+        }
       }
     },
     {
@@ -23,13 +38,31 @@
         "ticker": "QQQ",
         "structure": "put_credit_spread",
         "legs": [
-          {"right": "put", "side": "short", "method": "delta", "value": 0.25},
-          {"right": "put", "side": "long", "method": "width_from_leg", "value": 5, "reference_leg": 0}
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.25
+          },
+          {
+            "right": "put",
+            "side": "long",
+            "method": "width_from_leg",
+            "value": 5,
+            "reference_leg": 0
+          }
         ],
         "target_dte": 45,
-        "schedule": {"frequency": ["weekly"]},
+        "schedule": {
+          "frequency": [
+            "weekly"
+          ]
+        },
         "conditions": [],
-        "exit": {"profit_target_pct": 50, "stop_loss_pct": 200}
+        "exit": {
+          "profit_target_pct": 50,
+          "stop_loss_pct": 200
+        }
       }
     },
     {
@@ -40,15 +73,44 @@
         "ticker": "IWM",
         "structure": "iron_condor",
         "legs": [
-          {"right": "put", "side": "short", "method": "delta", "value": 0.20},
-          {"right": "put", "side": "long", "method": "width_from_leg", "value": 3, "reference_leg": 0},
-          {"right": "call", "side": "short", "method": "delta", "value": 0.20},
-          {"right": "call", "side": "long", "method": "width_from_leg", "value": 3, "reference_leg": 2}
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.2
+          },
+          {
+            "right": "put",
+            "side": "long",
+            "method": "width_from_leg",
+            "value": 3,
+            "reference_leg": 0
+          },
+          {
+            "right": "call",
+            "side": "short",
+            "method": "delta",
+            "value": 0.2
+          },
+          {
+            "right": "call",
+            "side": "long",
+            "method": "width_from_leg",
+            "value": 3,
+            "reference_leg": 2
+          }
         ],
         "target_dte": 30,
-        "schedule": {"frequency": ["monthly"]},
+        "schedule": {
+          "frequency": [
+            "monthly"
+          ]
+        },
         "conditions": [],
-        "exit": {"profit_target_pct": 40, "time_exit_dte": 10}
+        "exit": {
+          "profit_target_pct": 40,
+          "time_exit_dte": 10
+        }
       }
     },
     {
@@ -58,11 +120,24 @@
       "expect": {
         "ticker": "SPY",
         "structure": "covered_call",
-        "legs": [{"right": "call", "side": "short", "method": "delta", "value": 0.20}],
+        "legs": [
+          {
+            "right": "call",
+            "side": "short",
+            "method": "delta",
+            "value": 0.2
+          }
+        ],
         "target_dte": 30,
-        "schedule": {"frequency": ["monthly"]},
+        "schedule": {
+          "frequency": [
+            "monthly"
+          ]
+        },
         "conditions": [],
-        "exit": {"time_exit_dte": 0}
+        "exit": {
+          "time_exit_dte": 0
+        }
       }
     },
     {
@@ -72,14 +147,38 @@
       "expect": {
         "ticker": "QQQ",
         "structure": "long_call",
-        "legs": [{"right": "call", "side": "long", "method": "atm"}],
+        "legs": [
+          {
+            "right": "call",
+            "side": "long",
+            "method": "delta",
+            "value": 0.5
+          }
+        ],
         "target_dte": 60,
-        "schedule": {"frequency": ["signal_only", "daily"]},
+        "schedule": {
+          "frequency": [
+            "signal_only",
+            "daily"
+          ]
+        },
         "conditions": [
-          {"indicator": "rsi", "period": 14, "operator": ["<", "<=", "below"], "value": 30}
+          {
+            "indicator": "rsi",
+            "period": 14,
+            "operator": [
+              "<",
+              "<=",
+              "below"
+            ],
+            "value": 30
+          }
         ],
         "max_concurrent_positions": 1,
-        "exit": {"profit_target_pct": 100, "time_exit_dte": 20}
+        "exit": {
+          "profit_target_pct": 100,
+          "time_exit_dte": 20
+        }
       }
     },
     {
@@ -89,11 +188,26 @@
       "expect": {
         "ticker": "SPY",
         "structure": "short_put",
-        "legs": [{"right": "put", "side": "short", "method": "offset_pct", "value": -0.05}],
+        "legs": [
+          {
+            "right": "put",
+            "side": "short",
+            "method": "offset_pct",
+            "value": -0.05
+          }
+        ],
         "target_dte": 30,
-        "schedule": {"frequency": ["weekly"], "day_of_week": "friday"},
+        "schedule": {
+          "frequency": [
+            "weekly"
+          ],
+          "day_of_week": "friday"
+        },
         "conditions": [],
-        "exit": {"profit_target_pct": 60, "stop_loss_pct": 300}
+        "exit": {
+          "profit_target_pct": 60,
+          "stop_loss_pct": 300
+        }
       }
     },
     {
@@ -104,15 +218,44 @@
         "ticker": "SPY",
         "structure": "call_credit_spread",
         "legs": [
-          {"right": "call", "side": "short", "method": "delta", "value": 0.25},
-          {"right": "call", "side": "long", "method": "width_from_leg", "value": 5, "reference_leg": 0}
+          {
+            "right": "call",
+            "side": "short",
+            "method": "delta",
+            "value": 0.25
+          },
+          {
+            "right": "call",
+            "side": "long",
+            "method": "width_from_leg",
+            "value": 5,
+            "reference_leg": 0
+          }
         ],
         "target_dte": 21,
-        "schedule": {"frequency": ["daily", "signal_only"]},
+        "schedule": {
+          "frequency": [
+            "daily",
+            "signal_only"
+          ]
+        },
         "conditions": [
-          {"indicator": "ema_cross_state", "operator": ["below", "<"], "params": {"fast": 9, "slow": 20}}
+          {
+            "indicator": "ema_cross_state",
+            "operator": [
+              "below",
+              "<"
+            ],
+            "params": {
+              "fast": 9,
+              "slow": 20
+            }
+          }
         ],
-        "exit": {"profit_target_pct": 50, "stop_loss_pct": 150}
+        "exit": {
+          "profit_target_pct": 50,
+          "stop_loss_pct": 150
+        }
       }
     },
     {
@@ -122,13 +265,37 @@
       "expect": {
         "ticker": "IWM",
         "structure": "long_put",
-        "legs": [{"right": "put", "side": "long", "method": "atm"}],
-        "target_dte": 45,
-        "schedule": {"frequency": ["signal_only", "daily"]},
-        "conditions": [
-          {"indicator": "price_vs_sma_pct", "period": 50, "operator": [">", ">=", "above"], "value": 3}
+        "legs": [
+          {
+            "right": "put",
+            "side": "long",
+            "method": "delta",
+            "value": 0.5
+          }
         ],
-        "exit": {"profit_target_pct": 75, "time_exit_dte": 21}
+        "target_dte": 45,
+        "schedule": {
+          "frequency": [
+            "signal_only",
+            "daily"
+          ]
+        },
+        "conditions": [
+          {
+            "indicator": "price_vs_sma_pct",
+            "period": 50,
+            "operator": [
+              ">",
+              ">=",
+              "above"
+            ],
+            "value": 3
+          }
+        ],
+        "exit": {
+          "profit_target_pct": 75,
+          "time_exit_dte": 21
+        }
       }
     },
     {

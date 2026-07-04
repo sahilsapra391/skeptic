@@ -112,3 +112,30 @@ def test_too_many_legs_rejected() -> None:
     doc["position"]["legs"] = doc["position"]["legs"] * 5
     with pytest.raises(ValidationError):
         StrategySpec.model_validate(doc)
+
+
+def test_atm_normalizes_to_50_delta_at_the_model() -> None:
+    """ATM IS the 50-delta strike. The rewrite lives on StrikeSelection so
+    EVERY ingress — parser, POST /api/backtest, stored specs re-validated
+    for a run — lands on the same editable .50Δ."""
+    spec = copy.deepcopy(CANONICAL)
+    spec["position"]["legs"][0]["strike_selection"] = {"method": "atm", "value": 0}
+    model = StrategySpec.model_validate(spec)
+    sel = model.position.legs[0].strike_selection
+    assert sel.method.value == "delta"
+    assert sel.value == 0.5
+
+
+def test_width_from_leg_requires_positive_width() -> None:
+    """Zero/negative widths are structural nonsense — 422 at the boundary,
+    never reinterpreted per-entry inside the engine."""
+    for bad in (0, -5):
+        spec = copy.deepcopy(CANONICAL)
+        spec["position"]["structure"] = "put_credit_spread"
+        spec["position"]["legs"].append(
+            {"right": "put", "side": "long", "ratio": 1,
+             "strike_selection": {"method": "width_from_leg", "value": bad,
+                                  "reference_leg": 0}}
+        )
+        with pytest.raises(ValidationError):
+            StrategySpec.model_validate(spec)
