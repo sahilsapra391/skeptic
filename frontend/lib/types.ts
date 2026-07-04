@@ -184,6 +184,8 @@ export interface RunSummary {
   kind: VerdictKind;
   band?: { left: string; width: string };
   marker?: string;
+  status?: "running"; // gauntlet still in progress — no verdict fields yet
+  stage?: number; // 0-based current gauntlet stage while running
 }
 
 export interface CoverageRange {

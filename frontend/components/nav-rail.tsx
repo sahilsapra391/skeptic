@@ -193,15 +193,18 @@ export function NavRail() {
               <Link
                 key={r.id}
                 href={`/runs/${r.id}`}
-                title={r.name}
+                title={r.status === "running" ? `${r.name} — in progress` : r.name}
                 className={clsx(
-                  "truncate rounded-[8px] px-2.5 py-[7px] text-[12.5px]",
+                  "flex items-center gap-1.5 rounded-[8px] px-2.5 py-[7px] text-[12.5px]",
                   pathname === `/runs/${r.id}`
                     ? "bg-raised-2 text-ink"
                     : "text-ink-4 hover:bg-raised hover:text-ink-2",
                 )}
               >
-                {r.name}
+                {r.status === "running" && (
+                  <span className="inline-block h-[6px] w-[6px] shrink-0 animate-pin-pulse rounded-full bg-trust" />
+                )}
+                <span className="truncate">{r.name}</span>
               </Link>
             ))}
           </div>

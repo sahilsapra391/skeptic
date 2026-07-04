@@ -183,18 +183,42 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
 def list_runs() -> dict[str, Any]:
     """Library listing. Reads ONLY the small summary column — pulling 50
     full payloads (equity series and all) per listing is how a database
-    transfer quota dies."""
+    transfer quota dies. Queued/running runs get an ephemeral summary so
+    navigating away from the progress screen never 'loses' a run."""
     with db.session() as s:
         rows = (
-            s.query(db.Run.id, db.Run.created_at, db.Run.summary_json)
-            .filter(db.Run.status == "done")
+            s.query(
+                db.Run.id,
+                db.Run.created_at,
+                db.Run.status,
+                db.Run.stage,
+                db.Run.summary_json,
+                db.Run.spec_json,
+            )
+            .filter(db.Run.status.in_(["queued", "running", "done"]))
             .order_by(db.Run.created_at.desc())
             .limit(50)
             .all()
         )
         runs: list[dict[str, Any]] = []
         backfilled = False
-        for run_id, created_at, summary_json in rows:
+        for run_id, created_at, status, stage, summary_json, spec_json in rows:
+            if status in ("queued", "running"):
+                spec = json.loads(spec_json)
+                created = created_at.strftime("%b %-d ’%y") if created_at else ""
+                runs.append(
+                    {
+                        "id": run_id,
+                        "demo": False,
+                        "status": "running",
+                        "stage": stage or 0,
+                        "name": spec.get("meta", {}).get("name", run_id),
+                        "meta": f"started {created}" if created else "in progress",
+                        "quote": "",
+                        "kind": "verdict",
+                    }
+                )
+                continue
             if summary_json:
                 runs.append(json.loads(summary_json))
                 continue

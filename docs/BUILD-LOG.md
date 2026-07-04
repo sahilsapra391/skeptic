@@ -898,3 +898,22 @@ feed header, preview lines and the 50-tip pool all follow the Verbiage
 setting — a fresh retail run showed zero jargon ("on data it never saw:
 risk-adjusted score 1.76 vs 0.67 — holding ✓"). Backend battery green
 (76 tests, mypy strict), tsc/lint green.
+
+## 2026-07-04 (later) — Full trade log, wf-bar fix, in-progress runs in the library
+
+Trade log is now COMPLETE: every fill event and every skip ships in the
+payload, uncapped (the old 400/250 caps hid fills on active strategies;
+rows are ~100 B and only travel when a run is opened). The walk-forward
+"time periods" panel had flat indistinguishable bars — heights were
+normalized against ALL folds while only the last 16 display, so one wild
+2020 window flattened everything visible; normalization now uses the
+displayed window (verified: heights 17.6–52 vs all ~15 before). And
+in-progress runs no longer vanish when you navigate away: the library
+lists queued/running runs with a pulsing dot + "gauntlet in progress —
+stage N of 6" card (polling every 4 s until done), the sidebar's recent
+list gets the same dot, and /runs/{id} shows the LIVE gauntlet screen
+with previews, polling until the verdict lands and flipping to results
+in place. E2E-verified: launched a run, left for the library mid-flight,
+watched the card, opened it live, saw it complete. Note: runs stored
+before this deploy keep their old capped logs and flat bars — payloads
+are frozen at write time.
