@@ -180,6 +180,32 @@ class SessionSplit(BaseModel):
     close: SessionBucket = SessionBucket()
 
 
+class UnlockNeed(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    has: float
+    needs: float
+
+
+class UnlockConditions(BaseModel):
+    """What a REFUSED verdict is waiting for (D3a) — the same numbers the
+    refusal text shows, stored structured so the nightly auto-unlock scan
+    can compare them against the coverage ledger instead of parsing prose.
+    Only the binding constraints are present."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ticker: str
+    clock: str
+    requested_start: str
+    requested_end: str
+    coverage: UnlockNeed | None = None  # chain-coverage ratio of the window
+    trades: UnlockNeed | None = None  # closed trades vs MIN_TRADES
+    regimes: UnlockNeed | None = None  # volatility regimes present vs 2
+    # coverage state when refused — the delta baseline for "N new sessions"
+    sessions_at_refusal: int = 0
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -100,6 +100,11 @@ def _execute_run(run_id: str) -> None:
 
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage,
                               intraday=intraday)
+        # D3a: refused verdicts store their unlock needs structured — the
+        # nightly auto-unlock scan reasons from these
+        from app.honesty.stages import unlock_conditions
+
+        unlock = unlock_conditions(report, spec)
         verdict, retail_verdict = write_verdicts(report)
         payload = build_run_payload(run_id, spec, result, report, verdict, retail_verdict)
         # the stats bundle is the ONLY material grounded Q&A may quote from
@@ -119,6 +124,7 @@ def _execute_run(run_id: str) -> None:
             run.stage = 6
             run.payload_json = json.dumps(payload)
             run.stats_json = json.dumps(stats)
+            run.unlock_json = unlock.model_dump_json() if unlock else None
             created = run.created_at.strftime("%b %-d ’%y") if run.created_at else ""
             run.summary_json = json.dumps(run_summary(run_id, payload, created))
             s.add(db.RunEvent(run_id=run_id, stage=6, label="gauntlet complete"))

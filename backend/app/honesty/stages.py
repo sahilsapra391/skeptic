@@ -20,6 +20,7 @@ from app.honesty.report import (
     Concentration,
     Coverage,
     Dsr,
+    HonestyReport,
     LiquidityProfile,
     MonteCarlo,
     OosSplit,
@@ -28,6 +29,8 @@ from app.honesty.report import (
     Sensitivity,
     SessionBucket,
     SessionSplit,
+    UnlockConditions,
+    UnlockNeed,
     WalkForward,
     WalkForwardFold,
 )
@@ -649,4 +652,35 @@ def coverage(result: RunResult) -> Coverage:
         coverage_ratio=ratio,
         materially_short=short,
         reason=reason,
+    )
+
+
+# ------------------------------------------------- D3a: unlock conditions
+def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockConditions | None:
+    """Structured needs for a REFUSED verdict (trust label
+    insufficient_evidence) — built from the SAME stage numbers the refusal
+    text shows, so the nightly auto-unlock scan (D3b) compares facts, not
+    prose. Returns None for graded verdicts."""
+    if report.trust.label != "insufficient_evidence":
+        return None
+    cov = report.coverage
+    sample = report.regime_sample
+    return UnlockConditions(
+        ticker=spec.underlying.ticker.value,
+        clock=spec.backtest.clock.value,
+        requested_start=cov.requested_start,
+        requested_end=cov.requested_end,
+        coverage=(
+            UnlockNeed(has=cov.coverage_ratio, needs=COVERAGE_MIN_RATIO)
+            if cov.materially_short else None
+        ),
+        trades=(
+            UnlockNeed(has=float(sample.trades), needs=float(MIN_TRADES))
+            if sample.trades < MIN_TRADES else None
+        ),
+        regimes=(
+            UnlockNeed(has=float(sample.regimes_present), needs=2.0)
+            if sample.regimes_present < 2 else None
+        ),
+        sessions_at_refusal=cov.chain_sessions,
     )

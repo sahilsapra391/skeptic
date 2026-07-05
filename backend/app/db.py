@@ -54,6 +54,13 @@ class Run(Base):
     # real per-stage preview lines shown while the gauntlet runs
     previews_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # D3: structured unlock needs stored when a verdict is REFUSED — the
+    # nightly auto-unlock scan reasons from these, not from display text
+    unlock_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # D3: who started the run — "user" | "auto_unlock" | "receipt"
+    origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # D3: the refused/original run an automatic run supersedes or replays
+    parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class RunEvent(Base):
@@ -127,9 +134,12 @@ def _ensure_columns() -> None:
 
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
-        for column in ("stats_json", "previews_json", "summary_json"):
+        for column in ("stats_json", "previews_json", "summary_json", "unlock_json"):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
+        for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)")):
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
 
 
 def session() -> Session:
