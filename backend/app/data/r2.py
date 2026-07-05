@@ -54,6 +54,17 @@ def get_json(s3: Any, key: str, default: Any) -> Any:
         return default
 
 
+def put_json(s3: Any, key: str, payload: Any) -> None:
+    """State artifacts only (aggregates, priorities, calibration stats) —
+    chain data rows never travel through here (legal rail)."""
+    s3.put_object(
+        Bucket=bucket(),
+        Key=key,
+        Body=json.dumps(payload, indent=1).encode(),
+        ContentType="application/json",
+    )
+
+
 def get_parquet(s3: Any, key: str) -> pd.DataFrame | None:
     try:
         obj = s3.get_object(Bucket=bucket(), Key=key)

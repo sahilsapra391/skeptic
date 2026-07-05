@@ -292,6 +292,12 @@ export interface CoveragePayload {
       hv: { years: number; first: string; last: string } | null;
     }
   >;
+  /** D3d: weekly demand ranking (build_priorities.py) — the Observatory's
+   * "collection wants" line; null until the first weekly pass writes it */
+  collection_priorities?: {
+    generated_at: string;
+    priorities: { rank: number; want: string; why: string; score: number }[];
+  } | null;
 }
 
 export interface UnderlyingPoint {

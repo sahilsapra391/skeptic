@@ -136,6 +136,34 @@ Every eligible daily verdict eventually faces its own 5-minute replay
   gap mechanically: as short-dated daily history accumulates, the same
   drain starts producing real two-sided receipts, no code change needed.
 
+## Fill-model calibration (D3d)
+
+The daily fill model's parameters change ONLY through reviewed PRs — the
+weekly calibration pass (`scripts/calibrate_fill_model.py`) produces the
+evidence and, when the measured divergence clears the documented bar,
+opens a PROPOSAL PR editing the real defaults (`app/models/spec.py` + the
+schema — owner amendment 2, no config indirection). Nothing changes until
+a human merges it.
+
+- Measurement: for every contract-date in BOTH the EOD chain record and
+  the intraday slice's closing NBBO (ivol_5min sessions, last ≥15:45 ET
+  bar), how many TRUE half-spreads does the daily model's fill concede
+  from the TRUE closing mid? The model intends f (= the slippage default);
+  stale or wide EOD marks push the measured median off f.
+- Asymmetric evidence bar (owner amendment 3): a CONSERVATIVE correction
+  (daily fills measured cheaper than reality → raise the default) opens at
+  the base bar (n ≥ 500 contract-day sides, divergence ≥ 0.25). An
+  OPTIMISM-INCREASING correction (daily fills measured more punitive →
+  lower the default) needs n ≥ 2,000 and divergence ≥ 0.50, and the PR
+  title carries the `OPTIMISM-INCREASING:` prefix — never a silent nudge
+  toward rosier numbers.
+- Evidence: `docs/calibration/YYYY-MM-DD.md` (in the proposal PR) and
+  aggregate stats in `state/calibration_latest.json`. Distribution stats
+  only — chain rows never leave the lake.
+- Lake reality: contract overlap begins with the Yahoo 0–60 DTE capture
+  (2026-07-01) — see the receipts section above. Until n clears the floor
+  the weekly doc honestly says "insufficient evidence, no change."
+
 ## Conventions the numbers depend on (fixed, tested)
 
 - Exit priority at every clock: stop_loss → delta_stop → profit_target →
