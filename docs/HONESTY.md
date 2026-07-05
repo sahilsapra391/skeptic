@@ -105,6 +105,37 @@ same spec. Auto re-runs are capped per night (`AUTO_RERUNS_PER_NIGHT`) and
 every one is labeled `origin=auto_unlock` in the runs table and
 "re-ran automatically" in the Library — provenance is never blurred.
 
+## Verdict receipts (D3c)
+
+Every eligible daily verdict eventually faces its own 5-minute replay
+("the daily backtest promised X; the 5-min replay says Y"). Rules:
+
+- Eligible = a user-initiated daily run whose WHOLE tenor band fits the
+  intraday slice (max_dte ≤ 2) — both clocks must trade the same
+  contracts, or the receipt is an apples-to-oranges comparison dressed up
+  as like-for-like. The nightly drain replays ALL eligible runs, but
+  OFF-PEAK (≈02:00 ET) and SERIALIZED — one at a time, polled to
+  completion, fixed delay between submissions — so it can never collide
+  with live work. An on-demand "replay at 5-min" button does the same for
+  one run, immediately.
+- Replays are `origin=receipt` runs: like auto-unlocks they do NOT bump
+  the family trial counter (a mechanical replay of the same spec is not a
+  new try).
+- "Disagrees" = the replay Sharpe lands more than RECEIPT_WORSE_DELTA
+  (0.25) below the daily promise, or flips sign. A disagreeing receipt is
+  displayed PROMINENTLY and lowers the SHOWN confidence — but the stored
+  verdict's trust level is NEVER rewritten (owner amendment): the original
+  remains the honest record of what the daily engine concluded from its
+  data. Reporting treatment only, never retroactive scoring.
+- Lake reality (measured 2026-07-05): the historical EOD chains (dolthub,
+  2020→now) carry NO expirations under ~11 DTE, so an eligible daily run
+  fills zero trades against today's history — its receipt is one-sided
+  ("the daily engine had no data; the 5-min record says Y") and one-sided
+  receipts never accuse (`worse` stays false when either side is unknown).
+  The Yahoo EOD capture (0–60 DTE, running since 2026-07-01) closes this
+  gap mechanically: as short-dated daily history accumulates, the same
+  drain starts producing real two-sided receipts, no code change needed.
+
 ## Conventions the numbers depend on (fixed, tested)
 
 - Exit priority at every clock: stop_loss → delta_stop → profit_target →

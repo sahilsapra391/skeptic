@@ -190,6 +190,18 @@ export interface RunPayload {
    * (eod_chain / ivol_5min / cboe_minute → leg-fill counts) */
   clock?: string;
   fillSources?: Record<string, number>;
+  /** D3c: 5-min replay receipts (merged at read time; stored trust untouched) */
+  receipts?: {
+    replay_run_id: string;
+    created_at: string;
+    daily_sharpe: number | null;
+    five_min_sharpe: number | null;
+    daily_return: number | null;
+    five_min_return: number | null;
+    fill_sources: Record<string, number>;
+    worse: boolean;
+  }[];
+  replayEligible?: boolean;
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
   oosSplitDate?: string; // ISO date where the OOS window begins
   honesty: HonestyPanels;

@@ -18,8 +18,11 @@ from tests.fixtures.engine import fx_short_put_assigned as fx
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.delenv("SKEPTIC_ACCESS_TOKEN", raising=False)
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    # Empty, not deleted — the in-test import of scripts/nightly_improve
+    # runs load_local_env(), whose setdefault would resurrect a DELETED
+    # key mid-test (real LLM calls); an empty var survives setdefault.
+    monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
     import app.data.chains as chains_module
 
     monkeypatch.setattr(

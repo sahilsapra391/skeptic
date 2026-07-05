@@ -156,6 +156,83 @@ def execute_unlocks(decisions: list[UnlockDecision]) -> int:
     return submitted
 
 
+# Receipt drain pacing (owner amendment 1): the workflow window is already
+# off-peak (07:00 UTC ≈ 02:00 ET); replays are additionally SERIALIZED —
+# one at a time, polled to completion, with this delay between submissions
+# — so the drain can never collide with a live backtest.
+RECEIPT_DELAY_SECONDS = 60
+RECEIPT_POLL_SECONDS = 10
+RECEIPT_POLL_TIMEOUT = 1200  # a stuck replay stops the drain, loudly
+
+
+def eligible_for_receipt() -> list[str]:
+    """DONE user daily-clock runs, replayable within the intraday slice,
+    with no receipt yet."""
+    from app.api.replay import replay_eligible_spec
+
+    out: list[str] = []
+    with db.session() as s:
+        rows = (
+            s.query(db.Run.id, db.Run.spec_json, db.Run.receipts_json, db.Run.origin)
+            .filter(db.Run.status == "done", db.Run.spec_json.isnot(None))
+            .all()
+        )
+    for run_id, spec_json, receipts_json, origin in rows:
+        if (origin or "user") != "user" or receipts_json:
+            continue
+        try:
+            if replay_eligible_spec(json.loads(spec_json)):
+                out.append(run_id)
+        except Exception:
+            continue
+    return out
+
+
+def drain_receipts(delay: int = RECEIPT_DELAY_SECONDS) -> int:
+    """Serialized replay submissions via the on-demand endpoint — ALL
+    eligible runs (owner decision), one at a time, polled to completion."""
+    import time
+
+    import requests
+
+    base = os.environ.get("SKEPTIC_API_URL", "").rstrip("/")
+    if not base:
+        log.error("SKEPTIC_API_URL not set — cannot drain receipts")
+        return 0
+    headers = {}
+    token = os.environ.get("SKEPTIC_ACCESS_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    done = 0
+    for run_id in eligible_for_receipt():
+        resp = requests.post(f"{base}/api/runs/{run_id}/replay",
+                             headers=headers, timeout=30)
+        if resp.status_code == 409:
+            log.info("receipt %s: not replayable (%s)", run_id, resp.text[:120])
+            continue
+        if resp.status_code != 200:
+            log.error("receipt submit failed for %s: HTTP %s", run_id, resp.status_code)
+            continue
+        replay_id = resp.json().get("run_id")
+        log.info("receipt replay %s → %s (polling)", run_id, replay_id)
+        waited = 0
+        while waited < RECEIPT_POLL_TIMEOUT:
+            status = requests.get(f"{base}/api/runs/{replay_id}",
+                                  headers=headers, timeout=30).json().get("status")
+            if status in ("done", "error"):
+                break
+            time.sleep(RECEIPT_POLL_SECONDS)
+            waited += RECEIPT_POLL_SECONDS
+        else:
+            log.error("receipt replay %s stuck past %ss — stopping the drain",
+                      replay_id, RECEIPT_POLL_TIMEOUT)
+            return done
+        done += 1
+        time.sleep(delay)  # amendment 1: fixed gap between submissions
+    return done
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -168,15 +245,23 @@ def main() -> int:
     decisions = scan_unlocks()
     if not decisions:
         log.info("unlock scan: no refused runs waiting")
-        return 0
-    for d in decisions:
-        marker = "RE-RUN" if d.should_rerun else "still waiting"
-        log.info("[%s] %s %s@%s — %s", marker, d.run_id, d.ticker, d.clock, d.reason)
-    log.info("unlock scan: %d waiting, %d ready",
-             len(decisions), sum(1 for d in decisions if d.should_rerun))
+    else:
+        for d in decisions:
+            marker = "RE-RUN" if d.should_rerun else "still waiting"
+            log.info("[%s] %s %s@%s — %s", marker, d.run_id, d.ticker, d.clock, d.reason)
+        log.info("unlock scan: %d waiting, %d ready",
+                 len(decisions), sum(1 for d in decisions if d.should_rerun))
+    receipt_queue = eligible_for_receipt()
+    log.info("receipt queue: %d eligible daily run(s) without a receipt",
+             len(receipt_queue))
     if args.execute:
-        n = execute_unlocks(decisions)
-        log.info("submitted %d auto re-run(s) (cap %d/night)", n, AUTO_RERUNS_PER_NIGHT)
+        if decisions:
+            n = execute_unlocks(decisions)
+            log.info("submitted %d auto re-run(s) (cap %d/night)",
+                     n, AUTO_RERUNS_PER_NIGHT)
+        # the receipt drain runs every night regardless of the unlock queue
+        r = drain_receipts()
+        log.info("receipt drain: %d replay(s) completed", r)
     return 0
 
 
