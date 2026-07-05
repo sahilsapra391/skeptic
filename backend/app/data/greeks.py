@@ -122,9 +122,9 @@ def rates_asof(trading_dates: pd.Series, rates: pd.DataFrame | None) -> FloatArr
                     FALLBACK_R * 100)
         return np.full(n, FALLBACK_R, dtype=np.float64)
     r = rates.dropna(subset=["rate_pct"]).sort_values("date")
-    r_dates = pd.to_datetime(r["date"]).values
+    r_dates = np.asarray(pd.to_datetime(r["date"]).values)
     r_vals = (pd.to_numeric(r["rate_pct"], errors="coerce") / 100.0).to_numpy(dtype=np.float64)
-    td = pd.to_datetime(trading_dates).values
+    td = np.asarray(pd.to_datetime(trading_dates).values)
     idx = np.searchsorted(r_dates, td, side="right") - 1
     out = np.where(idx >= 0, r_vals[np.clip(idx, 0, None)], FALLBACK_R)
     return np.asarray(out, dtype=np.float64)
@@ -180,11 +180,13 @@ def fill_missing_greeks(
 
     r = rates_asof(td[need], rates)
     g = bs_greeks(
-        spot[need].to_numpy(dtype=np.float64),
-        pd.to_numeric(df.loc[need, "strike"], errors="coerce").to_numpy(dtype=np.float64),
-        dte[need].to_numpy(dtype=np.float64),
-        iv[need].to_numpy(dtype=np.float64),
-        (df.loc[need, "right"] == "call").to_numpy(dtype=np.bool_),
+        np.asarray(spot[need].to_numpy(), dtype=np.float64),
+        np.asarray(
+            pd.to_numeric(df.loc[need, "strike"], errors="coerce").to_numpy(), dtype=np.float64
+        ),
+        np.asarray(dte[need].to_numpy(), dtype=np.float64),
+        np.asarray(iv[need].to_numpy(), dtype=np.float64),
+        np.asarray((df.loc[need, "right"] == "call").to_numpy(), dtype=np.bool_),
         r,
         DIVIDEND_YIELD.get(ticker, 0.0),
     )
