@@ -34,12 +34,21 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     conds = list((raw_spec.get("entry") or {}).get("conditions") or []) + list(
         exit_rules.get("conditions") or []
     )
+    schedule = (raw_spec.get("entry") or {}).get("schedule") or {}
+    expiration = position.get("expiration_selection") or {}
+    backtest = raw_spec.get("backtest") or {}
     uses_v2 = (
         exit_rules.get("delta_stop_abs") is not None
         or exit_rules.get("theta_harvest") is not None
         or position.get("max_vega_per_contract") is not None
+        or backtest.get("clock") not in (None, "daily")
+        or schedule.get("time_of_day") is not None
+        or expiration.get("min_dte") == 0
+        or expiration.get("target_dte") == 0
         or any(
-            c.get("indicator") in _V2_INDICATOR_NAMES for c in conds if isinstance(c, dict)
+            isinstance(c, dict)
+            and (c.get("indicator") in _V2_INDICATOR_NAMES or c.get("timeframe") == "5min")
+            for c in conds
         )
     )
     return 2 if uses_v2 else 1
@@ -91,12 +100,17 @@ THE SPEC (all fields required unless noted):
                              per contract-set per vol point>
  },
  "entry": {"schedule": {"frequency": "daily"|"weekly"|"monthly"|"signal_only",
-                        "day_of_week": "monday"..."friday" (weekly only)},
+                        "day_of_week": "monday"..."friday" (weekly only),
+                        "time_of_day": "HH:MM" (OPTIONAL, ET, clock "5min" only —
+                                       earliest bar an entry may fill)},
            "conditions": [{"indicator": "rsi"|"sma"|"ema"|"price_vs_sma_pct"|"price_vs_ema_pct"
                           |"ema_cross_state"|"iv_percentile_1y"|"vix_level"
                           |"realized_vol_20d"|"drawdown_from_high_pct"
-                          |"ivx_rank_1y"|"ivx_level_30d"|"hv_iv_spread_30d",
+                          |"ivx_rank_1y"|"ivx_level_30d"|"hv_iv_spread_30d"
+                          |"price_vs_vwap_pct",
                            "period": <int, optional>, "params": {..optional..},
+                           "timeframe": "daily" (default) | "5min" (intraday bars;
+                                        price-series indicators only),
                            "operator": "<"|"<="|">"|">="|"above"|"below"
                                      |"crosses_above"|"crosses_below",
                            "value": <number>}],
@@ -108,7 +122,8 @@ THE SPEC (all fields required unless noted):
                             "profit_pct": <number>} (OPTIONAL)},
  "sizing": {"method": "fixed_contracts", "value": 1},
  "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
- "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42}
+ "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42,
+              "clock": "daily" (default) | "5min"}
 }
 
 CONVENTIONS:
@@ -174,6 +189,21 @@ CONVENTIONS:
   LEVEL) → ivx_level_30d with value 25 (percentage points, like vix_level).
   "IV rich vs realized by 4 points" → hv_iv_spread_30d with value 4.
 - "keep position vega under $30 per contract" → max_vega_per_contract 30.
+- INTRADAY (clock "5min"): "0DTE"/"same-day expiry" → target_dte 0, min_dte 0,
+  max_dte 0-1, clock "5min". "1DTE" → target_dte 1 (TRADING days at this clock:
+  Friday 1DTE correctly finds Monday). Any 0/1/2-DTE strategy, a time-of-day
+  entry, or a 5-minute indicator ⇒ set backtest.clock "5min". Intraday quote
+  coverage is SPY, 0-2 trading-DTE, near the money — that is the engine's
+  problem to disclose, not yours to block.
+- "enter at/after 10am" / "wait for the first 30 minutes" →
+  schedule.time_of_day "10:00" (ET, on the 5-minute grid). Sub-5-minute times
+  ("10:02") do not exist in the record → ask (offer the nearest 5-min bars).
+- "5-minute RSI(14) under 30" → {"indicator": "rsi", "period": 14,
+  "operator": "<", "value": 30, "timeframe": "5min"}. Same for 5-min SMA/EMA.
+- "below VWAP" → {"indicator": "price_vs_vwap_pct", "operator": "<", "value": 0,
+  "timeframe": "5min"}; "1% above VWAP" → value 1, operator ">". VWAP is
+  session-anchored and intraday-only — NEVER emit it with timeframe "daily".
+- A 1-minute chart/indicator request → ask: only the 5-minute record exists.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
   spec_version: always emit 1 — the server recomputes it from the vocabulary used.
 
@@ -347,6 +377,8 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         cadence = "on signal"
     else:
         cadence = freq
+    if schedule.get("time_of_day"):
+        cadence += f" · {schedule['time_of_day']} ET"
 
     exit_rules = spec["exit"]
     parts: list[str] = []

@@ -109,9 +109,21 @@ class BarView:
     session's close: today's daily close does not exist yet at an
     intraday bar (guardrail #2)."""
 
-    def __init__(self, iview: IntradayView, prev: MarketView) -> None:
+    def __init__(
+        self,
+        iview: IntradayView,
+        prev: MarketView,
+        intraday_lasts: list[float] | None = None,
+        lasts_len: int = 0,
+        vwap: float | None = None,
+    ) -> None:
         self._iview = iview
         self._prev = prev
+        # the run's rolling 5-min lasts: the engine appends as bars advance,
+        # so a length snapshot bounds this view at the current bar (D2c)
+        self._lasts = intraday_lasts if intraday_lasts is not None else []
+        self._lasts_len = lasts_len
+        self._vwap = vwap
 
     @property
     def as_of(self) -> date:
@@ -156,6 +168,12 @@ class BarView:
 
     def hv_30d(self) -> float | None:
         return self._prev.hv_30d()
+
+    def intraday_closes_upto(self) -> list[float]:
+        return self._lasts[: self._lasts_len]
+
+    def intraday_vwap(self) -> float | None:
+        return self._vwap
 
 
 def _calendar_dte_fn(as_of: date) -> DteFn:
@@ -793,6 +811,8 @@ def run_engine(
         clock=spec.backtest.clock.value,
     )
     covered_sessions = 0
+    intraday_lasts: list[float] = []  # rolling 5-min lasts across the run (D2c)
+    tod = spec.entry.schedule.time_of_day
 
     for day in clock:
         view = MarketView(store, day)
@@ -806,14 +826,28 @@ def run_engine(
             dte_fn = _trading_dte_fn(store, day)
             session_skips: set[str] = set()
             opened_this_session = False
+            session_pv = 0.0  # session-anchored VWAP accumulators (D2c)
+            session_vol = 0.0
             for bar in slc.bars:
-                bview = BarView(IntradayView(slc, bar), prev_view)
+                last = slc.underlying.get(bar)
+                if last is not None:
+                    intraday_lasts.append(last)
+                    vol = slc.underlying_volume.get(bar, 0.0)
+                    session_pv += last * vol
+                    session_vol += vol
+                vwap_now = session_pv / session_vol if session_vol > 0 else None
+                bview = BarView(IntradayView(slc, bar), prev_view,
+                                intraday_lasts, len(intraday_lasts), vwap_now)
                 events_before = len(state.trades)
                 # exits BEFORE entries at every bar: a position opened at
                 # bar t is first evaluated at bar t+1 (owner amendment 2 —
                 # a stop can never fire on its own entry bar)
                 _check_exits(spec, state, bview, dte_fn)
-                if not opened_this_session and _schedule_matches(spec, state, day):
+                if (
+                    not opened_this_session
+                    and _schedule_matches(spec, state, day)
+                    and (tod is None or bar.strftime("%H:%M") >= tod)
+                ):
                     equity_now = state.cash + sum(
                         _position_value(p, bview.close() or 0.0)
                         for p in state.positions

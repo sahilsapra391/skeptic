@@ -34,9 +34,10 @@ def _ivol_opt_frame(d: str) -> pd.DataFrame:
 
 
 def _ivol_und_frame(d: str) -> pd.DataFrame:
+    # volume is CUMULATIVE in the vendor feed (probed) — per-bar is the diff
     return pd.DataFrame([
-        {"minute_ts": f"{d} 09:30:00", "last": 100.0},
-        {"minute_ts": f"{d} 09:35:00", "last": 100.4},
+        {"minute_ts": f"{d} 09:30:00", "last": 100.0, "volume": 1_000},
+        {"minute_ts": f"{d} 09:35:00", "last": 100.4, "volume": 1_600},
     ])
 
 
@@ -97,6 +98,9 @@ class TestIvolSessions:
         assert q.theta == -0.30 and q.vega == 0.34  # vendor greeks ride along
         assert q.greeks_source == "vendor"
         assert slc.underlying[datetime(2025, 1, 6, 9, 35)] == 100.4
+        # cumulative 1,000 → 1,600 becomes per-bar 1,000 and 600 (D2c)
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
 
     def test_disk_cache_serves_second_store(self, store: intraday.IntradayStore,
                                             env: dict[str, Any]) -> None:
