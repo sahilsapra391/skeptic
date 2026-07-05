@@ -1,11 +1,13 @@
-"""M4 parser eval harness (BUILD-PLAN): runs the 12-case set against the
-LIVE parser and prints a pass/fail report.
+"""M4 parser eval harness (BUILD-PLAN): runs the golden case set against
+the LIVE parser and prints a pass/fail report.
 
 Run:  cd backend && PYTHONPATH=. uv run python evals/run_parser_eval.py
 Needs OPENROUTER_API_KEY (loaded via app.config.load_local_env).
 
-Acceptance: >= 7/8 clear cases match ground truth; 4/4 ambiguous cases
-produce questions with zero fabricated parameters.
+Acceptance (same spirit as the original 7/8 + 4/4, generalized when D1c
+grew the set): at most ONE clear-case miss, and EVERY ambiguous case must
+produce questions with zero fabricated parameters. Any parser-prompt
+change re-runs this and needs an owner ACCEPT before merge.
 """
 
 from __future__ import annotations
@@ -106,7 +108,7 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
             errs.append(f"max_concurrent {got} != {expect['max_concurrent_positions']}")
 
     exit_rules = spec["exit"]
-    for key in ("profit_target_pct", "stop_loss_pct", "time_exit_dte"):
+    for key in ("profit_target_pct", "stop_loss_pct", "time_exit_dte", "delta_stop_abs"):
         exp_v = expect["exit"].get(key)
         got_v = exit_rules.get(key)
         if exp_v is None:
@@ -114,6 +116,20 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
                 errs.append(f"fabricated exit.{key}={got_v}")
         elif got_v is None or not _approx(got_v, exp_v, 1e-3):
             errs.append(f"exit.{key} {got_v} != {exp_v}")
+
+    exp_th = expect["exit"].get("theta_harvest")
+    got_th = exit_rules.get("theta_harvest")
+    if exp_th is None:
+        if got_th is not None:
+            errs.append(f"fabricated exit.theta_harvest={got_th}")
+    elif not isinstance(got_th, dict) or any(
+        not _approx(got_th.get(k, -1), exp_th[k], 1e-3)
+        for k in ("dte_from", "dte_to", "profit_pct")
+    ):
+        errs.append(f"exit.theta_harvest {got_th} != {exp_th}")
+
+    if "spec_version" in expect and spec.get("spec_version") != expect["spec_version"]:
+        errs.append(f"spec_version {spec.get('spec_version')} != {expect['spec_version']}")
     return errs
 
 
@@ -146,9 +162,14 @@ def main() -> int:
             detail = "matches ground truth" if not errs else "; ".join(errs)[:220]
             lines.append(f"case {n:>2} [{'PASS' if not errs else 'FAIL'}] (spec) {detail}")
 
+    clear_total = sum(1 for c in CASES if c["kind"] == "spec")
+    ambiguous_total = sum(1 for c in CASES if c["kind"] == "questions")
     print("\n".join(lines))
-    print(f"\nclear: {clear_pass}/8 (accept >= 7) · ambiguous: {ambiguous_pass}/4 (accept 4)")
-    ok = clear_pass >= 7 and ambiguous_pass == 4
+    print(
+        f"\nclear: {clear_pass}/{clear_total} (accept >= {clear_total - 1}) · "
+        f"ambiguous: {ambiguous_pass}/{ambiguous_total} (accept {ambiguous_total})"
+    )
+    ok = clear_pass >= clear_total - 1 and ambiguous_pass == ambiguous_total
     print("RESULT:", "ACCEPTED" if ok else "REJECTED")
     return 0 if ok else 1
 

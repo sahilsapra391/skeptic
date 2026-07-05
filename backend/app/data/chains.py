@@ -26,7 +26,7 @@ from typing import Any, cast
 
 import pandas as pd
 
-from app.data import greeks, r2
+from app.data import greeks, ivol_analytics, r2
 from app.engine.market import MarketStore
 from app.engine.types import ContractKey, Quote
 
@@ -242,6 +242,14 @@ def _build_market_store(ticker: str) -> MarketStore:
                 if with_iv:
                     atm_iv[d] = float(min(with_iv)[1] or 0.0)
 
+    # vendor IVX/HV series (D1c) — honest absences when not banked
+    try:
+        s3 = r2.r2_client()
+        ivx_30d = ivol_analytics.load_ivx_30d(s3, ticker)
+        hv_30d = ivol_analytics.load_hv_30d(s3, ticker)
+    except Exception:
+        ivx_30d, hv_30d = {}, {}
+
     return MarketStore(
         ticker=ticker,
         sessions=sessions,
@@ -252,4 +260,8 @@ def _build_market_store(ticker: str) -> MarketStore:
         vix_dates=vix_dates,
         vix_close=vix_close,
         atm_iv=atm_iv,
+        ivx_dates=sorted(ivx_30d),
+        ivx_30d=ivx_30d,
+        hv_dates=sorted(hv_30d),
+        hv_30d=hv_30d,
     )

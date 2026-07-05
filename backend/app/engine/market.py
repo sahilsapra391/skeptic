@@ -33,10 +33,17 @@ class MarketStore:
     vix_dates: list[date] = field(default_factory=list)
     vix_close: dict[date, float] = field(default_factory=dict)
     atm_iv: dict[date, float] = field(default_factory=dict)  # per chain session
+    # vendor IVX / HV 30d series (decimals), 2005+ — spec-v2 filters (D1c)
+    ivx_dates: list[date] = field(default_factory=list)
+    ivx_30d: dict[date, float] = field(default_factory=dict)
+    hv_dates: list[date] = field(default_factory=list)
+    hv_30d: dict[date, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.sessions = sorted(self.sessions)
         self.chain_dates = sorted(self.chain_dates)
+        self.ivx_dates = sorted(self.ivx_dates)
+        self.hv_dates = sorted(self.hv_dates)
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
 
 
@@ -102,12 +109,33 @@ class MarketView:
                 out.append(v)
         return out
 
+    # ------------------------------------------------------ ivx / hv (v2)
+    # bounded by construction, like vix(): the last observation ≤ as_of.
+    def ivx_30d(self) -> float | None:
+        idx = bisect_right(self._store.ivx_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.ivx_30d[self._store.ivx_dates[idx - 1]]
+
+    def ivx_30d_history(self) -> list[float]:
+        """All IVX observations ≤ as_of, oldest → newest (rank input)."""
+        idx = bisect_right(self._store.ivx_dates, self._as_of)
+        return [self._store.ivx_30d[d] for d in self._store.ivx_dates[:idx]]
+
+    def hv_30d(self) -> float | None:
+        idx = bisect_right(self._store.hv_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.hv_30d[self._store.hv_dates[idx - 1]]
+
 
 def build_fixture_store(
     ticker: str,
     chains: dict[str, list[dict[str, object]]],
     underlying: dict[str, tuple[float, float]],
     vix: dict[str, float] | None = None,
+    ivx_30d: dict[str, float] | None = None,
+    hv_30d: dict[str, float] | None = None,
 ) -> MarketStore:
     """Fixture loader: plain dicts → MarketStore (same shape the real
     loader produces, so fixtures exercise the identical engine path)."""
@@ -149,6 +177,8 @@ def build_fixture_store(
     sessions = sorted(date.fromisoformat(k) for k in underlying)
     vix = vix or {}
     vix_map = {date.fromisoformat(k): v for k, v in vix.items()}
+    ivx_map = {date.fromisoformat(k): v for k, v in (ivx_30d or {}).items()}
+    hv_map = {date.fromisoformat(k): v for k, v in (hv_30d or {}).items()}
     return MarketStore(
         ticker=ticker,
         sessions=sessions,
@@ -158,4 +188,8 @@ def build_fixture_store(
         chain_dates=sorted(chain_map),
         vix_dates=sorted(vix_map),
         vix_close=vix_map,
+        ivx_dates=sorted(ivx_map),
+        ivx_30d=ivx_map,
+        hv_dates=sorted(hv_map),
+        hv_30d=hv_map,
     )

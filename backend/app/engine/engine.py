@@ -233,6 +233,23 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
         leg_slips.append(eff)
         leg_stressed.append(stressed)
 
+    # vega cap (spec v2, owner amendment 2): |NET vega| of the contract-set
+    # in dollars per vol point — leg vegas sum SIGNED (long +, short −,
+    # × ratio), so a spread's cancelling legs net. Missing vega data makes
+    # the user's rule unevaluable → skip, never silently ignore it.
+    cap = spec.position.max_vega_per_contract
+    if cap is not None:
+        net_vega = 0.0
+        for q, leg in zip(leg_quotes, spec.position.legs, strict=True):
+            if q.vega is None:
+                skip("vega_unavailable")
+                return
+            signed = q.vega if leg.side is Side.LONG else -q.vega
+            net_vega += signed * leg.ratio
+        if abs(net_vega) * MULT > cap:
+            skip("vega_cap_exceeded", detail=f"|net vega| ${abs(net_vega) * MULT:.2f} > ${cap:g}")
+            return
+
     # net premium per contract-set per share: credits positive
     premium = 0.0
     for px, leg in zip(entry_fills, spec.position.legs, strict=True):
@@ -342,6 +359,21 @@ def _close_position(
     return True
 
 
+def _delta_stop_hit(pos: Position, view: MarketView, threshold: float) -> bool:
+    """True when any WATCHED leg's |delta| reaches the threshold at today's
+    quotes. Watched = short legs when the position has any, else all legs.
+    Legs without a delta today are unevaluable — the rule waits on them,
+    it never guesses (spec-v2 contract)."""
+    unsettled = [leg for leg in pos.legs if not leg.settled]
+    shorts = [leg for leg in unsettled if leg.side == "short"]
+    watched = shorts if shorts else unsettled
+    for leg in watched:
+        q = view.quote(leg.key)
+        if q is not None and q.delta is not None and abs(q.delta) >= threshold:
+            return True
+    return False
+
+
 def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
     exit_rules = spec.exit
     for pos in state.positions:
@@ -353,13 +385,19 @@ def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
         if liq is not None and base > 0:
             profit_pct = (pos.premium + liq) / base * 100.0
 
-        # priority: stop → profit target → time → condition exits
+        # priority (owner-confirmed, D1c): stop → delta stop → profit
+        # target → theta harvest → time exit → condition exits
         if (
             exit_rules.stop_loss_pct is not None
             and profit_pct is not None
             and -profit_pct >= exit_rules.stop_loss_pct
         ):
             _close_position(pos, view, state, spec, "stop_loss")
+            continue
+        if exit_rules.delta_stop_abs is not None and _delta_stop_hit(
+            pos, view, exit_rules.delta_stop_abs
+        ):
+            _close_position(pos, view, state, spec, "delta_stop")
             continue
         if (
             exit_rules.profit_target_pct is not None
@@ -368,8 +406,17 @@ def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
         ):
             _close_position(pos, view, state, spec, "profit_target")
             continue
+        dte = min((leg.key.expiration - view.as_of).days for leg in pos.legs if not leg.settled)
+        th = exit_rules.theta_harvest
+        if (
+            th is not None
+            and profit_pct is not None
+            and th.dte_to <= dte <= th.dte_from
+            and profit_pct >= th.profit_pct
+        ):
+            _close_position(pos, view, state, spec, "theta_harvest")
+            continue
         if exit_rules.time_exit_dte is not None and exit_rules.time_exit_dte > 0:
-            dte = min((leg.key.expiration - view.as_of).days for leg in pos.legs if not leg.settled)
             if dte <= exit_rules.time_exit_dte:
                 _close_position(pos, view, state, spec, "time_exit")
                 continue

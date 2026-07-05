@@ -21,7 +21,28 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.honesty.verdict import DEFAULT_MODEL, OPENROUTER_URL, _extract_json
-from app.models.spec import StrategySpec
+from app.models.spec import V2_INDICATORS, StrategySpec
+
+_V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
+
+
+def _required_spec_version(raw_spec: dict[str, Any]) -> int:
+    """Server-computed from the vocabulary actually used — the version is a
+    contract, never trusted from the LLM."""
+    exit_rules = raw_spec.get("exit") or {}
+    position = raw_spec.get("position") or {}
+    conds = list((raw_spec.get("entry") or {}).get("conditions") or []) + list(
+        exit_rules.get("conditions") or []
+    )
+    uses_v2 = (
+        exit_rules.get("delta_stop_abs") is not None
+        or exit_rules.get("theta_harvest") is not None
+        or position.get("max_vega_per_contract") is not None
+        or any(
+            c.get("indicator") in _V2_INDICATOR_NAMES for c in conds if isinstance(c, dict)
+        )
+    )
+    return 2 if uses_v2 else 1
 
 log = logging.getLogger("parser")
 
@@ -65,20 +86,26 @@ THE SPEC (all fields required unless noted):
    "legs": [{"right": "call"|"put", "side": "long"|"short", "ratio": 1,
              "strike_selection": {"method": "delta"|"offset_pct"|"width_from_leg",
                                   "value": <number>, "reference_leg": <int, width_from_leg only>}}],
-   "expiration_selection": {"target_dte": <1-90>, "min_dte": <int>, "max_dte": <int>}
+   "expiration_selection": {"target_dte": <1-90>, "min_dte": <int>, "max_dte": <int>},
+   "max_vega_per_contract": <number, OPTIONAL — dollars of NET position vega
+                             per contract-set per vol point>
  },
  "entry": {"schedule": {"frequency": "daily"|"weekly"|"monthly"|"signal_only",
                         "day_of_week": "monday"..."friday" (weekly only)},
            "conditions": [{"indicator": "rsi"|"sma"|"ema"|"price_vs_sma_pct"|"price_vs_ema_pct"
                           |"ema_cross_state"|"iv_percentile_1y"|"vix_level"
-                          |"realized_vol_20d"|"drawdown_from_high_pct",
+                          |"realized_vol_20d"|"drawdown_from_high_pct"
+                          |"ivx_rank_1y"|"ivx_level_30d"|"hv_iv_spread_30d",
                            "period": <int, optional>, "params": {..optional..},
                            "operator": "<"|"<="|">"|">="|"above"|"below"
                                      |"crosses_above"|"crosses_below",
                            "value": <number>}],
            "max_concurrent_positions": <1-10>},
  "exit": {"profit_target_pct": <number>, "stop_loss_pct": <number>,
-          "time_exit_dte": <int>, "conditions": [...]},
+          "time_exit_dte": <int>, "conditions": [...],
+          "delta_stop_abs": <decimal in (0,1), OPTIONAL>,
+          "theta_harvest": {"dte_from": <int>, "dte_to": <int>,
+                            "profit_pct": <number>} (OPTIONAL)},
  "sizing": {"method": "fixed_contracts", "value": 1},
  "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
  "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42}
@@ -124,8 +151,31 @@ CONVENTIONS:
 - Percent profit/stop numbers are percents (50 = 50%). The same for percent
   indicators: price_vs_sma_pct / price_vs_ema_pct / drawdown_from_high_pct
   values are percents ("3% below its SMA" → value 3, never 0.03). Only delta
-  (0.30) and offset_pct (-0.05) take decimal values.
+  (0.30), delta_stop_abs (0.60) and offset_pct (-0.05) take decimal values.
+- A DELTA-based stop ("close/stop out if the short strike reaches/hits
+  60 delta", "close when it goes to 60 delta") → delta_stop_abs 0.60 —
+  NEVER stop_loss_pct (that is a percent-of-credit stop; a delta trigger is
+  not a percent, and substituting one is fabrication). Rolling is NOT
+  supported: "roll at X delta / X DTE" → ask whether CLOSING there is
+  acceptable (offer delta_stop_abs / time_exit_dte as options).
+- Distinguish the two profit-taking forms precisely:
+    "close at 50% profit or 21 DTE" (single DTE bound, an OR)
+        → profit_target_pct 50 AND time_exit_dte 21 — NOT theta_harvest.
+    "take profits at 50% BETWEEN 21 and 7 DTE" (a DTE WINDOW, two bounds)
+        → theta_harvest {"dte_from": 21, "dte_to": 7, "profit_pct": 50},
+          dte_from always the HIGHER number; emit NO separate
+          profit_target_pct/time_exit_dte for it.
+  theta_harvest is ONLY valid on defined-max-profit structures (short_put,
+  put/call credit spreads, iron_condor, covered_call). On long_call/long_put
+  it is INVALID — you must ask instead (offer a plain profit target or a
+  time exit). Never emit theta_harvest on a long option.
+- "IV rank above 50" / "IVR > 50" → {"indicator": "ivx_rank_1y",
+  "operator": ">", "value": 50} (a percentile, 0-100). "IVX above 25" (a
+  LEVEL) → ivx_level_30d with value 25 (percentage points, like vix_level).
+  "IV rich vs realized by 4 points" → hv_iv_spread_30d with value 4.
+- "keep position vega under $30 per contract" → max_vega_per_contract 30.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
+  spec_version: always emit 1 — the server recomputes it from the vocabulary used.
 
 WHEN TO ASK (result "questions") — the tool's identity depends on this:
 - ZERO exit rules stated → ask. No strike selection (delta/offset/ATM) stated → ask.
@@ -134,6 +184,8 @@ WHEN TO ASK (result "questions") — the tool's identity depends on this:
   (offer concrete options like "drawdown_from_high_pct >= 2" or "rsi(14) < 30").
 - Unsupported structures (wheel, strangles, calendars, ratio spreads) → ask, offering
   the nearest supported structures as options.
+- theta_harvest semantics requested on a long_call/long_put (no defined max
+  profit) → ask; offer a profit target or time exit instead. Never guess.
 - No entry cadence AND no entry condition → ask.
 Ask AT MOST 4 questions, each answerable in a word or two, most important first.
 Include 2-4 concrete "options" per question whenever sensible.
@@ -238,7 +290,7 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
         # guardrail: the user's words are the record, never a paraphrase
         raw_spec.setdefault("meta", {})
         raw_spec["meta"]["description_raw"] = text
-        raw_spec["spec_version"] = 1
+        raw_spec["spec_version"] = _required_spec_version(raw_spec)
         # (ATM → .50Δ normalization lives on StrikeSelection itself — every
         # ingress that validates a spec gets it, not just this one)
         try:
