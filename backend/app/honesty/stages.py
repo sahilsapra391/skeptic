@@ -26,10 +26,12 @@ from app.honesty.report import (
     ParamSweep,
     RegimeSample,
     Sensitivity,
+    SessionBucket,
+    SessionSplit,
     WalkForward,
     WalkForwardFold,
 )
-from app.models.spec import StrategySpec, StrikeMethod
+from app.models.spec import Clock, StrategySpec, StrikeMethod
 
 _N = NormalDist()
 ANNUAL = math.sqrt(252)
@@ -59,6 +61,22 @@ CONC_TOP_DAY_FRACTION = 0.05
 CONC_MATERIAL_SHARE = 0.50
 CONC_GAMMA_DECILE = 0.90
 CONC_MIN_SESSIONS = 40  # fewer marked sessions → the split is noise itself
+
+# 5-min gauntlet cost control (D2d, owner amendment 6 — decided on the D2b
+# benchmark): a full-history 5-min run measured 136s (2,252 sessions, no
+# conditions) to ~200s (with conditions, after the D2c O(n²) fix); a ±20%
+# sweep is ~20 re-runs ≈ 45–70 min — untenable synchronously on the Railway
+# box. The sweep therefore re-runs on the TRAILING window below (≈1 year,
+# ~23s/run → ~8 min dev, disclosed in the report and the verdict). Parameter
+# fragility is a local property; the full-history verdict still comes from
+# the full-history run. docs/HONESTY.md carries the arithmetic.
+SENS_5MIN_WINDOW_SESSIONS = 252
+# entry-time nudge shifts, minutes (owner brief: ±15 / ±30)
+NUDGE_SHIFTS_MIN = [-30, -15, 0, 15, 30]
+
+# session-split bucket boundaries, minutes from midnight ET (D2d)
+SESSION_OPEN_END = 10 * 60 + 30  # 09:30–10:29 = open
+SESSION_MID_END = 15 * 60  # 10:30–14:59 = mid; 15:00+ = close
 
 
 def _returns(equity: list[float]) -> list[float]:
@@ -270,41 +288,101 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], int, Setter]]
     return out
 
 
+def _classify(sharpes: list[float | None]) -> str | None:
+    """Plateau if the median neighbor Sharpe holds ≥ 70% of the peak,
+    else cliff (TECH-SPEC §6.4)."""
+    valid = [s for s in sharpes if s is not None]
+    if len(valid) < 3:
+        return None
+    peak = max(valid)
+    neighbors = sorted(v for v in valid if v != peak) or valid
+    median = neighbors[len(neighbors) // 2]
+    if peak <= 0:
+        return "cliff"  # nothing to stand on anywhere
+    return "plateau" if median >= 0.7 * peak else "cliff"
+
+
+def _sweep_base_spec(
+    spec: StrategySpec, intraday: IntradayProvider | None
+) -> tuple[StrategySpec, str | None]:
+    """The spec every sweep cell re-runs (5-min clock: bounded trailing
+    window per SENS_5MIN_WINDOW_SESSIONS — see the constant's rationale).
+    Every cell INCLUDING the base re-runs on the same window: cells stay
+    comparable, and the note disclosing the window rides the report."""
+    if spec.backtest.clock is not Clock.FIVE_MIN or intraday is None:
+        return spec, None
+    covered = intraday.sessions()
+    # respect the requested window: the sweep subsamples the run's OWN
+    # history, never sessions outside what the user asked to test
+    if spec.backtest.start is not None:
+        covered = [d for d in covered if d >= spec.backtest.start]
+    if spec.backtest.end is not None:
+        covered = [d for d in covered if d <= spec.backtest.end]
+    if len(covered) <= SENS_5MIN_WINDOW_SESSIONS:
+        return spec, None
+    window = covered[-SENS_5MIN_WINDOW_SESSIONS:]
+    base = copy.deepcopy(spec)
+    base.backtest.start = window[0]
+    note = (
+        f"5-min sweep re-runs on the trailing {SENS_5MIN_WINDOW_SESSIONS} "
+        f"covered sessions ({window[0]} →) — gauntlet cost is benchmark-bound "
+        "(docs/HONESTY.md)"
+    )
+    return base, note
+
+
 def sensitivity(
     spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
 ) -> Sensitivity:
     """Perturb each numeric parameter ±20% in 5 steps, re-run the engine,
-    classify the optimum: plateau if median neighbor Sharpe ≥ 70% of the
-    peak, else cliff (TECH-SPEC §6.4). Any cliff makes the verdict cliff."""
+    classify the optimum (plateau/cliff). At the 5-min clock the sweep also
+    nudges the ENTRY TIME ±15/±30 minutes (D2d, per the brief): an edge that
+    only exists at exactly one minute of the day is noise — classified with
+    the same plateau/cliff rules as every parameter."""
+    sweep_spec, window_note = _sweep_base_spec(spec, intraday)
     sweeps: list[ParamSweep] = []
-    for name, values, base_index, setter in _mutations(spec):
+    for name, values, base_index, setter in _mutations(sweep_spec):
         sharpes: list[float | None] = []
         for v in values:
-            mutated = copy.deepcopy(spec)
+            mutated = copy.deepcopy(sweep_spec)
             setter(mutated, v)
             try:
                 r = run_engine(mutated, store, intraday)
                 sharpes.append(_sharpe(_returns(r.equity)))
             except Exception:
                 sharpes.append(None)
-
-        valid = [s for s in sharpes if s is not None]
-        classification: str | None = None
-        if len(valid) >= 3:
-            peak = max(valid)
-            neighbors = sorted(v for v in valid if v != peak) or valid
-            median = neighbors[len(neighbors) // 2]
-            if peak <= 0:
-                classification = "cliff"  # nothing to stand on anywhere
-            else:
-                classification = "plateau" if median >= 0.7 * peak else "cliff"
         sweeps.append(
             ParamSweep(
                 name=name,
                 values=[float(v) for v in values],
                 sharpes=sharpes,
                 base_index=base_index,
-                classification=classification,
+                classification=_classify(sharpes),
+            )
+        )
+
+    if spec.backtest.clock is Clock.FIVE_MIN and intraday is not None:
+        nudge_sharpes: list[float | None] = []
+        has_tod = spec.entry.schedule.time_of_day is not None
+        for shift_min in NUDGE_SHIFTS_MIN:
+            if shift_min < 0 and not has_tod:
+                # entries can't move before the signal/session start —
+                # honest None, never a fabricated cell
+                nudge_sharpes.append(None)
+                continue
+            try:
+                r = run_engine(sweep_spec, store, intraday,
+                               entry_shift_bars=shift_min // 5)
+                nudge_sharpes.append(_sharpe(_returns(r.equity)))
+            except Exception:
+                nudge_sharpes.append(None)
+        sweeps.append(
+            ParamSweep(
+                name="entry_time",
+                values=[float(v) for v in NUDGE_SHIFTS_MIN],
+                sharpes=nudge_sharpes,
+                base_index=NUDGE_SHIFTS_MIN.index(0),
+                classification=_classify(nudge_sharpes),
             )
         )
 
@@ -312,7 +390,40 @@ def sensitivity(
     verdict: str | None = None
     if classified:
         verdict = "cliff" if "cliff" in classified else "plateau"
-    return Sensitivity(params=sweeps, verdict=verdict)
+    return Sensitivity(params=sweeps, verdict=verdict, window_note=window_note)
+
+
+def session_split(result: RunResult) -> SessionSplit:
+    """Bucket entries by their bar time (D2d): open 09:30–10:29, mid
+    10:30–14:59, close 15:00+. P/L attributes to the entry's bucket via the
+    position's realized P/L. Daily runs have no bar times — not meaningful."""
+    if result.clock != "5min":
+        return SessionSplit(meaningful=False, note="daily clock has no session buckets")
+    pl_by_pid: dict[int, float] = {}
+    for t in result.trades:
+        if t.pl is not None and t.position_id is not None:
+            pl_by_pid[t.position_id] = t.pl
+    buckets = {"open_": SessionBucket(), "mid": SessionBucket(), "close": SessionBucket()}
+    n = 0
+    for t in result.trades:
+        if t.action != "OPEN" or t.bar_time is None or t.position_id is None:
+            continue
+        h, m = t.bar_time.split(":")
+        minutes = int(h) * 60 + int(m)
+        key = ("open_" if minutes < SESSION_OPEN_END
+               else "mid" if minutes < SESSION_MID_END else "close")
+        b = buckets[key]
+        pl = pl_by_pid.get(t.position_id)
+        buckets[key] = SessionBucket(
+            trades=b.trades + 1,
+            wins=b.wins + (1 if (pl or 0.0) > 0 else 0),
+            pl=round(b.pl + (pl or 0.0), 2),
+        )
+        n += 1
+    if n == 0:
+        return SessionSplit(meaningful=False, note="no bar-stamped entries")
+    return SessionSplit(meaningful=True, open_=buckets["open_"],
+                        mid=buckets["mid"], close=buckets["close"])
 
 
 # ------------------------------------------------------------ stage 5: DSR

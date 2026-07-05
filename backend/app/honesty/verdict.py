@@ -83,6 +83,11 @@ def grounding_set(payload: dict[str, Any]) -> set[float]:
 def allowed_numbers(report: HonestyReport) -> set[float]:
     out = grounding_set(report.model_dump())
     out.add(float(report.monte_carlo.resamples))
+    # the walk-forward narration counts PROFITABLE folds — a derived count
+    # the dump doesn't carry as a number. Latent until histories grew long
+    # enough (10 years of 1DTE ≈ 58 folds) to push it past the 0–30
+    # counting-number range; caught by the D2 acceptance run's validator.
+    out.add(float(sum(1 for f in report.walk_forward.folds if f.ret > 0)))
     return out
 
 
@@ -223,6 +228,18 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         )
     if report.liquidity is not None and report.liquidity.material and report.liquidity.note:
         caveats.append(f"Liquidity: {report.liquidity.note}.")
+    fs = report.fill_sources
+    modeled = fs.get("alpaca_modeled", 0)
+    total_fills = sum(fs.values())
+    if modeled > 0 and total_fills > 0:
+        caveats.append(
+            f"{modeled} of {total_fills} option fills "
+            f"({round(modeled / total_fills * 100)}%) are MODELED quotes — trade "
+            "prints plus a modeled spread, filled at full adverse slippage. No "
+            "real NBBO existed for them; treat those fills as estimates."
+        )
+    if report.sensitivity.window_note:
+        caveats.append(report.sensitivity.window_note + ".")
     if not wf.meaningful:
         caveats.append(wf.note or "walk-forward not meaningful at this history length")
 
@@ -328,6 +345,15 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
             1,
             f"Only {cov.chain_sessions} of {cov.requested_sessions} days in your date range "
             f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested.",
+        )
+    fs = report.fill_sources
+    modeled = fs.get("alpaca_modeled", 0)
+    total_fills = sum(fs.values())
+    if modeled > 0 and total_fills > 0:
+        caveats.append(
+            f"{modeled} of {total_fills} fills ({round(modeled / total_fills * 100)}%) "
+            "used ESTIMATED prices (no real quotes existed) at worst-case slippage — "
+            "take those with extra salt."
         )
     liq = report.liquidity
     if liq is not None and liq.material:

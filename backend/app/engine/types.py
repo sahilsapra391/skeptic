@@ -75,6 +75,7 @@ class TradeEvent:
     pl: float | None = None
     reason: str | None = None
     position_id: int | None = None
+    bar_time: str | None = None  # "HH:MM" ET when the event happened at a 5-min bar (D2d)
 
 
 @dataclass
