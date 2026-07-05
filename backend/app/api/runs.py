@@ -48,12 +48,40 @@ class ParseRequest(BaseModel):
     answers: dict[str, Any] | None = None
 
 
+VALID_ORIGINS = {"user", "auto_unlock", "receipt"}
+AUTO_NOTE_MAX = 120
+
+
 class BacktestRequest(BaseModel):
     spec: dict[str, Any]
     seed: int | None = None
+    # D3: automatic runs declare themselves — origin drives the trial-
+    # counter policy and the Library's upgrade markers
+    origin: str = "user"
+    parent_run_id: str | None = None
+    auto_note: str | None = None  # e.g. "62 new sessions" (server-truncated)
 
 
-def _execute_run(run_id: str) -> None:
+def _inherit_trials(parent_run_id: str | None, family: str) -> int:
+    """Trial count for an AUTO re-run (owner decision, HONESTY.md): the same
+    spec on more data is NOT a new try at the family — no bump. Prefer the
+    parent's recorded trial count; fall back to the current counter value
+    read without incrementing."""
+    if parent_run_id:
+        with db.session() as s:
+            parent = s.get(db.Run, parent_run_id)
+            if parent is not None and parent.stats_json:
+                try:
+                    trials = json.loads(parent.stats_json)["honesty_report"]["dsr"]["trials"]
+                    return max(int(trials), 1)
+                except Exception:
+                    pass
+    with db.session() as s:
+        row = s.get(db.TrialCounter, family)
+        return max(row.trials if row else 1, 1)
+
+
+def _execute_run(run_id: str, auto_note: str | None = None) -> None:
     """Background job: load the lake, run the engine, store the payload."""
     with db.session() as s:
         run = s.get(db.Run, run_id)
@@ -64,6 +92,8 @@ def _execute_run(run_id: str) -> None:
         s.add(db.RunEvent(run_id=run_id, stage=0, label="backtest running"))
         s.commit()
         spec_json = run.spec_json
+        origin = run.origin or "user"
+        parent_run_id = run.parent_run_id
 
     try:
         spec = StrategySpec.model_validate(json.loads(spec_json))
@@ -80,10 +110,16 @@ def _execute_run(run_id: str) -> None:
             intraday = load_intraday_store(spec.underlying.ticker.value)
         result = run_backtest(spec, store, intraday)
 
-        # every attempt at a family is a trial — the multiple-testing bias
-        # the deflated Sharpe corrects for (TECH-SPEC §6.5)
+        # every HUMAN attempt at a family is a trial — the multiple-testing
+        # bias the deflated Sharpe corrects for (TECH-SPEC §6.5). AUTO
+        # re-runs are the same spec on more data — no new choice was made,
+        # so they inherit the parent's count instead of bumping (owner
+        # decision; docs/HONESTY.md).
         family = f"{spec.underlying.ticker.value}:{spec.position.structure.value}"
-        trials = db.bump_trials(family)
+        if origin == "auto_unlock":
+            trials = _inherit_trials(parent_run_id, family)
+        else:
+            trials = db.bump_trials(family)
 
         previews: list[dict[str, str]] = []
 
@@ -122,12 +158,31 @@ def _execute_run(run_id: str) -> None:
                 return
             run.status = "done"
             run.stage = 6
+            if origin == "auto_unlock":
+                payload["meta"] += " · auto-upgraded" + (f" ({auto_note})" if auto_note else "")
             run.payload_json = json.dumps(payload)
             run.stats_json = json.dumps(stats)
             run.unlock_json = unlock.model_dump_json() if unlock else None
             created = run.created_at.strftime("%b %-d ’%y") if run.created_at else ""
-            run.summary_json = json.dumps(run_summary(run_id, payload, created))
+            summary = run_summary(run_id, payload, created)
+            if origin == "auto_unlock":
+                summary["upgradeOf"] = parent_run_id
+                summary["autoNote"] = (
+                    f"re-ran automatically — {auto_note}" if auto_note
+                    else "re-ran automatically on new data"
+                )
+            run.summary_json = json.dumps(summary)
             s.add(db.RunEvent(run_id=run_id, stage=6, label="gauntlet complete"))
+            # the superseded refusal points forward to its upgrade
+            if origin == "auto_unlock" and parent_run_id:
+                parent = s.get(db.Run, parent_run_id)
+                if parent is not None and parent.summary_json:
+                    try:
+                        psum = json.loads(parent.summary_json)
+                        psum["supersededBy"] = run_id
+                        parent.summary_json = json.dumps(psum)
+                    except Exception:
+                        pass
             s.commit()
     except Exception as exc:
         log.exception("run %s failed", run_id)
@@ -175,6 +230,9 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
     if req.seed is not None:
         spec.backtest.seed = req.seed
 
+    if req.origin not in VALID_ORIGINS:
+        raise HTTPException(status_code=422, detail=f"unknown origin {req.origin!r}")
+
     run_id = uuid.uuid4().hex[:12]
     with db.session() as s:
         s.add(
@@ -184,10 +242,13 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
                 stage=0,
                 seed=spec.backtest.seed,
                 spec_json=spec.model_dump_json(),
+                origin=req.origin,
+                parent_run_id=req.parent_run_id,
             )
         )
         s.commit()
-    tasks.add_task(_execute_run, run_id)
+    note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
+    tasks.add_task(_execute_run, run_id, note)
     return {"run_id": run_id, "demo": False, "status": "queued"}
 
 

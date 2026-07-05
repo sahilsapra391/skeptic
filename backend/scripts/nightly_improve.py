@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -29,6 +30,10 @@ from app import db  # noqa: E402
 from app.data import r2  # noqa: E402
 
 log = logging.getLogger("nightly")
+
+# Auto re-runs are capped per night (owner decision) — the queue drains
+# across nights rather than storming Railway and the LLM budget at once.
+AUTO_RERUNS_PER_NIGHT = 3
 
 # A refused run is worth re-running once this many NEW covered sessions
 # have arrived since the refusal — below that, thin-sample refusals would
@@ -107,13 +112,57 @@ def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
     return decisions
 
 
+def execute_unlocks(decisions: list[UnlockDecision]) -> int:
+    """Submit capped re-runs through the backend API (Railway executes —
+    warm caches, LLM key, same DB; this script never runs the engine).
+    Returns how many were submitted."""
+    import requests
+
+    base = os.environ.get("SKEPTIC_API_URL", "").rstrip("/")
+    if not base:
+        log.error("SKEPTIC_API_URL not set — cannot execute re-runs")
+        return 0
+    headers = {}
+    token = os.environ.get("SKEPTIC_ACCESS_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    ready = [d for d in decisions if d.should_rerun][:AUTO_RERUNS_PER_NIGHT]
+    submitted = 0
+    for d in ready:
+        with db.session() as s:
+            row = s.get(db.Run, d.run_id)
+            spec_json = row.spec_json if row else None
+        if not spec_json:
+            continue
+        resp = requests.post(
+            f"{base}/api/backtest",
+            json={
+                "spec": json.loads(spec_json),
+                "origin": "auto_unlock",
+                "parent_run_id": d.run_id,
+                "auto_note": f"{d.new_sessions} new sessions",
+            },
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            submitted += 1
+            log.info("auto re-run submitted for %s → %s", d.run_id,
+                     resp.json().get("run_id"))
+        else:
+            log.error("submit failed for %s: HTTP %s %s", d.run_id,
+                      resp.status_code, resp.text[:160])
+    return submitted
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dry-run", action="store_true", default=True,
-                    help="report only (D3a: always dry-run; --execute lands in D3b)")
-    ap.parse_args()
+    ap.add_argument("--execute", action="store_true",
+                    help="submit capped re-runs via the API (default: dry-run)")
+    args = ap.parse_args()
 
     db.init_db()
     decisions = scan_unlocks()
@@ -121,10 +170,13 @@ def main() -> int:
         log.info("unlock scan: no refused runs waiting")
         return 0
     for d in decisions:
-        marker = "WOULD RE-RUN" if d.should_rerun else "still waiting"
+        marker = "RE-RUN" if d.should_rerun else "still waiting"
         log.info("[%s] %s %s@%s — %s", marker, d.run_id, d.ticker, d.clock, d.reason)
     log.info("unlock scan: %d waiting, %d ready",
              len(decisions), sum(1 for d in decisions if d.should_rerun))
+    if args.execute:
+        n = execute_unlocks(decisions)
+        log.info("submitted %d auto re-run(s) (cap %d/night)", n, AUTO_RERUNS_PER_NIGHT)
     return 0
 
 
