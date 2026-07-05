@@ -111,6 +111,14 @@ def build_fixture_store(
 ) -> MarketStore:
     """Fixture loader: plain dicts → MarketStore (same shape the real
     loader produces, so fixtures exercise the identical engine path)."""
+    def _f(row: dict[str, object], k: str) -> float | None:
+        v = row.get(k)
+        return None if v is None else float(v)  # type: ignore[arg-type]
+
+    def _i(row: dict[str, object], k: str) -> int | None:
+        v = row.get(k)
+        return None if v is None else int(v)  # type: ignore[call-overload]
+
     chain_map: dict[date, dict[ContractKey, Quote]] = {}
     for ds, rows in chains.items():
         d = date.fromisoformat(ds)
@@ -122,10 +130,19 @@ def build_fixture_store(
                 strike=float(row["strike"]),  # type: ignore[arg-type]
             )
             per[key] = Quote(
-                bid=None if row.get("bid") is None else float(row["bid"]),  # type: ignore[arg-type]
-                ask=None if row.get("ask") is None else float(row["ask"]),  # type: ignore[arg-type]
-                delta=None if row.get("delta") is None else float(row["delta"]),  # type: ignore[arg-type]
-                iv=None if row.get("iv") is None else float(row["iv"]),  # type: ignore[arg-type]
+                bid=_f(row, "bid"),
+                ask=_f(row, "ask"),
+                delta=_f(row, "delta"),
+                iv=_f(row, "iv"),
+                gamma=_f(row, "gamma"),
+                theta=_f(row, "theta"),
+                vega=_f(row, "vega"),
+                rho=_f(row, "rho"),
+                volume=_i(row, "volume"),
+                open_interest=_i(row, "open_interest"),
+                last=_f(row, "last"),
+                greeks_source=None if row.get("greeks_source") is None
+                else str(row["greeks_source"]),
             )
         chain_map[d] = per
 
