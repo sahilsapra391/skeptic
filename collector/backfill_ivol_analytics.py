@@ -136,24 +136,21 @@ class Job:
             )
 
     def ivs(self) -> None:
-        months = []
-        y, m = self.from_year, 1
-        now = datetime.now(timezone.utc)
-        while (y, m) <= (now.year, now.month):
-            months.append(f"{y}-{m:02d}")
-            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-
-        def last_day(month: str) -> str:
-            y0, m0 = int(month[:4]), int(month[5:])
-            nxt = date(y0 + (m0 == 12), (m0 % 12) + 1, 1)
-            return (nxt - timedelta(days=1)).isoformat()
-
+        # the ivs endpoint IGNORES from/to (returns zero rows) — verified
+        # live 2026-07-04; only single-date queries work, so surfaces pull
+        # one session per request. Surface history starts ~2008.
+        start = date(max(self.from_year, 2007), 1, 1)
+        end = datetime.now(timezone.utc).date() - timedelta(days=1)
+        days, d = [], start
+        while d <= end:
+            if d.weekday() < 5:
+                days.append(d.isoformat())
+            d += timedelta(days=1)
         for t in self.tickers:
             self._run_chunks(
-                "ivs", t, months,
-                lambda mo, t=t: _get(self.h, "/equities/eod/ivs", symbol=t,
-                                     **{"from": f"{mo}-01", "to": last_day(mo)}),
-                lambda mo, t=t: f"reference/ivol/ivs/ticker={t}/month={mo}.parquet",
+                "ivs", t, days,
+                lambda day, t=t: _get(self.h, "/equities/eod/ivs", symbol=t, date=day),
+                lambda day, t=t: f"reference/ivol/ivs/ticker={t}/date={day}/surface.parquet",
             )
 
     def bars1m(self) -> None:
