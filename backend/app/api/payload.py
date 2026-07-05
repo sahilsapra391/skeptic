@@ -536,9 +536,10 @@ def build_run_payload(
         "stage": 6,
         "name": spec.meta.name,
         "meta": (
-            f"{result.ticker} · {structure} · run {today} · effective window {window} "
-            f"(bounded by coverage) · seed {result.seed} · trials {report.dsr.trials} · "
-            f"fill model liquidity-v1 · verdict: {verdict.source}"
+            f"{result.ticker} · {structure} · clock {result.clock} · run {today} · "
+            f"effective window {window} (bounded by coverage) · seed {result.seed} · "
+            f"trials {report.dsr.trials} · fill model liquidity-v1 · "
+            f"verdict: {verdict.source}"
         ),
         "spec": None,
         "verdict": _verdict_block(report, verdict),
@@ -564,6 +565,9 @@ def build_run_payload(
         "coverage": report.coverage.model_dump(),
         "liquidity": report.liquidity.model_dump() if report.liquidity else None,
         "concentration": report.concentration.model_dump() if report.concentration else None,
+        # per-fill provenance (D2b): which quote record priced each leg fill
+        "fillSources": result.fill_sources,
+        "clock": result.clock,
         "greeksSeries": {
             "delta": _downsample_nullable(result.dates, result.portfolio_delta),
             "gamma": _downsample_nullable(result.dates, result.portfolio_gamma),

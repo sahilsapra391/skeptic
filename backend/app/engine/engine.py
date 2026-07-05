@@ -1,31 +1,49 @@
-"""Event-driven daily EOD engine (TECH-SPEC §5).
+"""ONE event-driven engine with a declared clock (TECH-SPEC §5 + D2b).
 
-Daily order of operations:
+Session order of operations (every clock):
   1. unwind assignment stock at today's OPEN (scheduled yesterday)
-  2. exits at today's close quotes — priority: stop → profit target →
-     time exit → condition exits
-  3. expiration settlement for positions expiring today
-  4. entries (schedule + conditions + capacity + chain availability);
-     anything unfillable is a SKIP with a reason code
-  5. mark-to-market at conservative liquidation prices → equity point
+  2. decisions —
+       clock="daily": exits at today's close quotes, then entries
+       clock="5min":  per 5-minute bar, exits THEN entries (so a position
+       opened at bar t is first exit-evaluated at bar t+1 — owner
+       amendment 2: a stop can never fire on its own entry bar)
+  3. expiration settlement at the close (0DTE settles same session)
+  4. mark-to-market at conservative liquidation prices → ONE equity point
+     per session at every clock (owner decision: daily-close equity keeps
+     every honesty stage's semantics)
+
+Exit priority, canonical at every clock (owner amendment 3): stop_loss →
+delta_stop → profit_target → theta_harvest → time_exit → condition exits.
+DTE basis: calendar days at clock="daily" (v1 semantics, bit-identical —
+the pinned regression proves it); TRADING days at clock="5min".
 
 Positions are marked and exited with the SAME fill model used to open
-them (guardrail #1). Days without a chain snapshot mark stale and cannot
-fill exits — honest behavior on checkpoint-marked history (DOLTHUB-EVAL
-§7); the settlement path still works because it uses underlying closes.
+them (guardrail #1), from REAL quote records only — every leg fill logs
+its provenance (fill_sources). Sessions without quotes mark stale and
+cannot fill exits — honest behavior on checkpoint-marked history; the
+settlement path still works because it uses underlying closes.
 """
 
 from __future__ import annotations
 
+from bisect import bisect_right
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from app.engine import fills
 from app.engine.conditions import all_conditions_pass
-from app.engine.market import MarketStore, MarketView
+from app.engine.market import (
+    IntradayProvider,
+    IntradayView,
+    MarketStore,
+    MarketView,
+    MarketViewLike,
+)
 from app.engine.selection import select_expiration, select_legs
 from app.engine.types import MULT, ContractKey, OpenLeg, Position, Quote, RunResult, TradeEvent
 from app.models.spec import (
+    Clock,
     Costs,
     Frequency,
     LiquidityMode,
@@ -34,6 +52,13 @@ from app.models.spec import (
     StrategySpec,
     Structure,
 )
+
+DteFn = Callable[[date], int]
+
+
+class SliceCoverageError(ValueError):
+    """The spec needs more than the intraday record covers — refused BEFORE
+    running (owner amendment 4): a plain reason beats a zero-fill grind."""
 
 
 @dataclass
@@ -49,11 +74,13 @@ class _State:
     fills_penalized: int = 0
     fills_stressed: int = 0
     fills_unknown_liquidity: int = 0
+    fill_sources: dict[str, int] = field(default_factory=dict)  # provenance (D2b)
 
 
 def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
-                     stressed: bool) -> None:
+                     stressed: bool, source: str) -> None:
     state.option_leg_fills += 1
+    state.fill_sources[source] = state.fill_sources.get(source, 0) + 1
     sp = fills.spread_pct(q)
     if sp is not None:
         state.fill_spread_pcts.append(sp)
@@ -75,6 +102,83 @@ def _position_desc(pos: Position) -> str:
     return " ".join(_leg_desc(leg) for leg in pos.legs)
 
 
+class BarView:
+    """One intraday bar through the MarketViewLike surface — the SAME
+    entry/exit/fill code runs at every clock. Daily-history reads
+    (condition indicators, VIX, ATM-IV) are bounded at the PREVIOUS
+    session's close: today's daily close does not exist yet at an
+    intraday bar (guardrail #2)."""
+
+    def __init__(self, iview: IntradayView, prev: MarketView) -> None:
+        self._iview = iview
+        self._prev = prev
+
+    @property
+    def as_of(self) -> date:
+        return self._iview.session
+
+    @property
+    def has_chain(self) -> bool:
+        return bool(self._iview.chain())
+
+    @property
+    def fill_source(self) -> str:
+        return self._iview.quote_source
+
+    def chain(self) -> dict[ContractKey, Quote]:
+        return self._iview.chain()
+
+    def quote(self, key: ContractKey) -> Quote | None:
+        got = self._iview.quote_at(key)
+        return None if got is None else got[0]
+
+    def close(self, d: date | None = None) -> float | None:
+        if d is not None and d != self._iview.session:
+            return self._prev.close(d)
+        return self._iview.underlying_last()
+
+    def closes_upto(self) -> list[float]:
+        return self._prev.closes_upto()
+
+    def vix(self) -> float | None:
+        return self._prev.vix()
+
+    def atm_iv_history(self) -> list[float]:
+        return self._prev.atm_iv_history()
+
+    # IVX/HV are EOD series — today's observation doesn't exist yet at an
+    # intraday bar, so these are bounded at the previous session too
+    def ivx_30d(self) -> float | None:
+        return self._prev.ivx_30d()
+
+    def ivx_30d_history(self) -> list[float]:
+        return self._prev.ivx_30d_history()
+
+    def hv_30d(self) -> float | None:
+        return self._prev.hv_30d()
+
+
+def _calendar_dte_fn(as_of: date) -> DteFn:
+    def fn(exp: date) -> int:
+        return (exp - as_of).days
+
+    return fn
+
+
+def _trading_dte_fn(store: MarketStore, as_of: date) -> DteFn:
+    """Trading-day DTE (owner-confirmed 5-min basis): sessions strictly
+    after `as_of` up to and including the expiry — 0DTE = 0, Friday's
+    "1DTE" = Monday's expiry."""
+    sessions = store.sessions
+
+    def fn(exp: date) -> int:
+        i = bisect_right(sessions, as_of)
+        j = bisect_right(sessions, exp)
+        return max(j - i, 0)
+
+    return fn
+
+
 def _close_slip(q: Quote, costs: Costs) -> float:
     """The slip a close-side price uses: base, OI-scaled when OI is known
     and thin (fills.effective_slip). Exit triggers, exit fills and marks all
@@ -84,7 +188,7 @@ def _close_slip(q: Quote, costs: Costs) -> float:
     )
 
 
-def _liq_value_per_share(pos: Position, view: MarketView, costs: Costs) -> float | None:
+def _liq_value_per_share(pos: Position, view: MarketViewLike, costs: Costs) -> float | None:
     """Signed liquidation value per contract-set per share, at today's
     quotes: closing longs sells (+), closing shorts buys back (−).
     None when any unsettled leg lacks a usable quote today."""
@@ -103,7 +207,7 @@ def _liq_value_per_share(pos: Position, view: MarketView, costs: Costs) -> float
     return total
 
 
-def _refresh_marks(pos: Position, view: MarketView, costs: Costs) -> None:
+def _refresh_marks(pos: Position, view: MarketViewLike, costs: Costs) -> None:
     for leg in pos.legs:
         if leg.settled:
             continue
@@ -129,7 +233,7 @@ def _position_value(pos: Position, close_px: float) -> float:
 
 
 def _portfolio_greeks(
-    positions: list[Position], view: MarketView
+    positions: list[Position], view: MarketViewLike
 ) -> tuple[float | None, float | None, float | None, float | None]:
     """Aggregate (delta, gamma, theta, vega) of all open positions at
     today's quotes. Signed: long +, short −; option greeks × qty × MULT,
@@ -211,12 +315,26 @@ def _risk_per_contract(
     return max(-premium * MULT, 0.0)
 
 
-def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: float) -> None:
+def _try_entry(
+    spec: StrategySpec,
+    state: _State,
+    view: MarketViewLike,
+    equity_now: float,
+    dte_fn: DteFn | None = None,
+    skip_dedupe: set[str] | None = None,
+) -> None:
     day = view.as_of
     slip = spec.costs.slippage_half_spread_fraction
     commission = spec.costs.commission_per_contract
 
     def skip(reason: str, detail: str = "") -> None:
+        # at the 5-min clock an entry is attempted at every bar; the same
+        # reason is logged once per session, not 80 times (dedupe set is
+        # per-session, supplied by the bar loop; daily passes None)
+        if skip_dedupe is not None:
+            if reason in skip_dedupe:
+                return
+            skip_dedupe.add(reason)
         state.trades.append(
             TradeEvent(day=day, action="SKIP", detail=detail or "entry candidate", reason=reason)
         )
@@ -238,7 +356,7 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
         skip("no_underlying_close")
         return
 
-    expiration = select_expiration(chain, day, spec.position.expiration_selection)
+    expiration = select_expiration(chain, day, spec.position.expiration_selection, dte_fn)
     if expiration is None:
         skip("no_expiration_in_window")
         return
@@ -348,7 +466,7 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
         )
 
     for q, eff, was_stressed in zip(leg_quotes, leg_slips, leg_stressed, strict=True):
-        _record_leg_fill(state, q, eff, slip, was_stressed)
+        _record_leg_fill(state, q, eff, slip, was_stressed, view.fill_source)
 
     state.positions.append(pos)
     if spec.entry.schedule.frequency is Frequency.MONTHLY:
@@ -365,7 +483,7 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
 
 
 def _close_position(
-    pos: Position, view: MarketView, state: _State, spec: StrategySpec, reason: str
+    pos: Position, view: MarketViewLike, state: _State, spec: StrategySpec, reason: str
 ) -> bool:
     """Close all unsettled option legs at today's quotes. False if any leg
     lacks a usable quote (the attempt is retried on later sessions).
@@ -389,7 +507,7 @@ def _close_position(
         state.cash += cash_delta
         pos.cash_flow += cash_delta
         leg.settled = True
-        _record_leg_fill(state, q, eff, slip, stressed=False)
+        _record_leg_fill(state, q, eff, slip, stressed=False, source=view.fill_source)
     pos.closed = pos.stock_shares == 0
     state.trades.append(
         TradeEvent(
@@ -404,7 +522,7 @@ def _close_position(
     return True
 
 
-def _delta_stop_hit(pos: Position, view: MarketView, threshold: float) -> bool:
+def _delta_stop_hit(pos: Position, view: MarketViewLike, threshold: float) -> bool:
     """True when any WATCHED leg's |delta| reaches the threshold at today's
     quotes. Watched = short legs when the position has any, else all legs.
     Legs without a delta today are unevaluable — the rule waits on them,
@@ -419,7 +537,11 @@ def _delta_stop_hit(pos: Position, view: MarketView, threshold: float) -> bool:
     return False
 
 
-def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
+def _check_exits(
+    spec: StrategySpec, state: _State, view: MarketViewLike, dte_fn: DteFn | None = None
+) -> None:
+    if dte_fn is None:
+        dte_fn = _calendar_dte_fn(view.as_of)
     exit_rules = spec.exit
     for pos in state.positions:
         if pos.closed or all(leg.settled for leg in pos.legs):
@@ -451,7 +573,7 @@ def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
         ):
             _close_position(pos, view, state, spec, "profit_target")
             continue
-        dte = min((leg.key.expiration - view.as_of).days for leg in pos.legs if not leg.settled)
+        dte = min(dte_fn(leg.key.expiration) for leg in pos.legs if not leg.settled)
         th = exit_rules.theta_harvest
         if (
             th is not None
@@ -469,7 +591,7 @@ def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
             _close_position(pos, view, state, spec, "condition_exit")
 
 
-def _settle_expirations(spec: StrategySpec, state: _State, view: MarketView) -> None:
+def _settle_expirations(spec: StrategySpec, state: _State, view: MarketViewLike) -> None:
     day = view.as_of
     close_px = view.close()
     if close_px is None:
@@ -593,21 +715,70 @@ def _unwind_pending_stock(state: _State, view: MarketView) -> None:
         _finalize_if_done(pos, state, view.as_of)
 
 
-def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
-    if not store.chain_dates:
-        raise ValueError("no options coverage for this window — nothing to simulate")
+def _check_slice_coverage(spec: StrategySpec, intraday: IntradayProvider) -> None:
+    """Owner amendment 4: refuse BEFORE running when the spec needs more
+    than the intraday record covers — a plain reason, never a zero-fill
+    grind. Until D2d, intraday quotes are the short-DTE ATM capture slice."""
+    sel = spec.position.expiration_selection
+    cap = intraday.slice_max_trading_dte
+    if sel.min_dte > cap:
+        raise SliceCoverageError(
+            f"requested {sel.min_dte}–{sel.max_dte} DTE at the 5-minute clock; "
+            f"intraday quotes cover 0–{cap} trading-DTE (ATM±$8, the short-DTE "
+            f"slice) — use clock \"daily\" for longer tenors"
+        )
+    if not intraday.sessions():
+        raise SliceCoverageError(
+            f"no intraday sessions in the lake for {spec.underlying.ticker.value} — "
+            "the 5-minute record has not reached this ticker yet; use clock \"daily\""
+        )
 
-    first_chain, last_chain = store.chain_dates[0], store.chain_dates[-1]
-    req_start = spec.backtest.start or first_chain
-    req_end = spec.backtest.end or store.sessions[-1]
-    eff_start = max(req_start, first_chain)
-    eff_end = min(req_end, store.sessions[-1])
+
+def _prev_session_view(store: MarketStore, day: date) -> MarketView:
+    """Daily context an intraday bar may see: strictly BEFORE today's close."""
+    i = bisect_right(store.sessions, day) - 1
+    if i > 0:
+        return MarketView(store, store.sessions[i - 1])
+    return MarketView(store, day - timedelta(days=1))
+
+
+def run_engine(
+    spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
+) -> RunResult:
+    five_min = spec.backtest.clock is Clock.FIVE_MIN
+
+    if five_min:
+        if intraday is None:
+            raise SliceCoverageError(
+                "the 5-minute clock needs the intraday store and none was provided"
+            )
+        _check_slice_coverage(spec, intraday)
+        covered = [d for d in intraday.sessions() if d in store.underlying_close]
+        if not covered:
+            raise SliceCoverageError(
+                "no intraday sessions overlap the underlying record — nothing to simulate"
+            )
+        req_start = spec.backtest.start or covered[0]
+        req_end = spec.backtest.end or covered[-1]
+        eff_start = max(req_start, covered[0])
+        eff_end = min(req_end, store.sessions[-1])
+        last_chain = covered[-1]
+    else:
+        if not store.chain_dates:
+            raise ValueError("no options coverage for this window — nothing to simulate")
+        first_chain, last_chain = store.chain_dates[0], store.chain_dates[-1]
+        req_start = spec.backtest.start or first_chain
+        req_end = spec.backtest.end or store.sessions[-1]
+        eff_start = max(req_start, first_chain)
+        eff_end = min(req_end, store.sessions[-1])
+
     clock = [d for d in store.sessions if eff_start <= d <= eff_end]
     if not clock:
         raise ValueError("effective window is empty after bounding by coverage")
 
     # what the user asked to test, so the honesty layer can compare it against
-    # the sessions that actually carried chains (the seventeen-fills gap)
+    # the sessions that actually carried quotes (the seventeen-fills gap —
+    # at the 5-min clock "carried quotes" means an intraday slice)
     requested_sessions = sum(1 for d in store.sessions if req_start <= d <= req_end)
 
     state = _State(cash=spec.backtest.initial_capital, positions=[], trades=[])
@@ -619,15 +790,70 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
         requested_start=req_start,
         requested_end=req_end,
         requested_sessions=requested_sessions,
+        clock=spec.backtest.clock.value,
     )
+    covered_sessions = 0
 
     for day in clock:
         view = MarketView(store, day)
         _unwind_pending_stock(state, view)
+
+        slc = intraday.slice_for(day) if five_min and intraday is not None else None
+        if slc is not None and slc.bars:
+            # ------------------------- 5-min bar loop (the declared clock)
+            covered_sessions += 1
+            prev_view = _prev_session_view(store, day)
+            dte_fn = _trading_dte_fn(store, day)
+            session_skips: set[str] = set()
+            opened_this_session = False
+            for bar in slc.bars:
+                bview = BarView(IntradayView(slc, bar), prev_view)
+                events_before = len(state.trades)
+                # exits BEFORE entries at every bar: a position opened at
+                # bar t is first evaluated at bar t+1 (owner amendment 2 —
+                # a stop can never fire on its own entry bar)
+                _check_exits(spec, state, bview, dte_fn)
+                if not opened_this_session and _schedule_matches(spec, state, day):
+                    equity_now = state.cash + sum(
+                        _position_value(p, bview.close() or 0.0)
+                        for p in state.positions
+                        if not p.closed
+                    )
+                    before = len(state.positions)
+                    _try_entry(spec, state, bview, equity_now, dte_fn, session_skips)
+                    opened_this_session = len(state.positions) > before
+                # every fill stays inspectable: stamp this bar's time onto
+                # the events it produced (the log is day-granular otherwise)
+                for ev in state.trades[events_before:]:
+                    if ev.action in ("OPEN", "CLOSE"):
+                        ev.detail += f" · {bar.strftime('%H:%M')}"
+            _settle_expirations(spec, state, view)  # 0DTE settles at the close
+            close_px = view.close()
+            if close_px is not None:
+                open_positions = [p for p in state.positions if not p.closed]
+                last_bar = BarView(IntradayView(slc, slc.bars[-1]), prev_view)
+                for pos in open_positions:
+                    _refresh_marks(pos, last_bar, spec.costs)
+                equity = state.cash + sum(_position_value(p, close_px) for p in open_positions)
+                result.dates.append(day)
+                result.equity.append(round(equity, 2))
+                pd_, pg, pt, pv = _portfolio_greeks(open_positions, last_bar)
+                result.portfolio_delta.append(None if pd_ is None else round(pd_, 2))
+                result.portfolio_gamma.append(None if pg is None else round(pg, 4))
+                result.portfolio_theta.append(None if pt is None else round(pt, 2))
+                result.portfolio_vega.append(None if pv is None else round(pv, 2))
+                if open_positions:
+                    result.days_in_market += 1
+            continue
+
+        # ------------------------------ daily close path (also the 5-min
+        # clock's fallback on sessions without an intraday slice: exits,
+        # settlement and marks use the REAL EOD chain — coarser timing,
+        # never synthetic — and NO new entries are minted)
         _check_exits(spec, state, view)
         _settle_expirations(spec, state, view)
 
-        if day <= last_chain and _schedule_matches(spec, state, day):
+        if not five_min and day <= last_chain and _schedule_matches(spec, state, day):
             equity_now = state.cash + sum(
                 _position_value(p, view.close() or 0.0)
                 for p in state.positions
@@ -655,10 +881,13 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
     result.trades = state.trades
     result.filled = sum(1 for t in state.trades if t.action == "OPEN")
     result.skipped = sum(1 for t in state.trades if t.action == "SKIP")
-    result.sessions_with_chain = sum(1 for d in clock if d in store.chains)
+    result.sessions_with_chain = (
+        covered_sessions if five_min else sum(1 for d in clock if d in store.chains)
+    )
     result.fill_spread_pcts = state.fill_spread_pcts
     result.option_leg_fills = state.option_leg_fills
     result.fills_penalized = state.fills_penalized
     result.fills_stressed = state.fills_stressed
     result.fills_unknown_liquidity = state.fills_unknown_liquidity
+    result.fill_sources = state.fill_sources
     return result

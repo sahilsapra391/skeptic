@@ -186,6 +186,10 @@ export interface RunPayload {
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
   concentration?: ConcentrationBlock | null;
+  /** D2b: the declared clock + per-fill quote provenance
+   * (eod_chain / ivol_5min / cboe_minute → leg-fill counts) */
+  clock?: string;
+  fillSources?: Record<string, number>;
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
   oosSplitDate?: string; // ISO date where the OOS window begins
   honesty: HonestyPanels;

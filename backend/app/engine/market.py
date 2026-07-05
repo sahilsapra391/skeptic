@@ -20,6 +20,7 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Protocol
 
 from app.engine.types import ContractKey, Quote
 
@@ -53,6 +54,38 @@ class MarketStore:
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
 
 
+class MarketViewLike(Protocol):
+    """The surface strategy logic reads through. Satisfied by MarketView
+    (daily close) and the engine's BarView (one intraday bar) — the SAME
+    entry/exit/fill code runs at every clock (D2 architecture)."""
+
+    @property
+    def as_of(self) -> date: ...
+    @property
+    def has_chain(self) -> bool: ...
+    @property
+    def fill_source(self) -> str: ...
+    def chain(self) -> dict[ContractKey, Quote]: ...
+    def quote(self, key: ContractKey) -> Quote | None: ...
+    def close(self, d: date | None = None) -> float | None: ...
+    def closes_upto(self) -> list[float]: ...
+    def vix(self) -> float | None: ...
+    def atm_iv_history(self) -> list[float]: ...
+    def ivx_30d(self) -> float | None: ...
+    def ivx_30d_history(self) -> list[float]: ...
+    def hv_30d(self) -> float | None: ...
+
+
+class IntradayProvider(Protocol):
+    """Per-session access to the 5-minute record (app/data/intraday.py's
+    IntradayStore in production; plain fixtures in tests)."""
+
+    @property
+    def slice_max_trading_dte(self) -> int: ...
+    def sessions(self) -> list[date]: ...
+    def slice_for(self, session: date) -> SessionSlice | None: ...
+
+
 class MarketView:
     """All reads bounded by as_of. No accessor can see past it."""
 
@@ -63,6 +96,10 @@ class MarketView:
     @property
     def as_of(self) -> date:
         return self._as_of
+
+    @property
+    def fill_source(self) -> str:
+        return "eod_chain"  # daily fills come from the EOD chain record
 
     def _check(self, d: date) -> None:
         if d > self._as_of:
@@ -173,6 +210,10 @@ class IntradayView:
     @property
     def session(self) -> date:
         return self._slice.session
+
+    @property
+    def quote_source(self) -> str:
+        return self._slice.quote_source
 
     def _check(self, ts: datetime) -> None:
         if ts > self._bar_ts:

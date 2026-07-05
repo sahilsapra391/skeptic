@@ -261,12 +261,17 @@ def _write_cache(ticker: str, d: str, opt: pd.DataFrame,
 # --------------------------------------------------------------------- store
 
 class IntradayStore:
-    """Lazy, LRU-bounded access to a ticker's 5-minute sessions."""
+    """Lazy, LRU-bounded access to a ticker's 5-minute sessions.
+    Satisfies app.engine.market.IntradayProvider."""
 
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
         self._sessions: dict[date, str] | None = None  # session -> source
         self._lru: OrderedDict[date, SessionSlice | None] = OrderedDict()
+
+    @property
+    def slice_max_trading_dte(self) -> int:
+        return SLICE_MAX_TRADING_DTE
 
     def _session_sources(self) -> dict[date, str]:
         if self._sessions is None:
@@ -285,28 +290,45 @@ class IntradayStore:
     def source_for(self, session: date) -> str | None:
         return self._session_sources().get(session)
 
-    def slice_for(self, session: date) -> SessionSlice | None:
-        if session in self._lru:
-            self._lru.move_to_end(session)
-            return self._lru[session]
+    def _ensure_cached(
+        self, session: date
+    ) -> tuple[pd.DataFrame, pd.DataFrame | None, str] | None:
+        """Frames for a session, from the disk cache or the lake (writing
+        the cache). Thread-safe for concurrent prefetch."""
         source = self.source_for(session)
         if source is None:
             return None
         d = session.isoformat()
-
         cached = _read_cached(self.ticker, d)
         if cached is not None and cached[2] == source:
-            opt, und, _ = cached
-        else:
-            s3 = r2.r2_client()
-            frames = (_ivol_frames(s3, self.ticker, d) if source == "ivol_5min"
-                      else _cboe_frames(s3, self.ticker, d))
-            if frames is None:
-                self._remember(session, None)
-                return None
-            opt, und = frames
-            _write_cache(self.ticker, d, opt, und, source)
+            return cached
+        s3 = r2.r2_client()
+        frames = (_ivol_frames(s3, self.ticker, d) if source == "ivol_5min"
+                  else _cboe_frames(s3, self.ticker, d))
+        if frames is None:
+            return None
+        opt, und = frames
+        _write_cache(self.ticker, d, opt, und, source)
+        return opt, und, source
 
+    def prefetch(self, sessions: list[date], workers: int = 16) -> int:
+        """Warm the on-disk cache concurrently (a full-history 5-min run
+        touches thousands of session objects; fetching them inline is the
+        slow path). Returns how many sessions ended up cached."""
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            done = list(pool.map(self._ensure_cached, sessions))
+        return sum(1 for f in done if f is not None)
+
+    def slice_for(self, session: date) -> SessionSlice | None:
+        if session in self._lru:
+            self._lru.move_to_end(session)
+            return self._lru[session]
+        frames = self._ensure_cached(session)
+        if frames is None:
+            if self.source_for(session) is not None:
+                self._remember(session, None)
+            return None
+        opt, und, source = frames
         slc = _build_slice(session, opt, und, source)
         self._remember(session, slc)
         return slc

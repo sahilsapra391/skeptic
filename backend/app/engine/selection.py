@@ -4,6 +4,7 @@ chain can't provide is a skip with a reason, never an approximation."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 
 from app.engine.types import ContractKey, Quote
@@ -11,17 +12,27 @@ from app.models.spec import ExpirationSelection, Leg, StrikeMethod
 
 
 def select_expiration(
-    chain: dict[ContractKey, Quote], as_of: date, sel: ExpirationSelection
+    chain: dict[ContractKey, Quote],
+    as_of: date,
+    sel: ExpirationSelection,
+    dte_fn: Callable[[date], int] | None = None,
 ) -> date | None:
+    """Expiration nearest target DTE within bounds. `dte_fn` declares the
+    DTE basis: default calendar days (the daily clock, v1 semantics); the
+    5-min clock passes a trading-day counter (owner-confirmed — Friday
+    "1DTE" selects Monday's expiry)."""
+    if dte_fn is None:
+        def dte_fn(e: date) -> int:
+            return (e - as_of).days
+
     candidates: set[date] = set()
     for key in chain:
-        dte = (key.expiration - as_of).days
-        if sel.min_dte <= dte <= sel.max_dte:
+        if sel.min_dte <= dte_fn(key.expiration) <= sel.max_dte:
             candidates.add(key.expiration)
     if not candidates:
         return None
     # nearest to target; earlier expiration wins ties
-    return min(candidates, key=lambda e: (abs((e - as_of).days - sel.target_dte), e))
+    return min(candidates, key=lambda e: (abs(dte_fn(e) - sel.target_dte), e))
 
 
 def _strikes_for(

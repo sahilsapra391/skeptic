@@ -14,7 +14,7 @@ from statistics import NormalDist
 import numpy as np
 
 from app.engine.engine import run_engine
-from app.engine.market import MarketStore
+from app.engine.market import IntradayProvider, MarketStore
 from app.engine.types import RunResult
 from app.honesty.report import (
     Concentration,
@@ -270,7 +270,9 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], int, Setter]]
     return out
 
 
-def sensitivity(spec: StrategySpec, store: MarketStore) -> Sensitivity:
+def sensitivity(
+    spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
+) -> Sensitivity:
     """Perturb each numeric parameter ±20% in 5 steps, re-run the engine,
     classify the optimum: plateau if median neighbor Sharpe ≥ 70% of the
     peak, else cliff (TECH-SPEC §6.4). Any cliff makes the verdict cliff."""
@@ -281,7 +283,7 @@ def sensitivity(spec: StrategySpec, store: MarketStore) -> Sensitivity:
             mutated = copy.deepcopy(spec)
             setter(mutated, v)
             try:
-                r = run_engine(mutated, store)
+                r = run_engine(mutated, store, intraday)
                 sharpes.append(_sharpe(_returns(r.equity)))
             except Exception:
                 sharpes.append(None)
