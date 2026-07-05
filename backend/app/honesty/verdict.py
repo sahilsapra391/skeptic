@@ -221,6 +221,8 @@ def template_verdict(report: HonestyReport) -> VerdictText:
             f"Requested {cov.requested_start} → {cov.requested_end}; "
             f"tested {cov.effective_start} → {cov.effective_end}.",
         )
+    if report.liquidity is not None and report.liquidity.material and report.liquidity.note:
+        caveats.append(f"Liquidity: {report.liquidity.note}.")
     if not wf.meaningful:
         caveats.append(wf.note or "walk-forward not meaningful at this history length")
 
@@ -327,6 +329,23 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
             f"Only {cov.chain_sessions} of {cov.requested_sessions} days in your date range "
             f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested.",
         )
+    liq = report.liquidity
+    if liq is not None and liq.material:
+        if liq.stressed_share is not None and liq.stressed_share > 0:
+            caveats.append(
+                f"{_pct(liq.stressed_share)} of fills paid the worst quoted price — "
+                "these options trade thin."
+            )
+        elif liq.skipped_illiquid >= 1 and liq.note and "refused" in liq.note:
+            caveats.append(
+                f"{liq.skipped_illiquid} trades were refused because the options looked "
+                "too thin to fill honestly."
+            )
+        elif liq.penalized_share is not None:
+            caveats.append(
+                f"{_pct(liq.penalized_share)} of fills paid extra slippage for thin "
+                "markets."
+            )
     if not wf.meaningful:
         caveats.append("Not enough history to test period-by-period yet.")
 

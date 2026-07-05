@@ -19,6 +19,7 @@ from app.engine.types import RunResult
 from app.honesty.report import (
     Coverage,
     Dsr,
+    LiquidityProfile,
     MonteCarlo,
     OosSplit,
     ParamSweep,
@@ -42,6 +43,12 @@ MIN_TRADES = 15
 # (diagnostics/SEVENTEEN.md §4). Changed only in a reviewed session, never
 # at runtime (guardrail: runtime code never modifies scoring rules).
 COVERAGE_MIN_RATIO = 0.5
+
+# Liquidity REPORTING thresholds (D1b): when crossed, the run's verdict adds
+# a caveat line — these gate disclosure, never scoring. Changed only in a
+# reviewed session, like every threshold in this file.
+LIQ_PENALIZED_MATERIAL_SHARE = 0.20  # ≥ this share filled above base slip
+LIQ_SKIPPED_MATERIAL_COUNT = 5  # ≥ this many entries refused by the gates
 
 
 def _returns(equity: list[float]) -> list[float]:
@@ -377,6 +384,60 @@ def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
         regimes_present=present,
         capped=capped,
         cap_reason=reason,
+    )
+
+
+# --------------------------------------------- stage 6c: liquidity profile
+def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile:
+    """How real the fills were (guardrail #1's disclosure arm). Counts come
+    straight from the engine's per-leg fill bookkeeping; `material` only
+    controls whether the verdict carries a caveat line — never scoring."""
+    n = result.option_leg_fills
+    spreads = sorted(result.fill_spread_pcts)
+    median_spread = spreads[len(spreads) // 2] if spreads else None
+
+    def share(count: int) -> float | None:
+        return count / n if n > 0 else None
+
+    penalized = share(result.fills_penalized)
+    stressed = share(result.fills_stressed)
+    skipped = sum(
+        1
+        for t in result.trades
+        if t.action == "SKIP"
+        and t.reason in ("illiquid_spread", "illiquid_oi", "illiquid_volume")
+    )
+
+    notes: list[str] = []
+    if stressed is not None and stressed > 0:
+        notes.append(
+            f"{round(stressed * 100)}% of option fills paid the full adverse quote "
+            "(stress mode on gated contracts)"
+        )
+    if penalized is not None and penalized >= LIQ_PENALIZED_MATERIAL_SHARE:
+        notes.append(
+            f"{round(penalized * 100)}% of option fills paid thin-liquidity slippage "
+            "above the base fraction"
+        )
+    if skipped >= LIQ_SKIPPED_MATERIAL_COUNT:
+        notes.append(
+            f"{skipped} entr{'y was' if skipped == 1 else 'ies were'} refused by the "
+            "liquidity gates — the strategy wants markets this data says are thin"
+        )
+
+    return LiquidityProfile(
+        mode=spec.costs.liquidity_mode.value,
+        max_spread_pct=spec.costs.max_spread_pct,
+        min_open_interest=spec.costs.min_open_interest,
+        min_volume=spec.costs.min_volume,
+        option_leg_fills=n,
+        median_spread_pct=median_spread,
+        penalized_share=penalized,
+        stressed_share=stressed,
+        unknown_liquidity_share=share(result.fills_unknown_liquidity),
+        skipped_illiquid=skipped,
+        material=bool(notes),
+        note="; ".join(notes) if notes else None,
     )
 
 

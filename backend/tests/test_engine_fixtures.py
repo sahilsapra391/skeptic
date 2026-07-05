@@ -15,6 +15,7 @@ from tests.fixtures.engine import (
     fx_iron_condor_target,
     fx_short_put_assigned,
     fx_short_put_otm,
+    fx_skip_illiquid,
     fx_skip_zero_bid,
 )
 
@@ -25,6 +26,7 @@ FIXTURES = [
     fx_iron_condor_target,
     fx_covered_call_called_away,
     fx_skip_zero_bid,
+    fx_skip_illiquid,
 ]
 
 

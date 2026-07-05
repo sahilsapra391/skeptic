@@ -224,12 +224,24 @@ class Sizing(BaseModel):
     value: float = Field(gt=0)
 
 
+class LiquidityMode(StrEnum):
+    SKIP = "skip"  # gated contracts are never filled; entry skips with a reason
+    STRESS = "stress"  # gated contracts fill at the full adverse quote (slip 1.0)
+
+
 class Costs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     commission_per_contract: float = Field(default=0.65, ge=0)
     # 0 (mid fills) is forbidden by the schema's exclusiveMinimum — guardrail #1
     slippage_half_spread_fraction: float = Field(default=0.5, gt=0, le=1)
+    # Liquidity floors (D1b, owner-confirmed Moderate defaults). Defaulted
+    # cost knobs like commission/slippage — never entry/strike/exit params,
+    # so guardrail #3 (no silent parser defaults) does not apply.
+    max_spread_pct: float = Field(default=25.0, gt=0)  # (ask−bid)/mid, in percent
+    min_open_interest: int = Field(default=10, ge=0)  # 0 disables the floor
+    min_volume: int = Field(default=0, ge=0)  # 0 disables the floor
+    liquidity_mode: LiquidityMode = LiquidityMode.SKIP
 
 
 class BacktestWindow(BaseModel):

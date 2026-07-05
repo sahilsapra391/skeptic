@@ -126,6 +126,7 @@ def run_gauntlet(
     dsr = stages.deflated_sharpe(result, trials)
     sample = stages.regime_sample(result, store)
     cov = stages.coverage(result)
+    liq = stages.liquidity_profile(result, spec)
     trust = compute_trust(oos, wf, mc, sens, sample, dsr, cov)
 
     return HonestyReport(
@@ -136,6 +137,7 @@ def run_gauntlet(
         dsr=dsr,
         regime_sample=sample,
         coverage=cov,
+        liquidity=liq,
         trust=trust,
         metrics=result.metrics,
         effective_start=result.effective_start.isoformat(),

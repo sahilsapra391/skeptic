@@ -128,7 +128,30 @@
           "exclusiveMinimum": 0,
           "maximum": 1,
           "default": 0.5,
-          "description": "Fraction of the half-spread conceded from mid toward the adverse quote. 0 (mid fills) is forbidden by validation; 1.0 = full adverse quote."
+          "description": "Fraction of the half-spread conceded from mid toward the adverse quote. 0 (mid fills) is forbidden by validation; 1.0 = full adverse quote. When a quote's open interest is known and thin, the effective fraction scales up to 1.0: slip_eff = slip + (1 - slip) * max(0, 1 - oi / (10 * min_open_interest)); unknown liquidity is never penalized, only disclosed."
+        },
+        "max_spread_pct": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 25,
+          "description": "Entry liquidity gate: quotes whose spread (ask - bid) exceeds this percent of mid are not filled at entry (skip with reason illiquid_spread, or full-adverse fill in stress mode). Exits are never gated - a position can always pay the quoted price to close."
+        },
+        "min_open_interest": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 10,
+          "description": "Entry liquidity floor: known open interest below this skips the entry (illiquid_oi). 0 disables. Missing OI is never gated, only disclosed in the run's liquidity profile."
+        },
+        "min_volume": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Entry liquidity floor on session volume (illiquid_volume). 0 (default) disables. Missing volume is never gated, only disclosed."
+        },
+        "liquidity_mode": {
+          "enum": ["skip", "stress"],
+          "default": "skip",
+          "description": "skip: gated contracts are never filled (reasoned skip). stress: gated contracts fill at the full adverse quote (slip 1.0) - the strategy keeps running but pays worst quoted prices."
         }
       }
     },
