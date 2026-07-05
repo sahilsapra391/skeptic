@@ -261,6 +261,9 @@ def build_coverage() -> dict[str, Any]:
         "ivol_analytics": _ivol_analytics_ranges(s3),
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": r2.get_json(s3, "state/quality_flags.json", {}),
+        # D3d: the weekly demand ranking (build_priorities.py) — what the
+        # collectors should want next, shown as the "collection wants" line
+        "collection_priorities": r2.get_json(s3, "state/collection_priorities.json", None),
         "dolthub": {
             "verified_sessions": len(verified),
             "quarantined": _quarantined_count(dolthub_state),

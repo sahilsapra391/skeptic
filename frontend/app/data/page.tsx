@@ -399,6 +399,26 @@ export default function DataPage() {
           ))}
         </div>
       </div>
+
+      {coverage.collection_priorities && coverage.collection_priorities.priorities.length > 0 && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-2.5")}>
+            COLLECTION WANTS · ranked weekly ·{" "}
+            {coverage.collection_priorities.generated_at.slice(0, 10)}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {coverage.collection_priorities.priorities.map((p) => (
+              <div key={p.rank} className="flex gap-2 text-[12.5px] leading-[1.55] text-ink-2">
+                <span className="font-mono text-ink-4">{p.rank}.</span>
+                <span>
+                  {p.want}
+                  <span className="text-ink-4"> — {p.why}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

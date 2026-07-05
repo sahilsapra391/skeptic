@@ -16,9 +16,17 @@ on:
         description: "Submit re-runs (unchecked = dry-run report only)"
         type: boolean
         default: true
+      weekly:
+        description: "Force the weekly calibration + priorities pass"
+        type: boolean
+        default: false
 
+# contents+pull-requests write: the WEEKLY calibration step may open a
+# reviewed proposal PR (D3d, owner amendment 2) — defaults change only
+# through that PR, never at runtime. Everything else only reads the repo.
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: nightly-improve
@@ -55,3 +63,27 @@ jobs:
           else
             PYTHONPATH=. uv run python scripts/nightly_improve.py
           fi
+
+      # D3d weekly pass (Saturdays, after the week's collection): demand
+      # ranking + fill-model calibration. A calibration divergence beyond
+      # the documented bar opens a PROPOSAL PR (asymmetric evidence bar;
+      # optimism-increasing changes carry the title prefix) — nothing
+      # changes until a human merges it.
+      - name: Weekly calibration + collection priorities (Saturdays)
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%u)" != "6" ] && [ "${{ inputs.weekly }}" != "true" ]; then
+            echo "not Saturday — weekly pass skipped"
+            exit 0
+          fi
+          git config user.name "sahilsapra391"
+          git config user.email "sahilsapra391@gmail.com"
+          PYTHONPATH=. uv run python scripts/build_priorities.py --execute
+          PYTHONPATH=. uv run python scripts/calibrate_fill_model.py --execute
