@@ -137,6 +137,8 @@ def _param_label(name: str, v: float) -> str:
         return f".{int(round(v * 100)):02d}Δ"
     if name == "dte":
         return f"{int(v)}d"
+    if name == "entry_time":
+        return f"{int(v):+d}m"  # the D2d entry-time nudge, minutes
     return f"{v:g}%"
 
 
@@ -568,6 +570,7 @@ def build_run_payload(
         # per-fill provenance (D2b): which quote record priced each leg fill
         "fillSources": result.fill_sources,
         "clock": result.clock,
+        "sessionSplit": report.session_split.model_dump() if report.session_split else None,
         "greeksSeries": {
             "delta": _downsample_nullable(result.dates, result.portfolio_delta),
             "gamma": _downsample_nullable(result.dates, result.portfolio_gamma),

@@ -197,10 +197,19 @@ def _trading_dte_fn(store: MarketStore, as_of: date) -> DteFn:
     return fn
 
 
-def _close_slip(q: Quote, costs: Costs) -> float:
+# Quote records whose fills ALWAYS pay the full adverse price: modeled
+# quotes (trade prints + modeled spread) carry no real NBBO — stress
+# slippage stays on until quote sources accumulate (D2d, per the brief).
+STRESSED_SOURCES = frozenset({"alpaca_modeled"})
+
+
+def _close_slip(q: Quote, costs: Costs, stressed: bool = False) -> float:
     """The slip a close-side price uses: base, OI-scaled when OI is known
     and thin (fills.effective_slip). Exit triggers, exit fills and marks all
-    price through here, so open and close share one fill model."""
+    price through here, so open and close share one fill model. Modeled
+    quotes are always stressed — slip 1.0, both directions."""
+    if stressed:
+        return 1.0
     return fills.effective_slip(
         costs.slippage_half_spread_fraction, q, costs.min_open_interest
     )
@@ -210,6 +219,7 @@ def _liq_value_per_share(pos: Position, view: MarketViewLike, costs: Costs) -> f
     """Signed liquidation value per contract-set per share, at today's
     quotes: closing longs sells (+), closing shorts buys back (−).
     None when any unsettled leg lacks a usable quote today."""
+    stressed = view.fill_source in STRESSED_SOURCES
     total = 0.0
     for leg in pos.legs:
         if leg.settled:
@@ -217,7 +227,7 @@ def _liq_value_per_share(pos: Position, view: MarketViewLike, costs: Costs) -> f
         q = view.quote(leg.key)
         if q is None:
             return None
-        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs))
+        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs, stressed))
         if px is None:
             return None
         ratio = leg.qty // max(pos.contracts, 1)
@@ -226,13 +236,14 @@ def _liq_value_per_share(pos: Position, view: MarketViewLike, costs: Costs) -> f
 
 
 def _refresh_marks(pos: Position, view: MarketViewLike, costs: Costs) -> None:
+    stressed = view.fill_source in STRESSED_SOURCES
     for leg in pos.legs:
         if leg.settled:
             continue
         q = view.quote(leg.key)
         if q is None:
             continue
-        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs))
+        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs, stressed))
         if px is not None:
             leg.last_mark = px
 
@@ -398,8 +409,8 @@ def _try_entry(
             return
         assert q is not None
         gate = fills.liquidity_gate(q, spec.costs)
-        stressed = False
-        if gate is not None:
+        stressed = view.fill_source in STRESSED_SOURCES  # modeled quotes: always
+        if gate is not None and not stressed:
             if spec.costs.liquidity_mode is LiquidityMode.SKIP:
                 skip(gate, detail=f"{key.right} {key.strike:g} exp {key.expiration}")
                 return
@@ -512,12 +523,13 @@ def _close_position(
     liq = _liq_value_per_share(pos, view, spec.costs)
     if liq is None:
         return False
+    stressed = view.fill_source in STRESSED_SOURCES
     for leg in pos.legs:
         if leg.settled:
             continue
         q = view.quote(leg.key)
         assert q is not None
-        eff = _close_slip(q, spec.costs)
+        eff = _close_slip(q, spec.costs, stressed)
         px = fills.fill_price(q, fills.close_action(leg.side), eff)
         assert px is not None
         cash_delta = px * leg.qty * MULT if leg.side == "long" else -px * leg.qty * MULT
@@ -761,8 +773,16 @@ def _prev_session_view(store: MarketStore, day: date) -> MarketView:
 
 
 def run_engine(
-    spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
+    spec: StrategySpec,
+    store: MarketStore,
+    intraday: IntradayProvider | None = None,
+    entry_shift_bars: int = 0,
 ) -> RunResult:
+    """`entry_shift_bars` is the honesty layer's entry-time-nudge lever
+    (D2d): shifts the session's entry WINDOW by N 5-minute bars. Positive
+    delays entries past the session start / time_of_day; negative moves a
+    time_of_day gate earlier (clamped to the session start). It is not
+    spec vocabulary — runs made with it are gauntlet probes."""
     five_min = spec.backtest.clock is Clock.FIVE_MIN
 
     if five_min:
@@ -813,6 +833,10 @@ def run_engine(
     covered_sessions = 0
     intraday_lasts: list[float] = []  # rolling 5-min lasts across the run (D2c)
     tod = spec.entry.schedule.time_of_day
+    tod_minutes: int | None = None
+    if tod is not None:
+        h, m = tod.split(":")
+        tod_minutes = int(h) * 60 + int(m) + entry_shift_bars * 5
 
     for day in clock:
         view = MarketView(store, day)
@@ -828,7 +852,8 @@ def run_engine(
             opened_this_session = False
             session_pv = 0.0  # session-anchored VWAP accumulators (D2c)
             session_vol = 0.0
-            for bar in slc.bars:
+            entry_from = max(entry_shift_bars, 0)  # nudge: delay the window
+            for bar_idx, bar in enumerate(slc.bars):
                 last = slc.underlying.get(bar)
                 if last is not None:
                     intraday_lasts.append(last)
@@ -843,10 +868,12 @@ def run_engine(
                 # bar t is first evaluated at bar t+1 (owner amendment 2 —
                 # a stop can never fire on its own entry bar)
                 _check_exits(spec, state, bview, dte_fn)
+                bar_minutes = bar.hour * 60 + bar.minute
                 if (
                     not opened_this_session
                     and _schedule_matches(spec, state, day)
-                    and (tod is None or bar.strftime("%H:%M") >= tod)
+                    and bar_idx >= entry_from
+                    and (tod_minutes is None or bar_minutes >= tod_minutes)
                 ):
                     equity_now = state.cash + sum(
                         _position_value(p, bview.close() or 0.0)
@@ -860,7 +887,8 @@ def run_engine(
                 # the events it produced (the log is day-granular otherwise)
                 for ev in state.trades[events_before:]:
                     if ev.action in ("OPEN", "CLOSE"):
-                        ev.detail += f" · {bar.strftime('%H:%M')}"
+                        ev.bar_time = bar.strftime("%H:%M")
+                        ev.detail += f" · {ev.bar_time}"
             _settle_expirations(spec, state, view)  # 0DTE settles at the close
             close_px = view.close()
             if close_px is not None:

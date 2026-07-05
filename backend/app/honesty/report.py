@@ -74,6 +74,10 @@ class Sensitivity(BaseModel):
 
     params: list[ParamSweep] = []
     verdict: str | None = None  # plateau | cliff | None
+    # D2d: at the 5-min clock the sweep re-runs on a bounded trailing window
+    # (gauntlet cost is benchmark-bound; docs/HONESTY.md has the arithmetic).
+    # Disclosed here so the verdict can say so.
+    window_note: str | None = None
 
 
 class Dsr(BaseModel):
@@ -153,6 +157,29 @@ class Concentration(BaseModel):
     flagged: bool = False
 
 
+class SessionBucket(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trades: int = 0
+    wins: int = 0
+    pl: float = 0.0
+
+
+class SessionSplit(BaseModel):
+    """Where in the session the entries earn (D2d): open (09:30–10:30),
+    mid (10:30–15:00), close (15:00–16:15) ET. Reported, never scored —
+    a strategy whose whole edge is one hour of the day should have to
+    say so out loud."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    meaningful: bool
+    note: str | None = None
+    open_: SessionBucket = SessionBucket()
+    mid: SessionBucket = SessionBucket()
+    close: SessionBucket = SessionBucket()
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -175,6 +202,8 @@ class HonestyReport(BaseModel):
     coverage: Coverage
     liquidity: LiquidityProfile | None = None  # None only on pre-D1b reports
     concentration: Concentration | None = None  # None only on pre-D1d reports
+    session_split: SessionSplit | None = None  # 5-min clock only (D2d)
+    fill_sources: dict[str, int] = {}  # per-leg fill provenance (D2b/D2d)
     trust: Trust
     metrics: dict[str, float | None]
     effective_start: str
