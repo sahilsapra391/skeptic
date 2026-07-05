@@ -18,6 +18,7 @@ requested window (the seventeen-fills case, diagnostics/SEVENTEEN.md).
 from __future__ import annotations
 
 from app.honesty.report import (
+    Concentration,
     Coverage,
     Dsr,
     MonteCarlo,
@@ -39,6 +40,7 @@ def compute_trust(
     sample: RegimeSample,
     dsr: Dsr,
     coverage: Coverage | None = None,
+    concentration: Concentration | None = None,
 ) -> Trust:
     survived = {
         "oos": not oos.flagged,
@@ -84,6 +86,10 @@ def compute_trust(
         reasons.append(f"{mc.p_loss:.0%} of resampled paths lose money")
     if not survived["sensitivity"] and sens.verdict == "cliff":
         reasons.append("the parameter optimum is a cliff — neighbors lose")
+    # D1d: concentration is a REPORTED reason, never a level change —
+    # promoting it to a cap requires evidence in a reviewed session
+    if concentration is not None and concentration.flagged and concentration.note:
+        reasons.append(concentration.note)
 
     return Trust(
         level=level,

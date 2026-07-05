@@ -13,11 +13,20 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from app.data import r2
+import pandas as pd
+
+from app.data import chains, r2
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
 INTRADAY_SOURCES = ["cboe_delayed", "yahoo"]
+
+# fields the Observatory grades per source (D1d): what share of rows
+# actually carry each field — gaps visible, not discovered mid-backtest
+CHAIN_QUALITY_FIELDS = [
+    "bid", "ask", "iv", "delta", "gamma", "theta", "vega", "rho",
+    "volume", "open_interest",
+]
 
 _CACHE: dict[str, Any] = {"at": 0.0, "payload": None}
 CACHE_SECONDS = 300
@@ -101,6 +110,65 @@ def _blind_spots(dolthub_state: dict[str, Any], minute: dict[str, Any]) -> list[
     return spots
 
 
+def _chain_quality(ticker: str) -> dict[str, Any] | None:
+    """Per-source field completeness + monthly median spread, computed from
+    the LOCAL chains cache written by the engine loader — this endpoint
+    never triggers a full lake pull. No cache yet → honestly absent
+    (guardrail #6: nothing asserted that the lake hasn't already proven)."""
+    cache_file = chains.CACHE_DIR / f"chains_{ticker}.parquet"
+    if not cache_file.exists():
+        return None
+    try:
+        df = pd.read_parquet(cache_file)
+    except Exception:
+        return None
+    if df.empty or "source" not in df.columns:
+        return None
+
+    out: dict[str, Any] = {"rows": int(len(df)), "sources": {}}
+    for source, group in df.groupby("source"):
+        fields = {
+            col: round(float(group[col].notna().mean()), 4)
+            for col in CHAIN_QUALITY_FIELDS
+            if col in group.columns
+        }
+        out["sources"][str(source)] = {"rows": int(len(group)), "fields": fields}
+
+    bid = pd.to_numeric(df["bid"], errors="coerce") if "bid" in df.columns else None
+    ask = pd.to_numeric(df["ask"], errors="coerce") if "ask" in df.columns else None
+    if bid is not None and ask is not None:
+        mid = (bid + ask) / 2.0
+        ok = bid.notna() & ask.notna() & (mid > 0)
+        if bool(ok.any()):
+            month = pd.to_datetime(df.loc[ok, "trading_date"]).dt.strftime("%Y-%m")
+            spread = ((ask - bid) / mid)[ok]
+            monthly = spread.groupby(month).median().sort_index()
+            out["monthly_median_spread_pct"] = [
+                {"month": str(m), "v": round(float(v) * 100, 2)} for m, v in monthly.items()
+            ]
+    return out
+
+
+def _ivol_analytics_ranges(s3: Any) -> dict[str, Any]:
+    """IVX / HV year-file coverage per ticker (cheap listings)."""
+    out: dict[str, Any] = {}
+    for ticker in TICKERS:
+        entry: dict[str, Any] = {}
+        for name in ("ivx", "hv"):
+            years = sorted(
+                {
+                    m.group(1)
+                    for k in r2.list_keys(s3, f"reference/ivol/{name}/ticker={ticker}/")
+                    if (m := re.search(r"year=(\d{4})", k))
+                }
+            )
+            entry[name] = (
+                {"years": len(years), "first": years[0], "last": years[-1]} if years else None
+            )
+        out[ticker] = entry
+    return out
+
+
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
@@ -159,12 +227,12 @@ def build_coverage() -> dict[str, Any]:
     record = eod["yahoo"].get("SPY") or {"sessions": 0, "first": None, "last": None}
 
     # per-ticker chain window across sources (what a backtest can actually use)
-    chains: dict[str, Any] = {}
+    chain_windows: dict[str, Any] = {}
     for ticker in TICKERS:
         firsts = [e["first"] for src in EOD_SOURCES if (e := eod[src].get(ticker))]
         lasts = [e["last"] for src in EOD_SOURCES if (e := eod[src].get(ticker))]
         sessions = sum(e["sessions"] for src in EOD_SOURCES if (e := eod[src].get(ticker)))
-        chains[ticker] = (
+        chain_windows[ticker] = (
             {"first": min(firsts), "last": max(lasts), "sessions": sessions} if firsts else None
         )
 
@@ -172,11 +240,13 @@ def build_coverage() -> dict[str, Any]:
         "generated_at": now.isoformat(),
         "record_days": record["sessions"],
         "record_latest": record["last"],
-        "chains": chains,
+        "chains": chain_windows,
         "eod": eod,
         "minute_bars": minute,
         "intraday": intraday,
         "underlying": underlying,
+        "chain_quality": {t: _chain_quality(t) for t in TICKERS},
+        "ivol_analytics": _ivol_analytics_ranges(s3),
         "quality": r2.get_json(s3, "state/quality_flags.json", {}),
         "dolthub": {
             "verified_sessions": len(verified),

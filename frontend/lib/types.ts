@@ -129,6 +129,43 @@ export interface SeriesPoint {
   v: number;
 }
 
+/** greek series carry honest gaps: v is null on days the lake had no greek */
+export interface NullableSeriesPoint {
+  t: string;
+  v: number | null;
+}
+
+export interface GreeksSeries {
+  delta: NullableSeriesPoint[];
+  gamma: NullableSeriesPoint[];
+  theta: NullableSeriesPoint[];
+  vega: NullableSeriesPoint[];
+}
+
+export interface LiquidityProfile {
+  mode: string;
+  max_spread_pct: number;
+  min_open_interest: number;
+  min_volume: number;
+  option_leg_fills: number;
+  median_spread_pct: number | null;
+  penalized_share: number | null;
+  stressed_share: number | null;
+  unknown_liquidity_share: number | null;
+  skipped_illiquid: number;
+  material: boolean;
+  note: string | null;
+}
+
+export interface ConcentrationBlock {
+  meaningful: boolean;
+  note: string | null;
+  top_days: number;
+  top_share: number | null;
+  gamma_coincidence: number | null;
+  flagged: boolean;
+}
+
 export interface RunPayload {
   id: string;
   demo: boolean;
@@ -145,6 +182,10 @@ export interface RunPayload {
   /** real runs ship raw series; the client shapes them into the charts */
   equitySeries?: SeriesPoint[];
   drawdownSeries?: SeriesPoint[];
+  /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
+  greeksSeries?: GreeksSeries;
+  liquidity?: LiquidityProfile | null;
+  concentration?: ConcentrationBlock | null;
   oosShadeX: number; // viewBox x where OOS shading starts (0..860)
   oosSplitDate?: string; // ISO date where the OOS window begins
   honesty: HonestyPanels;
@@ -214,6 +255,23 @@ export interface CoveragePayload {
   };
   blind_spots: { id: string; text: string }[];
   sources_status: Record<string, boolean | string>;
+  /** D1d: per-source field completeness + monthly spread, from the engine's
+   * local chain cache — null until the first engine load builds it */
+  chain_quality?: Record<
+    Ticker,
+    {
+      rows: number;
+      sources: Record<string, { rows: number; fields: Record<string, number> }>;
+      monthly_median_spread_pct?: { month: string; v: number }[];
+    } | null
+  >;
+  ivol_analytics?: Record<
+    Ticker,
+    {
+      ivx: { years: number; first: string; last: string } | null;
+      hv: { years: number; first: string; last: string } | null;
+    }
+  >;
 }
 
 export interface UnderlyingPoint {

@@ -54,6 +54,24 @@ def _downsample(dates: list[date], values: list[float], cap: int = 400) -> list[
     return [{"t": dates[i].isoformat(), "v": round(values[i], 2)} for i in idxs]
 
 
+def _downsample_nullable(
+    dates: list[date], values: list[float | None], cap: int = 400
+) -> list[dict[str, Any]]:
+    """Like _downsample, but a None stays a null point — greek gaps are
+    honest gaps, the chart shows a hole rather than a made-up line."""
+    n = len(values)
+    idxs: list[int]
+    if n <= cap:
+        idxs = list(range(n))
+    else:
+        step = n / cap
+        idxs = sorted({min(n - 1, int(i * step)) for i in range(cap)} | {n - 1})
+    return [
+        {"t": dates[i].isoformat(), "v": None if (v := values[i]) is None else round(v, 2)}
+        for i in idxs
+    ]
+
+
 def _drawdown_series(dates: list[date], equity: list[float]) -> list[dict[str, Any]]:
     peak = equity[0] if equity else 0.0
     dd: list[float] = []
@@ -545,6 +563,13 @@ def build_run_payload(
         "honesty": _honesty_panels(report),
         "coverage": report.coverage.model_dump(),
         "liquidity": report.liquidity.model_dump() if report.liquidity else None,
+        "concentration": report.concentration.model_dump() if report.concentration else None,
+        "greeksSeries": {
+            "delta": _downsample_nullable(result.dates, result.portfolio_delta),
+            "gamma": _downsample_nullable(result.dates, result.portfolio_gamma),
+            "theta": _downsample_nullable(result.dates, result.portfolio_theta),
+            "vega": _downsample_nullable(result.dates, result.portfolio_vega),
+        },
         "mc": _mc_fan(report),
         "mcTerm": {
             "p95": _dollars(report.monte_carlo.terminal_p95),

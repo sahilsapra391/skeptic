@@ -289,6 +289,95 @@ export default function DataPage() {
         </div>
       </div>
 
+      {coverage.chain_quality?.SPY && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-2.5")}>
+            CHAIN QUALITY — FIELD COMPLETENESS PER SOURCE
+          </div>
+          <div className="flex flex-col gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const q = coverage.chain_quality?.[t];
+              if (!q) return null;
+              return Object.entries(q.sources).map(([source, s]) => (
+                <div key={`${t}-${source}`} className="grid grid-cols-[130px_1fr] gap-2.5">
+                  <span className="text-ink-3">
+                    {t} · {source}
+                  </span>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-ink-4">
+                    <span className="text-ink-3">{s.rows.toLocaleString()} rows</span>
+                    {Object.entries(s.fields)
+                      .filter(([f]) =>
+                        ["iv", "delta", "vega", "volume", "open_interest"].includes(f),
+                      )
+                      .map(([f, share]) => (
+                        <span key={f} className={share < 0.5 ? "text-warn" : undefined}>
+                          {f.replace("open_interest", "oi")} {Math.round(share * 100)}%
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              ));
+            })}
+          </div>
+          {coverage.chain_quality.SPY.monthly_median_spread_pct && (
+            <div className="mt-3 border-t border-line-softer pt-2.5">
+              <div className={clsx(PANEL_TITLE, "mb-1.5")}>
+                SPY MEDIAN SPREAD BY MONTH — % OF MID
+              </div>
+              <svg width="100%" viewBox="0 0 860 46" className="block" preserveAspectRatio="none">
+                {(() => {
+                  const months = coverage.chain_quality.SPY.monthly_median_spread_pct!;
+                  const hi = Math.max(...months.map((m) => m.v), 1);
+                  const w = 860 / months.length;
+                  return months.map((m, i) => (
+                    <rect
+                      key={m.month}
+                      x={(i * w + 0.5).toFixed(1)}
+                      y={(44 - (m.v / hi) * 40).toFixed(1)}
+                      width={Math.max(w - 1, 0.8).toFixed(1)}
+                      height={((m.v / hi) * 40 + 2).toFixed(1)}
+                      fill="var(--ink-4)"
+                      opacity="0.75"
+                    >
+                      <title>{`${m.month} · ${m.v.toFixed(1)}%`}</title>
+                    </rect>
+                  ));
+                })()}
+              </svg>
+              <div className="mt-1 font-mono text-[10px] text-ink-4">
+                computed from the engine&apos;s local chain cache — appears after the first
+                lake load
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {coverage.ivol_analytics?.SPY?.ivx && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-3")}>
+            IV ANALYTICS (IVOLATILITY) — IVX / HV, BANKED YEARS
+          </div>
+          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const ivx = coverage.ivol_analytics?.[t]?.ivx;
+              if (!ivx) return null;
+              return (
+                <Lane
+                  key={t}
+                  label={`${t} IVX 30d`}
+                  first={`${ivx.first}-01-01`}
+                  last={`${ivx.last}-12-31`}
+                  t0="2005-01-01"
+                  t1={today}
+                  note={`${ivx.years} years · powers ivx_rank / hv-iv spread filters`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className={clsx(PANEL, "mt-3")}>
         <div className={clsx(PANEL_TITLE, "mb-2.5")}>NAMED BLIND SPOTS</div>
         <div className="flex flex-col gap-1.5">

@@ -97,6 +97,15 @@ class RunResult:
     fills_penalized: int = 0  # filled at OI-scaled slip above base
     fills_stressed: int = 0  # gated contracts filled at slip 1.0 (stress mode)
     fills_unknown_liquidity: int = 0  # open interest unknown at fill time
+    # portfolio greeks per marked session (D1d), aligned with `dates`.
+    # Units: delta/gamma in share-equivalents (greek × qty × 100, stock at
+    # 1Δ/share), theta in $/day, vega in $/vol-point. A flat book is 0.0;
+    # a day where any open leg lacks that greek is None — an honest gap,
+    # never an interpolation.
+    portfolio_delta: list[float | None] = field(default_factory=list)
+    portfolio_gamma: list[float | None] = field(default_factory=list)
+    portfolio_theta: list[float | None] = field(default_factory=list)
+    portfolio_vega: list[float | None] = field(default_factory=list)
     # requested window (what the user asked for) vs the effective window
     # (what coverage allowed) — the gap is the seventeen-fills disclosure
     requested_start: date | None = None

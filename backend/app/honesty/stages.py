@@ -17,6 +17,7 @@ from app.engine.engine import run_engine
 from app.engine.market import MarketStore
 from app.engine.types import RunResult
 from app.honesty.report import (
+    Concentration,
     Coverage,
     Dsr,
     LiquidityProfile,
@@ -49,6 +50,15 @@ COVERAGE_MIN_RATIO = 0.5
 # reviewed session, like every threshold in this file.
 LIQ_PENALIZED_MATERIAL_SHARE = 0.20  # ≥ this share filled above base slip
 LIQ_SKIPPED_MATERIAL_COUNT = 5  # ≥ this many entries refused by the gates
+
+# Concentration REPORTING thresholds (D1d): flag when the top 5% of marked
+# sessions carry ≥ half the gross |daily P&L|. Reported flag + verdict
+# reason, NOT a trust cap (promoting it needs evidence, in a reviewed
+# session). Gamma coincidence uses the top-|gamma| decile.
+CONC_TOP_DAY_FRACTION = 0.05
+CONC_MATERIAL_SHARE = 0.50
+CONC_GAMMA_DECILE = 0.90
+CONC_MIN_SESSIONS = 40  # fewer marked sessions → the split is noise itself
 
 
 def _returns(equity: list[float]) -> list[float]:
@@ -384,6 +394,64 @@ def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
         regimes_present=present,
         capped=capped,
         cap_reason=reason,
+    )
+
+
+# ---------------------------------------------- stage 6d: P&L concentration
+def concentration(result: RunResult) -> Concentration:
+    """Does the P&L come from a distribution of days or a handful of them —
+    and are the handful high-gamma days (a lottery-ticket shape)? Reported
+    flag + verdict reason only; never a trust cap in D1.
+
+    Gamma alignment: daily P&L i = equity[i+1] − equity[i], produced by the
+    exposure HELD at the close of day i → gamma index i."""
+    n_pnl = len(result.equity) - 1
+    if n_pnl < CONC_MIN_SESSIONS:
+        return Concentration(
+            meaningful=False,
+            note=f"concentration needs ≥ {CONC_MIN_SESSIONS} marked sessions",
+        )
+    pnl = [result.equity[i + 1] - result.equity[i] for i in range(n_pnl)]
+    gross = sum(abs(p) for p in pnl)
+    if gross <= 0:
+        return Concentration(meaningful=False, note="no P&L movement to concentrate")
+
+    k = max(1, math.ceil(CONC_TOP_DAY_FRACTION * n_pnl))
+    order = sorted(range(n_pnl), key=lambda i: abs(pnl[i]), reverse=True)
+    top_idx = order[:k]
+    top_share = sum(abs(pnl[i]) for i in top_idx) / gross
+
+    # gamma coincidence: |portfolio gamma| decile threshold over days where
+    # gamma is known; None when the top days' gammas are (honestly) unknown
+    gammas = result.portfolio_gamma
+    known = sorted(abs(g) for g in gammas[:n_pnl] if g is not None)
+    coincidence: float | None = None
+    if known and len(known) >= max(10, k):
+        threshold = known[min(int(CONC_GAMMA_DECILE * len(known)), len(known) - 1)]
+        top_gammas = [gammas[i] for i in top_idx]
+        if all(g is not None for g in top_gammas):
+            hits = sum(1 for g in top_gammas if abs(g or 0.0) >= threshold)
+            coincidence = hits / k
+
+    flagged = top_share >= CONC_MATERIAL_SHARE
+    note: str | None = None
+    if flagged:
+        note = (
+            f"{round(top_share * 100)}% of gross daily P&L comes from just {k} "
+            f"session{'s' if k != 1 else ''} (top {round(CONC_TOP_DAY_FRACTION * 100)}%)"
+        )
+        if coincidence is not None and coincidence >= 0.5:
+            note += (
+                f" — and {round(coincidence * 100)}% of those are top-decile "
+                "gamma days (lottery-ticket shape)"
+            )
+    return Concentration(
+        meaningful=True,
+        note=note,
+        top_days=k,
+        top_share=top_share,
+        gamma_coincidence=coincidence,
+        flagged=flagged,
     )
 
 
