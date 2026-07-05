@@ -81,11 +81,40 @@ class Indicator(StrEnum):
     IVX_RANK_1Y = "ivx_rank_1y"
     IVX_LEVEL_30D = "ivx_level_30d"
     HV_IV_SPREAD_30D = "hv_iv_spread_30d"
+    # spec v2 (D2c): intraday-only — % distance from session-anchored VWAP
+    PRICE_VS_VWAP_PCT = "price_vs_vwap_pct"
+
+
+class Timeframe(StrEnum):
+    """Which bar series a condition's indicator reads (D2c). daily = the
+    underlying daily closes (v1 semantics). 5min = the run's 5-minute
+    underlying lasts — requires clock="5min"."""
+
+    DAILY = "daily"
+    FIVE_MIN = "5min"
 
 
 # Indicators (and fields, checked separately) that require spec_version 2 —
 # a v1 spec using v2 vocabulary is a versioning error, never silent.
-V2_INDICATORS = {Indicator.IVX_RANK_1Y, Indicator.IVX_LEVEL_30D, Indicator.HV_IV_SPREAD_30D}
+V2_INDICATORS = {
+    Indicator.IVX_RANK_1Y,
+    Indicator.IVX_LEVEL_30D,
+    Indicator.HV_IV_SPREAD_30D,
+    Indicator.PRICE_VS_VWAP_PCT,
+}
+
+# Price-series indicators that can read the 5-minute timeframe; everything
+# else (VIX, IVX/HV, chain IV percentile, realized vol, drawdown) is a
+# daily series by construction.
+INTRADAY_CAPABLE_INDICATORS = {
+    Indicator.RSI,
+    Indicator.SMA,
+    Indicator.EMA,
+    Indicator.PRICE_VS_SMA_PCT,
+    Indicator.PRICE_VS_EMA_PCT,
+    Indicator.EMA_CROSS_STATE,
+    Indicator.PRICE_VS_VWAP_PCT,
+}
 
 
 class Operator(StrEnum):
@@ -189,6 +218,27 @@ class Condition(BaseModel):
     value: float
     period: int | None = Field(default=None, ge=2, le=400)
     params: dict[str, Any] | None = None
+    # spec v2 (D2c): which bar series the indicator reads
+    timeframe: Timeframe = Timeframe.DAILY
+
+    @model_validator(mode="after")
+    def _timeframe_fits_indicator(self) -> Condition:
+        if (
+            self.timeframe is Timeframe.FIVE_MIN
+            and self.indicator not in INTRADAY_CAPABLE_INDICATORS
+        ):
+            raise ValueError(
+                f"indicator {self.indicator.value} is a daily series — it cannot "
+                "read the 5min timeframe"
+            )
+        if self.indicator is Indicator.PRICE_VS_VWAP_PCT and (
+            self.timeframe is not Timeframe.FIVE_MIN
+        ):
+            raise ValueError(
+                "price_vs_vwap_pct is intraday-only — VWAP is session-anchored; "
+                'set timeframe "5min"'
+            )
+        return self
 
 
 class Schedule(BaseModel):
@@ -197,6 +247,10 @@ class Schedule(BaseModel):
     frequency: Frequency
     day_of_week: DayOfWeek | None = None
     day_of_month: int | None = Field(default=None, ge=1, le=28)
+    # spec v2 (D2c): earliest ET bar an entry may fill (clock="5min" only)
+    time_of_day: str | None = Field(
+        default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$"
+    )
 
 
 class Entry(BaseModel):
@@ -369,12 +423,35 @@ class StrategySpec(BaseModel):
             self.position.expiration_selection.target_dte == 0
         ):
             used.append("0-DTE expiration selection")
+        if self.entry.schedule.time_of_day is not None:
+            used.append("schedule.time_of_day")
         all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
         v2_used = {c.indicator.value for c in all_conditions if c.indicator in V2_INDICATORS}
         used += sorted(f"indicator {name}" for name in v2_used)
+        if any(c.timeframe is Timeframe.FIVE_MIN for c in all_conditions):
+            used.append('timeframe "5min"')
         if used:
             raise ValueError(
                 f"spec_version 1 cannot use v2 vocabulary: {', '.join(used)} — set spec_version 2"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _intraday_vocabulary_needs_5min_clock(self) -> StrategySpec:
+        """5-minute indicators and time-of-day entries only exist at the
+        5-minute clock — a daily engine has no bars to evaluate them on."""
+        if self.backtest.clock is Clock.FIVE_MIN:
+            return self
+        needs: list[str] = []
+        all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        if any(c.timeframe is Timeframe.FIVE_MIN for c in all_conditions):
+            needs.append('conditions with timeframe "5min"')
+        if self.entry.schedule.time_of_day is not None:
+            needs.append("schedule.time_of_day")
+        if needs:
+            raise ValueError(
+                f"{' and '.join(needs)} require backtest.clock \"5min\" — "
+                "the daily clock has no intraday bars"
             )
         return self
 

@@ -51,6 +51,10 @@ def _match_condition(expected: dict[str, Any], actual: list[dict[str, Any]]) -> 
             continue
         if "period" in expected and cond.get("period") != expected["period"]:
             return f"{expected['indicator']} period {cond.get('period')} != {expected['period']}"
+        if "timeframe" in expected:
+            got_tf = cond.get("timeframe") or "daily"
+            if got_tf != expected["timeframe"]:
+                return f"{expected['indicator']} timeframe {got_tf} != {expected['timeframe']}"
         if cond.get("operator") not in expected["operator"]:
             return (
                 f"{expected['indicator']} operator {cond.get('operator')} "
@@ -130,6 +134,14 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
 
     if "spec_version" in expect and spec.get("spec_version") != expect["spec_version"]:
         errs.append(f"spec_version {spec.get('spec_version')} != {expect['spec_version']}")
+    if "clock" in expect:
+        got_clock = (spec.get("backtest") or {}).get("clock") or "daily"
+        if got_clock != expect["clock"]:
+            errs.append(f"backtest.clock {got_clock} != {expect['clock']}")
+    if "time_of_day" in expect:
+        got_tod = sched.get("time_of_day")
+        if got_tod != expect["time_of_day"]:
+            errs.append(f"schedule.time_of_day {got_tod} != {expect['time_of_day']}")
     return errs
 
 
