@@ -5,7 +5,13 @@ touch it through `MarketView(store, as_of)`, whose every accessor is
 hard-bounded by `as_of`. Requesting anything after `as_of` raises
 `LookaheadError` — the canary test asserts this.
 
-Stores are built by loaders (real R2 loader in `load.py`, fixture loader
+D2a adds the minute scale: `SessionSlice` holds ONE session's 5-minute
+intraday record (bars, per-bar option quotes for the short-DTE ATM slice,
+per-bar underlying) and `IntradayView(slice, bar_ts)` bounds every read by
+the current bar. Bar timestamps are ET wall-clock, tz-naive, exactly as
+the lake stores them. The minute canary asserts the boundary.
+
+Stores are built by loaders (chains.py / intraday.py, fixture loaders
 below); the engine itself never sees pandas or the network.
 """
 
@@ -13,7 +19,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from app.engine.types import ContractKey, Quote
 
@@ -127,6 +133,136 @@ class MarketView:
         if idx == 0:
             return None
         return self._store.hv_30d[self._store.hv_dates[idx - 1]]
+
+
+@dataclass
+class SessionSlice:
+    """One session's 5-minute intraday record for the short-DTE ATM slice.
+
+    `quote_source` is per-SESSION, not per-quote: a session is served by its
+    best available source (ivol_5min: true NBBO; cboe_minute: ~15-min
+    delayed, forward coverage only — owner amendment 1) and every fill made
+    from it inherits that provenance. Sources are never mixed within a
+    session — a blend would blur what the verdict must disclose."""
+
+    session: date
+    bars: list[datetime]  # ordered decision bars, ET wall-clock tz-naive
+    quotes: dict[datetime, dict[ContractKey, Quote]]  # per-bar option slice
+    underlying: dict[datetime, float]  # per-bar underlying last
+    quote_source: str  # "ivol_5min" | "cboe_minute"
+
+    def __post_init__(self) -> None:
+        self.bars = sorted(self.bars)
+
+
+class IntradayView:
+    """All reads bounded by the current bar (guardrail #2 at minute scale).
+
+    quote_at() serves ONLY the current bar — there is deliberately no
+    timestamp parameter to ask for another bar's quote. History accessors
+    (bars_upto / underlying_history) end at bar_ts. Anything else raises."""
+
+    def __init__(self, slc: SessionSlice, bar_ts: datetime) -> None:
+        self._slice = slc
+        self._bar_ts = bar_ts
+
+    @property
+    def bar_ts(self) -> datetime:
+        return self._bar_ts
+
+    @property
+    def session(self) -> date:
+        return self._slice.session
+
+    def _check(self, ts: datetime) -> None:
+        if ts > self._bar_ts:
+            raise LookaheadError(
+                f"bar {self._bar_ts} attempted to read {ts} — lookahead is banned"
+            )
+
+    def chain(self) -> dict[ContractKey, Quote]:
+        """The current bar's option slice (empty when the bar carried none)."""
+        return self._slice.quotes.get(self._bar_ts, {})
+
+    def quote_at(self, key: ContractKey) -> tuple[Quote, str] | None:
+        """(quote, fill_source) at the CURRENT bar, or None — a gap is a gap
+        (no synthetic quotes in D2; owner decision)."""
+        q = self._slice.quotes.get(self._bar_ts, {}).get(key)
+        if q is None:
+            return None
+        return q, self._slice.quote_source
+
+    def underlying_last(self, ts: datetime | None = None) -> float | None:
+        ts = ts or self._bar_ts
+        self._check(ts)
+        return self._slice.underlying.get(ts)
+
+    def bars_upto(self) -> list[datetime]:
+        """Decision bars of this session ≤ the current bar."""
+        idx = bisect_right(self._slice.bars, self._bar_ts)
+        return self._slice.bars[:idx]
+
+    def underlying_history(self) -> list[float]:
+        """Underlying lasts at bars ≤ the current bar (intraday indicator
+        input, D2c). Bars without an underlying print are skipped — never
+        interpolated."""
+        out: list[float] = []
+        for b in self.bars_upto():
+            v = self._slice.underlying.get(b)
+            if v is not None:
+                out.append(v)
+        return out
+
+
+def build_fixture_slice(
+    session: str,
+    quotes: dict[str, list[dict[str, object]]],
+    underlying: dict[str, float],
+    quote_source: str = "ivol_5min",
+) -> SessionSlice:
+    """Fixture loader: {'HH:MM': rows} → SessionSlice (same shape the real
+    loader produces). Bar keys are ET wall-clock times within `session`."""
+
+    def _ts(hhmm: str) -> datetime:
+        d = date.fromisoformat(session)
+        h, m = hhmm.split(":")
+        return datetime(d.year, d.month, d.day, int(h), int(m))
+
+    def _f(row: dict[str, object], k: str) -> float | None:
+        v = row.get(k)
+        return None if v is None else float(v)  # type: ignore[arg-type]
+
+    quote_map: dict[datetime, dict[ContractKey, Quote]] = {}
+    for hhmm, rows in quotes.items():
+        per: dict[ContractKey, Quote] = {}
+        for row in rows:
+            key = ContractKey(
+                expiration=date.fromisoformat(str(row["expiration"])),
+                right=str(row["right"]),
+                strike=float(row["strike"]),  # type: ignore[arg-type]
+            )
+            per[key] = Quote(
+                bid=_f(row, "bid"),
+                ask=_f(row, "ask"),
+                delta=_f(row, "delta"),
+                iv=_f(row, "iv"),
+                gamma=_f(row, "gamma"),
+                theta=_f(row, "theta"),
+                vega=_f(row, "vega"),
+                volume=None if row.get("volume") is None
+                else int(row["volume"]),  # type: ignore[call-overload]
+                greeks_source="vendor",
+            )
+        quote_map[_ts(hhmm)] = per
+
+    bars = sorted(set(quote_map) | {_ts(k) for k in underlying})
+    return SessionSlice(
+        session=date.fromisoformat(session),
+        bars=bars,
+        quotes=quote_map,
+        underlying={_ts(k): float(v) for k, v in underlying.items()},
+        quote_source=quote_source,
+    )
 
 
 def build_fixture_store(

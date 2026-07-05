@@ -19,7 +19,14 @@ from app.data import chains, r2
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
-INTRADAY_SOURCES = ["cboe_delayed", "yahoo"]
+INTRADAY_SOURCES = ["ivolatility", "cboe_delayed", "yahoo"]
+
+# What the 5-minute record actually covers (mirrors app/data/intraday.py) —
+# every intraday surface discloses the slice, per guardrail #6.
+INTRADAY_SLICE_NOTE = (
+    "5-min record is a short-DTE ATM slice: 0–2 trading-DTE, ATM±$8 "
+    "(iVolatility NBBO; CBOE minute snapshots forward, ~15-min delayed)"
+)
 
 # fields the Observatory grades per source (D1d): what share of rows
 # actually carry each field — gaps visible, not discovered mid-backtest
@@ -95,6 +102,11 @@ def _blind_spots(dolthub_state: dict[str, Any], minute: dict[str, Any]) -> list[
             "id": "recorder-best-effort",
             "text": "Intraday recorder runs on the owner's machine — uptime is "
             "best-effort and gaps are recorded, not hidden",
+        },
+        {
+            "id": "intraday-slice",
+            "text": INTRADAY_SLICE_NOTE
+            + " — wider strikes and longer tenors have EOD coverage only",
         },
     ]
     quarantined = _quarantined_count(dolthub_state)
@@ -247,6 +259,7 @@ def build_coverage() -> dict[str, Any]:
         "underlying": underlying,
         "chain_quality": {t: _chain_quality(t) for t in TICKERS},
         "ivol_analytics": _ivol_analytics_ranges(s3),
+        "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": r2.get_json(s3, "state/quality_flags.json", {}),
         "dolthub": {
             "verified_sessions": len(verified),

@@ -233,6 +233,16 @@ export default function DataPage() {
               dim
             />
           )}
+          {coverage.intraday.ivolatility?.SPY && (
+            <Lane
+              label="SPY 5-min NBBO"
+              first={coverage.intraday.ivolatility.SPY.first}
+              last={coverage.intraday.ivolatility.SPY.last}
+              t0={t0}
+              t1={today}
+              note={`${coverage.intraday.ivolatility.SPY.sessions.toLocaleString()} sessions · short-DTE ATM slice`}
+            />
+          )}
           {recorder && (
             <Lane
               label="quote recorder"
