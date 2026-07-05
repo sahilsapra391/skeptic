@@ -351,8 +351,25 @@ def fetch_underlying(symbol: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def fetch_fred_dgs3mo() -> pd.DataFrame:
+    """3-month T-bill yield from FRED (free CSV, no key) — the risk-free rate
+    for the backend's computed Black-Scholes greeks (DATA-PIPELINE §4)."""
+    resp = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv",
+                        params={"id": "DGS3MO"}, timeout=60)
+    resp.raise_for_status()
+    df = pd.read_csv(io.StringIO(resp.text))
+    if df.empty or len(df.columns) != 2:
+        return pd.DataFrame()
+    df.columns = ["date", "rate_pct"]  # header name varies (DATE/observation_date)
+    df["rate_pct"] = pd.to_numeric(df["rate_pct"], errors="coerce")  # '.' = missing
+    df = df.dropna(subset=["rate_pct"])
+    df["date"] = pd.to_datetime(df["date"])
+    return df[["date", "rate_pct"]]
+
+
 def refresh_underlying_and_vix(s3) -> None:
-    """Daily OHLCV for tickers + ^VIX. Full-history overwrite: cheap, idempotent."""
+    """Daily OHLCV for tickers + ^VIX + risk-free rate. Full-history
+    overwrite: cheap, idempotent."""
     targets = [(t, f"underlying/ticker={t}/daily.parquet") for t in TICKERS]
     targets.append(("^VIX", "reference/vix_daily.parquet"))
     for symbol, key in targets:
@@ -361,6 +378,14 @@ def refresh_underlying_and_vix(s3) -> None:
             log.warning("[underlying:%s] no data from any source, skipped (non-fatal)", symbol)
             continue
         r2_put_parquet(s3, key, df)
+    try:
+        rates = fetch_fred_dgs3mo()
+        if rates.empty:
+            log.warning("[rates] FRED DGS3MO returned no data, skipped (non-fatal)")
+        else:
+            r2_put_parquet(s3, "reference/rates_dgs3mo.parquet", rates)
+    except Exception as exc:
+        log.warning("[rates] FRED DGS3MO fetch failed, non-fatal: %s", exc)
 
 
 # ------------------------------- modes -------------------------------------

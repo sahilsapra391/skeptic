@@ -46,3 +46,6 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "lake: touches the live R2 lake (auto-skips without credentials)",
+]

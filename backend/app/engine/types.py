@@ -8,19 +8,34 @@ from datetime import date
 MULT = 100  # options contract multiplier
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ContractKey:
     expiration: date
     right: str  # "call" | "put"
     strike: float
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Quote:
+    """One contract's quote row. A full SPY load holds ~5M of these, so the
+    class uses slots and every field beyond the big four is optional.
+
+    Greek unit conventions match the lake's vendor greeks (verified against
+    DoltHub vendor rows, aggregate-diff probe 2026-07-05): theta is per
+    calendar DAY, vega per 1 vol POINT (1%), rho per 1% rate move."""
+
     bid: float | None
     ask: float | None
     delta: float | None
     iv: float | None = None
+    gamma: float | None = None
+    theta: float | None = None  # $/share per calendar day
+    vega: float | None = None  # $/share per 1 vol point
+    rho: float | None = None  # $/share per 1% rate move
+    volume: int | None = None
+    open_interest: int | None = None
+    last: float | None = None
+    greeks_source: str | None = None  # "vendor" | "computed" | None
 
 
 @dataclass

@@ -26,13 +26,29 @@ from typing import Any, cast
 
 import pandas as pd
 
-from app.data import r2
+from app.data import greeks, r2
 from app.engine.market import MarketStore
 from app.engine.types import ContractKey, Quote
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache"
 FETCH_WORKERS = 24
-COLUMNS = ["trading_date", "expiration", "right", "strike", "bid", "ask", "delta", "iv"]
+# Full canonical width (D1a): the engine stops discarding greeks, liquidity
+# and provenance. `source` rides along for the Observatory's per-source
+# field-completeness view (D1d). Spot stays per-day in MarketStore — the
+# lake's documented join — but the column is read here because computing
+# missing greeks needs the row spot when a source carries one.
+COLUMNS = [
+    "trading_date", "expiration", "right", "strike", "bid", "ask", "last",
+    "volume", "open_interest", "iv", "delta", "gamma", "theta", "vega", "rho",
+    "greeks_source", "spot", "source",
+]
+NUMERIC_COLUMNS = [
+    "strike", "bid", "ask", "last", "volume", "open_interest", "iv",
+    "delta", "gamma", "theta", "vega", "rho", "spot",
+]
+# Bump when COLUMNS or the computed-greeks pass changes shape/semantics:
+# a mismatched manifest rebuilds the on-disk cache automatically.
+CACHE_SCHEMA_VERSION = 2
 
 
 def _latest_yahoo_keys(s3: Any, ticker: str) -> dict[str, str]:
@@ -81,7 +97,7 @@ def _fetch_frames(s3: Any, keys: list[str]) -> list[pd.DataFrame]:
             return None
         cols = [c for c in COLUMNS if c in df.columns]
         out = df[cols].copy()
-        for col in ("strike", "bid", "ask", "delta", "iv"):
+        for col in NUMERIC_COLUMNS:
             if col in out.columns:
                 out[col] = pd.to_numeric(out[col], errors="coerce")
         return out
@@ -91,10 +107,18 @@ def _fetch_frames(s3: Any, keys: list[str]) -> list[pd.DataFrame]:
     return [f for f in frames if f is not None]
 
 
-def _load_combined(ticker: str) -> pd.DataFrame:
+def _load_combined(
+    ticker: str,
+    spot_by_date: dict[object, float],
+    rates: pd.DataFrame | None,
+) -> pd.DataFrame:
     s3 = r2.r2_client()
     winners = _chain_keys(s3, ticker)
-    manifest = {"n": len(winners), "last": max(winners) if winners else None}
+    manifest = {
+        "v": CACHE_SCHEMA_VERSION,
+        "n": len(winners),
+        "last": max(winners) if winners else None,
+    }
 
     CACHE_DIR.mkdir(exist_ok=True)
     cache_file = CACHE_DIR / f"chains_{ticker}.parquet"
@@ -110,6 +134,9 @@ def _load_combined(ticker: str) -> pd.DataFrame:
         return pd.DataFrame(columns=COLUMNS)
     frames = _fetch_frames(s3, list(winners.values()))
     combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COLUMNS)
+    # fill greeks the source didn't carry (Yahoo rows) BEFORE caching, so the
+    # computed values are part of the cached artifact and its version key
+    combined = greeks.fill_missing_greeks(combined, ticker, spot_by_date, rates)
     try:
         combined.to_parquet(cache_file, index=False)
         meta_file.write_text(json.dumps(manifest))
@@ -118,11 +145,14 @@ def _load_combined(ticker: str) -> pd.DataFrame:
     return combined
 
 
-def _underlying_frames(ticker: str) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+def _underlying_frames(
+    ticker: str,
+) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
     s3 = r2.r2_client()
     daily = r2.get_parquet(s3, f"underlying/ticker={ticker}/daily.parquet")
     vix = r2.get_parquet(s3, "reference/vix_daily.parquet")
-    return daily, vix
+    rates = r2.get_parquet(s3, "reference/rates_dgs3mo.parquet")
+    return daily, vix, rates
 
 
 # in-process store cache: the parquet parse is seconds of work a warm
@@ -149,7 +179,7 @@ def warm_store(ticker: str = "SPY") -> None:
 
 
 def _build_market_store(ticker: str) -> MarketStore:
-    daily, vix = _underlying_frames(ticker)
+    daily, vix, rates = _underlying_frames(ticker)
     if daily is None or daily.empty:
         raise RuntimeError(f"no underlying dailies in the lake for {ticker}")
 
@@ -165,7 +195,7 @@ def _build_market_store(ticker: str) -> MarketStore:
         vix_dates = [pd.Timestamp(d).date() for d in vix["date"]]
         vix_close = {d: float(c) for d, c in zip(vix_dates, vix["close"], strict=False)}
 
-    combined = _load_combined(ticker)
+    combined = _load_combined(ticker, cast(dict[object, float], u_close), rates)
     chains: dict[date, dict[ContractKey, Quote]] = {}
     atm_iv: dict[date, float] = {}
     if not combined.empty:
@@ -175,6 +205,12 @@ def _build_market_store(ticker: str) -> MarketStore:
 
         def num(value: Any) -> float | None:
             return None if value is None or pd.isna(value) else float(value)
+
+        def num_i(value: Any) -> int | None:
+            return None if value is None or pd.isna(value) else int(value)
+
+        def text(value: Any) -> str | None:
+            return None if value is None or pd.isna(value) else str(value)
 
         for day, group in combined.groupby("trading_date"):
             per: dict[ContractKey, Quote] = {}
@@ -189,6 +225,14 @@ def _build_market_store(ticker: str) -> MarketStore:
                     ask=num(rec.get("ask")),
                     delta=num(rec.get("delta")),
                     iv=num(rec.get("iv")),
+                    gamma=num(rec.get("gamma")),
+                    theta=num(rec.get("theta")),
+                    vega=num(rec.get("vega")),
+                    rho=num(rec.get("rho")),
+                    volume=num_i(rec.get("volume")),
+                    open_interest=num_i(rec.get("open_interest")),
+                    last=num(rec.get("last")),
+                    greeks_source=text(rec.get("greeks_source")),
                 )
             d = cast(date, day)
             chains[d] = per
