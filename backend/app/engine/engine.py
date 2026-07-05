@@ -128,6 +128,51 @@ def _position_value(pos: Position, close_px: float) -> float:
     return value
 
 
+def _portfolio_greeks(
+    positions: list[Position], view: MarketView
+) -> tuple[float | None, float | None, float | None, float | None]:
+    """Aggregate (delta, gamma, theta, vega) of all open positions at
+    today's quotes. Signed: long +, short −; option greeks × qty × MULT,
+    stock at 1Δ per share. Per-greek honesty: a flat book is 0.0; if ANY
+    open leg lacks a greek today, THAT aggregate is None — a partial sum
+    would silently understate exposure."""
+    delta = gamma = theta = vega = 0.0
+    ok = {"delta": True, "gamma": True, "theta": True, "vega": True}
+    for pos in positions:
+        if pos.closed:
+            continue
+        for leg in pos.legs:
+            if leg.settled:
+                continue
+            q = view.quote(leg.key)
+            sign = 1.0 if leg.side == "long" else -1.0
+            scale = sign * leg.qty * MULT
+            for name, value in (
+                ("delta", None if q is None else q.delta),
+                ("gamma", None if q is None else q.gamma),
+                ("theta", None if q is None else q.theta),
+                ("vega", None if q is None else q.vega),
+            ):
+                if value is None:
+                    ok[name] = False
+                elif name == "delta":
+                    delta += value * scale
+                elif name == "gamma":
+                    gamma += value * scale
+                elif name == "theta":
+                    theta += value * scale
+                else:
+                    vega += value * scale
+        if pos.stock_shares:
+            delta += float(pos.stock_shares)  # stock is always 1Δ per share
+    return (
+        delta if ok["delta"] else None,
+        gamma if ok["gamma"] else None,
+        theta if ok["theta"] else None,
+        vega if ok["vega"] else None,
+    )
+
+
 def _schedule_matches(spec: StrategySpec, state: _State, day: date) -> bool:
     sched = spec.entry.schedule
     freq = sched.frequency
@@ -599,6 +644,11 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
             equity = state.cash + sum(_position_value(p, close_px) for p in open_positions)
             result.dates.append(day)
             result.equity.append(round(equity, 2))
+            pd_, pg, pt, pv = _portfolio_greeks(open_positions, view)
+            result.portfolio_delta.append(None if pd_ is None else round(pd_, 2))
+            result.portfolio_gamma.append(None if pg is None else round(pg, 4))
+            result.portfolio_theta.append(None if pt is None else round(pt, 2))
+            result.portfolio_vega.append(None if pv is None else round(pv, 2))
             if open_positions:
                 result.days_in_market += 1
 

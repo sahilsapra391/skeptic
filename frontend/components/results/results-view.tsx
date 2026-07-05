@@ -15,7 +15,7 @@ import clsx from "clsx";
 
 import { ApiError, askRun } from "@/lib/api";
 import { useSettings } from "@/lib/settings";
-import type { RunPayload, SeriesPoint } from "@/lib/types";
+import type { NullableSeriesPoint, RunPayload, SeriesPoint } from "@/lib/types";
 
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { Hint } from "@/components/hint";
@@ -299,6 +299,138 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+const HINT_GREEKS: HintPair = [
+  "Aggregate exposure of all open positions at each day's marks: delta/gamma in " +
+    "share-equivalents, theta in $/day, vega in $ per vol point. Gaps are days " +
+    "the data carried no greek — shown as holes, never interpolated.",
+  "How exposed the open positions were each day, in plain units. Gaps mean the " +
+    "data had no greeks that day — we show a hole instead of making one up.",
+];
+
+/** Null-gap polylines: one segment per contiguous run of known values, so a
+ * missing-greeks day renders as a hole in the line (honest gap). */
+function nullableSegments(
+  series: NullableSeriesPoint[],
+  height: number,
+  pad: number,
+): { points: string[]; dots: { x: number; y: number }[]; last: number | null } {
+  const known = series.filter((p): p is SeriesPoint => p.v !== null);
+  if (known.length === 0) return { points: [], dots: [], last: null };
+  const values = known.map((p) => p.v);
+  const lo = Math.min(...values, 0);
+  const hi = Math.max(...values, 0);
+  const span = hi - lo || 1;
+  const y = (v: number) => pad + (1 - (v - lo) / span) * (height - 2 * pad);
+  const x = (i: number) => (i / Math.max(series.length - 1, 1)) * 860;
+
+  const points: string[] = [];
+  const dots: { x: number; y: number }[] = [];
+  let current: string[] = [];
+  let currentStart = -1;
+  const flush = (endIdx: number) => {
+    if (current.length > 1) points.push(current.join(" "));
+    else if (current.length === 1) {
+      // an isolated known day between gaps still deserves a mark
+      const v = series[currentStart].v as number;
+      dots.push({ x: x(endIdx - 1), y: y(v) });
+    }
+    current = [];
+    currentStart = -1;
+  };
+  series.forEach((p, i) => {
+    if (p.v === null) {
+      flush(i);
+    } else {
+      if (currentStart < 0) currentStart = i;
+      current.push(`${x(i).toFixed(1)},${y(p.v).toFixed(1)}`);
+    }
+  });
+  flush(series.length);
+  return { points, dots, last: known[known.length - 1].v };
+}
+
+function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
+  const gs = run.greeksSeries;
+  const liq = run.liquidity;
+  const conc = run.concentration;
+  if (!gs || gs.delta.length === 0) return null;
+
+  const rows: { key: keyof typeof gs; label: string; unit: string }[] = [
+    { key: "delta", label: "Δ DELTA", unit: "share-eq" },
+    { key: "gamma", label: "Γ GAMMA", unit: "share-eq /$" },
+    { key: "theta", label: "Θ THETA", unit: "$/day" },
+    { key: "vega", label: "V VEGA", unit: "$/vol-pt" },
+  ];
+
+  const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
+
+  return (
+    <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
+      <div className="mb-2.5 flex justify-between">
+        <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
+          {retailMode ? "OPEN-POSITION EXPOSURE, DAY BY DAY" : "PORTFOLIO GREEKS — DAILY MARKS"}
+          <Hint text={pick(HINT_GREEKS, retailMode)} />
+        </span>
+        <span className="font-mono text-[10.5px] text-ink-4">
+          gaps = no greeks that day, never interpolated
+        </span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {rows.map(({ key, label, unit }) => {
+          const { points, dots, last } = nullableSegments(gs[key], 40, 5);
+          return (
+            <div key={key} className="grid grid-cols-[108px_1fr_120px] items-center gap-2.5">
+              <span className="font-mono text-[10.5px] tracking-[.08em] text-ink-4">{label}</span>
+              <svg width="100%" viewBox="0 0 860 40" className="block" preserveAspectRatio="none">
+                <line x1="0" y1="20" x2="860" y2="20" stroke="var(--grid)" />
+                {points.map((seg) => (
+                  <polyline
+                    key={seg.slice(0, 24)}
+                    points={seg}
+                    fill="none"
+                    stroke="var(--chart-bright)"
+                    strokeWidth="1.2"
+                  />
+                ))}
+                {dots.map((d) => (
+                  <circle
+                    key={`${d.x}-${d.y}`}
+                    cx={d.x.toFixed(1)}
+                    cy={d.y.toFixed(1)}
+                    r="1.6"
+                    fill="var(--chart-bright)"
+                  />
+                ))}
+              </svg>
+              <span className="text-right font-mono text-[11px] text-ink-3">
+                {last === null ? "—" : last.toLocaleString()}{" "}
+                <span className="text-ink-4">{unit}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {liq && (
+        <div className="mt-3 border-t border-line-softer pt-2.5 font-mono text-[11px] text-ink-3">
+          fills {liq.option_leg_fills} · median spread{" "}
+          {liq.median_spread_pct === null
+            ? "—"
+            : `${(liq.median_spread_pct * 100).toFixed(1)}% of mid`}{" "}
+          · {pct(liq.penalized_share)} thin-penalized · {pct(liq.unknown_liquidity_share)}{" "}
+          liquidity unknown · {liq.skipped_illiquid} refused ·{" "}
+          <span className="text-ink-4">
+            gates: spread ≤ {liq.max_spread_pct}% · OI ≥ {liq.min_open_interest} · mode{" "}
+            {liq.mode}
+          </span>
+        </div>
+      )}
+      {conc?.flagged && conc.note && (
+        <div className="mt-2 font-mono text-[11px] text-warn">⚠ concentration: {conc.note}</div>
+      )}
     </div>
   );
 }
@@ -718,6 +850,7 @@ export function ResultsView({
       <div className={clsx(run.verdict.refusal && "opacity-[.38]")}>
         <MetricTiles run={run} retailMode={retailMode} />
         <EquityChart run={run} retailMode={retailMode} />
+        <GreeksPanel run={run} retailMode={retailMode} />
         <HonestyPanels run={run} retailMode={retailMode} />
         <Recommendations run={run} retailMode={retailMode} />
         <TradeLog run={run} retailMode={retailMode} />

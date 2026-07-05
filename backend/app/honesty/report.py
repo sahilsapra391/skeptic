@@ -138,6 +138,21 @@ class LiquidityProfile(BaseModel):
     note: str | None
 
 
+class Concentration(BaseModel):
+    """Is the P&L a distribution or a handful of days? (D1d). Reported flag
+    + verdict reason only — promoting it to a trust cap is a future reviewed
+    threshold change, not this model's job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    meaningful: bool
+    note: str | None = None
+    top_days: int = 0  # the top 5% of marked sessions by |daily P&L|
+    top_share: float | None = None  # their share of gross |daily P&L|
+    gamma_coincidence: float | None = None  # fraction of those days in top-decile |gamma|
+    flagged: bool = False
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -159,6 +174,7 @@ class HonestyReport(BaseModel):
     regime_sample: RegimeSample
     coverage: Coverage
     liquidity: LiquidityProfile | None = None  # None only on pre-D1b reports
+    concentration: Concentration | None = None  # None only on pre-D1d reports
     trust: Trust
     metrics: dict[str, float | None]
     effective_start: str
