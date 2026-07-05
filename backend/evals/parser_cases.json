@@ -394,6 +394,97 @@
       "text": "Buy a 60 DTE ATM call on QQQ and harvest theta between 21 and 7 DTE at 50% profit.",
       "kind": "questions",
       "comment": "Owner amendment 1 golden case: theta_harvest has no defined max profit on a long option — the parser must ASK (offering a plain profit target or time exit), never emit theta_harvest on a long_call."
+    },
+    {
+      "case": 16,
+      "text": "Sell a 1DTE ATM put on SPY when the 5-minute RSI(14) is under 30 and price is below VWAP, take profit at 50%, stop at 200%.",
+      "kind": "spec",
+      "comment": "The founder's 0/1DTE mean-reversion family (D2 acceptance phrasing): must infer clock 5min, both intraday conditions, trading-day DTE 1.",
+      "expect": {
+        "spec_version": 2,
+        "clock": "5min",
+        "ticker": "SPY",
+        "structure": "short_put",
+        "legs": [
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.5
+          }
+        ],
+        "target_dte": 1,
+        "schedule": {
+          "frequency": [
+            "signal_only",
+            "daily"
+          ]
+        },
+        "conditions": [
+          {
+            "indicator": "rsi",
+            "period": 14,
+            "timeframe": "5min",
+            "operator": [
+              "<",
+              "<=",
+              "below"
+            ],
+            "value": 30
+          },
+          {
+            "indicator": "price_vs_vwap_pct",
+            "timeframe": "5min",
+            "operator": [
+              "<",
+              "<=",
+              "below"
+            ],
+            "value": 0
+          }
+        ],
+        "exit": {
+          "profit_target_pct": 50,
+          "stop_loss_pct": 200
+        }
+      }
+    },
+    {
+      "case": 17,
+      "text": "0DTE short put on SPY at 30 delta, enter after 10:00, close at 50% profit.",
+      "kind": "spec",
+      "expect": {
+        "spec_version": 2,
+        "clock": "5min",
+        "time_of_day": "10:00",
+        "ticker": "SPY",
+        "structure": "short_put",
+        "legs": [
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.3
+          }
+        ],
+        "target_dte": 0,
+        "schedule": {
+          "frequency": [
+            "daily",
+            "signal_only"
+          ]
+        },
+        "conditions": [],
+        "exit": {
+          "profit_target_pct": 50
+        }
+      }
+    },
+    {
+      "case": 18,
+      "text": "Scalp SPY 0DTE puts off the 1-minute chart, in at 9:32, out by 9:47.",
+      "kind": "questions",
+      "comment": "Sub-5-minute vocabulary: the record is 5-minute bars — the parser must ASK (offering the 5-min grid), never silently round 9:32 to 9:30 or emit a 1-minute indicator."
     }
   ]
 }

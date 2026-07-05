@@ -46,7 +46,7 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 # (covers a weekend); documented approximation for the tiny forward corpus.
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2  # v2 (D2c): underlying frames carry per-bar volume
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "intraday"
 LRU_SESSIONS = 32
 CBOE_FETCH_WORKERS = 16
@@ -97,10 +97,18 @@ def _ivol_frames(
     })[SLICE_COLUMNS]
     und_out: pd.DataFrame | None = None
     if und is not None and not und.empty and "last" in und.columns:
+        if "volume" in und.columns:
+            cum_vol = pd.to_numeric(und["volume"], errors="coerce")
+            # the vendor volume column is CUMULATIVE within the session
+            # (probed: monotonic 0 → ~52M) — per-bar volume is the diff
+            bar_vol = cum_vol.diff().fillna(cum_vol).clip(lower=0)
+        else:
+            bar_vol = pd.Series(0.0, index=und.index)  # VWAP unevaluable
         und_out = pd.DataFrame({
             "bar_ts": pd.to_datetime(und["minute_ts"]),
             "last": pd.to_numeric(und["last"], errors="coerce"),
-        }).dropna()
+            "volume": bar_vol,
+        }).dropna(subset=["bar_ts", "last"])
     return out, und_out
 
 
@@ -211,14 +219,20 @@ def _build_slice(
         quotes[bar.to_pydatetime()] = per
 
     underlying: dict[datetime, float] = {}
+    underlying_volume: dict[datetime, float] = {}
     if und is not None and not und.empty:
         for rec in und.dropna(subset=["bar_ts", "last"]).to_dict("records"):
-            underlying[pd.Timestamp(rec["bar_ts"]).to_pydatetime()] = float(rec["last"])
+            ts = pd.Timestamp(rec["bar_ts"]).to_pydatetime()
+            underlying[ts] = float(rec["last"])
+            vol = rec.get("volume")
+            if vol is not None and not pd.isna(vol):
+                underlying_volume[ts] = float(vol)
 
     bars = sorted(set(quotes) | set(underlying))
     return SessionSlice(
         session=session, bars=bars, quotes=quotes,
-        underlying=underlying, quote_source=source,
+        underlying=underlying, underlying_volume=underlying_volume,
+        quote_source=source,
     )
 
 

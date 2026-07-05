@@ -12,7 +12,7 @@ import pandas as pd
 
 from app.data import indicators as ind
 from app.engine.market import MarketViewLike
-from app.models.spec import Condition, Indicator, Operator
+from app.models.spec import Condition, Indicator, Operator, Timeframe
 
 
 def _compare(value: float, op: Operator, threshold: float) -> bool:
@@ -49,7 +49,59 @@ def _tail_values(series: pd.Series, n: int = 2) -> list[float]:
     return vals
 
 
+# Fixed indicator lookback at the 5-min timeframe: the schema caps period at
+# 400 bars; 1,200 bars (~3 weeks of sessions) triple-covers it. A bounded
+# window is the standard charting convention AND keeps a full-history run
+# O(n) — recomputing Wilder smoothing over years of bars per decision was
+# measured at 7.5× the engine's cost. Deterministic: same spec + data =
+# same values, always.
+INTRADAY_LOOKBACK_BARS = 1_200
+
+
+def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
+    """5-minute timeframe (D2c): price-series indicators over the run's
+    rolling 5-min lasts (bounded INTRADAY_LOOKBACK_BARS); VWAP is
+    session-anchored. Warmup or an empty bar history evaluates False —
+    never a thin-window guess."""
+    closes = view.intraday_closes_upto()[-INTRADAY_LOOKBACK_BARS:]
+    if not closes:
+        return False
+    if cond.indicator is Indicator.PRICE_VS_VWAP_PCT:
+        vwap = view.intraday_vwap()
+        if vwap is None or vwap <= 0:
+            return False
+        pct = (closes[-1] / vwap - 1.0) * 100.0
+        return _compare(pct, cond.operator, cond.value)
+
+    s = pd.Series(closes, dtype=float)
+    period = cond.period or 14
+    ind_name = cond.indicator
+    if ind_name is Indicator.RSI:
+        return _series_pair(_tail_values(ind.rsi(s, period)), cond.operator, cond.value)
+    if ind_name is Indicator.SMA:
+        return _series_pair(_tail_values(ind.sma(s, period)), cond.operator, cond.value)
+    if ind_name is Indicator.EMA:
+        return _series_pair(_tail_values(ind.ema(s, period)), cond.operator, cond.value)
+    if ind_name is Indicator.PRICE_VS_SMA_PCT:
+        sma = ind.sma(s, cond.period or 50)
+        pct_series = (s / sma - 1.0) * 100.0
+        return _series_pair(_tail_values(pct_series), cond.operator, cond.value)
+    if ind_name is Indicator.PRICE_VS_EMA_PCT:
+        ema = ind.ema(s, cond.period or 20)
+        pct_series = (s / ema - 1.0) * 100.0
+        return _series_pair(_tail_values(pct_series), cond.operator, cond.value)
+    if ind_name is Indicator.EMA_CROSS_STATE:
+        params = cond.params or {}
+        fast = int(params.get("fast", 9))
+        slow = int(params.get("slow", 20))
+        diff = ind.ema(s, fast) - ind.ema(s, slow)
+        return _series_pair(_tail_values(diff), cond.operator, 0.0)
+    return False  # validation keeps daily-only indicators off this path
+
+
 def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
+    if cond.timeframe is Timeframe.FIVE_MIN:
+        return _intraday_condition(view, cond)
     closes = view.closes_upto()
     if not closes:
         return False

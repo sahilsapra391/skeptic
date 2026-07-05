@@ -74,6 +74,11 @@ class MarketViewLike(Protocol):
     def ivx_30d(self) -> float | None: ...
     def ivx_30d_history(self) -> list[float]: ...
     def hv_30d(self) -> float | None: ...
+    # D2c: the run's rolling 5-minute underlying lasts (≤ current bar,
+    # across sessions) and the session-anchored VWAP at the current bar.
+    # The daily view has no bars: empty / None.
+    def intraday_closes_upto(self) -> list[float]: ...
+    def intraday_vwap(self) -> float | None: ...
 
 
 class IntradayProvider(Protocol):
@@ -100,6 +105,14 @@ class MarketView:
     @property
     def fill_source(self) -> str:
         return "eod_chain"  # daily fills come from the EOD chain record
+
+    # the daily view has no intraday bars — 5min-timeframe conditions are
+    # unevaluable here (and validation forbids them at clock="daily")
+    def intraday_closes_upto(self) -> list[float]:
+        return []
+
+    def intraday_vwap(self) -> float | None:
+        return None
 
     def _check(self, d: date) -> None:
         if d > self._as_of:
@@ -187,6 +200,9 @@ class SessionSlice:
     quotes: dict[datetime, dict[ContractKey, Quote]]  # per-bar option slice
     underlying: dict[datetime, float]  # per-bar underlying last
     quote_source: str  # "ivol_5min" | "cboe_minute"
+    # per-bar underlying volume (D2c, session-anchored VWAP input); empty
+    # when the source carries none (CBOE) — VWAP is honestly unevaluable then
+    underlying_volume: dict[datetime, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.bars = sorted(self.bars)
@@ -260,6 +276,7 @@ def build_fixture_slice(
     quotes: dict[str, list[dict[str, object]]],
     underlying: dict[str, float],
     quote_source: str = "ivol_5min",
+    volumes: dict[str, float] | None = None,
 ) -> SessionSlice:
     """Fixture loader: {'HH:MM': rows} → SessionSlice (same shape the real
     loader produces). Bar keys are ET wall-clock times within `session`."""
@@ -302,6 +319,7 @@ def build_fixture_slice(
         bars=bars,
         quotes=quote_map,
         underlying={_ts(k): float(v) for k, v in underlying.items()},
+        underlying_volume={_ts(k): float(v) for k, v in (volumes or {}).items()},
         quote_source=quote_source,
     )
 
