@@ -157,10 +157,15 @@ class Leg(BaseModel):
 
 
 class ExpirationSelection(BaseModel):
+    """DTE bounds. At clock="daily" these are CALENDAR days (unchanged
+    v1 semantics). At clock="5min" they are TRADING days (owner-confirmed:
+    Friday "1DTE" selects Monday's expiry), and 0 (same-day expiry) is
+    legal — 0DTE requires spec_version 2."""
+
     model_config = ConfigDict(extra="forbid")
 
-    target_dte: int = Field(ge=1, le=90)
-    min_dte: int = Field(ge=1)
+    target_dte: int = Field(ge=0, le=90)
+    min_dte: int = Field(ge=0)
     max_dte: int = Field(le=120)
 
 
@@ -295,6 +300,15 @@ class Costs(BaseModel):
     liquidity_mode: LiquidityMode = LiquidityMode.SKIP
 
 
+class Clock(StrEnum):
+    """The engine's declared decision cadence (D2b). daily = decisions at
+    each session close (the original engine, bit-identical). 5min =
+    decisions at each 5-minute bar, fills from REAL intraday NBBO only."""
+
+    DAILY = "daily"
+    FIVE_MIN = "5min"
+
+
 class BacktestWindow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -302,6 +316,7 @@ class BacktestWindow(BaseModel):
     end: date | None = Field(default=None, description="null = latest available")
     initial_capital: float = Field(default=10_000, ge=1000)
     seed: int = 42
+    clock: Clock = Clock.DAILY  # spec v2 vocabulary when not daily
 
 
 # Structures with a DEFINED maximum profit (the collected credit / capped
@@ -348,6 +363,12 @@ class StrategySpec(BaseModel):
             used.append("exit.theta_harvest")
         if self.position.max_vega_per_contract is not None:
             used.append("position.max_vega_per_contract")
+        if self.backtest.clock is not Clock.DAILY:
+            used.append("backtest.clock")
+        if self.position.expiration_selection.min_dte == 0 or (
+            self.position.expiration_selection.target_dte == 0
+        ):
+            used.append("0-DTE expiration selection")
         all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
         v2_used = {c.indicator.value for c in all_conditions if c.indicator in V2_INDICATORS}
         used += sorted(f"indicator {name}" for name in v2_used)

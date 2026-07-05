@@ -59,9 +59,10 @@
         "expiration_selection": {
           "type": "object",
           "required": ["target_dte", "min_dte", "max_dte"],
+          "description": "At clock=daily these are CALENDAR days (v1 semantics, unchanged). At clock=5min they are TRADING days (Friday '1DTE' selects Monday's expiry). 0 = same-day expiry (0DTE) and requires spec_version 2.",
           "properties": {
-            "target_dte": { "type": "integer", "minimum": 1, "maximum": 90 },
-            "min_dte": { "type": "integer", "minimum": 1 },
+            "target_dte": { "type": "integer", "minimum": 0, "maximum": 90 },
+            "min_dte": { "type": "integer", "minimum": 0 },
             "max_dte": { "type": "integer", "maximum": 120 }
           }
         },
@@ -184,7 +185,12 @@
         "start": { "type": ["string", "null"], "format": "date", "description": "null = earliest available options coverage." },
         "end": { "type": ["string", "null"], "format": "date", "description": "null = latest available." },
         "initial_capital": { "type": "number", "minimum": 1000, "default": 10000 },
-        "seed": { "type": "integer", "default": 42 }
+        "seed": { "type": "integer", "default": 42 },
+        "clock": {
+          "enum": ["daily", "5min"],
+          "default": "daily",
+          "description": "spec_version 2 when not daily. The engine's declared decision cadence. daily: decisions at each session close (original engine, bit-identical). 5min: decisions at each 5-minute bar; entries fill at the DECISION bar's quote and exits evaluate starting the NEXT bar (a stop can never fire on its entry bar); fills come from REAL intraday NBBO only (iVolatility 5-min, CBOE minute forward) - no synthetic quotes, a gap is a gap; intraday coverage is a short-DTE slice (0-2 trading-DTE, ATM+/-$8) and specs needing more are refused before running; equity is marked once per session close at every clock. Exit priority is identical at every clock: stop_loss -> delta_stop -> profit_target -> theta_harvest -> time_exit -> condition exits."
+        }
       }
     }
   },
