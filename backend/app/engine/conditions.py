@@ -109,6 +109,30 @@ def evaluate_condition(view: MarketView, cond: Condition) -> bool:
         current = window[-1]
         rank = sum(1 for v in window if v <= current) / len(window) * 100.0
         return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.IVX_RANK_1Y:
+        # vendor IVX (30d IV Mean) percentile within the trailing 252
+        # observations. Owner amendment 3: below 126 trailing observations
+        # the rank is unevaluable that day — False, never a thin-window guess.
+        history = view.ivx_30d_history()
+        if len(history) < 126:
+            return False
+        window = history[-252:]
+        current = window[-1]
+        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
+        return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.IVX_LEVEL_30D:
+        # stored as a decimal; compared in percentage points (vix_level
+        # ergonomics: "IVX above 25" → value 25)
+        ivx = view.ivx_30d()
+        if ivx is None:
+            return False
+        return _compare(ivx * 100.0, cond.operator, cond.value)
+    if ind_name is Indicator.HV_IV_SPREAD_30D:
+        ivx = view.ivx_30d()
+        hv = view.hv_30d()
+        if ivx is None or hv is None:
+            return False
+        return _compare((ivx - hv) * 100.0, cond.operator, cond.value)
     raise ValueError(f"unhandled indicator {ind_name}")  # pragma: no cover
 
 

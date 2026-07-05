@@ -317,6 +317,83 @@
       "case": 12,
       "text": "Buy calls when it looks oversold, sell when it recovers.",
       "kind": "questions"
+    },
+    {
+      "case": 13,
+      "text": "Sell a 30 delta put on SPY weekly, 45 DTE, close if the short strike reaches 60 delta, otherwise take profits at 50% between 21 and 7 DTE.",
+      "kind": "spec",
+      "expect": {
+        "spec_version": 2,
+        "ticker": "SPY",
+        "structure": "short_put",
+        "legs": [
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.3
+          }
+        ],
+        "target_dte": 45,
+        "schedule": {
+          "frequency": [
+            "weekly"
+          ]
+        },
+        "conditions": [],
+        "exit": {
+          "delta_stop_abs": 0.6,
+          "theta_harvest": {
+            "dte_from": 21,
+            "dte_to": 7,
+            "profit_pct": 50
+          }
+        }
+      }
+    },
+    {
+      "case": 14,
+      "text": "Short put on QQQ at 30 delta, 45 DTE, weekly entries, 50% profit target, but only when IV rank is above 50.",
+      "kind": "spec",
+      "expect": {
+        "spec_version": 2,
+        "ticker": "QQQ",
+        "structure": "short_put",
+        "legs": [
+          {
+            "right": "put",
+            "side": "short",
+            "method": "delta",
+            "value": 0.3
+          }
+        ],
+        "target_dte": 45,
+        "schedule": {
+          "frequency": [
+            "weekly"
+          ]
+        },
+        "conditions": [
+          {
+            "indicator": "ivx_rank_1y",
+            "operator": [
+              ">",
+              ">=",
+              "above"
+            ],
+            "value": 50
+          }
+        ],
+        "exit": {
+          "profit_target_pct": 50
+        }
+      }
+    },
+    {
+      "case": 15,
+      "text": "Buy a 60 DTE ATM call on QQQ and harvest theta between 21 and 7 DTE at 50% profit.",
+      "kind": "questions",
+      "comment": "Owner amendment 1 golden case: theta_harvest has no defined max profit on a long option — the parser must ASK (offering a plain profit target or time exit), never emit theta_harvest on a long_call."
     }
   ]
 }

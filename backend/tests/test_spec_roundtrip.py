@@ -76,7 +76,7 @@ _DELETE = object()
         (["costs", "slippage_half_spread_fraction"], 0, "mid fills are banned (guardrail #1)"),
         (["exit"], {}, "empty exit must ask, never default (guardrail #3)"),
         (["underlying", "ticker"], "TSLA", "v1 universe is SPY/QQQ/IWM only"),
-        (["spec_version"], 2, "spec_version is the constant 1"),
+        (["spec_version"], 3, "spec_version must be 1 or 2 (v2 added by D1c)"),
         (["position", "structure"], "wheel", "unknown structure"),
         (["position", "expiration_selection", "target_dte"], 0, "target_dte >= 1"),
         (["entry", "max_concurrent_positions"], 11, "max 10 concurrent"),

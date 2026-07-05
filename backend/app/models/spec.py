@@ -77,6 +77,15 @@ class Indicator(StrEnum):
     VIX_LEVEL = "vix_level"
     REALIZED_VOL_20D = "realized_vol_20d"
     DRAWDOWN_FROM_HIGH_PCT = "drawdown_from_high_pct"
+    # spec v2 (D1c): vendor IVX/HV analytics, 2005+ on all three tickers
+    IVX_RANK_1Y = "ivx_rank_1y"
+    IVX_LEVEL_30D = "ivx_level_30d"
+    HV_IV_SPREAD_30D = "hv_iv_spread_30d"
+
+
+# Indicators (and fields, checked separately) that require spec_version 2 —
+# a v1 spec using v2 vocabulary is a versioning error, never silent.
+V2_INDICATORS = {Indicator.IVX_RANK_1Y, Indicator.IVX_LEVEL_30D, Indicator.HV_IV_SPREAD_30D}
 
 
 class Operator(StrEnum):
@@ -161,6 +170,10 @@ class Position(BaseModel):
     structure: Structure
     legs: list[Leg] = Field(min_length=1, max_length=4)
     expiration_selection: ExpirationSelection
+    # spec v2 (D1c): entry-time cap on |NET vega| of the contract-set, in
+    # DOLLARS per contract-set per vol point (leg vegas sum signed —
+    # long +, short −, × ratio — then abs, × 100). Owner amendment 2.
+    max_vega_per_contract: float | None = Field(default=None, gt=0)
 
 
 class Condition(BaseModel):
@@ -189,6 +202,28 @@ class Entry(BaseModel):
     max_concurrent_positions: int = Field(ge=1, le=10)
 
 
+class ThetaHarvest(BaseModel):
+    """DTE-band profit harvest (spec v2, owner-confirmed semantics): inside
+    the DTE window [dte_to, dte_from], close as soon as profit reaches
+    profit_pct of max — "take profits during peak decay"."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dte_from: int = Field(ge=1, le=90)  # window opens at this DTE (inclusive)
+    dte_to: int = Field(ge=0)  # window closes at this DTE (inclusive)
+    profit_pct: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _window_runs_downward(self) -> ThetaHarvest:
+        # owner amendment 4: DTE counts DOWN — the window must too
+        if self.dte_from <= self.dte_to:
+            raise ValueError(
+                "theta_harvest.dte_from must be greater than dte_to "
+                "(the window runs from higher DTE down to lower DTE)"
+            )
+        return self
+
+
 class Exit(BaseModel):
     """At least one exit rule must be present. The parser must ASK rather
     than default when the user gave none (guardrail #3)."""
@@ -199,6 +234,20 @@ class Exit(BaseModel):
     stop_loss_pct: float | None = Field(default=None, gt=0)
     time_exit_dte: int | None = Field(default=None, ge=0)
     conditions: list[Condition] | None = None
+    # spec v2 (D1c): close when any watched leg's |delta| reaches the
+    # threshold (short legs when present, else all legs). 0.30 and 30 both
+    # accepted; normalized to the decimal like StrikeSelection deltas.
+    delta_stop_abs: float | None = Field(default=None, gt=0, lt=1)
+    theta_harvest: ThetaHarvest | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_delta_stop(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            v = data.get("delta_stop_abs")
+            if isinstance(v, int | float) and v > 1:
+                return {**data, "delta_stop_abs": v / 100.0}
+        return data
 
     @model_validator(mode="after")
     def _at_least_one_rule(self) -> Exit:
@@ -207,6 +256,8 @@ class Exit(BaseModel):
             and self.stop_loss_pct is None
             and self.time_exit_dte is None
             and self.conditions is None
+            and self.delta_stop_abs is None
+            and self.theta_harvest is None
         ):
             raise ValueError("exit must contain at least one rule (schema minProperties: 1)")
         return self
@@ -253,6 +304,18 @@ class BacktestWindow(BaseModel):
     seed: int = 42
 
 
+# Structures with a DEFINED maximum profit (the collected credit / capped
+# appreciation). theta_harvest measures "profit % of max" — undefined on
+# unlimited-upside longs, so it is forbidden there (owner amendment 1).
+DEFINED_MAX_PROFIT_STRUCTURES = {
+    Structure.SHORT_PUT,
+    Structure.PUT_CREDIT_SPREAD,
+    Structure.CALL_CREDIT_SPREAD,
+    Structure.IRON_CONDOR,
+    Structure.COVERED_CALL,
+}
+
+
 class StrategySpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -267,7 +330,44 @@ class StrategySpec(BaseModel):
     backtest: BacktestWindow
 
     @model_validator(mode="after")
-    def _version_is_one(self) -> StrategySpec:
-        if self.spec_version != 1:
-            raise ValueError("spec_version must be the constant 1")
+    def _version_supported(self) -> StrategySpec:
+        if self.spec_version not in (1, 2):
+            raise ValueError("spec_version must be 1 or 2")
+        return self
+
+    @model_validator(mode="after")
+    def _v2_vocabulary_needs_v2(self) -> StrategySpec:
+        """A v1 spec using v2 vocabulary is a versioning error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.spec_version >= 2:
+            return self
+        used: list[str] = []
+        if self.exit.delta_stop_abs is not None:
+            used.append("exit.delta_stop_abs")
+        if self.exit.theta_harvest is not None:
+            used.append("exit.theta_harvest")
+        if self.position.max_vega_per_contract is not None:
+            used.append("position.max_vega_per_contract")
+        all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        v2_used = {c.indicator.value for c in all_conditions if c.indicator in V2_INDICATORS}
+        used += sorted(f"indicator {name}" for name in v2_used)
+        if used:
+            raise ValueError(
+                f"spec_version 1 cannot use v2 vocabulary: {', '.join(used)} — set spec_version 2"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _theta_harvest_needs_defined_max_profit(self) -> StrategySpec:
+        # owner amendment 1: profit-% of max is undefined on unlimited-upside
+        # structures; the parser must ASK, and validation must refuse.
+        if (
+            self.exit.theta_harvest is not None
+            and self.position.structure not in DEFINED_MAX_PROFIT_STRUCTURES
+        ):
+            raise ValueError(
+                f"exit.theta_harvest is only valid on structures with a defined max "
+                f"profit ({', '.join(sorted(s.value for s in DEFINED_MAX_PROFIT_STRUCTURES))}); "
+                f"{self.position.structure.value} has no defined max profit"
+            )
         return self

@@ -74,18 +74,20 @@ def make_spec(**overrides: object) -> dict:
 
 
 def put(strike: float, bid: float, ask: float, delta: float, expiration: str,
-        volume: int | None = None, open_interest: int | None = None) -> dict:
+        volume: int | None = None, open_interest: int | None = None,
+        vega: float | None = None) -> dict:
     return {
         "expiration": expiration, "right": "put", "strike": strike,
         "bid": bid, "ask": ask, "delta": delta,
-        "volume": volume, "open_interest": open_interest,
+        "volume": volume, "open_interest": open_interest, "vega": vega,
     }
 
 
 def call(strike: float, bid: float, ask: float, delta: float, expiration: str,
-         volume: int | None = None, open_interest: int | None = None) -> dict:
+         volume: int | None = None, open_interest: int | None = None,
+         vega: float | None = None) -> dict:
     return {
         "expiration": expiration, "right": "call", "strike": strike,
         "bid": bid, "ask": ask, "delta": delta,
-        "volume": volume, "open_interest": open_interest,
+        "volume": volume, "open_interest": open_interest, "vega": vega,
     }

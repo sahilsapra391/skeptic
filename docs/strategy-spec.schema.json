@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://skeptic.local/strategy-spec.schema.json",
-  "title": "Skeptic Strategy Spec (IR) v1",
+  "title": "Skeptic Strategy Spec (IR) v2",
+  "description": "v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1 specs remain valid; v2 vocabulary requires spec_version 2 (validation enforces).",
   "type": "object",
   "required": ["spec_version", "meta", "underlying", "position", "entry", "exit", "sizing", "costs", "backtest"],
   "additionalProperties": false,
   "properties": {
-    "spec_version": { "const": 1 },
+    "spec_version": { "enum": [1, 2] },
     "meta": {
       "type": "object",
       "required": ["name", "description_raw"],
@@ -63,6 +64,11 @@
             "min_dte": { "type": "integer", "minimum": 1 },
             "max_dte": { "type": "integer", "maximum": 120 }
           }
+        },
+        "max_vega_per_contract": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "spec_version 2. Entry-time cap on |NET vega| of the contract-set in DOLLARS per contract-set per vol point: leg vegas sum SIGNED (long +, short -, x ratio), then abs, x 100. A spread's cancelling legs net; entries above the cap skip (vega_cap_exceeded); missing vega data skips (vega_unavailable) - the rule is never silently ignored."
         }
       }
     },
@@ -86,8 +92,8 @@
             "required": ["indicator", "operator", "value"],
             "properties": {
               "indicator": {
-                "enum": ["rsi", "sma", "ema", "price_vs_sma_pct", "price_vs_ema_pct", "ema_cross_state", "iv_percentile_1y", "vix_level", "realized_vol_20d", "drawdown_from_high_pct"],
-                "description": "All computed on strictly trailing windows over the underlying (or VIX). ema_cross_state compares fast vs slow EMA: value encodes {fast, slow}, operator above/below."
+                "enum": ["rsi", "sma", "ema", "price_vs_sma_pct", "price_vs_ema_pct", "ema_cross_state", "iv_percentile_1y", "vix_level", "realized_vol_20d", "drawdown_from_high_pct", "ivx_rank_1y", "ivx_level_30d", "hv_iv_spread_30d"],
+                "description": "All computed on strictly trailing windows over the underlying (or VIX). ema_cross_state compares fast vs slow EMA: value encodes {fast, slow}, operator above/below. spec_version 2 adds the vendor IVX/HV family (2005+ on all tickers): ivx_rank_1y = percentile rank (0-100) of the 30d IV Mean within the trailing 252 observations, unevaluable (False) below 126 trailing observations; ivx_level_30d = the 30d IV Mean in percentage points (like vix_level: 'IVX above 25' -> value 25); hv_iv_spread_30d = (30d IV Mean - 30d HV) in percentage points."
               },
               "period": { "type": "integer", "minimum": 2, "maximum": 400 },
               "params": { "type": "object", "description": "Indicator-specific, e.g. {\"fast\": 9, \"slow\": 20} for ema_cross_state." },
@@ -101,13 +107,29 @@
     },
     "exit": {
       "type": "object",
-      "description": "At least one of profit_target_pct, stop_loss_pct, time_exit_dte, or conditions must be present; the parser must ASK rather than default when the user gave none.",
+      "description": "At least one of profit_target_pct, stop_loss_pct, time_exit_dte, conditions, delta_stop_abs, or theta_harvest must be present; the parser must ASK rather than default when the user gave none. Exit priority in the engine: stop_loss -> delta_stop -> profit_target -> theta_harvest -> time_exit -> condition exits.",
       "minProperties": 1,
       "properties": {
         "profit_target_pct": { "type": "number", "exclusiveMinimum": 0, "description": "Percent of max credit captured (credit) or premium gain (debit)." },
         "stop_loss_pct": { "type": "number", "exclusiveMinimum": 0, "description": "Percent of credit received (credit) or premium paid (debit) lost." },
         "time_exit_dte": { "type": "integer", "minimum": 0 },
-        "conditions": { "$ref": "#/properties/entry/properties/conditions" }
+        "conditions": { "$ref": "#/properties/entry/properties/conditions" },
+        "delta_stop_abs": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "spec_version 2. Close the position when any watched leg's |delta| reaches this threshold at the daily marks (short legs when the position has any, else all legs). Decimal in (0,1); whole-number deltas (30) are normalized to decimals (0.30) at validation. Days where the watched legs carry no delta are unevaluable - the rule waits, it never guesses."
+        },
+        "theta_harvest": {
+          "type": "object",
+          "required": ["dte_from", "dte_to", "profit_pct"],
+          "additionalProperties": false,
+          "description": "spec_version 2. DTE-band profit harvest: inside the window [dte_to, dte_from] (DTE counts down), close as soon as profit >= profit_pct of max. Valid ONLY on structures with a defined max profit (short_put, put_credit_spread, call_credit_spread, iron_condor, covered_call) - validation refuses it on long_call/long_put and the parser must ASK instead. dte_from must be > dte_to (enforced by validation).",
+          "properties": {
+            "dte_from": { "type": "integer", "minimum": 1, "maximum": 90 },
+            "dte_to": { "type": "integer", "minimum": 0 },
+            "profit_pct": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
       }
     },
     "sizing": {
@@ -165,5 +187,21 @@
         "seed": { "type": "integer", "default": 42 }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "position": {
+            "properties": { "structure": { "enum": ["long_call", "long_put"] } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": { "not": { "required": ["theta_harvest"] } }
+        }
+      }
+    }
+  ]
 }
