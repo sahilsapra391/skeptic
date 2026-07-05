@@ -91,6 +91,16 @@ export default function LibraryPage() {
                 {r.name}
               </div>
               <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
+              {r.autoNote && (
+                <div className="mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
+                  ↻ {r.autoNote}
+                </div>
+              )}
+              {r.supersededBy && (
+                <div className="mb-2 inline-block rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4">
+                  superseded — re-ran automatically on new data
+                </div>
+              )}
               {r.status === "running" ? (
                 <div className="flex min-h-[72px] flex-col justify-center gap-1.5">
                   <div className="font-mono text-[12px] tracking-[.1em] text-trust">

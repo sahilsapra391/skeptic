@@ -93,6 +93,18 @@ ticker's OWN median EOD spread fraction over the slice band.
   is designed to EARN that threshold from evidence; until then the share
   is disclosed, loudly, and the reader judges.
 
+## Auto re-runs and the trial counter (D3b)
+
+The deflated Sharpe counts TRIALS — every human attempt at a strategy
+family is a bite at the multiple-testing apple. An AUTOMATIC re-run of a
+refused verdict (the auto-unlock queue) is the SAME spec on more data: no
+new parameter choice was made, so it does NOT bump the family's trial
+counter — it inherits the parent run's count (owner decision, 2026-07-05).
+Human-initiated runs always bump, including a human clicking re-run on the
+same spec. Auto re-runs are capped per night (`AUTO_RERUNS_PER_NIGHT`) and
+every one is labeled `origin=auto_unlock` in the runs table and
+"re-ran automatically" in the Library — provenance is never blurred.
+
 ## Conventions the numbers depend on (fixed, tested)
 
 - Exit priority at every clock: stop_loss → delta_stop → profit_target →

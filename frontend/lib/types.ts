@@ -231,6 +231,10 @@ export interface RunSummary {
   marker?: string;
   status?: "running"; // gauntlet still in progress — no verdict fields yet
   stage?: number; // 0-based current gauntlet stage while running
+  /** D3b: automatic upgrade lineage — provenance is never blurred */
+  upgradeOf?: string | null; // the refused run this one supersedes
+  autoNote?: string | null; // "re-ran automatically — N new sessions"
+  supersededBy?: string | null; // set on the OLD refusal once upgraded
 }
 
 export interface CoverageRange {
