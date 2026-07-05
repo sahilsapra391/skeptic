@@ -435,6 +435,72 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
   );
 }
 
+function ReceiptBanner({ run }: { run: RunPayload }) {
+  const [busy, setBusy] = useState(false);
+  const receipts = run.receipts ?? [];
+  const latest = receipts.length ? receipts[receipts.length - 1] : null;
+
+  const replay = async () => {
+    setBusy(true);
+    try {
+      const { replayRun } = await import("@/lib/api");
+      const r = await replayRun(run.id);
+      window.location.href = `/runs/${r.run_id}`;
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  if (!latest && !run.replayEligible) return null;
+
+  const fmtS = (v: number | null) => (v === null ? "—" : v.toFixed(2));
+
+  return (
+    <div className="mt-3">
+      {latest && (
+        <div
+          className={clsx(
+            "rounded-[14px] border px-5 py-3.5",
+            latest.worse ? "border-warn/60 bg-panel" : "border-line bg-panel",
+          )}
+        >
+          {latest.worse && (
+            // owner amendment 4: the disagreement is PROMINENT and lowers
+            // the SHOWN confidence — the stored verdict above is untouched
+            <div className="mb-1.5 font-mono text-[11.5px] font-medium tracking-[.12em] text-warn">
+              ⚠ THE 5-MIN REPLAY DISAGREES — READ THE VERDICT ABOVE WITH REDUCED CONFIDENCE
+            </div>
+          )}
+          <div className="font-mono text-[12.5px] text-ink-2">
+            RECEIPT — the daily backtest promised Sharpe {fmtS(latest.daily_sharpe)};
+            the 5-min replay says {fmtS(latest.five_min_sharpe)}.{" "}
+            <a href={`/runs/${latest.replay_run_id}`} className="text-trust underline">
+              see the replay
+            </a>
+            {Object.keys(latest.fill_sources ?? {}).length > 0 && (
+              <span className="text-ink-4">
+                {" "}· replay fills:{" "}
+                {Object.entries(latest.fill_sources)
+                  .map(([k, v]) => `${k} ${v}`)
+                  .join(", ")}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {!latest && run.replayEligible && (
+        <button
+          onClick={replay}
+          disabled={busy}
+          className="rounded-full border border-line px-4 py-1.5 font-mono text-[11.5px] text-ink-3 hover:border-trust-border hover:text-trust disabled:opacity-50"
+        >
+          {busy ? "queuing replay…" : "↻ replay at 5-min (verdict receipt)"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
   const h = run.honesty;
   const notes =
@@ -840,6 +906,7 @@ export function ResultsView({
       </div>
 
       <VerdictBlock verdict={verdict} />
+      <ReceiptBanner run={run} />
 
       {run.verdict.refusal && (
         <div className="mb-1 mt-[18px] text-center font-mono text-[10.5px] font-medium tracking-[.18em] text-ink-4">

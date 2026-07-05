@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -116,7 +117,7 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
         # so they inherit the parent's count instead of bumping (owner
         # decision; docs/HONESTY.md).
         family = f"{spec.underlying.ticker.value}:{spec.position.structure.value}"
-        if origin == "auto_unlock":
+        if origin in ("auto_unlock", "receipt"):
             trials = _inherit_trials(parent_run_id, family)
         else:
             trials = db.bump_trials(family)
@@ -171,6 +172,9 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
                     f"re-ran automatically — {auto_note}" if auto_note
                     else "re-ran automatically on new data"
                 )
+            elif origin == "receipt":
+                summary["upgradeOf"] = parent_run_id
+                summary["autoNote"] = "5-min replay (verdict receipt)"
             run.summary_json = json.dumps(summary)
             s.add(db.RunEvent(run_id=run_id, stage=6, label="gauntlet complete"))
             # the superseded refusal points forward to its upgrade
@@ -183,6 +187,29 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
                         parent.summary_json = json.dumps(psum)
                     except Exception:
                         pass
+            # D3c: a completed replay writes its receipt onto the ORIGINAL
+            # run — appended, never overwriting the stored verdict
+            if origin == "receipt" and parent_run_id:
+                parent = s.get(db.Run, parent_run_id)
+                if parent is not None and parent.stats_json:
+                    try:
+                        from app.api.replay import build_receipt
+
+                        receipt = build_receipt(
+                            run_id,
+                            json.loads(parent.stats_json),
+                            stats,
+                            payload,
+                            datetime.now(UTC).isoformat(),
+                        )
+                        existing = (
+                            json.loads(parent.receipts_json)
+                            if parent.receipts_json else []
+                        )
+                        existing.append(receipt)
+                        parent.receipts_json = json.dumps(existing)
+                    except Exception:
+                        log.exception("receipt attach failed for %s", parent_run_id)
             s.commit()
     except Exception as exc:
         log.exception("run %s failed", run_id)
@@ -316,7 +343,21 @@ def get_run(run_id: str) -> dict[str, Any]:
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     if run.status == "done" and run.payload_json:
-        return dict(json.loads(run.payload_json))
+        payload = dict(json.loads(run.payload_json))
+        # D3c: receipts arrive AFTER the payload froze — merged at read
+        # time; the stored verdict/trust inside the payload is untouched
+        if run.receipts_json:
+            try:
+                payload["receipts"] = json.loads(run.receipts_json)
+            except Exception:
+                pass
+        spec_dict = json.loads(run.spec_json) if run.spec_json else {}
+        from app.api.replay import replay_eligible_spec
+
+        payload["replayEligible"] = (
+            (run.origin or "user") == "user" and replay_eligible_spec(spec_dict)
+        )
+        return payload
     if run.status == "error":
         return {"id": run_id, "demo": False, "status": "error",
                 "error": run.error or "run failed", "stage": run.stage}
@@ -335,6 +376,42 @@ def get_run(run_id: str) -> dict[str, Any]:
 class AskRequest(BaseModel):
     question: str
     verbiage: str | None = None  # "institutional" (default) | "retail"
+
+
+@router.post("/runs/{run_id}/replay")
+def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
+    """On-demand verdict receipt (D3c, owner amendment 1): replay THIS
+    daily run at the 5-minute clock, right now. The receipt attaches to
+    the original when the replay completes; the stored verdict is never
+    rewritten."""
+    from app.api.replay import build_replay_spec, replay_eligible_spec
+
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or run.status != "done" or not run.spec_json:
+            raise HTTPException(status_code=404, detail="no completed run to replay")
+        spec_dict = json.loads(run.spec_json)
+    if not replay_eligible_spec(spec_dict):
+        raise HTTPException(
+            status_code=409,
+            detail="not replayable: only daily-clock specs whose whole tenor "
+                   "band fits the intraday slice (max_dte ≤ 2) can face the "
+                   "5-minute record like-for-like",
+        )
+    try:
+        replay_spec = StrategySpec.model_validate(build_replay_spec(spec_dict))
+    except ValidationError as exc:
+        raise HTTPException(status_code=409, detail=exc.errors()[:3]) from exc
+
+    new_id = uuid.uuid4().hex[:12]
+    with db.session() as s:
+        s.add(db.Run(id=new_id, status="queued", stage=0,
+                     seed=replay_spec.backtest.seed,
+                     spec_json=replay_spec.model_dump_json(),
+                     origin="receipt", parent_run_id=run_id))
+        s.commit()
+    tasks.add_task(_execute_run, new_id, None)
+    return {"run_id": new_id, "demo": False, "status": "queued", "parent": run_id}
 
 
 @router.post("/runs/{run_id}/ask")

@@ -61,6 +61,9 @@ class Run(Base):
     origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # D3: the refused/original run an automatic run supersedes or replays
     parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # D3c: 5-minute replay receipts attached to this (daily) run — merged
+    # into the payload at READ time; the stored verdict is never rewritten
+    receipts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RunEvent(Base):
@@ -134,7 +137,8 @@ def _ensure_columns() -> None:
 
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
-        for column in ("stats_json", "previews_json", "summary_json", "unlock_json"):
+        for column in ("stats_json", "previews_json", "summary_json", "unlock_json",
+                       "receipts_json"):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
         for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)")):

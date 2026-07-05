@@ -133,6 +133,13 @@ export function askRun(id: string, question: string): Promise<{ answer: string; 
   });
 }
 
+/** D3c: replay a daily run at the 5-minute clock (verdict receipt). */
+export function replayRun(id: string): Promise<{ run_id: string; parent: string }> {
+  return request<{ run_id: string; parent: string }>(`/api/runs/${id}/replay`, {
+    method: "POST",
+  });
+}
+
 export function getHealth(): Promise<{
   status: string;
   r2_configured: boolean;
