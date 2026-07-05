@@ -73,7 +73,12 @@ def _execute_run(run_id: str) -> None:
         from app.honesty.verdict import write_verdicts
 
         store = load_market_store(spec.underlying.ticker.value)
-        result = run_backtest(spec, store)
+        intraday = None
+        if spec.backtest.clock.value != "daily":
+            from app.data.intraday import load_intraday_store
+
+            intraday = load_intraday_store(spec.underlying.ticker.value)
+        result = run_backtest(spec, store, intraday)
 
         # every attempt at a family is a trial — the multiple-testing bias
         # the deflated Sharpe corrects for (TECH-SPEC §6.5)
@@ -93,7 +98,8 @@ def _execute_run(run_id: str) -> None:
                     s2.add(db.RunEvent(run_id=run_id, stage=stage, label=label))
                     s2.commit()
 
-        report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage)
+        report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage,
+                              intraday=intraday)
         verdict, retail_verdict = write_verdicts(report)
         payload = build_run_payload(run_id, spec, result, report, verdict, retail_verdict)
         # the stats bundle is the ONLY material grounded Q&A may quote from

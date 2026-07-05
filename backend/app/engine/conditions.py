@@ -11,7 +11,7 @@ import math
 import pandas as pd
 
 from app.data import indicators as ind
-from app.engine.market import MarketView
+from app.engine.market import MarketViewLike
 from app.models.spec import Condition, Indicator, Operator
 
 
@@ -49,7 +49,7 @@ def _tail_values(series: pd.Series, n: int = 2) -> list[float]:
     return vals
 
 
-def evaluate_condition(view: MarketView, cond: Condition) -> bool:
+def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     closes = view.closes_upto()
     if not closes:
         return False
@@ -136,5 +136,5 @@ def evaluate_condition(view: MarketView, cond: Condition) -> bool:
     raise ValueError(f"unhandled indicator {ind_name}")  # pragma: no cover
 
 
-def all_conditions_pass(view: MarketView, conds: list[Condition]) -> bool:
+def all_conditions_pass(view: MarketViewLike, conds: list[Condition]) -> bool:
     return all(evaluate_condition(view, c) for c in conds)

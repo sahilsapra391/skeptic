@@ -97,6 +97,10 @@ class RunResult:
     fills_penalized: int = 0  # filled at OI-scaled slip above base
     fills_stressed: int = 0  # gated contracts filled at slip 1.0 (stress mode)
     fills_unknown_liquidity: int = 0  # open interest unknown at fill time
+    # declared clock (D2b) + per-fill provenance: how many option-leg fills
+    # came from each quote record (eod_chain / ivol_5min / cboe_minute)
+    clock: str = "daily"
+    fill_sources: dict[str, int] = field(default_factory=dict)
     # portfolio greeks per marked session (D1d), aligned with `dates`.
     # Units: delta/gamma in share-equivalents (greek × qty × 100, stock at
     # 1Δ/share), theta in $/day, vega in $/vol-point. A flat book is 0.0;

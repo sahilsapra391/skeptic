@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.engine.market import MarketStore
+from app.engine.market import IntradayProvider, MarketStore
 from app.engine.types import RunResult
 from app.honesty import stages
 from app.honesty.report import HonestyReport, MonteCarlo, OosSplit, WalkForward
@@ -90,6 +90,7 @@ def run_gauntlet(
     result: RunResult,
     trials: int,
     on_stage: StageHook = _noop,
+    intraday: IntradayProvider | None = None,
 ) -> HonestyReport:
     on_stage(
         1,
@@ -105,7 +106,7 @@ def run_gauntlet(
     mc = stages.monte_carlo(result, spec.backtest.initial_capital)
 
     on_stage(4, "parameter sensitivity sweep", _mc_preview(mc))
-    sens = stages.sensitivity(spec, store)
+    sens = stages.sensitivity(spec, store, intraday)
 
     if sens.verdict == "plateau":
         sens_preview = _both(
