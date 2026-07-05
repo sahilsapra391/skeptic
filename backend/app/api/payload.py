@@ -520,7 +520,7 @@ def build_run_payload(
         "meta": (
             f"{result.ticker} · {structure} · run {today} · effective window {window} "
             f"(bounded by coverage) · seed {result.seed} · trials {report.dsr.trials} · "
-            f"verdict: {verdict.source}"
+            f"fill model liquidity-v1 · verdict: {verdict.source}"
         ),
         "spec": None,
         "verdict": _verdict_block(report, verdict),
@@ -544,6 +544,7 @@ def build_run_payload(
         "oosSplitDate": report.oos.split_date,
         "honesty": _honesty_panels(report),
         "coverage": report.coverage.model_dump(),
+        "liquidity": report.liquidity.model_dump() if report.liquidity else None,
         "mc": _mc_fan(report),
         "mcTerm": {
             "p95": _dollars(report.monte_carlo.terminal_p95),

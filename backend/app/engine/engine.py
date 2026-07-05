@@ -17,15 +17,23 @@ fill exits — honest behavior on checkpoint-marked history (DOLTHUB-EVAL
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from app.engine import fills
 from app.engine.conditions import all_conditions_pass
 from app.engine.market import MarketStore, MarketView
 from app.engine.selection import select_expiration, select_legs
-from app.engine.types import MULT, ContractKey, OpenLeg, Position, RunResult, TradeEvent
-from app.models.spec import Frequency, Side, SizingMethod, StrategySpec, Structure
+from app.engine.types import MULT, ContractKey, OpenLeg, Position, Quote, RunResult, TradeEvent
+from app.models.spec import (
+    Costs,
+    Frequency,
+    LiquidityMode,
+    Side,
+    SizingMethod,
+    StrategySpec,
+    Structure,
+)
 
 
 @dataclass
@@ -35,6 +43,26 @@ class _State:
     trades: list[TradeEvent]
     next_pid: int = 1
     last_entry_month: tuple[int, int] | None = None
+    # liquidity bookkeeping (D1b) — one record per option-LEG fill
+    fill_spread_pcts: list[float] = field(default_factory=list)
+    option_leg_fills: int = 0
+    fills_penalized: int = 0
+    fills_stressed: int = 0
+    fills_unknown_liquidity: int = 0
+
+
+def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
+                     stressed: bool) -> None:
+    state.option_leg_fills += 1
+    sp = fills.spread_pct(q)
+    if sp is not None:
+        state.fill_spread_pcts.append(sp)
+    if q.open_interest is None:
+        state.fills_unknown_liquidity += 1
+    if stressed:
+        state.fills_stressed += 1
+    elif eff_slip > base_slip + 1e-12:
+        state.fills_penalized += 1
 
 
 def _leg_desc(leg: OpenLeg) -> str:
@@ -47,7 +75,16 @@ def _position_desc(pos: Position) -> str:
     return " ".join(_leg_desc(leg) for leg in pos.legs)
 
 
-def _liq_value_per_share(pos: Position, view: MarketView, slip: float) -> float | None:
+def _close_slip(q: Quote, costs: Costs) -> float:
+    """The slip a close-side price uses: base, OI-scaled when OI is known
+    and thin (fills.effective_slip). Exit triggers, exit fills and marks all
+    price through here, so open and close share one fill model."""
+    return fills.effective_slip(
+        costs.slippage_half_spread_fraction, q, costs.min_open_interest
+    )
+
+
+def _liq_value_per_share(pos: Position, view: MarketView, costs: Costs) -> float | None:
     """Signed liquidation value per contract-set per share, at today's
     quotes: closing longs sells (+), closing shorts buys back (−).
     None when any unsettled leg lacks a usable quote today."""
@@ -58,7 +95,7 @@ def _liq_value_per_share(pos: Position, view: MarketView, slip: float) -> float 
         q = view.quote(leg.key)
         if q is None:
             return None
-        px = fills.fill_price(q, fills.close_action(leg.side), slip)
+        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs))
         if px is None:
             return None
         ratio = leg.qty // max(pos.contracts, 1)
@@ -66,14 +103,14 @@ def _liq_value_per_share(pos: Position, view: MarketView, slip: float) -> float 
     return total
 
 
-def _refresh_marks(pos: Position, view: MarketView, slip: float) -> None:
+def _refresh_marks(pos: Position, view: MarketView, costs: Costs) -> None:
     for leg in pos.legs:
         if leg.settled:
             continue
         q = view.quote(leg.key)
         if q is None:
             continue
-        px = fills.fill_price(q, fills.close_action(leg.side), slip)
+        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs))
         if px is not None:
             leg.last_mark = px
 
@@ -166,8 +203,11 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
         skip(reason or "selection_failed")
         return
 
-    # validate quotes + compute per-share entry fills
+    # validate quotes + liquidity gates + compute per-share entry fills
     entry_fills: list[float] = []
+    leg_quotes: list[Quote] = []
+    leg_slips: list[float] = []
+    leg_stressed: list[bool] = []
     for key, leg in zip(keys, spec.position.legs, strict=True):
         action = fills.open_action(leg.side.value)
         q = chain.get(key)
@@ -176,11 +216,22 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
             skip(problem, detail=f"{key.right} {key.strike:g} exp {key.expiration}")
             return
         assert q is not None
-        px = fills.fill_price(q, action, slip)
+        gate = fills.liquidity_gate(q, spec.costs)
+        stressed = False
+        if gate is not None:
+            if spec.costs.liquidity_mode is LiquidityMode.SKIP:
+                skip(gate, detail=f"{key.right} {key.strike:g} exp {key.expiration}")
+                return
+            stressed = True  # stress mode: pay the full adverse quote instead
+        eff = 1.0 if stressed else fills.effective_slip(slip, q, spec.costs.min_open_interest)
+        px = fills.fill_price(q, action, eff)
         if px is None:  # pragma: no cover — quote_problem gates this
             skip("missing_quote")
             return
         entry_fills.append(px)
+        leg_quotes.append(q)
+        leg_slips.append(eff)
+        leg_stressed.append(stressed)
 
     # net premium per contract-set per share: credits positive
     premium = 0.0
@@ -234,6 +285,9 @@ def _try_entry(spec: StrategySpec, state: _State, view: MarketView, equity_now: 
             OpenLeg(key=key, side=leg.side.value, qty=qty, entry_price=px, last_mark=px)
         )
 
+    for q, eff, was_stressed in zip(leg_quotes, leg_slips, leg_stressed, strict=True):
+        _record_leg_fill(state, q, eff, slip, was_stressed)
+
     state.positions.append(pos)
     if spec.entry.schedule.frequency is Frequency.MONTHLY:
         state.last_entry_month = (day.year, day.month)
@@ -252,10 +306,12 @@ def _close_position(
     pos: Position, view: MarketView, state: _State, spec: StrategySpec, reason: str
 ) -> bool:
     """Close all unsettled option legs at today's quotes. False if any leg
-    lacks a usable quote (the attempt is retried on later sessions)."""
+    lacks a usable quote (the attempt is retried on later sessions).
+    Exits are never liquidity-gated — a position can always pay the quoted
+    price to close — but thin known OI scales the slip like everywhere else."""
     slip = spec.costs.slippage_half_spread_fraction
     commission = spec.costs.commission_per_contract
-    liq = _liq_value_per_share(pos, view, slip)
+    liq = _liq_value_per_share(pos, view, spec.costs)
     if liq is None:
         return False
     for leg in pos.legs:
@@ -263,13 +319,15 @@ def _close_position(
             continue
         q = view.quote(leg.key)
         assert q is not None
-        px = fills.fill_price(q, fills.close_action(leg.side), slip)
+        eff = _close_slip(q, spec.costs)
+        px = fills.fill_price(q, fills.close_action(leg.side), eff)
         assert px is not None
         cash_delta = px * leg.qty * MULT if leg.side == "long" else -px * leg.qty * MULT
         cash_delta -= commission * leg.qty
         state.cash += cash_delta
         pos.cash_flow += cash_delta
         leg.settled = True
+        _record_leg_fill(state, q, eff, slip, stressed=False)
     pos.closed = pos.stock_shares == 0
     state.trades.append(
         TradeEvent(
@@ -285,12 +343,11 @@ def _close_position(
 
 
 def _check_exits(spec: StrategySpec, state: _State, view: MarketView) -> None:
-    slip = spec.costs.slippage_half_spread_fraction
     exit_rules = spec.exit
     for pos in state.positions:
         if pos.closed or all(leg.settled for leg in pos.legs):
             continue
-        liq = _liq_value_per_share(pos, view, slip)
+        liq = _liq_value_per_share(pos, view, spec.costs)
         base = abs(pos.premium)
         profit_pct: float | None = None
         if liq is not None and base > 0:
@@ -462,7 +519,6 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
     requested_sessions = sum(1 for d in store.sessions if req_start <= d <= req_end)
 
     state = _State(cash=spec.backtest.initial_capital, positions=[], trades=[])
-    slip = spec.costs.slippage_half_spread_fraction
     result = RunResult(
         ticker=spec.underlying.ticker.value,
         effective_start=clock[0],
@@ -492,7 +548,7 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
         if close_px is not None:
             open_positions = [p for p in state.positions if not p.closed]
             for pos in open_positions:
-                _refresh_marks(pos, view, slip)
+                _refresh_marks(pos, view, spec.costs)
             equity = state.cash + sum(_position_value(p, close_px) for p in open_positions)
             result.dates.append(day)
             result.equity.append(round(equity, 2))
@@ -503,4 +559,9 @@ def run_engine(spec: StrategySpec, store: MarketStore) -> RunResult:
     result.filled = sum(1 for t in state.trades if t.action == "OPEN")
     result.skipped = sum(1 for t in state.trades if t.action == "SKIP")
     result.sessions_with_chain = sum(1 for d in clock if d in store.chains)
+    result.fill_spread_pcts = state.fill_spread_pcts
+    result.option_leg_fills = state.option_leg_fills
+    result.fills_penalized = state.fills_penalized
+    result.fills_stressed = state.fills_stressed
+    result.fills_unknown_liquidity = state.fills_unknown_liquidity
     return result

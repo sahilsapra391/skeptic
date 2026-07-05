@@ -91,6 +91,12 @@ class RunResult:
     metrics: dict[str, float | None] = field(default_factory=dict)
     sessions_with_chain: int = 0
     days_in_market: int = 0
+    # liquidity bookkeeping (D1b) — per option-LEG fill, entries and closes
+    fill_spread_pcts: list[float] = field(default_factory=list)  # fraction of mid
+    option_leg_fills: int = 0
+    fills_penalized: int = 0  # filled at OI-scaled slip above base
+    fills_stressed: int = 0  # gated contracts filled at slip 1.0 (stress mode)
+    fills_unknown_liquidity: int = 0  # open interest unknown at fill time
     # requested window (what the user asked for) vs the effective window
     # (what coverage allowed) — the gap is the seventeen-fills disclosure
     requested_start: date | None = None

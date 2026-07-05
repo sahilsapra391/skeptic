@@ -116,6 +116,28 @@ class Coverage(BaseModel):
     reason: str | None
 
 
+class LiquidityProfile(BaseModel):
+    """How real this run's fills were (D1b). Reporting only in D1 — the
+    profile discloses, it does not cap trust. Every number is counted at
+    fill time by the engine; unknown liquidity (missing OI) is disclosed,
+    never punished."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str  # "skip" | "stress"
+    max_spread_pct: float  # gate config, percent of mid
+    min_open_interest: int
+    min_volume: int
+    option_leg_fills: int  # entry + close leg fills priced by the model
+    median_spread_pct: float | None  # fraction of mid at fill time
+    penalized_share: float | None  # filled at OI-scaled slip above base
+    stressed_share: float | None  # gated but filled at full adverse (stress mode)
+    unknown_liquidity_share: float | None  # OI unknown at fill time
+    skipped_illiquid: int  # entry candidates refused by the gates
+    material: bool
+    note: str | None
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,6 +158,7 @@ class HonestyReport(BaseModel):
     dsr: Dsr
     regime_sample: RegimeSample
     coverage: Coverage
+    liquidity: LiquidityProfile | None = None  # None only on pre-D1b reports
     trust: Trust
     metrics: dict[str, float | None]
     effective_start: str

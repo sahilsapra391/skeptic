@@ -14,6 +14,12 @@ math relies on (documented once here, enforced by these tests):
       BUY  fill = mid + slip * (ask − mid)
       SELL fill = mid − slip * (mid − bid)
     Commission (default $0.65) per contract per side, option legs only.
+  * Liquidity (D1b): entries are gated (spread > max_spread_pct of mid, or
+    KNOWN OI/volume below floors → skip with reason, or full-adverse fill
+    in stress mode); exits are never gated. When OI is KNOWN and thin the
+    slip fraction scales: slip_eff = slip + (1−slip)·max(0, 1−oi/(10·min_oi)).
+    Rows here omit volume/OI (None = unknown) → base slip everywhere, so
+    fixtures that predate D1b hold to the cent unchanged.
   * Multiplier 100. Credit/debit bases for profit/stop percentages use
     option fill prices only (commissions excluded from the base).
   * Marking: conservative liquidation side using the same fill model
@@ -67,15 +73,19 @@ def make_spec(**overrides: object) -> dict:
     return spec
 
 
-def put(strike: float, bid: float, ask: float, delta: float, expiration: str) -> dict:
+def put(strike: float, bid: float, ask: float, delta: float, expiration: str,
+        volume: int | None = None, open_interest: int | None = None) -> dict:
     return {
         "expiration": expiration, "right": "put", "strike": strike,
         "bid": bid, "ask": ask, "delta": delta,
+        "volume": volume, "open_interest": open_interest,
     }
 
 
-def call(strike: float, bid: float, ask: float, delta: float, expiration: str) -> dict:
+def call(strike: float, bid: float, ask: float, delta: float, expiration: str,
+         volume: int | None = None, open_interest: int | None = None) -> dict:
     return {
         "expiration": expiration, "right": "call", "strike": strike,
         "bid": bid, "ask": ask, "delta": delta,
+        "volume": volume, "open_interest": open_interest,
     }
