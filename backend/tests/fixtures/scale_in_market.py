@@ -50,24 +50,29 @@ def _call(expiry: str, bid: float, ask: float) -> dict:
 
 
 def _session(session_iso: str, expiry_iso: str, ruin: bool) -> SessionSlice:
-    """One session: a dip opens the basket (+2 at −1% vs VWAP, +5 at −2.5%),
-    then the call either recovers (PT, a win) or collapses (force-flat, a
-    loss). Equal per-bar volume ⇒ VWAP is the running mean of session lasts."""
+    """One session, one basket. A SHALLOW win only trips rung0 (−1% vs VWAP)
+    and takes profit; a DEEP loss cascades into rung1 (−2.5%) and is
+    force-flatted at 15:45. So the deep tier IS the loss — the martingale
+    tell the depth attribution must surface. Equal per-bar volume ⇒ VWAP is
+    the running mean of session lasts."""
     quotes = {
         "09:30": [_call(expiry_iso, 1.00, 1.10)],
         "09:35": [_call(expiry_iso, 1.00, 1.10)],
         "09:40": [_call(expiry_iso, 0.55, 0.65)],  # −1.34% vs VWAP → rung0 opens
-        "09:45": [_call(expiry_iso, 0.25, 0.35)],  # −2.54% vs VWAP → rung1
     }
-    und = {"09:30": 100.0, "09:35": 100.0, "09:40": 98.0, "09:45": 96.0}
+    und = {"09:30": 100.0, "09:35": 100.0, "09:40": 98.0}
     if ruin:
+        # dips deeper into rung1, then collapses → force-flat at a loss (depth 2)
+        quotes["09:45"] = [_call(expiry_iso, 0.25, 0.35)]  # −2.54% vs VWAP → rung1
         quotes["09:50"] = [_call(expiry_iso, 0.05, 0.15)]
-        quotes["15:45"] = [_call(expiry_iso, 0.02, 0.10)]  # force-flat at a loss
-        und["09:50"], und["15:45"] = 94.0, 93.0
+        quotes["15:45"] = [_call(expiry_iso, 0.02, 0.10)]
+        und["09:45"], und["09:50"], und["15:45"] = 96.0, 94.0, 93.0
     else:
+        # recovers before rung1 → shallow basket takes profit (depth 1)
+        quotes["09:45"] = [_call(expiry_iso, 0.50, 0.60)]  # −0.63% vs VWAP → no rung1
         quotes["09:50"] = [_call(expiry_iso, 1.50, 1.60)]  # PT
         quotes["15:45"] = [_call(expiry_iso, 1.50, 1.60)]
-        und["09:50"], und["15:45"] = 101.0, 101.0
+        und["09:45"], und["09:50"], und["15:45"] = 98.5, 101.0, 101.0
     volumes = {t: 100.0 for t in und}
     return build_fixture_slice(session_iso, quotes, und, volumes=volumes)
 

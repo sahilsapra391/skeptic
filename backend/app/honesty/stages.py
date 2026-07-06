@@ -10,17 +10,21 @@ import copy
 import math
 from collections.abc import Callable
 from statistics import NormalDist
+from typing import Any
 
 import numpy as np
 
 from app.engine.engine import run_engine
 from app.engine.market import IntradayProvider, MarketStore
-from app.engine.types import RunResult
+from app.engine.types import MULT, RungFill, RunResult
 from app.honesty.report import (
     Concentration,
     Coverage,
     Dsr,
     HonestyReport,
+    LadderDepth,
+    LadderRung,
+    LadderTier,
     LiquidityProfile,
     MonteCarlo,
     OosSplit,
@@ -427,6 +431,124 @@ def session_split(result: RunResult) -> SessionSplit:
         return SessionSplit(meaningful=False, note="no bar-stamped entries")
     return SessionSplit(meaningful=True, open_=buckets["open_"],
                         mid=buckets["mid"], close=buckets["close"])
+
+
+# ------------------------------------------ D5b: ladder depth attribution
+def ladder_depth_attribution(
+    result: RunResult, spec: StrategySpec
+) -> LadderDepth | None:
+    """Group realized basket P&L by the MAX rung depth each basket reached
+    (the per-tier table — iVol's P&L-by-ladder-depth), and attribute P&L to
+    the fills added AT each depth (the marginal-rung analysis — are the deep
+    adds themselves net negative?). Both views sum to the same realized total
+    (tested tie-out): each basket sits in exactly one tier, and a basket's
+    marginals sum to its realized P&L because the whole basket exits at ONE
+    price — so per fill, marginal = (exit − fill_price)·qty·MULT − 2·commission·qty
+    (entry commission + the fill's share of the exit commission).
+
+    Returns None when the spec is not a ladder or no basket closed."""
+    si = spec.entry.scale_in
+    if si is None:
+        return None
+    fills_by_pid: dict[int, list[RungFill]] = {}
+    for rf in result.rung_fills:
+        fills_by_pid.setdefault(rf.basket_pid, []).append(rf)
+    pl_by_pid = {
+        t.position_id: t.pl
+        for t in result.trades
+        if t.pl is not None and t.position_id is not None
+    }
+    commission = spec.costs.commission_per_contract
+
+    baskets: list[dict[str, Any]] = []
+    for pid, bfills in fills_by_pid.items():
+        pl = pl_by_pid.get(pid)
+        if pl is None:  # basket still open at run end — no realized P&L to attribute
+            continue
+        total_qty = sum(f.qty for f in bfills)
+        if total_qty <= 0:
+            continue
+        cost = sum(f.fill_price * f.qty * MULT for f in bfills)
+        # exit price derived from the realized P&L identity:
+        #   pl = exit·total·MULT − cost − commission·(entry_qty + total_qty)
+        # and entry_qty across a basket's fills == total_qty
+        exit_px = (pl + cost + 2 * commission * total_qty) / (total_qty * MULT)
+        baskets.append({
+            "pl": pl, "total_qty": total_qty, "exit_px": exit_px,
+            "max_rung": max(f.rung_index for f in bfills), "fills": bfills,
+        })
+    if not baskets:
+        return None
+
+    realized_total = sum(b["pl"] for b in baskets)
+    gross_profit = sum(b["pl"] for b in baskets if b["pl"] > 0)
+    gross_loss = -sum(b["pl"] for b in baskets if b["pl"] < 0)
+
+    # ---- per-tier (baskets grouped by the deepest rung they reached)
+    tier_acc: dict[int, dict[str, float]] = {}
+    for b in baskets:
+        t = tier_acc.setdefault(
+            b["max_rung"],
+            {"baskets": 0, "wins": 0, "contracts": 0, "total_pl": 0.0},
+        )
+        t["baskets"] += 1
+        t["wins"] += 1 if b["pl"] > 0 else 0
+        t["contracts"] += b["total_qty"]
+        t["total_pl"] += b["pl"]
+    tiers: list[LadderTier] = []
+    for idx in sorted(tier_acc):
+        t = tier_acc[idx]
+        n = int(t["baskets"])
+        pos = t["total_pl"] if t["total_pl"] > 0 else 0.0
+        neg = -t["total_pl"] if t["total_pl"] < 0 else 0.0
+        tiers.append(LadderTier(
+            depth=idx + 1,
+            threshold=si.rungs[idx].value,
+            baskets=n,
+            wins=int(t["wins"]),
+            win_rate=round(t["wins"] / n, 4) if n else None,
+            contracts=int(t["contracts"]),
+            total_pl=round(t["total_pl"], 2),
+            avg_pl=round(t["total_pl"] / n, 2) if n else 0.0,
+            pct_gross_profit=round(pos / gross_profit, 4) if gross_profit > 0 else None,
+            pct_gross_loss=round(neg / gross_loss, 4) if gross_loss > 0 else None,
+        ))
+
+    # ---- marginal (P&L attributable to the fills added AT each rung depth)
+    rung_acc: dict[int, dict[str, float]] = {}
+    for b in baskets:
+        for f in b["fills"]:
+            r = rung_acc.setdefault(
+                f.rung_index, {"fires": 0, "contracts": 0, "marginal_pl": 0.0}
+            )
+            r["fires"] += 1
+            r["contracts"] += f.qty
+            r["marginal_pl"] += (
+                (b["exit_px"] - f.fill_price) * f.qty * MULT - 2 * commission * f.qty
+            )
+    rungs: list[LadderRung] = []
+    for idx in sorted(rung_acc):
+        r = rung_acc[idx]
+        rungs.append(LadderRung(
+            rung_index=idx,
+            threshold=si.rungs[idx].value,
+            add_contracts=si.rungs[idx].add_contracts,
+            fires=int(r["fires"]),
+            contracts=int(r["contracts"]),
+            marginal_pl=round(r["marginal_pl"], 2),
+            net_negative=r["marginal_pl"] < 0,
+        ))
+
+    deepest = max(b["max_rung"] for b in baskets)
+    deepest_net_negative = bool(rung_acc.get(deepest, {}).get("marginal_pl", 0.0) < 0)
+
+    return LadderDepth(
+        baskets=len(baskets),
+        realized_total=round(realized_total, 2),
+        tiers=tiers,
+        rungs=rungs,
+        deepest_net_negative=deepest_net_negative,
+    )
 
 
 # ------------------------------------------------------------ stage 5: DSR

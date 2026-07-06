@@ -435,6 +435,90 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
   );
 }
 
+const HINT_LADDER: HintPair = [
+  "Where a scale-in ladder's realized P&L actually came from. The bars attribute P&L to the contracts added AT each rung depth — the test of whether the deep, riskiest adds pay for themselves. The table groups baskets by the deepest rung they reached (iVol's P&L-by-depth). Both views sum to the same realized total.",
+  "For a strategy that buys more as it falls: which depth made or lost the money. The deep add-ins are the dangerous part — this shows whether they actually earn their keep, or just quietly bleed.",
+];
+
+function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
+  const ld = run.ladderDepth;
+  if (!ld) return null;
+  const plText = (s: string) =>
+    s === "pos" ? "text-pl-pos" : s === "neg" ? "text-pl-neg" : "text-ink-3";
+  const plBar = (s: string) => (s === "neg" ? "bg-pl-neg" : "bg-pl-pos");
+
+  return (
+    <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
+      <div className="mb-3 flex items-center justify-between">
+        <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
+          {retailMode ? "SCALE-IN — WHERE THE MONEY CAME FROM" : "SCALE-IN DEPTH ATTRIBUTION"}
+          <Hint text={pick(HINT_LADDER, retailMode)} />
+        </span>
+        <span className="font-mono text-[10.5px] text-ink-4">
+          {ld.baskets} baskets · realized{" "}
+          <span className={plText(ld.realizedSign)}>{ld.realizedTotal}</span>
+        </span>
+      </div>
+
+      {/* marginal-rung bars: is the P&L from the shallow entries or the deep adds? */}
+      <div className="flex flex-col gap-1.5">
+        {ld.rungs.map((r) => (
+          <div key={r.label} className="grid grid-cols-[168px_1fr_92px] items-center gap-2.5">
+            <span className="font-mono text-[10.5px] text-ink-4">
+              {r.label} <span className="text-ink-5">· {r.contracts}ct</span>
+            </span>
+            <div className="h-[13px] w-full rounded-[3px]" style={{ background: "var(--line-softer)" }}>
+              <div
+                className={clsx("h-full rounded-[3px]", plBar(r.plSign))}
+                style={{ width: `${Math.max(r.barPct, 2)}%` }}
+              />
+            </div>
+            <span className={clsx("text-right font-mono text-[11px]", plText(r.plSign))}>
+              {r.marginalPl}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {ld.deepestNetNegative && (
+        <div className="mt-3 font-mono text-[11px] text-warn">
+          ⚠{" "}
+          {retailMode
+            ? "the deepest add-ins lost money overall — they're dragging the strategy down, not carrying it"
+            : "the deepest adds are net negative — the edge does NOT come from the deep rungs"}
+        </div>
+      )}
+
+      {/* per-tier table: baskets grouped by the deepest rung they reached */}
+      <div className="mt-3.5 border-t border-line-softer pt-3">
+        <div className="grid grid-cols-[80px_1fr_repeat(4,minmax(0,1fr))] gap-2 font-mono text-[9.5px] tracking-[.08em] text-ink-5">
+          <span>DEPTH</span>
+          <span>SIGNAL</span>
+          <span className="text-right">BASKETS</span>
+          <span className="text-right">WIN RATE</span>
+          <span className="text-right">TOTAL P&amp;L</span>
+          <span className="text-right">% OF LOSS</span>
+        </div>
+        {ld.tiers.map((t) => (
+          <div
+            key={t.depth}
+            className="mt-1 grid grid-cols-[80px_1fr_repeat(4,minmax(0,1fr))] items-center gap-2 font-mono text-[11px] text-ink-3"
+          >
+            <span>
+              {t.depth} rung{t.depth !== 1 ? "s" : ""}
+            </span>
+            <span className="text-ink-4">≤ {t.threshold}</span>
+            <span className="text-right">{t.baskets}</span>
+            <span className="text-right">{t.winRate}</span>
+            <span className={clsx("text-right", plText(t.plSign))}>{t.totalPl}</span>
+            <span className="text-right text-ink-4">{t.pctLoss}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ReceiptBanner({ run }: { run: RunPayload }) {
   const [busy, setBusy] = useState(false);
   const receipts = run.receipts ?? [];
@@ -917,6 +1001,7 @@ export function ResultsView({
       <div className={clsx(run.verdict.refusal && "opacity-[.38]")}>
         <MetricTiles run={run} retailMode={retailMode} />
         <EquityChart run={run} retailMode={retailMode} />
+        <LadderDepthPanel run={run} retailMode={retailMode} />
         <GreeksPanel run={run} retailMode={retailMode} />
         <HonestyPanels run={run} retailMode={retailMode} />
         <Recommendations run={run} retailMode={retailMode} />
