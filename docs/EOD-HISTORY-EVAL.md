@@ -57,12 +57,21 @@ one paid month, run the backfill, cancel. The forward pipeline is
 untouched either way; the collector's AV leg is already built, dormant,
 and premium-detecting (verified firing in the 2026-07-03 Actions log).
 
-**Honest uncertainty:** third-party writeups disagree on whether the
-$49.99 tier unlocks `HISTORICAL_OPTIONS` (one claims the 600 req/min
-tier; AV's own docs put that restriction on *realtime* options only).
-Day-1 verification is one probe request on the new key. If the base tier
-is gated: step up for the month or cancel inside it. This memo's
-recommendation is conditional on that probe.
+**Tier question RESOLVED (live probe, 2026-07-06, our own free key):**
+`HISTORICAL_OPTIONS` returns the generic gate — *"You may subscribe to
+**any** of the premium plans … to instantly unlock all premium
+endpoints"* — while `REALTIME_OPTIONS` (which we don't need) carries an
+explicit 600/1200-tier gate. AV's own API therefore confirms the
+**$49.99 tier unlocks the historical chains**. The day-1 probe in §4
+stays as belt-and-braces.
+
+**Same probe session, for the record:** four options endpoints are FREE
+on our existing key — realtime + historical `PUT_CALL_RATIO` (real
+values verified back to 2008-06-16) and realtime + historical
+`VOLUME_OPEN_INTEREST_RATIO`. Aggregates, not chains — no substitute for
+the backfill, but a zero-cost sentiment/regime enrichment candidate for
+a future spec-v3 discussion. Free-tier limits observed live: 25
+requests/day, ~5/minute.
 
 ## 4. Execution plan if approved (one paid month)
 
