@@ -243,7 +243,8 @@ export default function NewAnalysisPage() {
   );
 
   const runGauntlet = useCallback(async () => {
-    if (!draft?.exit || busy) return;
+    // exit AND data window are required choices — never defaults
+    if (!draft?.exit || !draft.window || busy) return;
     setBusy(true);
     setError(null);
     try {

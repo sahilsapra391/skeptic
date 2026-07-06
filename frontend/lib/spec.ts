@@ -70,6 +70,16 @@ function legs(draft: SpecDraft): Json[] {
 }
 
 function schedule(draft: SpecDraft): Json {
+  // the structured dial wins when present (pre-run cadence tile)
+  if (draft.cadenceSel) {
+    return {
+      frequency: draft.cadenceSel.frequency,
+      day_of_week:
+        draft.cadenceSel.frequency === "weekly"
+          ? (draft.cadenceSel.day_of_week ?? "monday")
+          : null,
+    };
+  }
   if (draft.fromChart || draft.cadence === "on signal") return { frequency: "signal_only" };
   if (draft.cadence === "daily") return { frequency: "daily" };
   if (draft.cadence === "monthly") return { frequency: "monthly" };
@@ -137,8 +147,13 @@ export function draftToSpec(draft: SpecDraft): Json {
       max_concurrent_positions: 5,
     },
     exit: exitRules(draft),
-    sizing: { method: "fixed_contracts", value: 1 },
+    sizing: {
+      method: draft.sizeMethod ?? "fixed_contracts",
+      value: draft.sizeValue ?? 1,
+    },
     costs: { commission_per_contract: 0.65, slippage_half_spread_fraction: 0.5 },
-    backtest: { start: null, end: null, initial_capital: 25000, seed: 42 },
+    // start/end are set by startBacktest from the CONFIRMED window —
+    // building a spec without one is a bug it will throw on
+    backtest: { start: null, end: null, initial_capital: draft.capital ?? 25000, seed: 42 },
   };
 }
