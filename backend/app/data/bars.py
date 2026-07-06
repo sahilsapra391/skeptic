@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -36,6 +37,18 @@ PAGE_MAX = 5000  # hard cap on any single response
 INDICATOR_LOOKBACK = 300
 MINUTE_LAKE_START = "2024-02"
 ET = "America/New_York"
+
+# CBOE recorder snapshots (options_intraday/source=cboe_delayed/...): each
+# snapshot carries the underlying `spot`, captured ~every 2 minutes and ~15
+# minutes delayed (the feed's own latency). When the Alpaca IEX tail is not
+# configured this is the only intraday-fresh underlying source — one spot per
+# snapshot, disclosed as delayed, never presented as real-time.
+CBOE_RECORDER = "options_intraday/source=cboe_delayed"
+RECORDER_LIST_TTL = 20.0  # seconds between key re-listings per ticker
+RECORDER_FETCH_WORKERS = 16
+# parsed spot snapshots for TODAY, per ticker — incremental so a 15s chart
+# poll reads only the snapshot(s) that landed since the last call
+_recorder_cache: dict[str, dict[str, Any]] = {}
 
 # interval -> (pandas rule, minutes per bar); None rule = raw minutes
 INTRADAY_INTERVALS: dict[str, tuple[str | None, int]] = {
@@ -151,6 +164,64 @@ def _live_tail_minutes(ticker: str, after: pd.Timestamp) -> pd.DataFrame | None:
     return df[["minute_ts", "open", "high", "low", "close", "volume"]].sort_values("minute_ts")
 
 
+def _recorder_snapshot_ts(key: str) -> pd.Timestamp | None:
+    """snap_YYYYMMDDTHHMMZ.parquet → UTC timestamp (the capture minute)."""
+    stem = key.rsplit("snap_", 1)[-1].removesuffix(".parquet")
+    try:
+        return pd.Timestamp(datetime.strptime(stem, "%Y%m%dT%H%MZ"), tz="UTC")
+    except ValueError:
+        return None
+
+
+def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFrame | None:
+    """Today's intraday underlying from the CBOE recorder snapshots — one
+    `spot` per ~2-minute snapshot, ~15 minutes delayed. Built into minute rows
+    (open=high=low=close=spot, no volume) so the resampler makes intraday
+    candles. Cached incrementally per ticker: a poll re-lists at most every
+    RECORDER_LIST_TTL seconds and reads only the snapshots it hasn't seen.
+    Best-effort — None off-session or when the recorder has nothing past
+    `after`."""
+    d = pd.Timestamp.now(tz=ET).date().isoformat()  # ET session date partition
+    cache = _recorder_cache.get(ticker)
+    if cache is None or cache["date"] != d:
+        cache = {"date": d, "seen": set(), "rows": [], "listed_at": 0.0}
+        _recorder_cache[ticker] = cache
+
+    if time.time() - cache["listed_at"] >= RECORDER_LIST_TTL:
+        keys = r2.list_keys(s3, f"{CBOE_RECORDER}/ticker={ticker}/date={d}/")
+        fresh = [k for k in keys if k not in cache["seen"]]
+        if fresh:
+
+            def _spot(key: str) -> dict[str, Any] | None:
+                ts = _recorder_snapshot_ts(key)
+                if ts is None:
+                    return None
+                df = r2.get_parquet(s3, key)
+                if df is None or df.empty or "spot" not in df.columns:
+                    return None
+                spot = pd.to_numeric(df["spot"], errors="coerce").dropna()
+                return {"minute_ts": ts, "spot": float(spot.iloc[0])} if len(spot) else None
+
+            with ThreadPoolExecutor(max_workers=RECORDER_FETCH_WORKERS) as pool:
+                got = list(pool.map(_spot, fresh))
+            for key, row in zip(fresh, got, strict=True):
+                cache["seen"].add(key)
+                if row is not None:
+                    cache["rows"].append(row)
+            cache["rows"].sort(key=lambda r: r["minute_ts"])
+        cache["listed_at"] = time.time()
+
+    rows = [r for r in cache["rows"] if r["minute_ts"] > after]
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    spot = df["spot"]
+    return pd.DataFrame(
+        {"minute_ts": df["minute_ts"], "open": spot, "high": spot,
+         "low": spot, "close": spot, "volume": 0.0}
+    )
+
+
 def _window_start(window: str, last_ts: pd.Timestamp) -> pd.Timestamp | None:
     if window == "all":
         return None
@@ -183,8 +254,10 @@ def _resample_minutes(df: pd.DataFrame, rule: str | None) -> pd.DataFrame:
 
 def _intraday_frame(
     s3: Any, ticker: str, interval: str, window: str, before: pd.Timestamp | None, target: int
-) -> tuple[pd.DataFrame, bool, bool, int]:
-    """Returns (frame incl. indicator-lookback rows, live, has_more, keep)."""
+) -> tuple[pd.DataFrame, bool, bool, int, str | None]:
+    """Returns (frame incl. indicator-lookback rows, live, has_more, keep,
+    live_kind). live_kind is "iex" (Alpaca real-time), "cboe" (recorder spot,
+    ~15-min delayed) or None."""
     rule, per_bar = INTRADAY_INTERVALS[interval]
     reference_end = before.to_pydatetime() if before is not None else datetime.now(UTC)
     bars_per_month = (390 // per_bar + 1) * 21
@@ -201,21 +274,30 @@ def _intraday_frame(
     )
 
     live = False
+    live_kind: str | None = None
     if before is None:
         last = minutes["minute_ts"].max() if len(minutes) else pd.Timestamp("2024-02-01", tz="UTC")
         if datetime.now(UTC) - last.to_pydatetime() > timedelta(minutes=2):
-            tail = _live_tail_minutes(ticker, last)
+            tail = _live_tail_minutes(ticker, last)  # real-time IEX (needs APCA keys)
             if tail is not None and len(tail):
                 minutes = pd.concat([minutes, tail], ignore_index=True).drop_duplicates(
                     subset="minute_ts"
                 )
-                live = True
+                live, live_kind = True, "iex"
+            else:
+                # no IEX tail configured → today's spot from the CBOE recorder
+                rtail = _recorder_spot_tail(s3, ticker, last)
+                if rtail is not None and len(rtail):
+                    minutes = pd.concat([minutes, rtail], ignore_index=True).drop_duplicates(
+                        subset="minute_ts"
+                    )
+                    live, live_kind = True, "cboe"
         else:
-            live = True
+            live, live_kind = True, "iex"  # the lake itself is already current
 
     if minutes.empty:
         empty = pd.DataFrame(columns=["ts", "open", "high", "low", "close", "volume"])
-        return empty, False, False, 0
+        return empty, False, False, 0, None
 
     bars = _resample_minutes(minutes.sort_values("minute_ts"), rule)
     if before is not None:
@@ -234,7 +316,7 @@ def _intraday_frame(
     bars = bars.tail(count + INDICATOR_LOOKBACK).reset_index(drop=True)
     keep = min(count, len(bars))
     has_more = truncated_months or pre_count > len(bars)
-    return bars, live, has_more, keep
+    return bars, live, has_more, keep, live_kind
 
 
 def _daily_frame(
@@ -340,19 +422,23 @@ def get_bars(
         before_ts = before_ts.tz_localize("UTC")
     target = min(limit or MAX_BARS, PAGE_MAX)
 
+    live_label: str | None = None
     if interval in DAILY_INTERVALS:
         frame, has_more, keep = _daily_frame(s3, ticker, interval, window, before_ts, target)
         live = False
         source = "lake dailies 1993→ (refreshed nightly)"
     else:
-        frame, live, has_more, keep = _intraday_frame(
+        frame, live, has_more, keep, live_kind = _intraday_frame(
             s3, ticker, interval, window, before_ts, target
         )
-        source = (
-            "lake minutes 2024-02→ + live IEX tail"
-            if live
-            else "lake minutes 2024-02→ (nightly; add APCA_* keys for a live tail)"
-        )
+        if live_kind == "cboe":
+            source = "lake minutes 2024-02→ + CBOE recorder spot (~15-min delayed)"
+            live_label = "delayed ~15m · CBOE recorder"
+        elif live:
+            source = "lake minutes 2024-02→ + live IEX tail"
+            live_label = "live · IEX tail"
+        else:
+            source = "lake minutes 2024-02→ (nightly; add APCA_* keys for a live tail)"
 
     # indicators computed over the FULL frame (with lookback rows), then the
     # lookback is sliced off so paged responses stitch seamlessly
@@ -380,6 +466,7 @@ def get_bars(
         "interval": interval,
         "window": window,
         "live": live,
+        "live_label": live_label,
         "source": source,
         "as_of": bars["ts"].max().isoformat() if not bars.empty else None,
         "has_more": bool(has_more),
