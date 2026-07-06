@@ -286,3 +286,43 @@ Trial-day sequence:
 Per-day gates (rejected days are logged, never written): ≥50 rows,
 ≤5% crossed quotes, |delta| ≤ 1, no expirations before the trading date.
 Storage: ~3–5 GB parquet for 3 tickers × ~21 years — negligible on R2.
+
+## §9 Unusual Whales backfill (prebuilt 2026-07-06, before subscription)
+
+Second vendor lane — **flow, dealer positioning, and vol analytics** UW sells
+that no price/quote source carries (GEX/DEX, market tide, net premium, OI
+structure, IV rank, skew, term structure). Options history depth ≈ 2022+.
+Collector: `collector/backfill_unusual_whales.py` (engine) +
+`collector/uw_manifest.py` (declarative endpoint list, 59 in-scope endpoints
+for SPY/QQQ/IWM). Auth = `Authorization: Bearer $UW_API_TOKEN` (collector/.env).
+
+Self-throttling: reads UW's own rate headers (`x-uw-req-per-minute-remaining`,
+`x-uw-token-req-limit`, `x-uw-daily-req-count`) off every response, paces under
+the per-minute ceiling, and stops cleanly ~25 requests short of the daily cap
+(resumable next day). Faithful banking: rows land via json_normalize with
+provenance stamps — we collect now, wire into the engine later.
+
+Trial-day sequence:
+1. `UW_API_TOKEN=…` into collector/.env.
+2. `uv run python backfill_unusual_whales.py --mode probe`  — RUN FIRST. Hits one
+   call per endpoint; reports status, row count, and how many distinct dates a
+   no-date call returns (→ which `date?` endpoints are one-call series vs need
+   per-date iteration — the budget-defining unknown), plus the account's real
+   daily/minute limits from the headers. Writes reference/state/uw_probe_report.json.
+   Any 403 = that dataset isn't on the trial tariff (like iVol's tariff blocks).
+3. If the probe shows a `date?` endpoint returns many dates in one call, move it
+   from `ticker_date`→`ticker_series` (or market_*) in uw_manifest.py — a large
+   budget win — then:
+4. `caffeinate -i uv run python backfill_unusual_whales.py --mode series`  (P0/P1,
+   cheap one-call histories + snapshots, all tickers).
+5. `caffeinate -i uv run python backfill_unusual_whales.py --mode daily`  (P2/P3
+   per-date sweeps, newest session first, budget-gated — the big one; rerun daily
+   until the state file shows complete).
+6. `--mode contracts` — per-contract daily history (OHLC+NBBO+IV+OI) for every
+   symbol seen in the banked option_chains listings: the QQQ/IWM chain rebuild.
+   Most expensive; run last, only if budget allows.
+
+Prefixes: `reference/uw/{name}/…` (series/ohlc), `uw/{name}/ticker={T}/date={D}/`
+(ticker×date), `uw/{name}/date={D}/` (market×date), `uw/option_hist/…` (contracts).
+State: `reference/state/uw_backfill.json`. Nothing here touches the chain lake or
+the engine — wiring UW signals into spec indicators is a later, reviewed phase.

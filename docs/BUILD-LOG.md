@@ -1112,3 +1112,20 @@ carry scale_in → the ladder would be dropped. draftToSpec + spec_to_draft need
 scale_in awareness for the edit path.
 **GATED: owner re-ACCEPT required before merge** (same gate as D1c/D2c). PR opened,
 NOT merged — awaiting owner acceptance of the eval.
+
+## 2026-07-06 — Unusual Whales collector prebuilt (before subscription)
+
+Owner directive: prebuild a comprehensive UW collector so trial day one is pure
+downloading — bank everything available for SPY/QQQ/IWM, figure out engine use
+later. Shipped `collector/backfill_unusual_whales.py` + `collector/uw_manifest.py`:
+manifest-driven (59 in-scope endpoints distilled from their 190-path OpenAPI spec —
+flow, GEX/DEX dealer positioning, market tide, OI structure, IV rank/skew/term
+structure, ETF holdings/flows, shorts, OHLC, per-contract history), Bearer auth,
+self-throttling off UW's live rate headers with a resumable daily-budget stop,
+faithful json_normalize banking to new R2 prefixes (chain lake untouched). A
+`probe` mode auto-detects each `date?` endpoint's history behavior (one-call series
+vs per-date) since that's the budget-defining unknown untestable without a token.
+Helpers (rows_of/_distinct_dates/to_frame/sessions_desc) unit-tested; ruff clean.
+DATA-PIPELINE §9 has the trial-day runbook. NOT wired into coverage/engine yet —
+that's the deliberate "collect now, use later" phase. UW options depth ≈2022+, so
+this complements (never replaces) the iVol 20-yr analytics + the pre-2022 chain gap.
