@@ -39,8 +39,40 @@ from app.api import data as data_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
 from app.db import init_db  # noqa: E402
 
+
+def _sweep_orphaned_runs() -> None:
+    """Runs execute as in-process background tasks — a run still marked
+    queued/running at BOOT died with the previous process (OOM, deploy,
+    crash) and can never finish. Mark it honestly instead of letting the
+    UI spin forever (incident 2026-07-06: a 40-minute phantom 'running')."""
+    from app import db
+
+    try:
+        with db.session() as s:
+            stuck = (
+                s.query(db.Run)
+                .filter(db.Run.status.in_(["queued", "running"]))
+                .all()
+            )
+            for run in stuck:
+                run.status = "error"
+                run.error = (
+                    "interrupted — the service restarted mid-run (out of memory "
+                    "or a deploy); no results were computed. Re-run when ready."
+                )
+                s.add(db.RunEvent(run_id=run.id, stage=run.stage or 0,
+                                  label="interrupted by service restart"))
+            if stuck:
+                s.commit()
+    except Exception:  # a sweep failure must never block boot
+        import logging
+
+        logging.getLogger("main").exception("orphaned-run sweep failed")
+
+
 app = FastAPI(title="Skeptic", version="0.1.0")
 init_db()
+_sweep_orphaned_runs()
 
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 

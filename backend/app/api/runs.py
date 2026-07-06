@@ -109,7 +109,16 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
             from app.data.intraday import load_intraday_store
 
             intraday = load_intraday_store(spec.underlying.ticker.value)
-        result = run_backtest(spec, store, intraday)
+
+        def _progress(done: int, total: int) -> None:
+            # a full-history 5-min run takes minutes; prove life in the
+            # event log so a stuck stage is distinguishable from work
+            with db.session() as ps:
+                ps.add(db.RunEvent(run_id=run_id, stage=0,
+                                   label=f"simulating — {done}/{total} sessions"))
+                ps.commit()
+
+        result = run_backtest(spec, store, intraday, progress=_progress)
 
         # every HUMAN attempt at a family is a trial — the multiple-testing
         # bias the deflated Sharpe corrects for (TECH-SPEC §6.5). AUTO

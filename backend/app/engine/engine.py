@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from app.engine import fills
-from app.engine.conditions import all_conditions_pass
+from app.engine.conditions import INTRADAY_LOOKBACK_BARS, all_conditions_pass
 from app.engine.market import (
     IntradayProvider,
     IntradayView,
@@ -170,7 +170,14 @@ class BarView:
         return self._prev.hv_30d()
 
     def intraday_closes_upto(self) -> list[float]:
-        return self._lasts[: self._lasts_len]
+        # AT MOST the trailing lookback window. Copying the WHOLE prefix
+        # here was O(bars²) across a run — a full-history 5-min backtest
+        # spent most of its 40 minutes copying lists, and the multi-MB
+        # per-bar churn ballooned the allocator until Railway OOM-killed
+        # the process (incident 2026-07-06). No consumer reads deeper:
+        # conditions trim to INTRADAY_LOOKBACK_BARS by contract.
+        start = self._lasts_len - INTRADAY_LOOKBACK_BARS
+        return self._lasts[max(0, start) : self._lasts_len]
 
     def intraday_vwap(self) -> float | None:
         return self._vwap
@@ -201,6 +208,11 @@ def _trading_dte_fn(store: MarketStore, as_of: date) -> DteFn:
 # quotes (trade prints + modeled spread) carry no real NBBO — stress
 # slippage stays on until quote sources accumulate (D2d, per the brief).
 STRESSED_SOURCES = frozenset({"alpaca_modeled"})
+
+# progress-callback cadence at the 5-min clock (~12 reports on a
+# full-history run) — frequent enough to prove life, rare enough to
+# stay off the hot path
+PROGRESS_EVERY_SESSIONS = 250
 
 
 def _close_slip(q: Quote, costs: Costs, stressed: bool = False) -> float:
@@ -777,12 +789,18 @@ def run_engine(
     store: MarketStore,
     intraday: IntradayProvider | None = None,
     entry_shift_bars: int = 0,
+    progress: Callable[[int, int], None] | None = None,
 ) -> RunResult:
     """`entry_shift_bars` is the honesty layer's entry-time-nudge lever
     (D2d): shifts the session's entry WINDOW by N 5-minute bars. Positive
     delays entries past the session start / time_of_day; negative moves a
     time_of_day gate earlier (clamped to the session start). It is not
-    spec vocabulary — runs made with it are gauntlet probes."""
+    spec vocabulary — runs made with it are gauntlet probes.
+
+    `progress(done_sessions, total_sessions)` fires every
+    PROGRESS_EVERY_SESSIONS covered 5-min sessions — a full-history
+    intraday run takes minutes and a silent stage is indistinguishable
+    from a dead one (incident 2026-07-06). Gauntlet probes pass None."""
     five_min = spec.backtest.clock is Clock.FIVE_MIN
 
     if five_min:
@@ -846,6 +864,8 @@ def run_engine(
         if slc is not None and slc.bars:
             # ------------------------- 5-min bar loop (the declared clock)
             covered_sessions += 1
+            if progress is not None and covered_sessions % PROGRESS_EVERY_SESSIONS == 0:
+                progress(covered_sessions, len(clock))
             prev_view = _prev_session_view(store, day)
             dte_fn = _trading_dte_fn(store, day)
             session_skips: set[str] = set()

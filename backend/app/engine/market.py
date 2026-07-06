@@ -76,7 +76,10 @@ class MarketViewLike(Protocol):
     def hv_30d(self) -> float | None: ...
     # D2c: the run's rolling 5-minute underlying lasts (≤ current bar,
     # across sessions) and the session-anchored VWAP at the current bar.
-    # The daily view has no bars: empty / None.
+    # The daily view has no bars: empty / None. Implementations return AT
+    # MOST the trailing INTRADAY_LOOKBACK_BARS values — indicators never
+    # read deeper, and an unbounded per-bar prefix copy is O(bars²) over a
+    # run (the 2026-07-06 OOM incident).
     def intraday_closes_upto(self) -> list[float]: ...
     def intraday_vwap(self) -> float | None: ...
 
