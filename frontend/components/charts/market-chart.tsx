@@ -330,12 +330,23 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         indicators: mergeIndicators(p.indicators, cur.indicators),
         hasMore: p.has_more,
       };
-      // sync the ref BEFORE queued view updaters run, so clamping never
-      // sees the pre-prepend length (which would yank the view left)
-      bufferRef.current = merged;
-      setBuffer(merged);
+      // Advance the view by the prepended count in the SAME commit as the
+      // buffer. If the (longer) buffer landed a render before the view moved,
+      // React would paint one frame of the new bars against the old start≈0
+      // view — the just-prepended OLD bars flashing at the left edge with a
+      // y-axis jump — and, because start is still < 150 there, the paging
+      // effect would re-fire on that frame: the flicker loop. Batching buffer
+      // and view removes both the flash and the re-trigger. (Deferred commit
+      // is only right for high-frequency GESTURE updates; here it's a race.)
       const added = p.bars.length;
-      mutateView((v) => ({ start: v.start + added, span: v.span }));
+      const next = clampView(
+        { start: viewStateRef.current.start + added, span: viewStateRef.current.span },
+        merged.bars.length,
+      );
+      bufferRef.current = merged;
+      viewStateRef.current = next;
+      setBuffer(merged);
+      setView(next);
     } catch {
       // transient — the next pan retriggers
     } finally {
