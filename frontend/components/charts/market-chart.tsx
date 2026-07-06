@@ -748,7 +748,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
           {buffer
             ? buffer.live
               ? (buffer.liveLabel ?? "live")
-              : `through ${buffer.asOf ? fmtTime(buffer.asOf, intraday) : "—"} · nightly lake`
+              : `through ${buffer.asOf ? fmtTime(buffer.asOf, intraday) : "—"} · ${buffer.liveLabel ?? "nightly lake"}`
             : ""}
         </span>
       </div>

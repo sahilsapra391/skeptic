@@ -46,6 +46,10 @@ ET = "America/New_York"
 CBOE_RECORDER = "options_intraday/source=cboe_delayed"
 RECORDER_LIST_TTL = 20.0  # seconds between key re-listings per ticker
 RECORDER_FETCH_WORKERS = 16
+# the recorder captures ~every 2 min while the session is open; if its newest
+# snapshot is older than this, the session has closed — the tail is shown as a
+# completed (delayed) record, not "live", and the nightly refresh finalizes it
+RECORDER_SESSION_ACTIVE_MIN = 30
 # parsed spot snapshots for TODAY, per ticker — incremental so a 15s chart
 # poll reads only the snapshot(s) that landed since the last call
 _recorder_cache: dict[str, dict[str, Any]] = {}
@@ -176,8 +180,9 @@ def _recorder_snapshot_ts(key: str) -> pd.Timestamp | None:
 def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFrame | None:
     """Today's intraday underlying from the CBOE recorder snapshots — one
     `spot` per ~2-minute snapshot, ~15 minutes delayed. Built into minute rows
-    (open=high=low=close=spot, no volume) so the resampler makes intraday
-    candles. Cached incrementally per ticker: a poll re-lists at most every
+    (open=high=low=close=spot; volume = the diff of the snapshot's cumulative
+    session volume, 0 where absent) so the resampler makes intraday candles.
+    Cached incrementally per ticker: a poll re-lists at most every
     RECORDER_LIST_TTL seconds and reads only the snapshots it hasn't seen.
     Best-effort — None off-session or when the recorder has nothing past
     `after`."""
@@ -200,7 +205,13 @@ def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFra
                 if df is None or df.empty or "spot" not in df.columns:
                     return None
                 spot = pd.to_numeric(df["spot"], errors="coerce").dropna()
-                return {"minute_ts": ts, "spot": float(spot.iloc[0])} if len(spot) else None
+                if not len(spot):
+                    return None
+                cum_vol: float | None = None
+                if "und_volume" in df.columns:  # cumulative session volume (newer snaps)
+                    uv = pd.to_numeric(df["und_volume"], errors="coerce").dropna()
+                    cum_vol = float(uv.iloc[0]) if len(uv) else None
+                return {"minute_ts": ts, "spot": float(spot.iloc[0]), "cum_vol": cum_vol}
 
             with ThreadPoolExecutor(max_workers=RECORDER_FETCH_WORKERS) as pool:
                 got = list(pool.map(_spot, fresh))
@@ -211,14 +222,30 @@ def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFra
             cache["rows"].sort(key=lambda r: r["minute_ts"])
         cache["listed_at"] = time.time()
 
-    rows = [r for r in cache["rows"] if r["minute_ts"] > after]
-    if not rows:
+    if not cache["rows"]:
         return None
-    df = pd.DataFrame(rows)
-    spot = df["spot"]
+    # per-bar volume = diff of the CUMULATIVE session volume across the FULL
+    # ordered sequence (so the first returned bar is correct even when the
+    # prior snapshot sits at/before `after`); 0 where the cumulative is absent
+    # (older snapshots predating the collector change) — honestly zero, never
+    # invented. The diff runs before the `after` filter.
+    full = pd.DataFrame(cache["rows"])  # rows are kept sorted by minute_ts
+    cum = full["cum_vol"] if "cum_vol" in full.columns else pd.Series([None] * len(full))
+    if cum.notna().any():
+        vol = cum.diff()
+        vol.iloc[0] = cum.iloc[0] if pd.notna(cum.iloc[0]) else 0.0
+        vol = vol.clip(lower=0).fillna(0.0)
+    else:
+        vol = pd.Series(0.0, index=full.index)
+    full = full.assign(volume=vol)
+
+    tail = full[full["minute_ts"] > after]
+    if tail.empty:
+        return None
+    spot = tail["spot"].to_numpy()
     return pd.DataFrame(
-        {"minute_ts": df["minute_ts"], "open": spot, "high": spot,
-         "low": spot, "close": spot, "volume": 0.0}
+        {"minute_ts": tail["minute_ts"].to_numpy(), "open": spot, "high": spot,
+         "low": spot, "close": spot, "volume": tail["volume"].to_numpy()}
     )
 
 
@@ -291,7 +318,16 @@ def _intraday_frame(
                     minutes = pd.concat([minutes, rtail], ignore_index=True).drop_duplicates(
                         subset="minute_ts"
                     )
-                    live, live_kind = True, "cboe"
+                    # "live" only while the session is open (the recorder is
+                    # still capturing). Once it closes, the same tail is shown
+                    # as a completed delayed record — not pulsing "live", not
+                    # polled — until the nightly refresh finalizes the day.
+                    newest = rtail["minute_ts"].max()
+                    active = pd.Timestamp.now(tz="UTC") - newest <= pd.Timedelta(
+                        minutes=RECORDER_SESSION_ACTIVE_MIN
+                    )
+                    live = bool(active)
+                    live_kind = "cboe_live" if active else "cboe_closed"
         else:
             live, live_kind = True, "iex"  # the lake itself is already current
 
@@ -431,10 +467,13 @@ def get_bars(
         frame, live, has_more, keep, live_kind = _intraday_frame(
             s3, ticker, interval, window, before_ts, target
         )
-        if live_kind == "cboe":
+        if live_kind == "cboe_live":
             source = "lake minutes 2024-02→ + CBOE recorder spot (~15-min delayed)"
             live_label = "delayed ~15m · CBOE recorder"
-        elif live:
+        elif live_kind == "cboe_closed":
+            source = "lake minutes 2024-02→ + CBOE recorder spot (session closed)"
+            live_label = "CBOE recorder (delayed) · completes overnight"
+        elif live_kind == "iex":
             source = "lake minutes 2024-02→ + live IEX tail"
             live_label = "live · IEX tail"
         else:
