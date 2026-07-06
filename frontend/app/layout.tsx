@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo, IBM_Plex_Mono, Newsreader } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
@@ -81,6 +82,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
           </main>
         </div>
+        <Analytics />
       </body>
     </html>
   );
