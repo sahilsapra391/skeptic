@@ -34,8 +34,10 @@ from typing import Any
 # full tape 2022-01-01). Per-endpoint floors override.
 OPTIONS_FLOOR = "2022-01-01"
 
-# candle sizes worth banking per ticker (each call returns full history for that size)
-OHLC_CANDLES = ["1d", "1h", "30m", "5m"]
+# candle sizes worth banking per ticker (each call returns full history for that
+# size). 1m depth is typically shallower than the daily history — the collector
+# banks whatever the endpoint returns and the empty/short tail is honest.
+OHLC_CANDLES = ["1d", "1h", "30m", "5m", "1m"]
 
 MANIFEST: list[dict[str, Any]] = [
     # ---- P0: one-call histories (full time series in a single request) --------
@@ -98,6 +100,8 @@ MANIFEST: list[dict[str, Any]] = [
     {"name": "expiry_breakdown", "path": "/api/stock/{ticker}/expiry-breakdown", "mode": "ticker_date", "priority": 2},
     {"name": "option_chains", "path": "/api/stock/{ticker}/option-chains", "mode": "ticker_date", "priority": 2},
     {"name": "flow_per_strike", "path": "/api/stock/{ticker}/flow-per-strike", "mode": "ticker_date", "priority": 2},
+    {"name": "flow_per_strike_intraday", "path": "/api/stock/{ticker}/flow-per-strike-intraday",
+     "mode": "ticker_date", "priority": 2},
     {"name": "options_pulse", "path": "/api/stock/{ticker}/options-pulse", "mode": "ticker_date", "priority": 2},
     {"name": "volume_oi_expiry", "path": "/api/stock/{ticker}/option/volume-oi-expiry",
      "mode": "ticker_date", "priority": 2},

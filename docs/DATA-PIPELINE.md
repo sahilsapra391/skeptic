@@ -296,6 +296,8 @@ Collector: `collector/backfill_unusual_whales.py` (engine) +
 `collector/uw_manifest.py` (declarative endpoint list, 59 in-scope endpoints
 for SPY/QQQ/IWM). Auth = `Authorization: Bearer $UW_API_TOKEN` (collector/.env).
 
+Granularity: most positioning/vol signals are DAILY (one reading per session — inherent to the metric). Intraday is captured where UW offers it: underlying OHLC down to **1-minute** (candles 1d/1h/30m/5m/1m), market tide at its native **1-minute** default, net-premium ticks, and flow-per-strike-intraday. True second/tick bars aren't a UW REST product (only the excluded whole-market tape / live websocket); minute-and-5min OPTION quotes+greeks are already covered by the iVol 5-min capture, so UW is not run for that.
+
 Self-throttling: reads UW's own rate headers (`x-uw-req-per-minute-remaining`,
 `x-uw-token-req-limit`, `x-uw-daily-req-count`) off every response, paces under
 the per-minute ceiling, and stops cleanly ~25 requests short of the daily cap
