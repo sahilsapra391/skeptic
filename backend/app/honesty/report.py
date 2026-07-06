@@ -254,6 +254,48 @@ class LadderDepth(BaseModel):
     deepest_net_negative: bool  # are the deepest-reached adds net negative?
 
 
+class ScaleInHonesty(BaseModel):
+    """Martingale defenses specific to a scale-in ladder (D5c). Two HARD caps
+    (each refuses the run at insufficient_evidence) plus a reported
+    concentration signal. This chunk LIFTS the D5a interlock: a ladder that
+    clears these can be blessed like any strategy; one that trips them can't."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    baskets: int
+
+    # ruin-tail Monte Carlo: resample the basket P&L sequence, measure the
+    # account-drawdown tail. A ladder that is fine on average but has a fat
+    # ruin tail gets it surfaced AND capped.
+    resamples: int
+    seed: int
+    max_basket_contracts: int  # the largest basket the ladder actually built
+    worst_basket_loss: float | None  # most negative single-basket P&L
+    ruin_threshold: float  # account-drawdown fraction that counts as ruin
+    ruin_max_drawdown_p95: float | None
+    ruin_max_drawdown_p99: float | None
+    p_ruin: float | None  # P(resampled max drawdown > ruin_threshold)
+    ruin_flagged: bool  # fat ruin tail → HARD cap
+
+    # deep-rung dependency: recompute realized P&L WITHOUT the deepest rung's
+    # fills (from the recorded marginals — cheap, no re-run). If a positive
+    # edge flips negative without the deepest, riskiest adds, the edge DEPENDS
+    # on them — a martingale sign-flip → HARD cap.
+    deepest_threshold: float
+    realized_total: float
+    total_without_deepest: float
+    deep_rung_sign_flip: bool  # positive edge depends on the deepest rung → HARD cap
+    deep_rung_flagged: bool  # deepest rung materially moves the total (reported)
+
+    # basket-size concentration: one deep-basket day dominating P&L is the
+    # martingale tell (reported, never a cap on its own — D1d posture).
+    top_basket_share: float | None  # share of gross |basket P&L| from the top basket
+    concentration_flagged: bool
+
+    caps_trust: bool  # ruin_flagged OR deep_rung_sign_flip
+    reasons: list[str]  # human-readable cap/flag reasons
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -278,6 +320,7 @@ class HonestyReport(BaseModel):
     concentration: Concentration | None = None  # None only on pre-D1d reports
     session_split: SessionSplit | None = None  # 5-min clock only (D2d)
     ladder_depth: LadderDepth | None = None  # scale-in runs only (D5b)
+    scale_in: ScaleInHonesty | None = None  # scale-in martingale defenses (D5c)
     fill_sources: dict[str, int] = {}  # per-leg fill provenance (D2b/D2d)
     trust: Trust
     metrics: dict[str, float | None]

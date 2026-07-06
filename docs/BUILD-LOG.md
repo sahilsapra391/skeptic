@@ -1053,3 +1053,30 @@ rule honored; verified in the browser preview). No approved depth mockup existed
 so the panel follows the existing results-panel conventions (PANEL tokens, Plex
 Mono data) — flagged for owner DesignSync. Backend green: 260 passed, 1 skipped
 (9 new), ruff + mypy(strict) clean; frontend tsc + lint clean.
+
+## 2026-07-06 — D5c: scale-in martingale defenses, the interlock lifted (branch claude/d5c-scale-in-defenses)
+
+**Two real defenses replace the blanket interlock.** New honesty stage
+`scale_in_honesty` computes, per ladder run: (1) a ruin-tail Monte Carlo —
+resamples the basket P&L sequence (seeded block bootstrap, starting capital as
+the first peak) and HARD-caps when P(resampled max drawdown > 30%) ≥ 10%
+(RUIN_DRAW_THRESHOLD / RUIN_TAIL_PROB); (2) deep-rung dependency — subtracts the
+deepest rung's recorded marginals (no re-run) and HARD-caps on a sign flip (a
+positive edge that goes negative without the deepest, riskiest adds DEPENDS on
+them); (3) basket-size concentration — REPORTED (top basket's share of gross
+|basket P&L|), never a cap on its own. `compute_trust` drops the D5a
+`scale_in_pending` interlock and takes the `ScaleInHonesty` object instead: trips
+either hard cap → insufficient_evidence (reason leads); clears both → judged like
+any strategy (**the interlock is LIFTED — a clean ladder can now be blessed**).
+**Adds are still not trades.** Sample counting uses closed baskets, not per-rung
+fills (a lone ladder built from 4 rung fills is still 1 trade, still
+sample-capped) — documented + tested. `unlock_conditions` returns None for a
+martingale refusal (strategy property, not thin data → auto-unlock never chases
+it). Verdict headline (both registers) names the defense that fired, grounded.
+**Acceptance met, one story:** a martingale-overfit fixture (17 ruin @ −251.10 + 3
+lucky-deep @ +1855.90, 20 baskets / 2 vol regimes, NOT sample-capped) is refused
+with BOTH defenses firing — realized +$1,299 flips to −$486 without rung1
+(hand-computed), 25% of resampled orderings draw down > 30%; the clean 20-basket
+fixture clears both and grades to level 3. D5c is honesty-only (stages / trust /
+verdict / HONESTY.md); no engine or payload change. Backend green: 263 passed, 1
+skipped (6 new, interlock test renamed → defenses), ruff + mypy(strict) clean.

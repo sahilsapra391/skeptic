@@ -196,7 +196,19 @@ def template_verdict(report: HonestyReport) -> VerdictText:
 
     if trust.label == "insufficient_evidence":
         cov = report.coverage
-        if cov.materially_short:
+        si = report.scale_in
+        if si is not None and si.caps_trust and si.deep_rung_sign_flip:
+            headline = (
+                "Verdict withheld — the edge depends on the deepest, riskiest adds: "
+                f"${si.realized_total:,.0f} flips to −${abs(si.total_without_deepest):,.0f} "
+                f"without the deepest rung ({si.deepest_threshold:g})."
+            )
+        elif si is not None and si.caps_trust and si.p_ruin is not None:
+            headline = (
+                f"Verdict withheld — ruinous tail: {si.p_ruin * 100:.0f}% of resampled "
+                f"orderings draw the account down more than {si.ruin_threshold * 100:.0f}%."
+            )
+        elif cov.materially_short:
             headline = (
                 f"Verdict withheld. {cov.chain_sessions} of {cov.requested_sessions} "
                 "requested sessions had usable option chains — the window is mostly untested."
@@ -299,7 +311,21 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
 
     if trust.label == "insufficient_evidence":
         cov = report.coverage
-        if cov.materially_short:
+        si = report.scale_in
+        if si is not None and si.caps_trust and si.deep_rung_sign_flip:
+            headline = (
+                "No verdict — this only makes money because of the deepest, riskiest "
+                f"add-ins: ${si.realized_total:,.0f} turns into "
+                f"−${abs(si.total_without_deepest):,.0f} without them. That's a bet on "
+                "the most dangerous part working."
+            )
+        elif si is not None and si.caps_trust and si.p_ruin is not None:
+            headline = (
+                f"No verdict — too ruinous: in {si.p_ruin * 100:.0f}% of reshuffles the "
+                f"account fell more than {si.ruin_threshold * 100:.0f}%. Adding into losers "
+                "blows up too often."
+            )
+        elif cov.materially_short:
             headline = (
                 f"No verdict yet — only {cov.chain_sessions} of {cov.requested_sessions} "
                 "days in your date range actually had option prices to trade on."

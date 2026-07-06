@@ -30,6 +30,7 @@ from app.honesty.report import (
     OosSplit,
     ParamSweep,
     RegimeSample,
+    ScaleInHonesty,
     Sensitivity,
     SessionBucket,
     SessionSplit,
@@ -68,6 +69,15 @@ CONC_TOP_DAY_FRACTION = 0.05
 CONC_MATERIAL_SHARE = 0.50
 CONC_GAMMA_DECILE = 0.90
 CONC_MIN_SESSIONS = 40  # fewer marked sessions → the split is noise itself
+
+# Scale-in martingale defenses (D5c). Reviewed thresholds — a ladder that
+# trips either HARD cap is refused (insufficient_evidence), the same posture
+# the D5a interlock held while these were pending. Changed only in a reviewed
+# session, like every threshold in this file.
+RUIN_DRAW_THRESHOLD = 0.30  # account drawdown fraction that counts as "ruin"
+RUIN_TAIL_PROB = 0.10  # P(resampled max drawdown > threshold) that HARD-caps
+RUIN_MIN_BASKETS = 5  # below this the ruin resample is not meaningful
+BASKET_CONC_SHARE = 0.50  # top basket's share of gross |basket P&L| → flag (reported)
 
 # 5-min gauntlet cost control (D2d, owner amendment 6 — decided on the D2b
 # benchmark): a full-history 5-min run measured 136s (2,252 sessions, no
@@ -433,20 +443,21 @@ def session_split(result: RunResult) -> SessionSplit:
                         mid=buckets["mid"], close=buckets["close"])
 
 
-# ------------------------------------------ D5b: ladder depth attribution
-def ladder_depth_attribution(
-    result: RunResult, spec: StrategySpec
-) -> LadderDepth | None:
-    """Group realized basket P&L by the MAX rung depth each basket reached
-    (the per-tier table — iVol's P&L-by-ladder-depth), and attribute P&L to
-    the fills added AT each depth (the marginal-rung analysis — are the deep
-    adds themselves net negative?). Both views sum to the same realized total
-    (tested tie-out): each basket sits in exactly one tier, and a basket's
-    marginals sum to its realized P&L because the whole basket exits at ONE
-    price — so per fill, marginal = (exit − fill_price)·qty·MULT − 2·commission·qty
-    (entry commission + the fill's share of the exit commission).
+# ------------------------------------------ D5b/D5c: scale-in ladder shared
+def _fill_marginal(exit_px: float, fill_price: float, qty: int, commission: float) -> float:
+    """P&L attributable to one rung fill: the whole basket exits at ONE price,
+    so a fill of `qty` at `fill_price` contributes (exit − fill)·qty·MULT, less
+    its entry commission and its share of the exit commission (2·commission·qty).
+    A basket's fills' marginals sum EXACTLY to its realized P&L."""
+    return (exit_px - fill_price) * qty * MULT - 2 * commission * qty
 
-    Returns None when the spec is not a ladder or no basket closed."""
+
+def _ladder_baskets(result: RunResult, spec: StrategySpec) -> list[dict[str, Any]] | None:
+    """Per-basket records for the depth/defense stages: realized pl, total
+    contracts, cost, the derived exit price, the deepest rung reached, and the
+    fills. None when the spec is not a ladder or no basket closed. Baskets
+    still open at run end carry no realized P&L and are skipped (adds are never
+    counted as trades — the sample counter uses closed baskets, D5c)."""
     si = spec.entry.scale_in
     if si is None:
         return None
@@ -459,26 +470,43 @@ def ladder_depth_attribution(
         if t.pl is not None and t.position_id is not None
     }
     commission = spec.costs.commission_per_contract
-
     baskets: list[dict[str, Any]] = []
     for pid, bfills in fills_by_pid.items():
         pl = pl_by_pid.get(pid)
-        if pl is None:  # basket still open at run end — no realized P&L to attribute
+        if pl is None:
             continue
         total_qty = sum(f.qty for f in bfills)
         if total_qty <= 0:
             continue
         cost = sum(f.fill_price * f.qty * MULT for f in bfills)
-        # exit price derived from the realized P&L identity:
-        #   pl = exit·total·MULT − cost − commission·(entry_qty + total_qty)
-        # and entry_qty across a basket's fills == total_qty
+        # exit price from the realized P&L identity:
+        #   pl = exit·total·MULT − cost − commission·(entry_qty + total_qty),
+        #   entry_qty across a basket's fills == total_qty
         exit_px = (pl + cost + 2 * commission * total_qty) / (total_qty * MULT)
         baskets.append({
-            "pl": pl, "total_qty": total_qty, "exit_px": exit_px,
+            "pl": pl, "total_qty": total_qty, "cost": cost, "exit_px": exit_px,
             "max_rung": max(f.rung_index for f in bfills), "fills": bfills,
         })
-    if not baskets:
+    return baskets or None
+
+
+# ------------------------------------------ D5b: ladder depth attribution
+def ladder_depth_attribution(
+    result: RunResult, spec: StrategySpec
+) -> LadderDepth | None:
+    """Group realized basket P&L by the MAX rung depth each basket reached
+    (the per-tier table — iVol's P&L-by-ladder-depth), and attribute P&L to
+    the fills added AT each depth (the marginal-rung analysis — are the deep
+    adds themselves net negative?). Both views sum to the same realized total
+    (tested tie-out): each basket sits in exactly one tier, and a basket's
+    marginals sum to its realized P&L.
+
+    Returns None when the spec is not a ladder or no basket closed."""
+    si = spec.entry.scale_in
+    baskets = _ladder_baskets(result, spec)
+    if si is None or not baskets:
         return None
+    commission = spec.costs.commission_per_contract
 
     realized_total = sum(b["pl"] for b in baskets)
     gross_profit = sum(b["pl"] for b in baskets if b["pl"] > 0)
@@ -523,9 +551,7 @@ def ladder_depth_attribution(
             )
             r["fires"] += 1
             r["contracts"] += f.qty
-            r["marginal_pl"] += (
-                (b["exit_px"] - f.fill_price) * f.qty * MULT - 2 * commission * f.qty
-            )
+            r["marginal_pl"] += _fill_marginal(b["exit_px"], f.fill_price, f.qty, commission)
     rungs: list[LadderRung] = []
     for idx in sorted(rung_acc):
         r = rung_acc[idx]
@@ -548,6 +574,106 @@ def ladder_depth_attribution(
         tiers=tiers,
         rungs=rungs,
         deepest_net_negative=deepest_net_negative,
+    )
+
+
+# ------------------------------------------ D5c: scale-in martingale defenses
+def scale_in_honesty(
+    result: RunResult, spec: StrategySpec, initial_capital: float
+) -> ScaleInHonesty | None:
+    """Defenses specific to a scale-in ladder (a martingale): a ruin-tail
+    Monte Carlo on the basket P&L sequence and a deep-rung-dependency check,
+    each a HARD cap, plus a reported basket-size concentration. LIFTS the D5a
+    interlock — a ladder that clears these is judged like any strategy."""
+    si = spec.entry.scale_in
+    baskets = _ladder_baskets(result, spec)
+    if si is None or not baskets:
+        return None
+    commission = spec.costs.commission_per_contract
+    pls = [b["pl"] for b in baskets]
+    realized_total = sum(pls)
+    n = len(baskets)
+
+    # ---- ruin-tail Monte Carlo: resample the basket P&L sequence (seeded,
+    # same block bootstrap as the main MC) and measure the account-drawdown
+    # tail. The running peak includes the starting capital, so a run of losers
+    # draws down from where the account began — the honest ruin view.
+    p95 = p99 = p_ruin = None
+    ruin_flagged = False
+    if n >= RUIN_MIN_BASKETS:
+        arr = np.array(pls, dtype=float)
+        rng = np.random.RandomState(result.seed)
+        block = 5
+        n_blocks = math.ceil(n / block)
+        starts = rng.randint(0, n, size=(1000, n_blocks))
+        offsets = np.arange(block)
+        idx = (starts[:, :, None] + offsets[None, None, :]) % n
+        sampled = arr[idx.reshape(1000, -1)[:, :n]]
+        paths = initial_capital + np.cumsum(sampled, axis=1)
+        peak = np.maximum(np.maximum.accumulate(paths, axis=1), initial_capital)
+        max_dd = (1.0 - paths / np.maximum(peak, 1e-9)).max(axis=1)
+        p95, p99 = float(np.percentile(max_dd, 95)), float(np.percentile(max_dd, 99))
+        p_ruin = float(np.mean(max_dd > RUIN_DRAW_THRESHOLD))
+        ruin_flagged = p_ruin >= RUIN_TAIL_PROB
+
+    # ---- deep-rung dependency: remove the deepest rung's fills (no re-run —
+    # subtract their recorded marginals). A positive edge that flips negative
+    # without the deepest, riskiest adds DEPENDS on them (the martingale trap).
+    deepest = max(b["max_rung"] for b in baskets)
+    deep_marginal = sum(
+        _fill_marginal(b["exit_px"], f.fill_price, f.qty, commission)
+        for b in baskets
+        for f in b["fills"]
+        if f.rung_index == deepest
+    )
+    total_without_deepest = realized_total - deep_marginal
+    deep_sign_flip = realized_total > 0 and total_without_deepest <= 0
+    deep_flagged = deep_sign_flip or (
+        abs(deep_marginal) >= 0.5 * abs(realized_total)
+        if realized_total
+        else deep_marginal != 0
+    )
+
+    # ---- basket-size concentration (reported, never a cap on its own): does a
+    # single deep-basket day dominate the P&L?
+    gross = sum(abs(p) for p in pls)
+    top_share = (max(abs(p) for p in pls) / gross) if gross > 0 else None
+    conc_flagged = top_share is not None and top_share >= BASKET_CONC_SHARE
+
+    reasons: list[str] = []
+    if deep_sign_flip:
+        reasons.append(
+            f"the edge depends on the deepest rung ({si.rungs[deepest].value:g}): "
+            f"realized ${realized_total:,.0f} flips to −${abs(total_without_deepest):,.0f} "
+            "with those adds removed"
+        )
+    if ruin_flagged and p_ruin is not None:
+        reasons.append(
+            f"ruinous tail: {p_ruin:.0%} of resampled orderings draw the account down "
+            f"more than {RUIN_DRAW_THRESHOLD:.0%}"
+        )
+
+    losses = [p for p in pls if p < 0]
+    return ScaleInHonesty(
+        baskets=n,
+        resamples=1000,
+        seed=result.seed,
+        max_basket_contracts=max(b["total_qty"] for b in baskets),
+        worst_basket_loss=round(min(losses), 2) if losses else None,
+        ruin_threshold=RUIN_DRAW_THRESHOLD,
+        ruin_max_drawdown_p95=None if p95 is None else round(p95, 4),
+        ruin_max_drawdown_p99=None if p99 is None else round(p99, 4),
+        p_ruin=None if p_ruin is None else round(p_ruin, 4),
+        ruin_flagged=ruin_flagged,
+        deepest_threshold=si.rungs[deepest].value,
+        realized_total=round(realized_total, 2),
+        total_without_deepest=round(total_without_deepest, 2),
+        deep_rung_sign_flip=deep_sign_flip,
+        deep_rung_flagged=deep_flagged,
+        top_basket_share=None if top_share is None else round(top_share, 4),
+        concentration_flagged=conc_flagged,
+        caps_trust=ruin_flagged or deep_sign_flip,
+        reasons=reasons,
     )
 
 

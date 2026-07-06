@@ -131,10 +131,8 @@ def run_gauntlet(
     conc = stages.concentration(result)
     split = stages.session_split(result)
     ladder = stages.ladder_depth_attribution(result, spec)
-    trust = compute_trust(
-        oos, wf, mc, sens, sample, dsr, cov, conc,
-        scale_in_pending=spec.entry.scale_in is not None,
-    )
+    scale_in = stages.scale_in_honesty(result, spec, spec.backtest.initial_capital)
+    trust = compute_trust(oos, wf, mc, sens, sample, dsr, cov, conc, scale_in)
 
     return HonestyReport(
         oos=oos,
@@ -148,6 +146,7 @@ def run_gauntlet(
         concentration=conc,
         session_split=split,
         ladder_depth=ladder,
+        scale_in=scale_in,
         fill_sources=dict(result.fill_sources),
         trust=trust,
         metrics=result.metrics,
