@@ -1029,3 +1029,27 @@ code-pending refusal so the auto-unlock scan never chases it. Single-leg
 the rest with a reason; the `reversal_signal` stop-mode is wired in the schema
 and deferred. Backend suite green: 251 passed, 1 skipped (19 new), ruff +
 mypy(strict) clean.
+
+## 2026-07-06 — D5b: depth attribution, the crown jewel (branch claude/d5b-depth-attribution)
+
+**Two tied-out views of a ladder's realized P&L.** New honesty stage
+`ladder_depth_attribution` (present on every scale-in run): a per-tier table
+(baskets grouped by the MAX rung depth they reached — iVol's P&L-by-depth: count,
+win rate, total/avg P&L, share of gross profit vs loss) AND a marginal-rung
+analysis (P&L attributable to the contracts added AT each depth — are the deep
+adds themselves net negative?). Because the whole basket exits at ONE price, a
+fill's marginal = `(exit − fill)·qty·100 − 2·commission·qty`, derived from the
+basket's realized P&L, so the per-tier totals AND the per-rung marginals each tie
+out to the same realized total — tested to the cent (fixture-1 basket: rungs
+−12.60 / +41.10 / +143.50 = +172.00) and on a 20-basket run (shallow tier +$2,306
+carries all profit, deep tier −$1,880 is 100% of the loss, deep adds net −$1,043).
+**Grounded verdict + prominent panel.** The verdict now MUST reference depth when
+a ladder ran ("the deepest adds are net −$X — the edge is not in the deep rungs"),
+numerically grounded from the stage and riding in the caveats so it surfaces even
+while the interlock withholds the verdict; the LLM path gets the same instruction.
+New results panel (marginal-rung bars + the tier table) placed right under the
+equity chart — P/L red/green lives on this DATA panel, never the verdict (color
+rule honored; verified in the browser preview). No approved depth mockup existed,
+so the panel follows the existing results-panel conventions (PANEL tokens, Plex
+Mono data) — flagged for owner DesignSync. Backend green: 260 passed, 1 skipped
+(9 new), ruff + mypy(strict) clean; frontend tsc + lint clean.

@@ -130,6 +130,7 @@ def run_gauntlet(
     liq = stages.liquidity_profile(result, spec)
     conc = stages.concentration(result)
     split = stages.session_split(result)
+    ladder = stages.ladder_depth_attribution(result, spec)
     trust = compute_trust(
         oos, wf, mc, sens, sample, dsr, cov, conc,
         scale_in_pending=spec.entry.scale_in is not None,
@@ -146,6 +147,7 @@ def run_gauntlet(
         liquidity=liq,
         concentration=conc,
         session_split=split,
+        ladder_depth=ladder,
         fill_sources=dict(result.fill_sources),
         trust=trust,
         metrics=result.metrics,

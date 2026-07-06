@@ -206,6 +206,54 @@ class UnlockConditions(BaseModel):
     sessions_at_refusal: int = 0
 
 
+class LadderTier(BaseModel):
+    """One basket-size tier: baskets grouped by the MAX rung depth they
+    reached (D5b). The iVol P&L-by-ladder-depth table, and then some."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    depth: int  # rungs reached = deepest fired rung index + 1
+    threshold: float  # the deepest reached rung's condition value (the tier label)
+    baskets: int
+    wins: int
+    win_rate: float | None
+    contracts: int  # total contracts across baskets in this tier
+    total_pl: float
+    avg_pl: float
+    pct_gross_profit: float | None  # share of gross profit across all baskets
+    pct_gross_loss: float | None  # share of gross loss across all baskets
+
+
+class LadderRung(BaseModel):
+    """Marginal analysis: the P&L attributable to fills added AT this rung
+    depth (not just baskets that reached it) — answers 'are the deep adds
+    themselves net negative', the question that kills or saves a martingale."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rung_index: int
+    threshold: float
+    add_contracts: int  # the spec's per-fire add at this rung
+    fires: int  # how many baskets fired this rung
+    contracts: int  # total contracts added at this depth
+    marginal_pl: float  # P&L attributable to fills at this depth (ties out to total)
+    net_negative: bool
+
+
+class LadderDepth(BaseModel):
+    """Depth attribution for a scale-in ladder (D5b, the crown jewel).
+    Present only on ladder runs; the per-tier totals AND the per-rung
+    marginals each sum to `realized_total` (tie-out, tested)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    baskets: int  # closed baskets attributed
+    realized_total: float  # sum of closed basket P&L — the tie-out anchor
+    tiers: list[LadderTier]  # ordered by depth ascending
+    rungs: list[LadderRung]  # ordered by rung_index
+    deepest_net_negative: bool  # are the deepest-reached adds net negative?
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -229,6 +277,7 @@ class HonestyReport(BaseModel):
     liquidity: LiquidityProfile | None = None  # None only on pre-D1b reports
     concentration: Concentration | None = None  # None only on pre-D1d reports
     session_split: SessionSplit | None = None  # 5-min clock only (D2d)
+    ladder_depth: LadderDepth | None = None  # scale-in runs only (D5b)
     fill_sources: dict[str, int] = {}  # per-leg fill provenance (D2b/D2d)
     trust: Trust
     metrics: dict[str, float | None]

@@ -154,6 +154,41 @@ def _pct(v: float | None, digits: int = 0) -> str:
     return "—" if v is None else f"{v * 100:.{digits}f}%"
 
 
+def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
+    """One grounded sentence on depth attribution — required whenever a ladder
+    ran (brief D5b). Every number comes from report.ladder_depth, so it is
+    grounded by construction; it rides in the caveats so it surfaces even when
+    the verdict is withheld (the D5a interlock withholds every ladder for now)."""
+    ld = report.ladder_depth
+    if ld is None or not ld.rungs:
+        return None
+    deep = ld.rungs[-1]
+    mpl = abs(deep.marginal_pl)
+    if retail:
+        verb = "lost" if deep.net_negative else "made"
+        tail = (
+            "those deep add-ins are what dragged it down"
+            if deep.net_negative
+            else "the deep add-ins pulled their weight"
+        )
+        return (
+            f"Depth: adding more at the deepest level ({deep.threshold:g}) {verb} "
+            f"${mpl:,.0f} of the ${abs(ld.realized_total):,.0f} across {ld.baskets} "
+            f"baskets — {tail}."
+        )
+    sign = "−" if deep.net_negative else "+"
+    tail = (
+        "the edge does NOT come from the deep adds"
+        if deep.net_negative
+        else "the deep adds are net positive here"
+    )
+    return (
+        f"Ladder depth: fills at the deepest rung ({deep.threshold:g}) net {sign}"
+        f"${mpl:,.0f} of the ${abs(ld.realized_total):,.0f} realized across "
+        f"{ld.baskets} baskets — {tail}."
+    )
+
+
 def template_verdict(report: HonestyReport) -> VerdictText:
     """Uncomfortable part first, always."""
     oos, wf, mc = report.oos, report.walk_forward, report.monte_carlo
@@ -240,6 +275,9 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         )
     if report.sensitivity.window_note:
         caveats.append(report.sensitivity.window_note + ".")
+    ladder = _ladder_caveat(report)
+    if ladder:
+        caveats.append(ladder)
     if not wf.meaningful:
         caveats.append(wf.note or "walk-forward not meaningful at this history length")
 
@@ -372,6 +410,9 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
                 f"{_pct(liq.penalized_share)} of fills paid extra slippage for thin "
                 "markets."
             )
+    ladder = _ladder_caveat(report, retail=True)
+    if ladder:
+        caveats.append(ladder)
     if not wf.meaningful:
         caveats.append("Not enough history to test period-by-period yet.")
 
@@ -432,6 +473,9 @@ def _llm_narrate(
         "as a percent). NEVER do arithmetic — no differences, ratios, averages, "
         "annualizing, or counting of your own. A number not literally in the JSON "
         "must not appear in your text. When in doubt, describe without the number. "
+        "If the JSON has a ladder_depth object, you MUST state which rung depth "
+        "carried the P&L and whether the deepest adds were net negative, using its "
+        "numbers — a scale-in ladder's depth attribution is the point. "
         "Write every field in English, regardless of the field names in the JSON. "
         'Respond with JSON only: {"headline": str, "evidence": [str], '
         '"breaks_where": [str], "caveats": [str]}'

@@ -344,6 +344,59 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
     ]
 
 
+def _ladder_depth_block(report: HonestyReport) -> dict[str, Any] | None:
+    """Depth attribution for the results panel (D5b): the per-tier table + a
+    marginal-rung bar chart. P/L red/green is fine here — this is a DATA
+    panel, never a trust/verdict surface (the color rule)."""
+    ld = report.ladder_depth
+    if ld is None:
+        return None
+
+    def sign(v: float) -> str:
+        return "pos" if v > 0 else "neg" if v < 0 else "none"
+
+    def money(v: float) -> str:
+        return f"{'+' if v >= 0 else '−'}${abs(v):,.0f}"
+
+    max_tier = max((abs(t.total_pl) for t in ld.tiers), default=0.0) or 1.0
+    max_rung = max((abs(r.marginal_pl) for r in ld.rungs), default=0.0) or 1.0
+    return {
+        "baskets": ld.baskets,
+        "realizedTotal": money(ld.realized_total),
+        "realizedSign": sign(ld.realized_total),
+        "deepestNetNegative": ld.deepest_net_negative,
+        "tiers": [
+            {
+                "depth": t.depth,
+                "threshold": f"{t.threshold:g}",
+                "baskets": t.baskets,
+                "winRate": _pct(t.win_rate, 0),
+                "contracts": t.contracts,
+                "totalPl": money(t.total_pl),
+                "avgPl": money(t.avg_pl),
+                "plSign": sign(t.total_pl),
+                "pctProfit": _pct(t.pct_gross_profit, 0),
+                "pctLoss": _pct(t.pct_gross_loss, 0),
+                "barPct": round(abs(t.total_pl) / max_tier * 100, 1),
+            }
+            for t in ld.tiers
+        ],
+        "rungs": [
+            {
+                "label": f"rung {r.rung_index + 1} · {r.threshold:g}",
+                "addContracts": r.add_contracts,
+                "fires": r.fires,
+                "contracts": r.contracts,
+                "marginalPl": money(r.marginal_pl),
+                "plSign": sign(r.marginal_pl),
+                "netNeg": r.net_negative,
+                "barPct": round(abs(r.marginal_pl) / max_rung * 100, 1),
+            }
+            for r in ld.rungs
+        ],
+    }
+
+
 def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any]:
     trust = report.trust
     sample = report.regime_sample
@@ -571,6 +624,7 @@ def build_run_payload(
         "fillSources": result.fill_sources,
         "clock": result.clock,
         "sessionSplit": report.session_split.model_dump() if report.session_split else None,
+        "ladderDepth": _ladder_depth_block(report),
         "greeksSeries": {
             "delta": _downsample_nullable(result.dates, result.portfolio_delta),
             "gamma": _downsample_nullable(result.dates, result.portfolio_gamma),

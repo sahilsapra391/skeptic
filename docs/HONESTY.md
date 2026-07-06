@@ -200,6 +200,29 @@ existing gauntlet and get blessed while UNDEFENDED. That is unacceptable, so:
   inflate its way to 15 "trades" (the baskets-not-fills rule D5c formalizes
   falls out of the D5a representation for free).
 
+## Ladder depth attribution (D5b)
+
+The point of running a martingale honestly is to make its risk VISIBLE, the
+way iVolatility's P&L-by-ladder-depth table did. `ladder_depth_attribution`
+(present on every ladder run) reports two tied-out views of the realized P&L:
+
+- **Per-tier table:** baskets grouped by the MAX rung depth they reached
+  (their basket-size tier) — count, win rate, total/avg P&L, and share of
+  gross profit vs gross loss. This is iVol's table: which depth made or lost.
+- **Marginal-rung analysis:** the P&L attributable to the contracts added AT
+  each rung depth — the question that kills or saves a martingale (are the
+  deep, riskiest adds themselves net negative?). Because the whole basket
+  exits at ONE price, a fill's marginal P&L is
+  `(exit − fill_price)·qty·MULT − 2·commission·qty`, and a basket's marginals
+  sum exactly to its realized P&L. So the per-tier totals AND the per-rung
+  marginals each tie out to the same `realized_total` (tested to the cent).
+- **In the verdict + panel:** the verdict MUST reference depth whenever a
+  ladder ran ("the deepest adds are net −$X — the edge is not in the deep
+  rungs"), grounded from the stage numbers; it rides in the caveats so it
+  surfaces even while the interlock withholds the verdict. The results panel
+  shows the marginal-rung bars + the tier table. P/L red/green is allowed
+  there (it is a DATA panel), never on the trust/verdict surfaces.
+
 ## Conventions the numbers depend on (fixed, tested)
 
 - Exit priority at every clock: stop_loss → delta_stop → profit_target →

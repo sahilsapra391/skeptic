@@ -189,6 +189,42 @@ export interface ConcentrationBlock {
   flagged: boolean;
 }
 
+/** D5b: scale-in depth attribution (present only on ladder runs). P/L
+ * red/green is allowed on this DATA panel, never on the verdict. */
+export interface LadderDepthTier {
+  depth: number;
+  threshold: string;
+  baskets: number;
+  winRate: string;
+  contracts: number;
+  totalPl: string;
+  avgPl: string;
+  plSign: "pos" | "neg" | "none";
+  pctProfit: string;
+  pctLoss: string;
+  barPct: number;
+}
+
+export interface LadderDepthRung {
+  label: string;
+  addContracts: number;
+  fires: number;
+  contracts: number;
+  marginalPl: string;
+  plSign: "pos" | "neg" | "none";
+  netNeg: boolean;
+  barPct: number;
+}
+
+export interface LadderDepthBlock {
+  baskets: number;
+  realizedTotal: string;
+  realizedSign: "pos" | "neg" | "none";
+  deepestNetNegative: boolean;
+  tiers: LadderDepthTier[];
+  rungs: LadderDepthRung[];
+}
+
 export interface RunPayload {
   id: string;
   demo: boolean;
@@ -209,6 +245,8 @@ export interface RunPayload {
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
   concentration?: ConcentrationBlock | null;
+  /** D5b: scale-in depth attribution (null on non-ladder runs) */
+  ladderDepth?: LadderDepthBlock | null;
   /** D2b: the declared clock + per-fill quote provenance
    * (eod_chain / ivol_5min / cboe_minute → leg-fill counts) */
   clock?: string;
