@@ -102,10 +102,18 @@ def bump_trials(family: str, n: int = 1) -> int:
         return row.trials
 
 
-_engine = create_engine(
-    _database_url(),
-    connect_args={"check_same_thread": False} if _database_url().startswith("sqlite") else {},
-)
+def _engine_kwargs(url: str) -> dict[str, object]:
+    """SQLite wants check_same_thread off (one file, many threads). Postgres
+    (Neon) closes idle SSL connections aggressively — without pre_ping the
+    pool hands out a dead socket and the request dies with
+    'SSL connection has been closed unexpectedly'; pre_ping validates the
+    connection first and recycle retires it before Neon's ~5-min idle cut."""
+    if url.startswith("sqlite"):
+        return {"connect_args": {"check_same_thread": False}}
+    return {"pool_pre_ping": True, "pool_recycle": 280}
+
+
+_engine = create_engine(_database_url(), **_engine_kwargs(_database_url()))
 SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
 # set when the configured database was unreachable and we fell back

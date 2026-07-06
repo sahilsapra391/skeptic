@@ -10,8 +10,11 @@ narrated number validated against the stats payload.
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import json
 import logging
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -83,8 +86,40 @@ def _inherit_trials(parent_run_id: str | None, family: str) -> int:
         return max(row.trials if row else 1, 1)
 
 
+# Engine + full gauntlet run in-process as background tasks (single web
+# worker). The gauntlet's sensitivity sweep re-runs the whole engine ~20×;
+# two overlapping full-history runs' transient PEAKS are what tip a small
+# container OOM (measured: no per-run reference leak — the Python heap is
+# flat run-over-run — so the risk is concurrency, not accumulation). This
+# lock serializes them: a second submission stays honestly 'queued' until
+# the first finishes.
+_ENGINE_LOCK = threading.Lock()
+
+
+def _release_memory() -> None:
+    """Hand the sweep's freed transient buffers back to the OS. glibc keeps
+    freed pandas/numpy chunks in per-thread arenas, so container RSS ratchets
+    even though nothing leaks; gc + malloc_trim return them. A no-op where
+    malloc_trim is unavailable (macOS / musl)."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
 def _execute_run(run_id: str, auto_note: str | None = None) -> None:
-    """Background job: load the lake, run the engine, store the payload."""
+    """Background job: serialize on the engine lock, run one gauntlet, then
+    return freed memory to the OS regardless of outcome."""
+    with _ENGINE_LOCK:
+        try:
+            _run_and_store(run_id, auto_note)
+        finally:
+            _release_memory()
+
+
+def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
+    """Load the lake, run the engine + gauntlet, store the payload."""
     with db.session() as s:
         run = s.get(db.Run, run_id)
         if run is None:

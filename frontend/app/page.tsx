@@ -136,7 +136,8 @@ export default function NewAnalysisPage() {
   // runs the parser spec verbatim, dial edits rebuild from the dials
   const parsedSpecRef = useRef<Record<string, unknown> | null>(null);
   const parsedDraftRef = useRef<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCancelledRef = useRef(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const speech = useSpeechToText((segment) => {
@@ -194,7 +195,8 @@ export default function NewAnalysisPage() {
       })
       .catch(() => undefined);
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      pollCancelledRef.current = true;
+      if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, []);
 
@@ -252,22 +254,31 @@ export default function NewAnalysisPage() {
       const { run_id } = await startBacktest(draft, untouched ? parsedSpecRef.current : null);
       setPhase("running");
       setRun(null);
-      pollRef.current = setInterval(async () => {
+      // self-scheduling poll: each tick AWAITS the prior response before
+      // arming the next, so a slow backend can never stack overlapping
+      // requests (the old fixed 400ms setInterval flooded /api/runs/{id}
+      // and stole threadpool threads from the running gauntlet)
+      pollCancelledRef.current = false;
+      const poll = async () => {
         try {
           const payload = await getRun(run_id);
+          if (pollCancelledRef.current) return;
           setRun(payload);
           if (payload.status === "done") {
-            if (pollRef.current) clearInterval(pollRef.current);
             setPhase("results");
-          } else if (payload.status === "error") {
-            if (pollRef.current) clearInterval(pollRef.current);
+            return;
+          }
+          if (payload.status === "error") {
             setError(payload.error ?? "backtest failed");
             setPhase("spec");
+            return;
           }
         } catch {
-          // keep polling; transient
+          // transient — fall through and reschedule
         }
-      }, 400);
+        if (!pollCancelledRef.current) pollRef.current = setTimeout(poll, 1200);
+      };
+      poll();
     } catch (e) {
       setError(e instanceof Error ? e.message : "backtest failed");
     } finally {
@@ -276,7 +287,8 @@ export default function NewAnalysisPage() {
   }, [draft, busy]);
 
   const reset = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
+    pollCancelledRef.current = true;
+    if (pollRef.current) clearTimeout(pollRef.current);
     setPhase("compose");
     setRun(null);
     setDraft(null);

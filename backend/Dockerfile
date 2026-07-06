@@ -7,7 +7,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    # cap glibc per-thread arenas: with the default (8 × nCPU) the sweep's
+    # freed numpy/pandas buffers linger unreturned and RSS ratchets on a
+    # small container. 2 arenas keeps allocator retention bounded.
+    MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 
