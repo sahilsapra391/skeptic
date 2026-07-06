@@ -18,6 +18,10 @@ import type { CoveragePayload } from "@/lib/types";
 const PANEL = "rounded-[14px] border border-line bg-panel p-4";
 const PANEL_TITLE = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
 
+// heartbeat waveform, edge to edge of the 260-wide viewBox (~372 path units)
+const HB_POINTS =
+  "0,20 40,20 48,6 56,34 64,20 110,20 118,6 126,34 134,20 180,20 188,6 196,34 204,20 260,20";
+
 function laneGeometry(first: string, last: string, t0: string, t1: string) {
   const ms = (d: string) => new Date(d).getTime();
   const span = ms(t1) - ms(t0) || 1;
@@ -147,17 +151,31 @@ export default function DataPage() {
         <div className={PANEL}>
           <div className={clsx(PANEL_TITLE, "mb-2")}>COLLECTOR HEARTBEAT</div>
           <svg width="100%" viewBox="0 0 260 40" className="block">
+            {/* the full waveform, always drawn edge to edge so the trace fills
+                the panel; a clipping dash here would leave a blank third and
+                read as a half-drawn (buggy) line */}
             <polyline
-              points="0,20 40,20 48,6 56,34 64,20 110,20 118,6 126,34 134,20 180,20 188,6 196,34 204,20 260,20"
+              points={HB_POINTS}
               fill="none"
               stroke={recorderFresh ? "var(--ac)" : "var(--ink-4)"}
               strokeWidth="1.6"
-              // the dash is the traveling-pulse animation; when stalled it must
-              // NOT clip the trace — a 240-unit dash on a ~372-unit path would
-              // hide the right third and read as a half-drawn (buggy) line
-              strokeDasharray={recorderFresh ? "240" : undefined}
-              className={recorderFresh ? "animate-heartbeat" : undefined}
+              strokeLinejoin="round"
+              strokeLinecap="round"
             />
+            {/* live: a bright pulse sweeps the full line (the "beat") — a short
+                dash traveling the whole path, over the fully-drawn base */}
+            {recorderFresh && (
+              <polyline
+                points={HB_POINTS}
+                fill="none"
+                stroke="var(--ac)"
+                strokeWidth="3.2"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                strokeDasharray="26 346"
+                className="animate-heartbeat"
+              />
+            )}
           </svg>
           <div className="mt-2 font-mono text-[11px] text-ink-3">
             {recorderMins != null
