@@ -20,7 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from app.honesty.verdict import DEFAULT_MODEL, OPENROUTER_URL, _extract_json
+from app.honesty.verdict import OPENROUTER_URL, PARSER_MODEL, _extract_json
 from app.models.spec import V2_INDICATORS, StrategySpec
 
 _V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
@@ -271,7 +271,9 @@ def _call_llm(messages: list[dict[str, str]], api_key: str) -> dict[str, Any] | 
     import requests
 
     body: dict[str, Any] = {
-        "model": os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
+        # the parser stays on the pro model (its own override) — flash does not
+        # clear the parser eval (it fabricates exits); guardrail #3
+        "model": os.environ.get("OPENROUTER_PARSER_MODEL", PARSER_MODEL),
         "messages": messages,
         "temperature": 0.0,
         "response_format": {"type": "json_object"},

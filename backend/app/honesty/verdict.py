@@ -24,7 +24,14 @@ from app.honesty.report import HonestyReport
 log = logging.getLogger("verdict")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
+# Two models on purpose (owner decision 2026-07-06). The NARRATION calls
+# (verdict, ask, health) use the cheaper/faster flash model — their numeric
+# validator + English guard + template fallback keep them honest. The PARSER
+# stays on the pro model: flash fabricated an exit on the no-exit ladder case
+# in the parser eval (guardrail #3), so it does not clear the parser gate.
+# Each is overridable by its own env var; a prod value still wins.
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash"  # verdict · ask · health (OPENROUTER_MODEL)
+PARSER_MODEL = "deepseek/deepseek-v4-pro"  # parser only (OPENROUTER_PARSER_MODEL)
 
 
 class VerdictText(BaseModel):
