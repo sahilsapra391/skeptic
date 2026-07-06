@@ -101,6 +101,7 @@ interface Buffer {
   indicators: Record<string, IndicatorSeries>;
   hasMore: boolean;
   live: boolean;
+  liveLabel: string | null;
   source: string;
   asOf: string | null;
 }
@@ -280,6 +281,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         indicators: p.indicators,
         hasMore: p.has_more,
         live: p.live,
+        liveLabel: p.live_label ?? null,
         source: p.source,
         asOf: p.as_of,
       });
@@ -421,7 +423,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
             ? sliceInd(cur.indicators[k], p.indicators[k])
             : p.indicators[k];
         });
-        setBuffer({ ...cur, bars, indicators, live: p.live, asOf: p.as_of });
+        setBuffer({ ...cur, bars, indicators, live: p.live, liveLabel: p.live_label ?? cur.liveLabel, asOf: p.as_of });
         const v = viewRef.current;
         if (v.start + v.span >= nOld - 1.5) {
           // following the live edge — stay pinned to it
@@ -745,7 +747,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
           {buffer?.live && <span className="inline-block h-[7px] w-[7px] animate-pin-pulse rounded-full bg-trust" />}
           {buffer
             ? buffer.live
-              ? "live · iex tail"
+              ? (buffer.liveLabel ?? "live")
               : `through ${buffer.asOf ? fmtTime(buffer.asOf, intraday) : "—"} · nightly lake`
             : ""}
         </span>

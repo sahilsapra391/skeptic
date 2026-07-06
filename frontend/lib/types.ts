@@ -396,6 +396,9 @@ export interface BarsPayload {
   interval: ChartInterval;
   window: ChartWindow;
   live: boolean;
+  /** honest freshness label for a live tail: "live · IEX tail" (real-time) or
+   * "delayed ~15m · CBOE recorder" — never claims real-time for delayed data */
+  live_label?: string | null;
   source: string;
   as_of: string | null;
   has_more: boolean;
