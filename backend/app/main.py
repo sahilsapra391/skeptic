@@ -106,7 +106,7 @@ def health() -> dict[str, object]:
     from app import db
     from app.data.r2 import r2_configured
     from app.honesty.stages import MIN_TRADES
-    from app.honesty.verdict import DEFAULT_MODEL
+    from app.honesty.verdict import DEFAULT_MODEL, PARSER_MODEL
 
     llm = bool(os.environ.get("OPENROUTER_API_KEY"))
     return {
@@ -119,7 +119,8 @@ def health() -> dict[str, object]:
         "verdict_llm": "live — validated narration, template fallback" if llm
         else "template only (no key)",
         "ask": "live — grounded Q&A on finished runs" if llm else "needs OPENROUTER_API_KEY",
-        "model": os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
+        "model": os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),  # narration
+        "parser_model": os.environ.get("OPENROUTER_PARSER_MODEL", PARSER_MODEL),
         "min_trades": MIN_TRADES,
     }
 
