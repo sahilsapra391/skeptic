@@ -114,6 +114,57 @@ def scale_in_ladder_spec() -> StrategySpec:
     })
 
 
+def _overfit_session(session_iso: str, expiry_iso: str, lucky: bool) -> SessionSlice:
+    """A martingale-overfit session: EVERY basket cascades into the deep rung
+    (+2 @ 0.60, +5 @ 0.30 → 7 ct, blended 0.3857). Most collapse and are
+    force-flatted at 0.04 (ruin); a lucky FEW spike to 3.05 (PT). The edge, if
+    any, lives entirely in the deep rung — removing it flips the sign."""
+    quotes = {
+        "09:30": [_call(expiry_iso, 1.00, 1.10)],
+        "09:35": [_call(expiry_iso, 1.00, 1.10)],
+        "09:40": [_call(expiry_iso, 0.45, 0.65)],  # rung0 opens, buy 0.60
+        "09:45": [_call(expiry_iso, 0.15, 0.35)],  # rung1 fires, buy 0.30
+    }
+    und = {"09:30": 100.0, "09:35": 100.0, "09:40": 98.0, "09:45": 96.0}
+    if lucky:
+        quotes["09:50"] = [_call(expiry_iso, 3.00, 3.20)]  # spike → PT, sell 3.05
+        und["09:50"] = 105.0
+    else:
+        quotes["09:50"] = [_call(expiry_iso, 0.02, 0.10)]
+        quotes["15:45"] = [_call(expiry_iso, 0.02, 0.10)]  # force-flat, sell 0.04
+        und["09:50"], und["15:45"] = 94.0, 93.0
+    volumes = {t: 100.0 for t in und}
+    return build_fixture_slice(session_iso, quotes, und, volumes=volumes)
+
+
+def martingale_overfit_multi_session(
+    n: int = 20, lucky: int = 3
+) -> tuple[MarketStore, ScaleInIntraday]:
+    """One lucky deep reversal in a sea of ruinous ones — the martingale trap.
+    `lucky` deep baskets spike to a big win; the other n−lucky collapse. Net
+    positive (the wins outweigh) BUT the profit is entirely in the deepest
+    rung, so removing it flips the sign — deep-rung dependency + ruin tail both
+    fire. ≥15 baskets across two vol regimes, so it is NOT sample-capped: the
+    refusal is the martingale defenses, not thin evidence.
+
+    Hand-computed (n=20, lucky=3): 17 ruin @ −251.10, 3 lucky @ +1855.90 →
+    realized +1299.00; deep-rung (rung1) marginal +1785.00 → without it
+    −486.00 (sign flip)."""
+    days = _weekdays(date(2025, 1, 6), n + 1)
+    isos = [d.isoformat() for d in days]
+    # the lucky sessions are spread across BOTH vol regimes so neither the
+    # win nor the losses cluster in one regime
+    lucky_idx = {int(round(i * (n - 1) / max(lucky - 1, 1))) for i in range(lucky)}
+    slices = {
+        isos[i]: _overfit_session(isos[i], isos[i + 1], lucky=(i in lucky_idx))
+        for i in range(n)
+    }
+    underlying = {iso: (100.0, 100.0) for iso in isos}
+    vix = {isos[i]: (12.0 if i < n // 2 else 25.0) for i in range(n)}
+    store = build_fixture_store("SPY", {}, underlying, vix=vix)
+    return store, ScaleInIntraday(slices)
+
+
 def scale_in_multi_session(
     n: int = 20, ruin_every: int = 3
 ) -> tuple[MarketStore, ScaleInIntraday]:

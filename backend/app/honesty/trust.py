@@ -24,6 +24,7 @@ from app.honesty.report import (
     MonteCarlo,
     OosSplit,
     RegimeSample,
+    ScaleInHonesty,
     Sensitivity,
     Trust,
     WalkForward,
@@ -41,7 +42,7 @@ def compute_trust(
     dsr: Dsr,
     coverage: Coverage | None = None,
     concentration: Concentration | None = None,
-    scale_in_pending: bool = False,
+    scale_in: ScaleInHonesty | None = None,
 ) -> Trust:
     survived = {
         "oos": not oos.flagged,
@@ -54,13 +55,13 @@ def compute_trust(
     # data-integrity caps → insufficient_evidence, most fundamental first: no
     # amount of good statistics rescues a window that was barely tested.
     cap_reasons: list[str] = []
-    # D5a interlock: a scale-in ladder is a martingale, and until its
-    # dedicated defenses land (D5c) NO ladder can be blessed — no matter how
-    # good the four attacks look or how many baskets it cleared. This is FIRST
-    # so the refusal reads as "defenses pending", not "sample too thin"
-    # (docs/HONESTY.md · the whole thesis of shipping scale-in before D5c).
-    if scale_in_pending:
-        cap_reasons.append("scale-in safety checks pending (D5c)")
+    # D5c martingale defenses (LIFTS the D5a interlock): a scale-in ladder that
+    # trips the ruin-tail MC or the deep-rung-dependency check is refused —
+    # FIRST, so the refusal reads as the martingale failure, not "sample too
+    # thin". A ladder that clears them is judged like any strategy
+    # (docs/HONESTY.md · scale-in defenses).
+    if scale_in is not None and scale_in.caps_trust:
+        cap_reasons.extend(scale_in.reasons)
     if coverage is not None and coverage.materially_short:
         cap_reasons.append(coverage.reason or "requested window mostly lacks chain data")
     if sample.capped:
@@ -98,6 +99,20 @@ def compute_trust(
     # promoting it to a cap requires evidence in a reviewed session
     if concentration is not None and concentration.flagged and concentration.note:
         reasons.append(concentration.note)
+    # D5c: a ladder that cleared the hard caps can still carry reported
+    # martingale signals — the deepest rung moving the total, or one deep
+    # basket dominating the P&L (the martingale tell). Reported, not a cap.
+    if scale_in is not None:
+        if scale_in.deep_rung_flagged and not scale_in.deep_rung_sign_flip:
+            reasons.append(
+                f"the deepest rung ({scale_in.deepest_threshold:g}) moves the total "
+                f"materially: ${scale_in.realized_total:,.0f} → "
+                f"${scale_in.total_without_deepest:,.0f} without it"
+            )
+        if scale_in.concentration_flagged and scale_in.top_basket_share is not None:
+            reasons.append(
+                f"one basket drove {scale_in.top_basket_share:.0%} of gross basket P&L"
+            )
 
     return Trust(
         level=level,

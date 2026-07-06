@@ -164,41 +164,51 @@ a human merges it.
   (2026-07-01) — see the receipts section above. Until n clears the floor
   the weekly doc honestly says "insufficient evidence, no change."
 
-## The scale-in interlock (D5a → D5c)
+## Scale-in martingale defenses (D5c — the interlock, lifted)
 
 A scale-in ladder that adds size into a losing position is a MARTINGALE —
 the most ruin-prone structure in retail options, and exactly the thing
-Skeptic exists not to be fooled by. The primitive that runs it faithfully
-(D5a) lands BEFORE its dedicated defenses (the ruin-tail Monte Carlo,
-deep-rung-dependency flag, and basket-aware concentration — D5c). The moment
-the ladder exists, a run could in principle clear the 15-trade bar and the
-existing gauntlet and get blessed while UNDEFENDED. That is unacceptable, so:
+Skeptic exists not to be fooled by. D5a shipped the primitive behind a blanket
+INTERLOCK (every ladder hard-capped at `insufficient_evidence`, "scale-in
+safety checks pending (D5c)") so a blessable-but-undefended martingale was
+structurally impossible in the interim. D5c REPLACES that interlock with two
+real, strategy-specific defenses — each a HARD cap in `compute_trust` (a
+`scale_in` object the gauntlet passes, the same mechanism as every other cap).
+A ladder that trips either is refused; one that clears both is now judged like
+any strategy and CAN be blessed.
 
-- **The interlock.** Any run whose spec carries `entry.scale_in` is
-  hard-capped at `insufficient_evidence` — reason
-  `"scale-in safety checks pending (D5c)"` — regardless of the four attacks
-  or how many baskets it cleared. It is the FIRST cap reason, ahead of the
-  thin-sample and coverage caps, so the refusal reads "defenses pending", not
-  "not enough trades". Lives in `compute_trust` (a `scale_in_pending` flag
-  the gauntlet passes), the same mechanism as every other data-integrity cap.
-- **Why it's safe to ship the primitive first.** The interlock makes a
-  blessable-but-undefended martingale structurally impossible. The tests
-  prove one story: a ladder that blows up is refused (`test_scale_in_engine`
-  books the full loss; `test_scale_in_interlock` shows the interlock LEADS
-  over the thin-sample cap), and a ladder with ≥15 baskets across two vol
-  regimes — NOT sample-capped — is STILL refused, while the identical stage
-  numbers with the flag off grade to a real level. The interlock, not luck of
-  the sample, is the cap.
-- **Not a data unlock.** A scale-in refusal is code-pending, not data-thin,
-  so `unlock_conditions` returns None for it — the D3b auto-unlock scan must
-  not re-run and re-refuse it forever. D5c LIFTS the interlock: once the
-  martingale defenses are in, a ladder that clears them can be blessed like
-  any strategy; one that doesn't, can't.
+- **Ruin-tail Monte Carlo.** Baskets add into losers, so the danger is a fat
+  drawdown tail even when the average is fine. `scale_in_honesty` resamples the
+  basket P&L sequence (seeded block bootstrap, same as the main MC) and, with
+  the account's starting capital as the first peak, measures the max-drawdown
+  distribution. It HARD-caps when `P(resampled max drawdown > 30%) ≥ 10%`
+  (`RUIN_DRAW_THRESHOLD` / `RUIN_TAIL_PROB`, reviewed constants). One lucky deep
+  win in a sea of ruinous baskets → most resampled orderings draw down hard →
+  refused.
+- **Deep-rung dependency.** Removing the deepest rung's fills (cheap — subtract
+  their recorded marginals, no re-run) and recomputing the total: if a POSITIVE
+  edge flips negative without the deepest, riskiest adds, the edge DEPENDS on
+  them — a martingale sign-flip → HARD cap. When the deepest rung merely moves
+  the total materially without flipping the sign, that is REPORTED, not capped.
+- **Basket-size concentration.** One deep-basket day dominating the P&L is the
+  martingale tell. A per-basket concentration (share of gross |basket P&L| from
+  the top basket) is REPORTED (never a cap on its own — the D1d posture); the
+  session-level concentration check already accounts for basket size on real
+  runs, since an intraday basket closes same-session.
 - **Adds are not trades.** A basket is ONE position that emits one terminal
   `CLOSE` with a P&L; rung adds are `ADD` events (never counted in `filled`).
-  So the sample counter already counts BASKETS, not fills — a ladder cannot
-  inflate its way to 15 "trades" (the baskets-not-fills rule D5c formalizes
-  falls out of the D5a representation for free).
+  So the sample counter counts BASKETS, not fills — a ladder cannot inflate its
+  way to 15 "trades" by adding more rungs (a lone ladder built from four rung
+  fills is still one closed trade, and still sample-capped).
+- **Not a data unlock.** A martingale refusal is a strategy property, not thin
+  data, so `unlock_conditions` returns None for it — the D3b auto-unlock scan
+  must not re-run and re-refuse it forever.
+
+The tests prove one story end to end: a martingale-overfit ladder (one lucky
+deep reversal in a sea of ruinous ones, ≥15 baskets across two vol regimes so
+it is NOT sample-capped) is refused with BOTH defenses firing (realized
++$1,299 flips to −$486 without the deepest rung; 25% of resampled orderings
+draw down > 30%), while a clean ladder that clears both grades to a real level.
 
 ## Ladder depth attribution (D5b)
 
