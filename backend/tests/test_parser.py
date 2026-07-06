@@ -119,3 +119,79 @@ def test_malformed_position_falls_back_to_questions(
     )
     out = parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
     assert out is not None and out.status == "questions"
+
+
+# --------------------------------------------------------- D5d: scale-in
+def test_required_spec_version_detects_v3() -> None:
+    """The version is server-computed from the vocabulary used — scale_in or
+    close_at_time lifts it to 3, never trusted from the LLM."""
+    rsv = parser_module._required_spec_version
+    assert rsv({"entry": {"scale_in": {"mode": "signal_ladder"}}}) == 3
+    assert rsv({"exit": {"close_at_time": "15:45"}}) == 3
+    assert rsv({"backtest": {"clock": "5min"}}) == 2
+    assert rsv({"exit": {"profit_target_pct": 50}}) == 1
+
+
+def _ladder_spec_raw() -> dict:
+    # what the LLM emits (spec_version 1, ATM on the leg) — the server
+    # normalizes and recomputes the version
+    return {
+        "spec_version": 1,
+        "meta": {"name": "SPY 1DTE RSI ladder", "description_raw": "a paraphrase"},
+        "underlying": {"ticker": "SPY"},
+        "position": {
+            "structure": "long_call",
+            "legs": [{"right": "call", "side": "long", "ratio": 1,
+                      "strike_selection": {"method": "atm", "value": 0}}],
+            "expiration_selection": {"target_dte": 1, "min_dte": 0, "max_dte": 2},
+        },
+        "entry": {
+            "schedule": {"frequency": "signal_only"}, "conditions": [],
+            "max_concurrent_positions": 1,
+            "scale_in": {
+                "mode": "signal_ladder", "basket": True,
+                "rungs": [
+                    {"indicator": "rsi", "period": 14, "timeframe": "5min",
+                     "operator": "<=", "value": 30, "add_contracts": 2},
+                    {"indicator": "rsi", "period": 14, "timeframe": "5min",
+                     "operator": "<=", "value": 25, "add_contracts": 3},
+                ],
+                "rearm": {"indicator": "rsi", "period": 14, "timeframe": "5min",
+                          "operator": ">", "value": 30},
+                "max_total_contracts": 20,
+            },
+        },
+        "exit": {"profit_target_pct": 40, "stop_loss_pct": 75, "close_at_time": "15:45"},
+        "sizing": {"method": "fixed_contracts", "value": 1},
+        "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
+        "backtest": {"start": None, "end": None, "initial_capital": 25000,
+                     "seed": 42, "clock": "5min"},
+    }
+
+
+def test_scale_in_ladder_flows_through_and_recomputes_to_v3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ladder the model emits (as v1) validates as a v3 spec: the server
+    recomputes the version, keeps the rungs/cap, and normalizes ATM → .50Δ.
+    Proves the parser's server-side guarantees for the D5 primitive without
+    the live model."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(
+        requests, "post",
+        lambda *a, **k: _FakeResp({"result": "spec", "spec": _ladder_spec_raw()}),
+    )
+    out = parser_module.parse_strategy(
+        "SPY 1DTE ATM call, scale in on 5-min RSI(14): 2 at 30, 3 at 25, cap 20, "
+        "40% profit, 75% stop, flatten by 3:45"
+    )
+    assert out is not None and out.status == "spec" and out.spec is not None
+    spec = out.spec
+    assert spec["spec_version"] == 3  # server recomputed from the vocabulary
+    si = spec["entry"]["scale_in"]
+    assert len(si["rungs"]) == 2 and si["max_total_contracts"] == 20
+    assert si["rungs"][0]["add_contracts"] == 2
+    assert spec["exit"]["close_at_time"] == "15:45"
+    assert spec["backtest"]["clock"] == "5min"
+    # ATM normalized on the leg, like every ingress
+    assert spec["position"]["legs"][0]["strike_selection"]["value"] == 0.5

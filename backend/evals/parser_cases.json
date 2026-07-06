@@ -1,5 +1,5 @@
 {
-  "comment": "BUILD-PLAN M4 eval set — 8 clear cases with hand-written ground truth, 4 ambiguous cases that must produce questions with zero fabricated parameters. Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults and dte windows are free.",
+  "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free.",
   "cases": [
     {
       "case": 1,
@@ -485,6 +485,99 @@
       "text": "Scalp SPY 0DTE puts off the 1-minute chart, in at 9:32, out by 9:47.",
       "kind": "questions",
       "comment": "Sub-5-minute vocabulary: the record is 5-minute bars — the parser must ASK (offering the 5-min grid), never silently round 9:32 to 9:30 or emit a 1-minute indicator."
+    },
+    {
+      "case": 19,
+      "text": "Buy a 1DTE ATM call on SPY and scale in as the 5-minute RSI(14) falls: 2 contracts at RSI 30, 3 more at 25, 5 at 20, 10 at 15. Stop adding once RSI stops making new lows. Cap the whole basket at 20 contracts. Take profit at 40% of the blended cost, stop out at 75%, and flatten by 3:45 — no overnight.",
+      "kind": "spec",
+      "comment": "D5 GOLDEN — the founder's scale-in ladder family. Runs AS WRITTEN: a 4-rung intraday RSI ladder on a 1DTE ATM call, not flattened to a single entry. Owner may swap in their verbatim prompt; the ground truth is the decision-relevant subset.",
+      "expect": {
+        "spec_version": 3,
+        "clock": "5min",
+        "ticker": "SPY",
+        "structure": "long_call",
+        "legs": [
+          {
+            "right": "call",
+            "side": "long",
+            "method": "delta",
+            "value": 0.5
+          }
+        ],
+        "target_dte": 1,
+        "schedule": {
+          "frequency": [
+            "signal_only",
+            "daily"
+          ]
+        },
+        "conditions": [],
+        "scale_in": {
+          "rungs": [
+            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 30, "add_contracts": 2 },
+            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 25, "add_contracts": 3 },
+            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 20, "add_contracts": 5 },
+            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 15, "add_contracts": 10 }
+          ],
+          "max_total_contracts": 20
+        },
+        "exit": {
+          "profit_target_pct": 40,
+          "stop_loss_pct": 75,
+          "close_at_time": "15:45"
+        }
+      }
+    },
+    {
+      "case": 20,
+      "text": "On QQQ, buy the nearest same-day-expiry ATM call and add as the 5-minute RSI(2) drops — 1 contract at 25, then 2 more at 15 — capped at 5 contracts total. Take profit 50%, out by 3:50, nothing held overnight.",
+      "kind": "spec",
+      "comment": "A second, shorter ladder (0DTE QQQ) to prove generality — the primitive isn't special-cased to SPY or to four rungs.",
+      "expect": {
+        "spec_version": 3,
+        "clock": "5min",
+        "ticker": "QQQ",
+        "structure": "long_call",
+        "legs": [
+          {
+            "right": "call",
+            "side": "long",
+            "method": "delta",
+            "value": 0.5
+          }
+        ],
+        "target_dte": 0,
+        "schedule": {
+          "frequency": [
+            "signal_only",
+            "daily"
+          ]
+        },
+        "conditions": [],
+        "scale_in": {
+          "rungs": [
+            { "indicator": "rsi", "period": 2, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 25, "add_contracts": 1 },
+            { "indicator": "rsi", "period": 2, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 15, "add_contracts": 2 }
+          ],
+          "max_total_contracts": 5
+        },
+        "exit": {
+          "profit_target_pct": 50,
+          "close_at_time": "15:50"
+        }
+      }
+    },
+    {
+      "case": 21,
+      "text": "Scale into SPY 1DTE ATM calls on the 5-minute RSI(14): 2 at 30, 3 at 25, 5 at 20. Take profit at 40%, flatten by 3:45.",
+      "kind": "questions",
+      "comment": "The ladder is supported and fully specified EXCEPT the ruin cap — a scale-in with no max_total_contracts is unbounded ruin. The parser must ASK for the cap, never default it (guardrail #3)."
+    },
+    {
+      "case": 22,
+      "text": "Buy SPY 1DTE ATM calls and add more as the 5-minute RSI(14) drops — 2 at 30, 3 at 25, 5 at 20 — max 15 contracts.",
+      "kind": "questions",
+      "comment": "A ladder with a cap but ZERO exit rules — the parser must ASK for an exit, exactly as it does for any structure with no stated exit."
     }
   ]
 }
