@@ -188,9 +188,12 @@ summary {
   }
 }
 
+/* the live "beat" — a short bright pulse sweeps the FULL heartbeat path
+   (~372 user units) and loops seamlessly; the base waveform stays fully drawn
+   underneath, so the trace fills the panel edge to edge at every frame */
 @keyframes hb {
   to {
-    stroke-dashoffset: -240;
+    stroke-dashoffset: -372;
   }
 }
 
