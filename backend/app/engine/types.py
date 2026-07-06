@@ -61,6 +61,13 @@ class Position:
     stock_basis: float = 0.0
     pending_stock: int = 0  # shares to unwind at next session OPEN (+sell / −buy-to-cover)
     closed: bool = False
+    # scale-in basket bookkeeping (D5a). A basket is ONE position whose single
+    # leg's qty accumulates across rungs; `premium` stays the BLENDED per-share
+    # cost, recomputed on each add, so the existing exit math (profit_pct =
+    # (premium + liq)/|premium|) reduces to value/cost − 1 on the whole basket.
+    scale_in: bool = False
+    fired_rungs: set[int] = field(default_factory=set)  # rung indices already filled
+    basket_cost: float = 0.0  # total premium $ paid across adds (excl commission)
 
     @property
     def is_credit(self) -> bool:
@@ -70,12 +77,33 @@ class Position:
 @dataclass
 class TradeEvent:
     day: date
-    action: str  # OPEN CLOSE EXPIRE SETTLE ASSIGN CALLED_AWAY STOCK_BUY STOCK_SELL SKIP
+    # OPEN CLOSE EXPIRE SETTLE ASSIGN CALLED_AWAY STOCK_BUY STOCK_SELL SKIP
+    # ADD — a scale-in rung fill AFTER the basket-opening bar (D5a); ADDs are
+    # NOT counted as trades (result.filled counts OPEN only), so a ladder can
+    # never inflate its way to the 15-trade bar.
+    action: str
     detail: str
     pl: float | None = None
     reason: str | None = None
     position_id: int | None = None
     bar_time: str | None = None  # "HH:MM" ET when the event happened at a 5-min bar (D2d)
+
+
+@dataclass(frozen=True, slots=True)
+class RungFill:
+    """One scale-in rung fill (D5a) — the raw material D5b attributes P&L on.
+    Records which rung, at what depth (threshold), how many contracts actually
+    filled (post-clamp), and the real ask-side price/provenance."""
+
+    basket_pid: int
+    day: date
+    bar_time: str | None  # "HH:MM" ET, None on the daily clock
+    rung_index: int  # position in scale_in.rungs — the idempotency identity
+    threshold: float  # the rung condition's value (the depth tier for D5b)
+    qty: int  # contracts actually added (after any cap clamp)
+    fill_price: float  # per-share ask-side fill
+    fill_source: str
+    cap_clamped: bool = False  # this rung was clamped to the remaining capacity
 
 
 @dataclass
@@ -116,3 +144,6 @@ class RunResult:
     requested_start: date | None = None
     requested_end: date | None = None
     requested_sessions: int = 0
+    # scale-in per-rung fills (D5a), flat across baskets (group by basket_pid).
+    # The depth-attribution stage (D5b) is built entirely from these.
+    rung_fills: list[RungFill] = field(default_factory=list)

@@ -41,12 +41,23 @@ from app.engine.market import (
     MarketViewLike,
 )
 from app.engine.selection import select_expiration, select_legs
-from app.engine.types import MULT, ContractKey, OpenLeg, Position, Quote, RunResult, TradeEvent
+from app.engine.types import (
+    MULT,
+    ContractKey,
+    OpenLeg,
+    Position,
+    Quote,
+    RungFill,
+    RunResult,
+    TradeEvent,
+)
 from app.models.spec import (
     Clock,
+    Condition,
     Costs,
     Frequency,
     LiquidityMode,
+    ScaleIn,
     Side,
     SizingMethod,
     StrategySpec,
@@ -75,6 +86,20 @@ class _State:
     fills_stressed: int = 0
     fills_unknown_liquidity: int = 0
     fill_sources: dict[str, int] = field(default_factory=dict)  # provenance (D2b)
+    rung_fills: list[RungFill] = field(default_factory=list)  # scale-in adds (D5a)
+
+
+@dataclass
+class _BasketState:
+    """The scale-in ladder's live state (D5a). `basket` is the one active
+    accumulating position (or None); `armed` gates whether a fresh basket may
+    open — after a basket closes it is False until the rearm signal passes, so
+    the ladder can't loop forever. At the 5-min clock a flat ladder re-arms at
+    each covered session (a new oversold episode per day, matching how a human
+    runs this); a basket carried overnight keeps accumulating."""
+
+    armed: bool = True
+    basket: Position | None = None
 
 
 def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
@@ -523,6 +548,222 @@ def _try_entry(
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# SCALE-IN BASKET (D5a) — one accumulating position with a blended cost basis.
+# Gated entirely behind spec.entry.scale_in: the non-ladder path never runs
+# any of this, so daily-clock output stays bit-identical (pinned regression).
+# ══════════════════════════════════════════════════════════════════════════
+
+def _basket_skip(
+    state: _State, view: MarketViewLike, session_skips: set[str] | None,
+    reason: str, detail: str = "",
+) -> None:
+    if session_skips is not None:
+        if reason in session_skips:
+            return
+        session_skips.add(reason)
+    state.trades.append(
+        TradeEvent(day=view.as_of, action="SKIP",
+                   detail=detail or "scale-in rung", reason=reason)
+    )
+
+
+def _condition_passes(view: MarketViewLike, cond: Condition) -> bool:
+    return all_conditions_pass(view, [cond])
+
+
+def _fire_rungs(
+    spec: StrategySpec,
+    state: _State,
+    view: MarketViewLike,
+    basket: Position,
+    opening: bool,
+    bar_time: str | None,
+    session_skips: set[str] | None,
+) -> None:
+    """Fire every not-yet-fired rung whose condition passes at THIS bar, at the
+    current bar's ASK (guardrail #1; D1b liquidity gates apply per fill). Adds
+    are clamped to max_total_contracts (flagged cap_clamped); once the cap is
+    reached no deeper rung fires. Rungs fired AT the opening bar fold into the
+    OPEN event (opening=True → no ADD events); later fires emit ADD events.
+    Every fill reads only the current bar's quote — the add can never peek at a
+    future bar (the intraday lookahead canary asserts this)."""
+    si = spec.entry.scale_in
+    assert si is not None
+    slip = spec.costs.slippage_half_spread_fraction
+    commission = spec.costs.commission_per_contract
+    leg = basket.legs[0]
+    key = leg.key
+    action = fills.open_action(leg.side)  # "buy" for a long basket
+    for idx, rung in enumerate(si.rungs):
+        if idx in basket.fired_rungs:
+            continue
+        if not _condition_passes(view, rung):
+            continue
+        remaining = si.max_total_contracts - basket.contracts
+        if remaining <= 0:
+            break  # cap reached — deeper rungs cannot fire
+        q = view.quote(key)
+        problem = fills.quote_problem(q, action)
+        if problem is not None:
+            # a gap / zero quote: the rung stays unfired and retries next bar
+            _basket_skip(state, view, session_skips, problem,
+                         detail=f"{key.right} {key.strike:g} rung {rung.value:g}")
+            continue
+        assert q is not None
+        gate = fills.liquidity_gate(q, spec.costs)
+        stressed = view.fill_source in STRESSED_SOURCES
+        if gate is not None and not stressed:
+            if spec.costs.liquidity_mode is LiquidityMode.SKIP:
+                _basket_skip(state, view, session_skips, gate,
+                             detail=f"{key.right} {key.strike:g} rung {rung.value:g}")
+                continue
+            stressed = True  # stress mode: pay the full adverse quote
+        eff = 1.0 if stressed else fills.effective_slip(slip, q, spec.costs.min_open_interest)
+        px = fills.fill_price(q, action, eff)
+        if px is None:  # pragma: no cover — quote_problem gates this
+            _basket_skip(state, view, session_skips, "missing_quote")
+            continue
+
+        qty = rung.add_contracts
+        clamped = False
+        if qty > remaining:
+            qty = remaining
+            clamped = True
+
+        # commit the fill: long basket BUYS, so cash and premium go debit
+        cash_delta = -px * qty * MULT - commission * qty
+        state.cash += cash_delta
+        basket.cash_flow += cash_delta
+        basket.basket_cost += px * qty * MULT
+        basket.contracts += qty
+        leg.qty += qty
+        # blended per-share cost basis: keeps the existing exit math
+        # (profit_pct = (premium + liq)/|premium|) equal to value/cost − 1
+        blended = basket.basket_cost / (MULT * basket.contracts)
+        basket.premium = -blended  # long debit → negative premium
+        leg.entry_price = blended
+        leg.last_mark = px
+        basket.fired_rungs.add(idx)
+        _record_leg_fill(state, q, eff, slip, stressed, view.fill_source)
+        state.rung_fills.append(
+            RungFill(
+                basket_pid=basket.pid, day=view.as_of, bar_time=bar_time,
+                rung_index=idx, threshold=rung.value, qty=qty, fill_price=px,
+                fill_source=view.fill_source, cap_clamped=clamped,
+            )
+        )
+        if not opening:
+            tag = " cap_clamped" if clamped else ""
+            state.trades.append(
+                TradeEvent(
+                    day=view.as_of, action="ADD",
+                    detail=f"+{qty}{'C' if leg.key.right == 'call' else 'P'}"
+                           f"{leg.key.strike:g} @ {px:.3f} · rung {rung.value:g}{tag}",
+                    position_id=basket.pid,
+                    reason="cap_clamped" if clamped else None,
+                )
+            )
+        if clamped:
+            break  # the cap was hit exactly on this rung — stop deepening
+
+
+def _open_basket(
+    spec: StrategySpec,
+    state: _State,
+    view: MarketViewLike,
+    bstate: _BasketState,
+    dte_fn: DteFn | None,
+    bar_time: str | None,
+    session_skips: set[str] | None,
+) -> None:
+    """Open a fresh basket: select the single-leg contract once, then fire
+    every already-satisfied rung at this bar. If nothing fills (gap / gated /
+    zero quote) the provisional basket is discarded and the open retries next
+    bar — an empty basket is never recorded."""
+    day = view.as_of
+    if not view.has_chain:
+        _basket_skip(state, view, session_skips, "no_chain_data")
+        return
+    chain = view.chain()
+    spot = view.close()
+    if spot is None:
+        _basket_skip(state, view, session_skips, "no_underlying_close")
+        return
+    expiration = select_expiration(chain, day, spec.position.expiration_selection, dte_fn)
+    if expiration is None:
+        _basket_skip(state, view, session_skips, "no_expiration_in_window")
+        return
+    keys, reason = select_legs(chain, expiration, spec.position.legs, spot)
+    if keys is None:
+        _basket_skip(state, view, session_skips, reason or "selection_failed")
+        return
+
+    leg = spec.position.legs[0]
+    pos = Position(
+        pid=state.next_pid,
+        structure=spec.position.structure.value,
+        legs=[OpenLeg(key=keys[0], side=leg.side.value, qty=0, entry_price=0.0, last_mark=0.0)],
+        contracts=0, opened=day, premium=0.0, scale_in=True,
+    )
+    _fire_rungs(spec, state, view, pos, opening=True, bar_time=bar_time,
+                session_skips=session_skips)
+    if pos.contracts <= 0:
+        return  # nothing filled this bar — discard, retry next bar
+
+    state.next_pid += 1
+    state.positions.append(pos)
+    bstate.basket = pos
+    rungs_hit = len(pos.fired_rungs)
+    state.trades.append(
+        TradeEvent(
+            day=day, action="OPEN",
+            detail=f"{_position_desc(pos)} · exp {expiration} · basket db "
+                   f"{abs(pos.premium):.3f} · {pos.contracts}ct · {rungs_hit} rung"
+                   f"{'s' if rungs_hit != 1 else ''}",
+            position_id=pos.pid,
+        )
+    )
+
+
+def _manage_basket(
+    spec: StrategySpec,
+    state: _State,
+    view: MarketViewLike,
+    bstate: _BasketState,
+    dte_fn: DteFn | None,
+    session_skips: set[str] | None,
+    bar_time: str | None,
+) -> None:
+    """One bar of the ladder state machine. Runs AFTER exits, so an add at bar
+    t is first exit-evaluated at t+1 (owner amendment 2 — a stop can never
+    fire on its own add bar)."""
+    si = spec.entry.scale_in
+    assert si is not None
+    if bstate.basket is not None and not bstate.basket.closed:
+        _fire_rungs(spec, state, view, bstate.basket, opening=False,
+                    bar_time=bar_time, session_skips=session_skips)
+        return
+    # flat: a closed basket must wait for the rearm signal to leave the zone
+    if not bstate.armed:
+        if _condition_passes(view, si.rearm):
+            bstate.armed = True
+        return
+    # armed & flat: the first (shallowest) rung's condition opens the basket
+    if _condition_passes(view, si.rungs[0]):
+        _open_basket(spec, state, view, bstate, dte_fn, bar_time, session_skips)
+
+
+def _force_flat(spec: StrategySpec, state: _State, view: MarketViewLike) -> None:
+    """exit.close_at_time force-flat: close every open position at this bar
+    (reason session_flat). A leg without a usable quote here can't fill — it
+    carries and is retried next bar (honest, never synthetic)."""
+    for pos in state.positions:
+        if pos.closed or all(leg.settled for leg in pos.legs):
+            continue
+        _close_position(pos, view, state, spec, "session_flat")
+
+
 def _close_position(
     pos: Position, view: MarketViewLike, state: _State, spec: StrategySpec, reason: str
 ) -> bool:
@@ -856,6 +1097,17 @@ def run_engine(
         h, m = tod.split(":")
         tod_minutes = int(h) * 60 + int(m) + entry_shift_bars * 5
 
+    # scale-in ladder (D5a). `bstate` persists across the run; a basket
+    # carried overnight keeps accumulating, while a flat ladder re-arms at
+    # each covered 5-min session. `flat_minutes` is the general session
+    # force-flat (exit.close_at_time, 5-min clock only).
+    scale_in: ScaleIn | None = spec.entry.scale_in
+    bstate = _BasketState()
+    flat_minutes: int | None = None
+    if spec.exit.close_at_time is not None:
+        fh, fm = spec.exit.close_at_time.split(":")
+        flat_minutes = int(fh) * 60 + int(fm)
+
     for day in clock:
         view = MarketView(store, day)
         _unwind_pending_stock(state, view)
@@ -873,6 +1125,9 @@ def run_engine(
             session_pv = 0.0  # session-anchored VWAP accumulators (D2c)
             session_vol = 0.0
             entry_from = max(entry_shift_bars, 0)  # nudge: delay the window
+            # a flat ladder re-arms for a fresh oversold episode each session
+            if scale_in is not None and bstate.basket is None:
+                bstate.armed = True
             for bar_idx, bar in enumerate(slc.bars):
                 last = slc.underlying.get(bar)
                 if last is not None:
@@ -884,30 +1139,53 @@ def run_engine(
                 bview = BarView(IntradayView(slc, bar), prev_view,
                                 intraday_lasts, len(intraday_lasts), vwap_now)
                 events_before = len(state.trades)
-                # exits BEFORE entries at every bar: a position opened at
-                # bar t is first evaluated at bar t+1 (owner amendment 2 —
-                # a stop can never fire on its own entry bar)
-                _check_exits(spec, state, bview, dte_fn)
                 bar_minutes = bar.hour * 60 + bar.minute
-                if (
-                    not opened_this_session
-                    and _schedule_matches(spec, state, day)
-                    and bar_idx >= entry_from
-                    and (tod_minutes is None or bar_minutes >= tod_minutes)
-                ):
-                    equity_now = state.cash + sum(
-                        _position_value(p, bview.close() or 0.0)
-                        for p in state.positions
-                        if not p.closed
-                    )
-                    before = len(state.positions)
-                    _try_entry(spec, state, bview, equity_now, dte_fn, session_skips)
-                    opened_this_session = len(state.positions) > before
+                bar_hhmm = bar.strftime("%H:%M")
+                past_flat = flat_minutes is not None and bar_minutes >= flat_minutes
+                if past_flat:
+                    # close_at_time overrides everything at/after its bar: flat
+                    # the book, mint nothing (no exits/adds beyond the flatten)
+                    _force_flat(spec, state, bview)
+                    if scale_in is not None and (
+                        bstate.basket is not None and bstate.basket.closed
+                    ):
+                        bstate.basket = None
+                        bstate.armed = False
+                else:
+                    # exits BEFORE entries at every bar: a position opened at
+                    # bar t is first evaluated at bar t+1 (owner amendment 2 —
+                    # a stop can never fire on its own entry bar)
+                    _check_exits(spec, state, bview, dte_fn)
+                    if scale_in is not None:
+                        if bstate.basket is not None and bstate.basket.closed:
+                            bstate.basket = None
+                            bstate.armed = False
+                        if (
+                            _schedule_matches(spec, state, day)
+                            and bar_idx >= entry_from
+                            and (tod_minutes is None or bar_minutes >= tod_minutes)
+                        ):
+                            _manage_basket(spec, state, bview, bstate, dte_fn,
+                                           session_skips, bar_hhmm)
+                    elif (
+                        not opened_this_session
+                        and _schedule_matches(spec, state, day)
+                        and bar_idx >= entry_from
+                        and (tod_minutes is None or bar_minutes >= tod_minutes)
+                    ):
+                        equity_now = state.cash + sum(
+                            _position_value(p, bview.close() or 0.0)
+                            for p in state.positions
+                            if not p.closed
+                        )
+                        before = len(state.positions)
+                        _try_entry(spec, state, bview, equity_now, dte_fn, session_skips)
+                        opened_this_session = len(state.positions) > before
                 # every fill stays inspectable: stamp this bar's time onto
                 # the events it produced (the log is day-granular otherwise)
                 for ev in state.trades[events_before:]:
-                    if ev.action in ("OPEN", "CLOSE"):
-                        ev.bar_time = bar.strftime("%H:%M")
+                    if ev.action in ("OPEN", "CLOSE", "ADD"):
+                        ev.bar_time = bar_hhmm
                         ev.detail += f" · {ev.bar_time}"
             _settle_expirations(spec, state, view)  # 0DTE settles at the close
             close_px = view.close()
@@ -935,7 +1213,16 @@ def run_engine(
         _check_exits(spec, state, view)
         _settle_expirations(spec, state, view)
 
-        if not five_min and day <= last_chain and _schedule_matches(spec, state, day):
+        if scale_in is not None and not five_min:
+            # daily-clock ladder (the degenerate case: adds land on successive
+            # SESSIONS as the daily signal deepens). Only on the true daily
+            # clock — a 5-min gap session never mints a basket.
+            if day <= last_chain and _schedule_matches(spec, state, day):
+                if bstate.basket is not None and bstate.basket.closed:
+                    bstate.basket = None
+                    bstate.armed = False
+                _manage_basket(spec, state, view, bstate, None, None, None)
+        elif not five_min and day <= last_chain and _schedule_matches(spec, state, day):
             equity_now = state.cash + sum(
                 _position_value(p, view.close() or 0.0)
                 for p in state.positions
@@ -972,4 +1259,5 @@ def run_engine(
     result.fills_stressed = state.fills_stressed
     result.fills_unknown_liquidity = state.fills_unknown_liquidity
     result.fill_sources = state.fill_sources
+    result.rung_fills = state.rung_fills
     return result

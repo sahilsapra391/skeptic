@@ -164,10 +164,52 @@ a human merges it.
   (2026-07-01) — see the receipts section above. Until n clears the floor
   the weekly doc honestly says "insufficient evidence, no change."
 
+## The scale-in interlock (D5a → D5c)
+
+A scale-in ladder that adds size into a losing position is a MARTINGALE —
+the most ruin-prone structure in retail options, and exactly the thing
+Skeptic exists not to be fooled by. The primitive that runs it faithfully
+(D5a) lands BEFORE its dedicated defenses (the ruin-tail Monte Carlo,
+deep-rung-dependency flag, and basket-aware concentration — D5c). The moment
+the ladder exists, a run could in principle clear the 15-trade bar and the
+existing gauntlet and get blessed while UNDEFENDED. That is unacceptable, so:
+
+- **The interlock.** Any run whose spec carries `entry.scale_in` is
+  hard-capped at `insufficient_evidence` — reason
+  `"scale-in safety checks pending (D5c)"` — regardless of the four attacks
+  or how many baskets it cleared. It is the FIRST cap reason, ahead of the
+  thin-sample and coverage caps, so the refusal reads "defenses pending", not
+  "not enough trades". Lives in `compute_trust` (a `scale_in_pending` flag
+  the gauntlet passes), the same mechanism as every other data-integrity cap.
+- **Why it's safe to ship the primitive first.** The interlock makes a
+  blessable-but-undefended martingale structurally impossible. The tests
+  prove one story: a ladder that blows up is refused (`test_scale_in_engine`
+  books the full loss; `test_scale_in_interlock` shows the interlock LEADS
+  over the thin-sample cap), and a ladder with ≥15 baskets across two vol
+  regimes — NOT sample-capped — is STILL refused, while the identical stage
+  numbers with the flag off grade to a real level. The interlock, not luck of
+  the sample, is the cap.
+- **Not a data unlock.** A scale-in refusal is code-pending, not data-thin,
+  so `unlock_conditions` returns None for it — the D3b auto-unlock scan must
+  not re-run and re-refuse it forever. D5c LIFTS the interlock: once the
+  martingale defenses are in, a ladder that clears them can be blessed like
+  any strategy; one that doesn't, can't.
+- **Adds are not trades.** A basket is ONE position that emits one terminal
+  `CLOSE` with a P&L; rung adds are `ADD` events (never counted in `filled`).
+  So the sample counter already counts BASKETS, not fills — a ladder cannot
+  inflate its way to 15 "trades" (the baskets-not-fills rule D5c formalizes
+  falls out of the D5a representation for free).
+
 ## Conventions the numbers depend on (fixed, tested)
 
 - Exit priority at every clock: stop_loss → delta_stop → profit_target →
   theta_harvest → time_exit → condition exits (dual-clock fixture).
+- `exit.close_at_time` (5-min clock only) force-flats every open position at
+  the first bar ≥ its ET time — "no overnight", symmetric with entry
+  `time_of_day`; it overrides the priority order at/after its bar.
+- A scale-in basket accumulates into ONE blended-cost position; its exits use
+  the SAME profit_pct math as any position (blended premium reduces it to
+  value/cost − 1). Rung adds fill at the CURRENT bar's ask (canary-guarded).
 - Entries fill at the DECISION bar; exits evaluate from the NEXT bar.
 - DTE is calendar days at clock="daily", TRADING days at clock="5min".
 - 5-min indicators read a fixed 1,200-bar lookback

@@ -130,7 +130,10 @@ def run_gauntlet(
     liq = stages.liquidity_profile(result, spec)
     conc = stages.concentration(result)
     split = stages.session_split(result)
-    trust = compute_trust(oos, wf, mc, sens, sample, dsr, cov, conc)
+    trust = compute_trust(
+        oos, wf, mc, sens, sample, dsr, cov, conc,
+        scale_in_pending=spec.entry.scale_in is not None,
+    )
 
     return HonestyReport(
         oos=oos,

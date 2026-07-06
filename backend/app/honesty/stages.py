@@ -665,6 +665,15 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
         return None
     cov = report.coverage
     sample = report.regime_sample
+    # A refusal that no amount of DATA can lift — e.g. the D5a scale-in
+    # interlock (defenses pending, not sample/coverage) — must not enter the
+    # auto-unlock scan (D3b), or it would re-run and re-refuse forever.
+    if not (
+        cov.materially_short
+        or sample.trades < MIN_TRADES
+        or sample.regimes_present < 2
+    ):
+        return None
     return UnlockConditions(
         ticker=spec.underlying.ticker.value,
         clock=spec.backtest.clock.value,

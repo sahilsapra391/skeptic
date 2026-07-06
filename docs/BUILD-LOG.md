@@ -995,3 +995,37 @@ validation gates, canonical-column normalization verified against the
 vendor's published OpenAPI schema on GitHub), chains loader precedence
 ivolatility > av > yahoo > dolthub (unit-tested), coverage page reports
 the new source. DATA-PIPELINE §8 documents the trial-day runbook.
+
+## 2026-07-06 — D5a: the scale-in ladder primitive (branch claude/d5a-scale-in-primitive)
+
+**The engine primitive, gated so nothing merged moves.** Spec v3 adds
+`entry.scale_in` (a `signal_ladder` of rungs — each an existing condition plus
+`add_contracts` — a `rearm`, and a required `max_total_contracts`) and a general
+`exit.close_at_time` session force-flat ("no overnight", 5-min clock only,
+symmetric with entry `time_of_day`). A basket is ONE accumulating position: its
+single leg's qty grows per rung and `premium` stays the BLENDED per-share cost,
+so the exit math `(premium + liq)/|premium|` reduces to value/cost − 1 on the
+whole basket and the existing exit machinery is untouched. Every basket path is
+behind `spec.entry.scale_in is not None` — the three pinned daily digests stay
+bit-identical, both lookahead canaries green, overfit fixture still ≤ 2.
+**Adds are not trades, for free.** The basket emits one terminal `CLOSE` with a
+P&L; rung fires are `ADD` events (never in `filled`), so the sample counter
+already counts baskets — a ladder can't inflate to 15 "trades". Per-rung fills
+(`RunResult.rung_fills`) are recorded for D5b attribution.
+**Five hand-computed fixtures.** PT happy path (+$172.00), martingale-ruin
+cascade force-flatted at −$496.00 (loss booked in full, not smoothed), re-arm
+(no second basket until the signal leaves the zone), cap-clamp (a +10 rung
+trimmed to +5 at the cap), and the interlock. The minute canary is extended: a
+rung add fills at the bar it is reached, never the next.
+**The interlock (D5a → D5c).** A scale-in run is hard-capped at
+`insufficient_evidence` — "scale-in safety checks pending (D5c)", the FIRST cap
+reason — no matter the gauntlet or the basket count. Proven as one story: a
+ladder that blows up is refused with the interlock LEADING over the thin-sample
+cap, and a ladder with ≥15 baskets across two vol regimes (NOT sample-capped) is
+still refused, while the identical stage numbers with the flag off grade to a
+real level. Documented in HONESTY.md; `unlock_conditions` returns None for the
+code-pending refusal so the auto-unlock scan never chases it. Single-leg
+(long_call/long_put) and fixed_contracts only this phase — validation refuses
+the rest with a reason; the `reversal_signal` stop-mode is wired in the schema
+and deferred. Backend suite green: 251 passed, 1 skipped (19 new), ruff +
+mypy(strict) clean.
