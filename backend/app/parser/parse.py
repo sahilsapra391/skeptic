@@ -410,6 +410,16 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         else f"{sizing['value']:g}% risk"
     )
 
+    backtest = spec.get("backtest") or {}
+    # explicit dates in the strategy text pre-fill a custom window; the
+    # pre-run screen still requires the user to CONFIRM a window before
+    # any run (owner directive 2026-07-06) — null forces that choice
+    window = (
+        {"kind": "custom", "start": backtest["start"], "end": backtest.get("end")}
+        if backtest.get("start")
+        else None
+    )
+
     return {
         "ticker": spec["underlying"]["ticker"],
         "structure": position["structure"],
@@ -418,6 +428,18 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         "dte": position["expiration_selection"]["target_dte"],
         "cadence": cadence,
         "size": size,
+        # structured dials (2026-07-06): the pre-run screen edits THESE and
+        # the outgoing spec is rebuilt from them — display strings above
+        # stay for compatibility
+        "cadenceSel": {
+            "frequency": freq,
+            "day_of_week": schedule.get("day_of_week"),
+        },
+        "sizeMethod": sizing["method"],
+        "sizeValue": sizing["value"],
+        "capital": backtest.get("initial_capital", 25_000),
+        "clock": backtest.get("clock", "daily"),
+        "window": window,
         "exit": " · ".join(parts) if parts else None,
         "fromChart": False,
         "quote": text,

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -118,7 +119,9 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
                                    label=f"simulating — {done}/{total} sessions"))
                 ps.commit()
 
+        engine_t0 = time.monotonic()
         result = run_backtest(spec, store, intraday, progress=_progress)
+        engine_seconds = time.monotonic() - engine_t0
 
         # every HUMAN attempt at a family is a trial — the multiple-testing
         # bias the deflated Sharpe corrects for (TECH-SPEC §6.5). AUTO
@@ -144,14 +147,18 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
                     s2.add(db.RunEvent(run_id=run_id, stage=stage, label=label))
                     s2.commit()
 
+        gauntlet_t0 = time.monotonic()
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage,
                               intraday=intraday)
+        gauntlet_seconds = time.monotonic() - gauntlet_t0
         # D3a: refused verdicts store their unlock needs structured — the
         # nightly auto-unlock scan reasons from these
         from app.honesty.stages import unlock_conditions
 
         unlock = unlock_conditions(report, spec)
+        verdict_t0 = time.monotonic()
         verdict, retail_verdict = write_verdicts(report)
+        verdict_seconds = time.monotonic() - verdict_t0
         payload = build_run_payload(run_id, spec, result, report, verdict, retail_verdict)
         # the stats bundle is the ONLY material grounded Q&A may quote from
         stats = {
@@ -162,12 +169,25 @@ def _execute_run(run_id: str, auto_note: str | None = None) -> None:
             "final_equity": result.equity[-1] if result.equity else None,
             "honesty_report": report.model_dump(),
         }
+        # measured run cost — the pre-run time estimates are medians over
+        # these rows (per clock, on THIS box), never invented numbers
+        perf = {
+            "clock": spec.backtest.clock.value,
+            "sessions": report.coverage.chain_sessions,
+            "engine_s": round(engine_seconds, 2),
+            "gauntlet_s": round(gauntlet_seconds, 2),
+            # ~constant per run regardless of window (LLM narration) — the
+            # estimate adds it so wall-clock predictions stay honest
+            "verdict_s": round(verdict_seconds, 2),
+            "conditions": bool(spec.entry.conditions),
+        }
         with db.session() as s:
             run = s.get(db.Run, run_id)
             if run is None:
                 return
             run.status = "done"
             run.stage = 6
+            run.perf_json = json.dumps(perf)
             if origin == "auto_unlock":
                 payload["meta"] += " · auto-upgraded" + (f" ({auto_note})" if auto_note else "")
             run.payload_json = json.dumps(payload)

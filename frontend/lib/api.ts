@@ -8,6 +8,7 @@ import type {
   ChartInterval,
   ChartWindow,
   CoveragePayload,
+  EstimatePayload,
   ParseResult,
   RunPayload,
   RunSummary,
@@ -39,6 +40,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getCoverage(): Promise<CoveragePayload> {
   return request<CoveragePayload>("/api/data/coverage");
+}
+
+/** Pre-run window options: real session counts + measured time estimates. */
+export function getEstimate(ticker: string, clock: string): Promise<EstimatePayload> {
+  return request<EstimatePayload>(
+    `/api/data/estimate?ticker=${encodeURIComponent(ticker)}&clock=${encodeURIComponent(clock)}`,
+  );
 }
 
 export function getUnderlying(ticker: string, days = 240): Promise<{ series: UnderlyingPoint[] }> {
@@ -85,6 +93,19 @@ export function parseText(
   });
 }
 
+/** The confirmed window → backtest start/end dates. Throws when the user
+ * has not confirmed a window — RUN must be impossible without one. */
+export function windowToDates(draft: SpecDraft): { start: string | null; end: string | null } {
+  const w = draft.window;
+  if (!w) throw new Error("data window is unset — the spec screen must ask, never default");
+  if (w.kind === "custom") return { start: w.start ?? null, end: w.end ?? null };
+  if (w.kind === "all") return { start: null, end: null };
+  const years = { "1y": 1, "3y": 3, "5y": 5, "10y": 10 }[w.kind];
+  const start = new Date();
+  start.setFullYear(start.getFullYear() - years);
+  return { start: start.toISOString().slice(0, 10), end: null };
+}
+
 export function startBacktest(
   draft: SpecDraft,
   parsedSpec?: Record<string, unknown> | null,
@@ -97,6 +118,32 @@ export function startBacktest(
     commission_per_contract: commission,
     slippage_half_spread_fraction: slippage,
   };
+  // pre-run dials apply to EVERY run too (2026-07-06): the confirmed data
+  // window (required), contracts, cadence and capital — like costs, they
+  // override even a verbatim parsed spec, because the screen showed them
+  const dates = windowToDates(draft);
+  spec.backtest = {
+    ...(spec.backtest as Record<string, unknown>),
+    start: dates.start,
+    end: dates.end,
+    ...(draft.capital != null ? { initial_capital: draft.capital } : {}),
+  };
+  if (draft.sizeValue != null && draft.sizeMethod) {
+    spec.sizing = { method: draft.sizeMethod, value: draft.sizeValue };
+  }
+  if (draft.cadenceSel) {
+    const entry = { ...(spec.entry as Record<string, unknown>) };
+    const prev = (entry.schedule ?? {}) as Record<string, unknown>;
+    entry.schedule = {
+      ...prev, // keep time_of_day / day_of_month the parser set
+      frequency: draft.cadenceSel.frequency,
+      day_of_week:
+        draft.cadenceSel.frequency === "weekly"
+          ? (draft.cadenceSel.day_of_week ?? "monday")
+          : null,
+    };
+    spec.entry = entry;
+  }
   return request<{ run_id: string; demo: boolean }>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },

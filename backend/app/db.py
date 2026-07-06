@@ -64,6 +64,9 @@ class Run(Base):
     # D3c: 5-minute replay receipts attached to this (daily) run — merged
     # into the payload at READ time; the stored verdict is never rewritten
     receipts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # measured run cost {clock, sessions, engine_s, gauntlet_s, conditions}
+    # — the pre-run time estimates are medians over THESE, never guesses
+    perf_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RunEvent(Base):
@@ -138,7 +141,7 @@ def _ensure_columns() -> None:
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
         for column in ("stats_json", "previews_json", "summary_json", "unlock_json",
-                       "receipts_json"):
+                       "receipts_json", "perf_json"):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
         for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)")):

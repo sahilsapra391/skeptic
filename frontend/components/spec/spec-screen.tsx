@@ -8,12 +8,13 @@
  * honestly (no minute engine yet), and nothing runs on an unconfirmed spec.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 
 import { Hint } from "@/components/hint";
+import { getEstimate } from "@/lib/api";
 import { useSettings } from "@/lib/settings";
-import type { SpecDraft, Structure, Ticker, TriggerSpec } from "@/lib/types";
+import type { EstimatePayload, SpecDraft, Structure, Ticker, TriggerSpec, WindowKind } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
 /** Plain-English one-liners for every dial — [institutional, retail]. */
@@ -47,8 +48,16 @@ const SPEC_HINTS: Record<string, [string, string]> = {
     "How often a new trade is considered.",
   ],
   SIZE: [
-    "How many contracts each trade uses.",
-    "How many contracts each trade uses.",
+    "How many contracts each trade uses. Editable — sizing scales P/L and risk together.",
+    "How many contracts each trade buys or sells. You can change it.",
+  ],
+  WINDOW: [
+    "How much history to test on — required. Session counts are real coverage; time estimates are medians of measured runs on this server. Shorter windows run faster but see fewer regimes, so verdicts earn less trust.",
+    "How many years to test against — you must pick one. Less history is faster but the verdict is based on less evidence.",
+  ],
+  CAPITAL: [
+    "Starting cash for the simulated account.",
+    "How much money the test account starts with.",
   ],
   EXIT: [
     "When the trade closes — a profit target, a stop loss, a time exit, or a combination.",
@@ -130,6 +139,31 @@ const STRIKE_DELTAS = Array.from({ length: 19 }, (_, i) => (i + 1) * 5);
 // DTE: 0–50, every day (0 = 0DTE, refused at run until the minute engine)
 const DTE_CHOICES = Array.from({ length: 51 }, (_, i) => i);
 
+const WINDOW_KEYS: WindowKind[] = ["1y", "3y", "5y", "10y", "all"];
+const WINDOW_LABEL: Record<string, string> = {
+  "1y": "last 1 year",
+  "3y": "last 3 years",
+  "5y": "last 5 years",
+  "10y": "last 10 years",
+  all: "all available",
+};
+
+/** Honest time label: measured medians only — unmeasured says so. */
+function fmtEst(seconds: number | null): string {
+  if (seconds == null) return "unmeasured";
+  if (seconds < 90) return `~${Math.max(1, Math.round(seconds))}s`;
+  if (seconds < 5400) return `~${Math.round(seconds / 60)}m`;
+  return `~${(seconds / 3600).toFixed(1)}h`;
+}
+
+const CADENCE_CHOICES: { v: string; label: string }[] = [
+  { v: "daily", label: "daily" },
+  { v: "weekly:monday", label: "weekly · mon" },
+  { v: "weekly:friday", label: "weekly · fri" },
+  { v: "monthly", label: "monthly" },
+  { v: "signal_only", label: "on signal" },
+];
+
 /** Per-structure exit preset sets. Credit structures manage winners early
  * and cut at a DTE; debit structures think in profit multiples and stops. */
 const CREDIT_EXITS = [
@@ -174,7 +208,36 @@ export function SpecScreen({
   const [customDte, setCustomDte] = useState("");
   const exitSet = !!draft.exit;
   const zeroDte = draft.dte === 0;
+  const windowSet = !!draft.window;
   const set = (patch: Partial<SpecDraft>) => onChange({ ...draft, ...patch });
+
+  // real session counts + measured time estimates per window (per ticker+clock)
+  const [estimate, setEstimate] = useState<EstimatePayload | null>(null);
+  const clock = draft.clock ?? "daily";
+  useEffect(() => {
+    let alive = true;
+    setEstimate(null);
+    getEstimate(draft.ticker, clock)
+      .then((e) => {
+        if (alive) setEstimate(e);
+      })
+      .catch(() => undefined); // estimates degrade to "…", never invented
+    return () => {
+      alive = false;
+    };
+  }, [draft.ticker, clock]);
+
+  const windowOption = (key: WindowKind): string => {
+    const opt = estimate?.options.find((o) => o.key === key);
+    if (!opt) return WINDOW_LABEL[key];
+    return `${WINDOW_LABEL[key]} · ${opt.sessions} sessions · ${fmtEst(opt.est_seconds)}`;
+  };
+
+  const cadenceValue = draft.cadenceSel
+    ? draft.cadenceSel.frequency === "weekly"
+      ? `weekly:${draft.cadenceSel.day_of_week ?? "monday"}`
+      : draft.cadenceSel.frequency
+    : "weekly:monday";
 
   // structured custom exit → the same string grammar the presets use
   const customExitLabel = (): string | null => {
@@ -309,17 +372,117 @@ export function SpecScreen({
             </div>
           </>
         ) : (
-          <>
-            <div className={TILE}>
-              <TileLabel name="CADENCE" />
-              <div className="pt-0.5 font-mono text-[15px] font-semibold">{draft.cadence}</div>
-            </div>
-            <div className={TILE}>
-              <TileLabel name="SIZE" />
-              <div className="pt-0.5 font-mono text-[15px] font-semibold">{draft.size}</div>
-            </div>
-          </>
+          <div className={TILE}>
+            <TileLabel name="CADENCE ▾" />
+            <select
+              value={cadenceValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                const [freq, day] = v.split(":");
+                const sel = { frequency: freq, day_of_week: day ?? null };
+                const label = CADENCE_CHOICES.find((c) => c.v === v)?.label ?? freq;
+                set({ cadenceSel: sel, cadence: label });
+              }}
+              className={TILE_SELECT_CLS}
+              title="Entry cadence"
+            >
+              {CADENCE_CHOICES.map((c) => (
+                <option key={c.v} value={c.v}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
+
+        <div className={TILE}>
+          <TileLabel name="SIZE ✎" />
+          <div className="flex items-baseline gap-1.5">
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={draft.sizeValue ?? 1}
+              onChange={(e) =>
+                set({
+                  sizeValue: Math.max(1, Math.min(1000, Math.round(Number(e.target.value) || 1))),
+                })
+              }
+              className="w-[64px] bg-transparent py-[2px] font-mono text-[17px] font-semibold text-ink focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+              title="Contracts per trade"
+            />
+            <span className="font-mono text-[11px] text-ink-4">
+              {draft.sizeMethod === "risk_pct_of_equity" ? "% risk" : "contracts"}
+            </span>
+          </div>
+        </div>
+
+        <div className={clsx(TILE, !windowSet && "!border-trust-border !bg-trust-dim")}>
+          <div
+            className={clsx(
+              TILE_LABEL,
+              "flex items-center justify-between gap-1",
+              !windowSet && "!text-trust",
+            )}
+          >
+            <span>WINDOW ▾</span>
+            <Hint
+              text={settings.verbiage === "retail" ? SPEC_HINTS.WINDOW[1] : SPEC_HINTS.WINDOW[0]}
+              align="right"
+            />
+          </div>
+          <select
+            value={draft.window ? draft.window.kind : "__unset"}
+            onChange={(e) => {
+              const v = e.target.value as WindowKind | "__unset" | "__custom";
+              if (v === "__unset") return;
+              if (v === "__custom" || v === "custom") {
+                // confirm the text-supplied dates as the window
+                set({ window: { ...(draft.window ?? {}), kind: "custom" } });
+                return;
+              }
+              set({ window: { kind: v } });
+            }}
+            className={TILE_SELECT_CLS}
+            title={estimate?.basis.note ?? "Data window — required before running"}
+          >
+            {!windowSet && <option value="__unset">choose…</option>}
+            {draft.window?.kind === "custom" || draft.window?.start ? (
+              <option value="custom">
+                {draft.window?.start ?? "?"} → {draft.window?.end ?? "today"}
+              </option>
+            ) : null}
+            {WINDOW_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {windowOption(k)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={TILE}>
+          <TileLabel name="CAPITAL ✎" />
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-[15px] font-semibold text-ink-4">$</span>
+            <input
+              type="number"
+              min={1000}
+              max={10_000_000}
+              step={1000}
+              value={draft.capital ?? 25000}
+              onChange={(e) =>
+                set({
+                  capital: Math.max(
+                    1000,
+                    Math.min(10_000_000, Math.round(Number(e.target.value) || 25000)),
+                  ),
+                })
+              }
+              className="w-full bg-transparent py-[2px] font-mono text-[17px] font-semibold text-ink focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+              title="Starting capital"
+            />
+          </div>
+        </div>
 
         <button
           onClick={() => setExitEditing(true)}
@@ -491,14 +654,25 @@ export function SpecScreen({
         </div>
       )}
 
+      {!windowSet && (
+        <div className="mt-3 rounded-xl border border-trust-border bg-trust-dim px-3.5 py-3 text-[13.5px] leading-[1.5] text-ink">
+          <b className="text-trust">Pick a data window</b> — how much history should this run test
+          against? Shorter is faster; longer sees more market regimes and earns more trust.
+        </div>
+      )}
+
       <div className="mt-5 flex items-center justify-between">
-        <span className="text-[12.5px] text-ink-4">Nothing runs on an unconfirmed spec.</span>
+        <span className="text-[12.5px] text-ink-4">
+          {estimate
+            ? `Nothing runs on an unconfirmed spec. Time estimates: ${estimate.basis.note}.`
+            : "Nothing runs on an unconfirmed spec."}
+        </span>
         <button
           onClick={onRun}
-          disabled={!exitSet || zeroDte}
+          disabled={!exitSet || zeroDte || !windowSet}
           className={clsx(
             "rounded-[11px] px-6 py-3 text-[15.5px]",
-            exitSet && !zeroDte
+            exitSet && !zeroDte && windowSet
               ? "bg-trust font-bold text-on-accent"
               : "cursor-not-allowed bg-raised-2 text-ink-4",
           )}

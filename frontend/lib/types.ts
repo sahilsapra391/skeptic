@@ -36,14 +36,16 @@ export interface TriggerSpec {
 }
 
 /** Editable display draft the composer/spec flow works with before a run. */
+export type WindowKind = "1y" | "3y" | "5y" | "10y" | "all" | "custom";
+
 export interface SpecDraft {
   ticker: Ticker;
   structure: Structure;
   strikeDelta: number; // whole-number delta, 5..95 in steps of 5 (.05Δ steps)
   strikeLabel?: string | null; // non-delta selection from the parser ("ATM", "5% below spot")
   dte: number; // 0..50 (0 = 0DTE, refused at run until the minute engine)
-  cadence: string; // e.g. "weekly · mon"
-  size: string; // e.g. "1 contract"
+  cadence: string; // e.g. "weekly · mon" (display; cadenceSel is the editable truth)
+  size: string; // e.g. "1 contract" (display; sizeValue is the editable truth)
   exit: string | null; // null = parser must ask, never guess
   fromChart: boolean;
   quote: string; // the user's words, verbatim — or the chart-teach summary
@@ -51,6 +53,27 @@ export interface SpecDraft {
   trigger?: string; // chart mode: display label for the trigger
   triggerSpec?: TriggerSpec; // chart mode: the editable structured trigger
   examples?: number; // chart mode: pinned example count
+  // pre-run dials (2026-07-06): the outgoing spec is rebuilt from these
+  /** REQUIRED before any run — null disables RUN until the user chooses.
+   * Text-supplied dates arrive as a pre-filled custom entry, still
+   * needing explicit confirmation. */
+  window?: { kind: WindowKind; start?: string | null; end?: string | null } | null;
+  cadenceSel?: { frequency: string; day_of_week?: string | null };
+  sizeMethod?: "fixed_contracts" | "risk_pct_of_equity";
+  sizeValue?: number;
+  capital?: number;
+  clock?: "daily" | "5min";
+}
+
+/** /api/data/estimate — window options with real session counts and time
+ * estimates measured from completed runs (null until the first run at a
+ * clock calibrates; never an invented number). */
+export interface EstimatePayload {
+  ticker: string;
+  clock: string;
+  first_session: string | null;
+  options: { key: WindowKind; sessions: number; est_seconds: number | null }[];
+  basis: { measured_runs: number; note: string };
 }
 
 export type VerdictKind = "fades-oos" | "survives" | "refusal" | "graded";
