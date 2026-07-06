@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://skeptic.local/strategy-spec.schema.json",
-  "title": "Skeptic Strategy Spec (IR) v2",
-  "description": "v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1 specs remain valid; v2 vocabulary requires spec_version 2 (validation enforces).",
+  "title": "Skeptic Strategy Spec (IR) v3",
+  "description": "v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2 and v3 vocabulary requires spec_version 3 (validation enforces).",
   "type": "object",
   "required": ["spec_version", "meta", "underlying", "position", "entry", "exit", "sizing", "costs", "backtest"],
   "additionalProperties": false,
   "properties": {
-    "spec_version": { "enum": [1, 2] },
+    "spec_version": { "enum": [1, 2, 3] },
     "meta": {
       "type": "object",
       "required": ["name", "description_raw"],
@@ -113,12 +113,66 @@
             }
           }
         },
-        "max_concurrent_positions": { "type": "integer", "minimum": 1, "maximum": 10 }
+        "max_concurrent_positions": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "scale_in": {
+          "type": "object",
+          "required": ["mode", "basket", "rungs", "rearm", "max_total_contracts"],
+          "additionalProperties": false,
+          "description": "spec_version 3. The scale-in ladder primitive (D5a): legs accumulate into ONE basket with a blended cost basis; exits act on the whole basket. Valid ONLY on single-leg structures (long_call/long_put) in D5a - a multi-leg ladder is refused with a 'not yet' message. sizing.method must be fixed_contracts (rungs specify absolute contract counts). A scale-in run is hard-capped at insufficient_evidence (reason 'scale-in safety checks pending (D5c)') until the martingale defenses land in D5c - the interlock keeps an undefended martingale from ever being blessed.",
+          "properties": {
+            "mode": { "enum": ["signal_ladder"], "description": "Only mode this phase; leaves room for future scale-in modes." },
+            "basket": { "const": true, "description": "Legs accumulate into one blended-cost-basis position; the whole basket exits together." },
+            "rungs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "description": "Ordered ladder rungs. Each rung is an entry condition (same vocabulary as entry.conditions) plus add_contracts; each fires AT MOST ONCE per basket. The first rung opens the basket; when a bar satisfies several rungs at once (a gap through thresholds) they all fire at that bar's ask. Adds that would breach max_total_contracts are clamped to the remaining capacity (flagged cap_clamped) and no deeper rung fires.",
+              "items": {
+                "type": "object",
+                "required": ["indicator", "operator", "value", "add_contracts"],
+                "additionalProperties": false,
+                "properties": {
+                  "indicator": { "$ref": "#/properties/entry/properties/conditions/items/properties/indicator" },
+                  "period": { "type": "integer", "minimum": 2, "maximum": 400 },
+                  "params": { "type": "object" },
+                  "operator": { "$ref": "#/properties/entry/properties/conditions/items/properties/operator" },
+                  "value": { "type": "number" },
+                  "timeframe": { "$ref": "#/properties/entry/properties/conditions/items/properties/timeframe" },
+                  "add_contracts": { "type": "integer", "minimum": 1, "description": "Absolute contract count added when this rung fires (not a percent of capital)." }
+                }
+              }
+            },
+            "rearm": {
+              "type": "object",
+              "required": ["indicator", "operator", "value"],
+              "additionalProperties": false,
+              "description": "After a basket closes, a fresh basket may open only once this condition passes (the signal leaves the oversold zone, e.g. RSI back above 30). Prevents an infinite add loop. Same condition vocabulary as a rung.",
+              "properties": {
+                "indicator": { "$ref": "#/properties/entry/properties/conditions/items/properties/indicator" },
+                "period": { "type": "integer", "minimum": 2, "maximum": 400 },
+                "params": { "type": "object" },
+                "operator": { "$ref": "#/properties/entry/properties/conditions/items/properties/operator" },
+                "value": { "type": "number" },
+                "timeframe": { "$ref": "#/properties/entry/properties/conditions/items/properties/timeframe" }
+              }
+            },
+            "stop_adding_on": {
+              "type": "object",
+              "required": ["mode"],
+              "additionalProperties": false,
+              "description": "How the ladder stops deepening. Default next_rung_not_reached: a rung simply never fires if its threshold is not reached (no extra detector). reversal_signal (a rung stops even if later reached, once a reversal condition triggers) is reserved for a later phase - the field is forward-compatible but only next_rung_not_reached is implemented in D5a.",
+              "properties": {
+                "mode": { "enum": ["next_rung_not_reached", "reversal_signal"], "default": "next_rung_not_reached" }
+              }
+            },
+            "max_total_contracts": { "type": "integer", "minimum": 1, "description": "Hard cap on total basket contracts across all rungs - the ruin guardrail. Required whenever scale_in is present; must be >= the largest single rung's add_contracts." }
+          }
+        }
       }
     },
     "exit": {
       "type": "object",
-      "description": "At least one of profit_target_pct, stop_loss_pct, time_exit_dte, conditions, delta_stop_abs, or theta_harvest must be present; the parser must ASK rather than default when the user gave none. Exit priority in the engine: stop_loss -> delta_stop -> profit_target -> theta_harvest -> time_exit -> condition exits.",
+      "description": "At least one of profit_target_pct, stop_loss_pct, time_exit_dte, conditions, delta_stop_abs, theta_harvest, or close_at_time must be present; the parser must ASK rather than default when the user gave none. Exit priority in the engine: stop_loss -> delta_stop -> profit_target -> theta_harvest -> time_exit -> condition exits; close_at_time is a separate end-of-session force-flat evaluated per 5-minute bar (it overrides everything at/after its time).",
       "minProperties": 1,
       "properties": {
         "profit_target_pct": { "type": "number", "exclusiveMinimum": 0, "description": "Percent of max credit captured (credit) or premium gain (debit)." },
@@ -140,6 +194,11 @@
             "dte_to": { "type": "integer", "minimum": 0 },
             "profit_pct": { "type": "number", "exclusiveMinimum": 0 }
           }
+        },
+        "close_at_time": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "description": "spec_version 3; requires backtest.clock=5min. Force-flat every open position at the first 5-minute bar at or after this ET time - the 'no overnight' rule, symmetric with entry.schedule.time_of_day. No new entries or ladder adds fire at or after it. Meaningless on the daily clock (validation refuses); a malformed time is a validation error, never silently ignored."
         }
       }
     },

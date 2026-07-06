@@ -41,6 +41,7 @@ def compute_trust(
     dsr: Dsr,
     coverage: Coverage | None = None,
     concentration: Concentration | None = None,
+    scale_in_pending: bool = False,
 ) -> Trust:
     survived = {
         "oos": not oos.flagged,
@@ -53,6 +54,13 @@ def compute_trust(
     # data-integrity caps → insufficient_evidence, most fundamental first: no
     # amount of good statistics rescues a window that was barely tested.
     cap_reasons: list[str] = []
+    # D5a interlock: a scale-in ladder is a martingale, and until its
+    # dedicated defenses land (D5c) NO ladder can be blessed — no matter how
+    # good the four attacks look or how many baskets it cleared. This is FIRST
+    # so the refusal reads as "defenses pending", not "sample too thin"
+    # (docs/HONESTY.md · the whole thesis of shipping scale-in before D5c).
+    if scale_in_pending:
+        cap_reasons.append("scale-in safety checks pending (D5c)")
     if coverage is not None and coverage.materially_short:
         cap_reasons.append(coverage.reason or "requested window mostly lacks chain data")
     if sample.capped:

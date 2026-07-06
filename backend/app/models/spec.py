@@ -253,12 +253,76 @@ class Schedule(BaseModel):
     )
 
 
+class ScaleInMode(StrEnum):
+    SIGNAL_LADDER = "signal_ladder"  # this phase; leaves room for future modes
+
+
+class StopAddingMode(StrEnum):
+    NEXT_RUNG_NOT_REACHED = "next_rung_not_reached"  # default; a rung fires iff reached
+    REVERSAL_SIGNAL = "reversal_signal"  # reserved (D5a wires the field, not the logic)
+
+
+class Rung(Condition):
+    """One ladder step (spec v3, D5a): a full entry Condition plus the number
+    of contracts to ADD when it fires. Each rung fires at most once per basket;
+    add_contracts is an ABSOLUTE contract count, never a percent of capital."""
+
+    add_contracts: int = Field(ge=1)
+
+
+class StopAddingOn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # only next_rung_not_reached is implemented in D5a — the field exists so
+    # the schema is forward-compatible when the reversal detector lands later
+    mode: StopAddingMode = StopAddingMode.NEXT_RUNG_NOT_REACHED
+
+
+class ScaleIn(BaseModel):
+    """The scale-in ladder primitive (spec v3, D5a). Legs accumulate into ONE
+    basket with a blended cost basis; the whole basket exits together. A run
+    that uses scale_in is hard-capped at insufficient_evidence until the
+    martingale defenses land (D5c) — the interlock lives in the honesty layer,
+    not here, but every scale_in spec inherits it (docs/HONESTY.md)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: ScaleInMode
+    basket: bool
+    rungs: list[Rung] = Field(min_length=1, max_length=8)
+    rearm: Condition
+    stop_adding_on: StopAddingOn = Field(default_factory=StopAddingOn)
+    max_total_contracts: int = Field(ge=1)  # the ruin cap (required; parser Q4)
+
+    @model_validator(mode="after")
+    def _basket_must_be_true(self) -> ScaleIn:
+        if self.basket is not True:
+            raise ValueError(
+                "scale_in.basket must be true — legs accumulate into one blended "
+                "basket that exits together"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _cap_covers_largest_rung(self) -> ScaleIn:
+        biggest = max(r.add_contracts for r in self.rungs)
+        if self.max_total_contracts < biggest:
+            raise ValueError(
+                f"scale_in.max_total_contracts ({self.max_total_contracts}) must be "
+                f">= the largest rung add_contracts ({biggest})"
+            )
+        return self
+
+
 class Entry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schedule: Schedule
     conditions: list[Condition]
     max_concurrent_positions: int = Field(ge=1, le=10)
+    # spec v3 (D5a): the scale-in ladder. Absent ⇒ every pre-D5a spec is
+    # unchanged. Present ⇒ the basket engine runs and the D5c interlock applies.
+    scale_in: ScaleIn | None = None
 
 
 class ThetaHarvest(BaseModel):
@@ -298,6 +362,12 @@ class Exit(BaseModel):
     # accepted; normalized to the decimal like StrikeSelection deltas.
     delta_stop_abs: float | None = Field(default=None, gt=0, lt=1)
     theta_harvest: ThetaHarvest | None = None
+    # spec v3 (D5a): general intraday session force-flat — flatten every open
+    # position at the first 5-min bar ≥ this ET time ("no overnight"),
+    # symmetric with entry.schedule.time_of_day. Requires clock="5min".
+    close_at_time: str | None = Field(
+        default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -317,6 +387,7 @@ class Exit(BaseModel):
             and self.conditions is None
             and self.delta_stop_abs is None
             and self.theta_harvest is None
+            and self.close_at_time is None
         ):
             raise ValueError("exit must contain at least one rule (schema minProperties: 1)")
         return self
@@ -400,8 +471,8 @@ class StrategySpec(BaseModel):
 
     @model_validator(mode="after")
     def _version_supported(self) -> StrategySpec:
-        if self.spec_version not in (1, 2):
-            raise ValueError("spec_version must be 1 or 2")
+        if self.spec_version not in (1, 2, 3):
+            raise ValueError("spec_version must be 1, 2, or 3")
         return self
 
     @model_validator(mode="after")
@@ -437,17 +508,66 @@ class StrategySpec(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _v3_vocabulary_needs_v3(self) -> StrategySpec:
+        """v3 vocabulary on a v1/v2 spec is a loud error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.spec_version >= 3:
+            return self
+        used: list[str] = []
+        if self.entry.scale_in is not None:
+            used.append("entry.scale_in")
+        if self.exit.close_at_time is not None:
+            used.append("exit.close_at_time")
+        if used:
+            raise ValueError(
+                f"spec_version {self.spec_version} cannot use v3 vocabulary: "
+                f"{', '.join(used)} — set spec_version 3"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _scale_in_constraints(self) -> StrategySpec:
+        """D5a scope + coherence rules for the scale-in ladder."""
+        si = self.entry.scale_in
+        if si is None:
+            return self
+        # single-leg only in D5a: the blended-per-share math generalizes
+        # cleanly for one leg; multi-leg baskets (per-leg vs per-basket exit,
+        # ratio adds) are a genuine can of worms deferred to a later phase.
+        if len(self.position.legs) != 1 or self.position.structure not in (
+            Structure.LONG_CALL,
+            Structure.LONG_PUT,
+        ):
+            raise ValueError(
+                "scale_in is supported only on single-leg long_call / long_put "
+                "structures in this build — multi-leg ladders are not yet supported"
+            )
+        # rung add_contracts are ABSOLUTE counts, so percent-of-capital sizing
+        # is incoherent with a ladder (the non-obvious constraint spelled out).
+        if self.sizing.method is not SizingMethod.FIXED_CONTRACTS:
+            raise ValueError(
+                "scale-in rungs specify absolute contract counts, so sizing.method "
+                "must be fixed_contracts"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _intraday_vocabulary_needs_5min_clock(self) -> StrategySpec:
-        """5-minute indicators and time-of-day entries only exist at the
-        5-minute clock — a daily engine has no bars to evaluate them on."""
+        """5-minute indicators, time-of-day entries and the session
+        force-flat only exist at the 5-minute clock — a daily engine has no
+        bars to evaluate them on."""
         if self.backtest.clock is Clock.FIVE_MIN:
             return self
         needs: list[str] = []
         all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        if self.entry.scale_in is not None:
+            all_conditions += [*self.entry.scale_in.rungs, self.entry.scale_in.rearm]
         if any(c.timeframe is Timeframe.FIVE_MIN for c in all_conditions):
             needs.append('conditions with timeframe "5min"')
         if self.entry.schedule.time_of_day is not None:
             needs.append("schedule.time_of_day")
+        if self.exit.close_at_time is not None:
+            needs.append("exit.close_at_time")
         if needs:
             raise ValueError(
                 f"{' and '.join(needs)} require backtest.clock \"5min\" — "

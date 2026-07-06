@@ -40,8 +40,9 @@ def test_v2_without_new_vocabulary_is_fine() -> None:
 
 
 def test_unsupported_version_rejected() -> None:
-    with pytest.raises(ValidationError, match="spec_version must be 1 or 2"):
-        StrategySpec.model_validate(_v1_short_put(spec_version=3))
+    # v3 is valid as of D5a; 4 is still out of range
+    with pytest.raises(ValidationError, match="spec_version must be 1, 2, or 3"):
+        StrategySpec.model_validate(_v1_short_put(spec_version=4))
 
 
 @pytest.mark.parametrize(
