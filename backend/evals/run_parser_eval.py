@@ -71,6 +71,37 @@ def _match_condition(expected: dict[str, Any], actual: list[dict[str, Any]]) -> 
     return f"no condition with indicator {expected['indicator']}"
 
 
+def _match_scale_in(expected: dict[str, Any], actual: dict[str, Any] | None) -> str | None:
+    if not isinstance(actual, dict):
+        return "no scale_in emitted"
+    errs: list[str] = []
+    exp_rungs = expected["rungs"]
+    act_rungs = actual.get("rungs") or []
+    if len(act_rungs) != len(exp_rungs):
+        return f"{len(act_rungs)} rungs != {len(exp_rungs)}"
+    for i, (er, ar) in enumerate(zip(exp_rungs, act_rungs, strict=True)):
+        if ar.get("indicator") != er["indicator"]:
+            errs.append(f"rung[{i}] indicator {ar.get('indicator')} != {er['indicator']}")
+        if "period" in er and ar.get("period") != er["period"]:
+            errs.append(f"rung[{i}] period {ar.get('period')} != {er['period']}")
+        if "timeframe" in er and (ar.get("timeframe") or "daily") != er["timeframe"]:
+            errs.append(f"rung[{i}] timeframe {ar.get('timeframe')} != {er['timeframe']}")
+        if ar.get("operator") not in er["operator"]:
+            errs.append(f"rung[{i}] operator {ar.get('operator')} not in {er['operator']}")
+        if not _approx(ar.get("value", 0), er["value"], 1e-3):
+            errs.append(f"rung[{i}] value {ar.get('value')} != {er['value']}")
+        if ar.get("add_contracts") != er["add_contracts"]:
+            errs.append(
+                f"rung[{i}] add_contracts {ar.get('add_contracts')} != {er['add_contracts']}"
+            )
+    if actual.get("max_total_contracts") != expected["max_total_contracts"]:
+        errs.append(
+            f"max_total_contracts {actual.get('max_total_contracts')} "
+            f"!= {expected['max_total_contracts']}"
+        )
+    return "; ".join(errs) or None
+
+
 def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[str]:
     errs: list[str] = []
     if spec["meta"]["description_raw"] != text:
@@ -131,6 +162,24 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
         for k in ("dte_from", "dte_to", "profit_pct")
     ):
         errs.append(f"exit.theta_harvest {got_th} != {exp_th}")
+
+    exp_si = expect.get("scale_in")
+    got_si = spec["entry"].get("scale_in")
+    if exp_si is None:
+        if got_si is not None:
+            errs.append(f"fabricated scale_in: {json.dumps(got_si)[:120]}")
+    else:
+        err = _match_scale_in(exp_si, got_si)
+        if err:
+            errs.append(f"scale_in: {err}")
+
+    exp_cat = expect["exit"].get("close_at_time")
+    got_cat = exit_rules.get("close_at_time")
+    if exp_cat is None:
+        if got_cat is not None:
+            errs.append(f"fabricated exit.close_at_time={got_cat}")
+    elif got_cat != exp_cat:
+        errs.append(f"exit.close_at_time {got_cat} != {exp_cat}")
 
     if "spec_version" in expect and spec.get("spec_version") != expect["spec_version"]:
         errs.append(f"spec_version {spec.get('spec_version')} != {expect['spec_version']}")

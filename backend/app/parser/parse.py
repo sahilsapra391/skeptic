@@ -29,14 +29,16 @@ _V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
 def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     """Server-computed from the vocabulary actually used — the version is a
     contract, never trusted from the LLM."""
+    entry = raw_spec.get("entry") or {}
     exit_rules = raw_spec.get("exit") or {}
     position = raw_spec.get("position") or {}
-    conds = list((raw_spec.get("entry") or {}).get("conditions") or []) + list(
-        exit_rules.get("conditions") or []
-    )
-    schedule = (raw_spec.get("entry") or {}).get("schedule") or {}
+    conds = list(entry.get("conditions") or []) + list(exit_rules.get("conditions") or [])
+    schedule = entry.get("schedule") or {}
     expiration = position.get("expiration_selection") or {}
     backtest = raw_spec.get("backtest") or {}
+    # v3 (D5): the scale-in ladder and the session force-flat
+    if entry.get("scale_in") is not None or exit_rules.get("close_at_time") is not None:
+        return 3
     uses_v2 = (
         exit_rules.get("delta_stop_abs") is not None
         or exit_rules.get("theta_harvest") is not None
@@ -114,12 +116,22 @@ THE SPEC (all fields required unless noted):
                            "operator": "<"|"<="|">"|">="|"above"|"below"
                                      |"crosses_above"|"crosses_below",
                            "value": <number>}],
-           "max_concurrent_positions": <1-10>},
+           "max_concurrent_positions": <1-10>,
+           "scale_in": {  // OPTIONAL — a scale-in ladder (add size as a signal deepens)
+             "mode": "signal_ladder", "basket": true,
+             "rungs": [{<a condition: indicator/operator/value/period/timeframe>,
+                        "add_contracts": <int>}],  // ordered shallow → deep
+             "rearm": {<a condition — the signal LEAVING the zone>},
+             "stop_adding_on": {"mode": "next_rung_not_reached"},  // only mode supported
+             "max_total_contracts": <int>  // REQUIRED with scale_in — the ruin cap
+           }},
  "exit": {"profit_target_pct": <number>, "stop_loss_pct": <number>,
           "time_exit_dte": <int>, "conditions": [...],
           "delta_stop_abs": <decimal in (0,1), OPTIONAL>,
           "theta_harvest": {"dte_from": <int>, "dte_to": <int>,
-                            "profit_pct": <number>} (OPTIONAL)},
+                            "profit_pct": <number>} (OPTIONAL),
+          "close_at_time": "HH:MM" (OPTIONAL, ET, clock "5min" only — flatten every open
+                           position at/after this bar; "no overnight")},
  "sizing": {"method": "fixed_contracts", "value": 1},
  "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
  "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42,
@@ -204,8 +216,32 @@ CONVENTIONS:
   "timeframe": "5min"}; "1% above VWAP" → value 1, operator ">". VWAP is
   session-anchored and intraday-only — NEVER emit it with timeframe "daily".
 - A 1-minute chart/indicator request → ask: only the 5-minute record exists.
+- SCALE-IN LADDER ("add 2 contracts at RSI 30, 3 at 25, 5 at 20, ...", "scale in as it
+  falls", "buy more as the signal deepens", "average down in steps") → entry.scale_in.
+  This is SUPPORTED now — RUN IT AS WRITTEN, never flatten it to a single entry and never
+  say it isn't supported. Rules:
+    * Only on single-leg long_call / long_put. Each rung is a full condition PLUS
+      add_contracts (an ABSOLUTE contract count); rungs ordered shallow → deep.
+    * The rungs ARE the entry signal: put them in scale_in.rungs and leave entry.conditions
+      EMPTY. Do NOT also duplicate the first rung as an entry condition.
+    * rearm = the SAME indicator leaving the zone: rungs firing on "RSI <= 30/25/20/15" →
+      rearm {"indicator":"rsi", "operator":">", "value":30, ...same period/timeframe} (the
+      shallowest threshold). Carry the rung indicator's period/timeframe onto every rung and
+      the rearm ("5-minute RSI(14)" → period 14, timeframe "5min" on all of them).
+    * A 5-minute ladder indicator ⇒ backtest.clock "5min" (like any intraday indicator).
+    * max_total_contracts is REQUIRED — the ruin cap. If the user states one ("cap at 20",
+      "max 20 contracts total") use it. If NO cap is stated, ASK for it: a scale-in with no
+      hard cap is unbounded ruin — NEVER default or invent it.
+    * "stop adding when it reverses" / "add until the move reverses, then stop" / "stop
+      deepening if it doesn't keep falling" → stop_adding_on {"mode":"next_rung_not_reached"}
+      (adds simply stop when the signal doesn't reach the next rung — the ONLY supported
+      mode; never emit "reversal_signal").
+    * sizing stays fixed_contracts (rung counts are absolute) — never risk_pct with a ladder.
+- "flatten by 3:45" / "close everything by 3:45pm" / "no overnight, out by 15:45" (intraday)
+  → exit.close_at_time "15:45" (ET, clock "5min"). It is a COMPLETE exit on its own.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
-  spec_version: always emit 1 — the server recomputes it from the vocabulary used.
+  spec_version: always emit 1 — the server recomputes it (a scale_in ladder or a
+  close_at_time lifts it to 3; v2 vocabulary lifts it to 2).
 
 WHEN TO ASK (result "questions") — the tool's identity depends on this:
 - ZERO exit rules stated → ask. No strike selection (delta/offset/ATM) stated → ask.
@@ -216,6 +252,8 @@ WHEN TO ASK (result "questions") — the tool's identity depends on this:
   the nearest supported structures as options.
 - theta_harvest semantics requested on a long_call/long_put (no defined max
   profit) → ask; offer a profit target or time exit instead. Never guess.
+- A scale-in ladder with NO stated max-contracts cap → ask for the cap (offer a couple of
+  concrete totals). The ladder is supported; the missing RUIN CAP is the only blocker.
 - No entry cadence AND no entry condition → ask.
 Ask AT MOST 4 questions, each answerable in a word or two, most important first.
 Include 2-4 concrete "options" per question whenever sensible.

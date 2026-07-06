@@ -1080,3 +1080,35 @@ with BOTH defenses firing — realized +$1,299 flips to −$486 without rung1
 fixture clears both and grades to level 3. D5c is honesty-only (stages / trust /
 verdict / HONESTY.md); no engine or payload change. Backend green: 263 passed, 1
 skipped (6 new, interlock test renamed → defenses), ruff + mypy(strict) clean.
+
+## 2026-07-06 — D5d: parser offers the ladder, stops simplifying (branch claude/d5d-parser-ladder · OWNER RE-ACCEPT GATE)
+
+**The parser now runs the ladder AS WRITTEN.** parse.py's system prompt gained
+entry.scale_in + exit.close_at_time with explicit conventions: a scale-in ladder
+("add 2 at RSI 30, 3 at 25, ...") is SUPPORTED — emit it, never flatten to a
+single entry, never say it isn't supported; rungs live in scale_in.rungs and
+entry.conditions stays EMPTY (the rungs ARE the signal); rearm = the indicator
+leaving the zone; a 5-min ladder indicator ⇒ clock 5min; max_total_contracts is
+REQUIRED (the ruin cap) — if unstated the parser ASKS, never defaults it (guardrail
+#3); "stop adding when it reverses" → stop_adding_on next_rung_not_reached (the only
+implemented mode); "flatten by 3:45 / no overnight" → close_at_time 15:45. sizing
+stays fixed_contracts. _required_spec_version recomputes to 3 on scale_in/close_at_time
+(server-computed, never trusted from the LLM). Eval grader extended to actually check
+scale_in (per-rung indicator/period/timeframe/operator/value/add_contracts + the cap)
+and close_at_time, so a ladder case can't pass flattened.
+**Eval 18 → 22** (14 clear + 8 ambiguous): golden ladder (case 19 = the founder's
+4-rung intraday RSI family → full spec), generality ladder (case 20 = 0DTE QQQ), and
+two ASK cases (21 = no cap → asks the ruin cap; 22 = no exits → asks). LIVE EVAL
+RESULT: **13/14 clear + 8/8 ambiguous → ACCEPTED**; ALL FOUR ladder cases pass. The
+one clear miss is case 3 (pre-existing iron-condor, asked about the "$3 wider" wing —
+unrelated to the ladder changes, within the 1-miss tolerance, deepseek nondeterminism).
+Hermetic unit tests added (no LLM): the ladder flows through parse_strategy and
+recomputes to v3; version detection unit-covered. 265 passed, 1 skipped; ruff + mypy
+clean.
+**KNOWN INTEGRATION FLAG (frontend follow-up, not parser scope):** a parsed ladder
+runs correctly on the parse→run path when the pre-run dials are UNTOUCHED (api.ts sends
+the full parsed spec); editing a dial rebuilds from draftToSpec, which does not yet
+carry scale_in → the ladder would be dropped. draftToSpec + spec_to_draft need
+scale_in awareness for the edit path.
+**GATED: owner re-ACCEPT required before merge** (same gate as D1c/D2c). PR opened,
+NOT merged — awaiting owner acceptance of the eval.
