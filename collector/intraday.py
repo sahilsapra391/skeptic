@@ -84,6 +84,10 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
     options = data.get("options") or []
     now = datetime.now(timezone.utc)
     spot = data.get("current_price") or data.get("close")
+    # the underlying's CUMULATIVE session share volume (the CBOE quote carries
+    # it alongside spot); banked per snapshot so the chart's intraday tail can
+    # show real volume (diffed to per-bar at read time). None if the feed omits it.
+    und_volume = data.get("volume")
     rows, dropped = [], 0
     for o in options:
         m = CBOE_OCC_RE.match((o.get("option") or "").strip())
@@ -115,10 +119,11 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
             "spot": spot,
             "source": "cboe_delayed",
             "source_ts": payload.get("timestamp") or data.get("last_trade_time"),
+            "und_volume": und_volume,
         })
     if dropped:
         log.debug("%s: dropped %d non-standard symbols", ticker, dropped)
-    return pd.DataFrame(rows, columns=CANONICAL_COLUMNS + ["source_ts"])
+    return pd.DataFrame(rows, columns=CANONICAL_COLUMNS + ["source_ts", "und_volume"])
 
 
 def snap_key(source: str, ticker: str, ts: datetime) -> str:
