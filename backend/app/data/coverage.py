@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.data import chains, ivs_signals, r2, resolution
+from app.data import chains, gex_signals, ivs_signals, r2, resolution
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
@@ -198,6 +198,30 @@ def _ivs_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
         "term_sessions": _n("term_slope_30_90"),
     }
 
+def _dealer_positioning_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
+    """Window of the banked UW greek_exposure series (F1) — guardrail #6:
+    the surface offering GEX/DEX filters shows the window they read, and
+    the pre-run refusal quotes the same first session."""
+    if df is None or df.empty or "date" not in df.columns:
+        return None
+    dates = df["date"].astype(str)
+
+    def _n(cols: tuple[str, str]) -> int:
+        if not all(c in df.columns for c in cols):
+            return 0
+        a = pd.to_numeric(df[cols[0]], errors="coerce")
+        b = pd.to_numeric(df[cols[1]], errors="coerce")
+        return int((a.notna() & b.notna()).sum())
+
+    return {
+        "sessions": int(len(df)),
+        "first": str(dates.min()),
+        "last": str(dates.max()),
+        "gex_sessions": _n(("call_gamma", "put_gamma")),
+        "dex_sessions": _n(("call_delta", "put_delta")),
+    }
+
+
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
@@ -237,6 +261,12 @@ def build_coverage() -> dict[str, Any]:
         ivs_signals_f = {
             t: pool.submit(
                 r2.get_parquet, s3, ivs_signals.SIGNALS_KEY.format(ticker=t)
+            )
+            for t in TICKERS
+        }
+        dealer_f = {
+            t: pool.submit(
+                r2.get_parquet, s3, gex_signals.GEX_SERIES_KEY.format(ticker=t)
             )
             for t in TICKERS
         }
@@ -284,6 +314,9 @@ def build_coverage() -> dict[str, Any]:
         ivs_signal_cov = {
             t: _ivs_signals_range(ivs_signals_f[t].result()) for t in TICKERS
         }
+        dealer_cov = {
+            t: _dealer_positioning_range(dealer_f[t].result()) for t in TICKERS
+        }
         chain_quality = {t: chain_quality_f[t].result() for t in TICKERS}
         resolution_mix = {t: resolution_f[t].result() for t in TICKERS}
         dolthub_state = dolthub_f.result()
@@ -327,6 +360,7 @@ def build_coverage() -> dict[str, Any]:
         "chain_quality": chain_quality,
         "ivol_analytics": ivol_analytics,
         "ivs_signals": ivs_signal_cov,
+        "dealer_positioning": dealer_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
         # D3d: the weekly demand ranking (build_priorities.py) — what the

@@ -157,17 +157,19 @@ function computeSpecVersion(spec: Json): number {
   // the vocabulary needs (a skew condition on a finest-resolution spec is 5).
   // Ladder rungs and the rearm are conditions too (review finding).
   const V5_INDICATORS = new Set(["skew_25d", "term_structure_slope"]);
+  // F1: dealer-positioning vocabulary lifts to 6 — checked before v5,
+  // the version is the MAX the vocabulary needs
+  const V6_INDICATORS = new Set([
+    "gex_level", "gex_rank_1y", "dex_level", "dex_rank_1y",
+  ]);
   const scaleIn = (entry.scale_in ?? {}) as Json;
   const ladderConds = [
     ...((scaleIn.rungs as Json[] | undefined) ?? []),
     ...(scaleIn.rearm ? [scaleIn.rearm as Json] : []),
   ];
-  if (
-    [...conds, ...ladderConds].some((c) =>
-      V5_INDICATORS.has(String(c.indicator)),
-    )
-  )
-    return 5;
+  const allConds = [...conds, ...ladderConds];
+  if (allConds.some((c) => V6_INDICATORS.has(String(c.indicator)))) return 6;
+  if (allConds.some((c) => V5_INDICATORS.has(String(c.indicator)))) return 5;
   if (backtest.resolution != null || entry.intraday_scan != null) return 4;
   if (entry.scale_in != null || exit.close_at_time != null) return 3;
   if (

@@ -438,6 +438,39 @@ export default function DataPage() {
         </div>
       )}
 
+      {(coverage.dealer_positioning?.SPY ||
+        coverage.dealer_positioning?.QQQ ||
+        coverage.dealer_positioning?.IWM) && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-1")}>
+            DEALER POSITIONING (UW) — NET GEX / DEX, SIGN + RANK VOCABULARY
+          </div>
+          <div className="mb-3 text-[11.5px] leading-[1.5] text-ink-4">
+            vendor units are opaque — filters read the sign (long/short
+            gamma) and the trailing-year percentile only; runs conditioned
+            on this family refuse windows starting before the first banked
+            session
+          </div>
+          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const dp = coverage.dealer_positioning?.[t];
+              if (!dp) return null;
+              return (
+                <Lane
+                  key={t}
+                  label={`${t} exposure`}
+                  first={dp.first}
+                  last={dp.last}
+                  t0="2025-01-01"
+                  t1={today}
+                  note={`gex ${dp.gex_sessions.toLocaleString()} · dex ${dp.dex_sessions.toLocaleString()} of ${dp.sessions.toLocaleString()} sessions`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {(coverage.resolution_mix?.SPY ||
         coverage.resolution_mix?.QQQ ||
         coverage.resolution_mix?.IWM) && (

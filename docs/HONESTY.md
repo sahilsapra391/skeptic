@@ -584,3 +584,56 @@ Honesty rules the numbers depend on:
 - **Coverage is disclosed per signal.** The Observatory shows the derived
   window with separate skew/term session counts — a session can carry one
   signal and honestly lack the other (guardrail #6).
+
+## F1 (ENGINE-V4): dealer positioning — sign and rank, never vendor units
+
+Four spec-v6 indicators read Unusual Whales' daily EOD dealer
+greek-exposure series (banked nightly; ~250 sessions from 2025-07-08,
+deepening every night with no redeploy):
+
+- **`gex_level`** — net dealer gamma (call_gamma + put_gamma, the
+  vendor's sign convention). Positive = dealers long gamma. The sign IS
+  the regime: "trade only when dealers are long gamma" compiles to
+  `gex_level > 0` — there is no separate dealer_gamma_regime indicator,
+  because a duplicate of a sign test is a drift surface.
+- **`dex_level`** — net dealer delta, same convention.
+- **`gex_rank_1y` / `dex_rank_1y`** — percentile of the current value
+  within the trailing 252 observations, exactly the ivx_rank
+  construction INCLUDING its floor (owner amendment): below 126 trailing
+  observations the rank is unevaluable that day — False, never a
+  thin-window percentile. The rank unlocks as the UW window accrues past
+  the floor; no code change involved.
+
+Honesty rules the numbers depend on:
+
+- **Vendor units are opaque — vocabulary is sign + rank only.** The raw
+  magnitudes (~10⁵–10⁶ today) are vendor-defined and could be rescaled
+  upstream without notice; a raw threshold ("GEX above 5 billion") would
+  then change meaning with no error — the silent-spec-corruption class.
+  The parser refuses raw-unit thresholds and offers the sign form or a
+  percentile instead. Comparisons against 0 and percentile ranks survive
+  any rescale.
+- **Pre-run signal-coverage refusal (owner decision 2026-07-07).** A run
+  conditioned on this family whose window starts before the signal's
+  first covered session is REFUSED before simulating, with the covered
+  window offered back. The uncovered stretch would sit in forced flat
+  cash — Sharpe over zero-variance years, diluted drawdowns, a long
+  window as costume (the SEVENTEEN class). Prevention beats correction:
+  the problem is detectable from spec + store alone, so no corrupted
+  artifact is ever produced. Unconditioned specs are untouched, and the
+  composer shows the bound on the window tile before submitting.
+- **EOD observations obey the intraday boundary.** At intraday bars both
+  signals read the PREVIOUS session (guardrail #2) — intraday
+  spot_exposures cadence is a deliberately separate, later chunk
+  (stale-but-true beats fresh-but-leaky).
+- **gex_flip_distance was surveyed and DEFERRED, not shipped degraded.**
+  The banked 50-strike EOD snapshot is structurally the wrong input for
+  locating a zero-gamma point: ~35% of sessions have no sign transition
+  at all, and wing-noise transitions produce absurd values (−69% of spot)
+  that LOOK like dealer positioning while being illiquid-strike
+  artifacts — honest to the artifact, dishonest to the concept. It earns
+  its own design pass when deeper strike profiles or a vendor zero-gamma
+  endpoint exist (paid tier).
+- **Coverage is disclosed per signal** — the Observatory shows the
+  banked window with per-signal session counts, and the pre-run refusal
+  quotes the same first session it displays.

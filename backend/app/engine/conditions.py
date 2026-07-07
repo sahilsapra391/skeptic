@@ -236,6 +236,40 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         if skew is None:
             return False
         return _compare(skew, cond.operator, cond.value)
+    if ind_name is Indicator.GEX_LEVEL:
+        # F1: net dealer gamma, VENDOR UNITS — vocabulary is sign-only
+        # ("dealers long gamma" → > 0); the compare itself is unit-free at
+        # threshold 0, and the parser refuses raw-unit thresholds
+        gex = view.gex_level()
+        if gex is None:
+            return False
+        return _compare(gex, cond.operator, cond.value)
+    if ind_name is Indicator.GEX_RANK_1Y:
+        # percentile within the trailing 252 observations; below 126
+        # trailing observations the rank is unevaluable that day — False,
+        # never a thin-window guess (owner amendment, inherits the D1
+        # ivx_rank floor; unlocks as the UW window crosses it)
+        history = view.gex_history()
+        if len(history) < 126:
+            return False
+        window = history[-252:]
+        current = window[-1]
+        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
+        return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.DEX_LEVEL:
+        # F1: net dealer delta, vendor units — sign vocabulary only
+        dex = view.dex_level()
+        if dex is None:
+            return False
+        return _compare(dex, cond.operator, cond.value)
+    if ind_name is Indicator.DEX_RANK_1Y:
+        history = view.dex_history()
+        if len(history) < 126:
+            return False
+        window = history[-252:]
+        current = window[-1]
+        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
+        return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.TERM_STRUCTURE_SLOPE:
         # F4: ATM IV(90d) − ATM IV(30d), VOL POINTS; "< 0" = inverted
         slope = view.term_structure_slope()

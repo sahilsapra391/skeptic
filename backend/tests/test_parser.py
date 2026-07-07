@@ -164,6 +164,21 @@ def test_required_spec_version_detects_v5() -> None:
         "rearm": term}}}) == 5
 
 
+def test_required_spec_version_detects_v6() -> None:
+    """F1: dealer-positioning vocabulary lifts to 6 — the MAX wins even
+    when v5/v4 vocabulary is also present, and ladder conditions count."""
+    rsv = parser_module._required_spec_version
+    gex = {"indicator": "gex_level", "operator": ">", "value": 0}
+    rank = {"indicator": "dex_rank_1y", "operator": "<", "value": 10}
+    skew = {"indicator": "skew_25d", "operator": ">", "value": 5}
+    assert rsv({"entry": {"conditions": [gex]}}) == 6
+    assert rsv({"exit": {"conditions": [rank]}}) == 6
+    assert rsv({"entry": {"conditions": [gex, skew]}}) == 6
+    assert rsv({"entry": {"conditions": [gex]},
+                "backtest": {"resolution": "finest"}}) == 6
+    assert rsv({"entry": {"scale_in": {"rungs": [gex]}}}) == 6
+
+
 def _ladder_spec_raw() -> dict:
     # what the LLM emits (spec_version 1, ATM on the leg) — the server
     # normalizes and recomputes the version

@@ -228,6 +228,15 @@ export function SpecScreen({
     };
   }, [draft.ticker, clock]);
 
+  // F1: dealer-positioning indicators are coverage-capped — windows
+  // starting before the signal's first session are REFUSED at run time,
+  // so the bound is shown here while composing (owner decision)
+  const V6_INDICATORS = ["gex_level", "gex_rank_1y", "dex_level", "dex_rank_1y"];
+  const dealerBound =
+    draft.triggerSpec && V6_INDICATORS.includes(draft.triggerSpec.indicator)
+      ? estimate?.signal_windows?.dealer_positioning
+      : undefined;
+
   const windowOption = (key: WindowKind): string => {
     const opt = estimate?.options.find((o) => o.key === key);
     if (!opt) return WINDOW_LABEL[key];
@@ -495,6 +504,12 @@ export function SpecScreen({
               </option>
             ))}
           </select>
+          {dealerBound && (
+            <div className="mt-1 font-mono text-[10.5px] leading-[1.4] text-ink-4">
+              dealer-positioning data starts {dealerBound.first} — earlier
+              windows are refused
+            </div>
+          )}
         </div>
 
         <div className={TILE}>

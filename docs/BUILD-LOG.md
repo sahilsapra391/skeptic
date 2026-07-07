@@ -1482,3 +1482,42 @@ applies ONLY when a DTE number appears in the exit itself; cadence rule
 gained the case-29 worked negative example. FINAL EVAL (36 cases):
 23/23 clear + 13/13 ambiguous ACCEPTED; case-29 probe 5/5 asks (was
 4/5). All three verbatim goldens pass.
+
+## F1 (ENGINE-V4) — dealer positioning: GEX/DEX sign + rank (2026-07-07)
+
+WHAT: spec v6 — four UW dealer-positioning indicators as condition
+filters: gex_level / dex_level (net gamma / net delta, vendor sign
+convention; the sign IS the regime — dealer_gamma_regime is parser sugar
+for gex_level > 0, never a duplicate indicator) and gex_rank_1y /
+dex_rank_1y (trailing-252 percentile with the D1 ivx_rank ≥126-obs
+floor, owner amendment — rank unlocks as UW data accrues). OWNER
+DECISIONS: (1) pre-run REFUSAL when a conditioned run's window starts
+before the signal's first covered session (prevention beats correction —
+no corrupted long-window artifact is ever produced; covered window
+offered back; bound surfaced on the composer's window tile);
+(2) daily-first semantics — intraday spot_exposures GEX is its own later
+chunk (stale-but-true beats fresh-but-leaky); (3) sign + rank vocabulary
+only — raw vendor-unit thresholds refused by the parser (opaque units, a
+silent upstream rescale would corrupt every threshold spec).
+gex_flip_distance DEFERRED after live probing: the 50-strike EOD
+snapshot derives no transition on ~35% of sessions and wing-noise
+transitions produce absurd values (SPY −69%) — disclosed, not dropped
+(F4 iv_surface_point precedent).
+HOW: app/data/gex_signals.py loader (coercion, dedupe keep=last,
+per-signal NaN skip) reads the nightly-banked reference/uw/
+greek_exposure series — NO new collector job (the series is already one
+row per session; self-improvement wiring is the existing UW collector).
+MarketStore/MarketView/BarView + protocol; conditions dispatch;
+check_signal_coverage in run_engine at BOTH clocks (SliceCoverageError,
+plain reason); spec v6 gating incl. ladder rungs/rearm; schema + TS
+mirror (v6 before v5, max wins); estimate signal_windows block +
+window-tile bound note; coverage + Observatory dealer-positioning lane.
+TESTS: 28 new (452 total green) — loader coercion/dedupe/missing-columns,
+PIT boundedness + history bounding, BarView prev-day, sign semantics
+both directions (real SPY +283K / QQQ −124K magnitudes as fixtures),
+rank floor boundary 125/126 + rising-series rank-100 hand fixture,
+unavailable-is-False all four, v6 gating (incl. v6 rung on v3 ladder),
+schema parity, refusal suite (window-before-signal refused with the
+covered window; default-full-window refused; covered window runs AND
+gates on the qualifying session only; unconditioned spec untouched;
+no-data-at-all refused plainly).

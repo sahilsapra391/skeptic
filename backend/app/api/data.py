@@ -139,10 +139,30 @@ def get_estimate(
             else None
         ),
     })
+    # F1: coverage-capped signal bounds — a spec conditioned on these
+    # indicators refuses windows starting before the signal's first
+    # session, so the composer can bound the window choice PRE-SUBMIT
+    # (owner decision 2026-07-07: surface the bound while composing)
+    signal_windows: dict[str, Any] = {}
+    try:
+        store = load_market_store(ticker)
+        firsts = [d[0] for d in (store.gex_dates, store.dex_dates) if d]
+        lasts = [d[-1] for d in (store.gex_dates, store.dex_dates) if d]
+        if firsts:
+            signal_windows["dealer_positioning"] = {
+                "first": str(min(firsts)),
+                "last": str(max(lasts)),
+                "indicators": ["gex_level", "gex_rank_1y",
+                               "dex_level", "dex_rank_1y"],
+            }
+    except Exception:  # honest absence — the run-time refusal still guards
+        signal_windows = {}
+
     return {
         "ticker": ticker,
         "clock": clock,
         "first_session": str(sessions[0]) if sessions else None,
+        "signal_windows": signal_windows,
         "options": options,
         "basis": {
             "measured_runs": len(rates),

@@ -56,6 +56,7 @@ from app.models.spec import (
     Condition,
     Costs,
     Frequency,
+    Indicator,
     IntradayScan,
     LiquidityMode,
     Resolution,
@@ -235,6 +236,21 @@ class BarView:
 
     def term_structure_slope(self) -> float | None:
         return self._prev.term_structure_slope()
+
+    # F1: dealer positioning is an EOD series — previous session at
+    # intraday bars, like IVX (stale-but-true beats fresh-but-leaky;
+    # intraday spot_exposures is a deferred later chunk)
+    def gex_level(self) -> float | None:
+        return self._prev.gex_level()
+
+    def gex_history(self) -> list[float]:
+        return self._prev.gex_history()
+
+    def dex_level(self) -> float | None:
+        return self._prev.dex_level()
+
+    def dex_history(self) -> list[float]:
+        return self._prev.dex_history()
 
     def intraday_closes_upto(self) -> list[float]:
         # AT MOST the trailing lookback window. Copying the WHOLE prefix
@@ -1146,6 +1162,58 @@ def _check_slice_coverage(spec: StrategySpec, intraday: IntradayProvider) -> Non
         )
 
 
+# F1: which store series each coverage-capped indicator reads. A spec
+# conditioned on one of these refuses pre-run when its window starts
+# before the signal's first covered session (owner decision 2026-07-07):
+# the uncovered stretch would sit in forced flat cash and CORRUPT the
+# stats — Sharpe over zero-variance years, diluted drawdowns — a long
+# window as costume. Detectable from spec + store alone, so prevention
+# beats correction (the D2 slice-refusal precedent).
+_SIGNAL_SERIES: dict[Indicator, tuple[str, str]] = {
+    Indicator.GEX_LEVEL: ("dealer positioning (UW)", "gex_dates"),
+    Indicator.GEX_RANK_1Y: ("dealer positioning (UW)", "gex_dates"),
+    Indicator.DEX_LEVEL: ("dealer positioning (UW)", "dex_dates"),
+    Indicator.DEX_RANK_1Y: ("dealer positioning (UW)", "dex_dates"),
+}
+
+
+def _spec_conditions(spec: StrategySpec) -> list[Condition]:
+    conds: list[Condition] = list(spec.entry.conditions)
+    conds += list(spec.exit.conditions or [])
+    if spec.entry.scale_in is not None:
+        conds += list(spec.entry.scale_in.rungs)
+        if spec.entry.scale_in.rearm is not None:
+            conds.append(spec.entry.scale_in.rearm)
+    return conds
+
+
+def check_signal_coverage(spec: StrategySpec, store: MarketStore,
+                          eff_start: date, eff_end: date) -> None:
+    """Refuse BEFORE running when a condition's signal series starts after
+    the effective window does — plain reason, covered window offered."""
+    for cond in _spec_conditions(spec):
+        entry = _SIGNAL_SERIES.get(cond.indicator)
+        if entry is None:
+            continue
+        label, dates_attr = entry
+        dates: list[date] = getattr(store, dates_attr)
+        if not dates:
+            raise SliceCoverageError(
+                f"{label} data is not banked for {spec.underlying.ticker.value} "
+                f"yet — the {cond.indicator.value} filter cannot be evaluated "
+                "on any session"
+            )
+        first = dates[0]
+        if eff_start < first:
+            raise SliceCoverageError(
+                f"{label} data for {spec.underlying.ticker.value} starts "
+                f"{first.isoformat()}; the requested window starts "
+                f"{eff_start.isoformat()} — the uncovered stretch would sit in "
+                f"flat cash and corrupt the stats. Run {first.isoformat()} → "
+                f"{eff_end.isoformat()} instead."
+            )
+
+
 def _prev_session_view(store: MarketStore, day: date) -> MarketView:
     """Daily context an intraday bar may see: strictly BEFORE today's close."""
     i = bisect_right(store.sessions, day) - 1
@@ -1201,6 +1269,9 @@ def run_engine(
     clock = [d for d in store.sessions if eff_start <= d <= eff_end]
     if not clock:
         raise ValueError("effective window is empty after bounding by coverage")
+    # F1: coverage-capped signal filters refuse windows the signal can't
+    # honestly cover — at BOTH clocks, before any simulation work
+    check_signal_coverage(spec, store, clock[0], clock[-1])
 
     # what the user asked to test, so the honesty layer can compare it against
     # the sessions that actually carried quotes (the seventeen-fills gap —
