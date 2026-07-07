@@ -63,6 +63,23 @@ KEY = ContractKey(expiration=date(2025, 1, 6), right="put", strike=100.0)
 D = "2025-01-06"
 
 
+def _install_ivol(monkeypatch: pytest.MonkeyPatch, und: pd.DataFrame | None,
+                  opt: pd.DataFrame | None = None) -> None:
+    """Wire the fake lake for one ivol session. Tests that need live state
+    (the store fixture's fetch counter, the stale-und availability toggle)
+    keep their own closures."""
+    opt_frame = _ivol_opt_frame(D) if opt is None else opt
+
+    def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+        return [D] if "ivolatility" in prefix else []
+
+    def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+        return und if "underlying_intraday" in key else opt_frame
+
+    monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+    monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+
 @pytest.fixture()
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     state = {"parquet_fetches": 0}
@@ -115,14 +132,7 @@ class TestIvolSessions:
             {"minute_ts": f"{D} 09:45:00", "last": 120.0, "volume": 52_000_000},
         ])
 
-        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
-            return [D] if "ivolatility" in prefix else []
-
-        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
-            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
-
-        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
-        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+        _install_ivol(monkeypatch, und)
 
         slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
         assert slc is not None
@@ -161,14 +171,7 @@ class TestIvolSessions:
             {"minute_ts": f"{D} 09:35:00", "last": 100.4, "volume": 1_600},
         ])
 
-        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
-            return [D] if "ivolatility" in prefix else []
-
-        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
-            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
-
-        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
-        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+        _install_ivol(monkeypatch, und)
 
         slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
         assert slc is not None
@@ -189,14 +192,7 @@ class TestIvolSessions:
             {"minute_ts": f"{D} 09:35:00", "last": 100.5, "volume": 1_700},
         ])
 
-        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
-            return [D] if "ivolatility" in prefix else []
-
-        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
-            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
-
-        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
-        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+        _install_ivol(monkeypatch, und)
 
         slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
         assert slc is not None
@@ -215,14 +211,7 @@ class TestIvolSessions:
             {"minute_ts": f"{D} 13:05:00", "last": 100.4, "volume": 30_000_600},
         ])
 
-        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
-            return [D] if "ivolatility" in prefix else []
-
-        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
-            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
-
-        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
-        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+        _install_ivol(monkeypatch, und)
 
         slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
         assert slc is not None
@@ -243,15 +232,7 @@ class TestIvolSessions:
         opt = _ivol_opt_frame(D)
         bad = opt.iloc[[0]].assign(minute_ts="not-a-time")
         opt = pd.concat([opt, bad], ignore_index=True)
-
-        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
-            return [D] if "ivolatility" in prefix else []
-
-        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
-            return und if "underlying_intraday" in key else opt
-
-        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
-        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+        _install_ivol(monkeypatch, und, opt)
 
         slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
         assert slc is not None
@@ -262,6 +243,40 @@ class TestIvolSessions:
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
         # the dropped row's interval rides into the next surviving diff
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 40)] == 1_000
+
+    def test_malformed_expiration_drops_row_not_session(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A non-null unparseable expiration cell survives the NaN-only
+        dropna and used to raise in _build_slice — AFTER the frame was
+        cached, so every retry re-raised from the version-valid cache."""
+        opt = _ivol_opt_frame(D)
+        bad = opt.iloc[[0]].assign(expiration="2026-O7-08", strike=101.0)
+        opt = pd.concat([opt, bad], ignore_index=True)
+        _install_ivol(monkeypatch, _ivol_und_frame(D), opt)
+
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        bar930 = slc.quotes[datetime(2025, 1, 6, 9, 30)]
+        assert set(bar930) == {KEY}  # the poisoned row is gone, session lives
+        # and the cache-served read (the path that used to re-raise) works
+        cached = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert cached is not None
+        assert set(cached.quotes[datetime(2025, 1, 6, 9, 30)]) == {KEY}
+
+    def test_all_stamps_unparseable_refuses_session(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path
+    ) -> None:
+        """When EVERY option stamp evaporates, the session must be refused,
+        not served (and cached) as a hollow zero-quote session that the
+        engine would count as covered."""
+        opt = _ivol_opt_frame(D).assign(minute_ts="not-a-time")
+        _install_ivol(monkeypatch, _ivol_und_frame(D), opt)
+
+        assert intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6)) is None
+        # nothing cached: the next run rereads the possibly-repaired object
+        assert not (tmp_path / "SPY" / f"{D}_meta.json").exists()
 
     def test_disk_cache_serves_second_store(self, store: intraday.IntradayStore,
                                             env: dict[str, Any]) -> None:
