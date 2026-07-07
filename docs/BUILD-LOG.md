@@ -1401,3 +1401,38 @@ max_concurrent/max_vega pass through, comment/HONESTY claims corrected;
 EVAL (30 cases): 20/20 clear + 10/10 ambiguous — ACCEPTED, perfect score
 (the scoping resolved the case-25 nondeterminism). PR held for the owner
 re-ACCEPT + verbatim golden swap.
+
+## F4 (ENGINE-V4) — vol-surface signals: 25Δ skew + 30v90 term slope (2026-07-07)
+
+WHAT: spec v5 — two IVS-derived indicators usable as entry/exit condition
+filters at any clock: skew_25d (IV 25Δput − 25Δcall @30d tenor, VOL
+POINTS, linear delta interpolation between bracketing grid rows) and
+term_structure_slope (ATM IV 90d − 30d from exact OTM%=0 rows). Owner
+decisions: FIXED market-standard tenors (no parameterization on spec —
+exotic tenors later as explicit named vocabulary if a real strategy needs
+them); iv_surface_point DEFERRED to its own design pass (disclosed, not
+dropped); "variance risk premium" phrasing is a parser ALIAS onto
+hv_iv_spread_30d — one implementation per formula, duplicates drift.
+HOW: derive-once artifact reference/derived/ivs_signals/ticker={T}.parquet
+built nightly by collector/derive_ivs_signals.py (incremental watermark
+state/ivs_signals_derive.json; the MATH is imported from
+app/data/ivs_signals.py — single source, fixture-tested; new surface
+sessions flow in with no redeploy). Engine: MarketStore/MarketView
+bisect accessors (PIT ≤ as_of), BarView reads the PREVIOUS session at
+intraday bars (EOD-fit rule), conditions compare vol points DIRECTLY
+(never re-×100 — pinned against the ivx_level ×100 convention).
+Fail-closed derivation: missing tenor/bracket → None per signal, never
+extrapolated or cross-tenor. spec_version 5 gating both ways (v5 vocab
+on v4 spec is loud; probe bumped to 6), JSON schema updated, TS
+computeSpecVersion mirror. Parser: explicit skew/term phrasing, vague
+"skew is steep" asks for the threshold, unsupported tenors/deltas ask,
+VRP alias pinned NOT to lift the version. Coverage + Observatory: per-
+ticker derived window with per-signal session counts (a session can
+carry skew and honestly lack term). Eval: cases 31-35.
+TESTS: 31 new (415 total green) — hand-computed interpolation (6.0 vol
+points exact; 1/3-weight rounding 5.3333), exact-node, both unbracketed
+directions, cross-tenor refusal, ATM non-pollution, per-signal absence,
+loader NaN handling, PIT boundedness both accessors, BarView prev-day,
+×100-bug canary, unavailable-is-False, v5 gating + schema parity,
+version detection incl. alias, condition-gated e2e (entry fires only on
+the qualifying session).

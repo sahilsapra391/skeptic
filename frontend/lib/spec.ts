@@ -153,6 +153,10 @@ function computeSpecVersion(spec: Json): number {
   const V2_INDICATORS = new Set([
     "ivx_rank_1y", "ivx_level_30d", "hv_iv_spread_30d", "price_vs_vwap_pct",
   ]);
+  // F4: vol-surface vocabulary — checked first, the version is the MAX
+  // the vocabulary needs (a skew condition on a finest-resolution spec is 5)
+  const V5_INDICATORS = new Set(["skew_25d", "term_structure_slope"]);
+  if (conds.some((c) => V5_INDICATORS.has(String(c.indicator)))) return 5;
   if (backtest.resolution != null || entry.intraday_scan != null) return 4;
   if (entry.scale_in != null || exit.close_at_time != null) return 3;
   if (

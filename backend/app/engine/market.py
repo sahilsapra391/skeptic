@@ -45,12 +45,19 @@ class MarketStore:
     ivx_30d: dict[date, float] = field(default_factory=dict)
     hv_dates: list[date] = field(default_factory=list)
     hv_30d: dict[date, float] = field(default_factory=dict)
+    # IVS-derived surface signals (VOL POINTS), 2007+ — spec-v5 filters (F4)
+    skew_dates: list[date] = field(default_factory=list)
+    skew_25d: dict[date, float] = field(default_factory=dict)
+    term_dates: list[date] = field(default_factory=list)
+    term_slope: dict[date, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.sessions = sorted(self.sessions)
         self.chain_dates = sorted(self.chain_dates)
         self.ivx_dates = sorted(self.ivx_dates)
         self.hv_dates = sorted(self.hv_dates)
+        self.skew_dates = sorted(self.skew_dates)
+        self.term_dates = sorted(self.term_dates)
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
 
 
@@ -76,6 +83,8 @@ class MarketViewLike(Protocol):
     def ivx_30d(self) -> float | None: ...
     def ivx_30d_history(self) -> list[float]: ...
     def hv_30d(self) -> float | None: ...
+    def skew_25d(self) -> float | None: ...
+    def term_structure_slope(self) -> float | None: ...
     # D2c: the run's rolling 5-minute underlying lasts (≤ current bar,
     # across sessions) and the session-anchored VWAP at the current bar.
     # The daily view has no bars: empty / None. Implementations return AT
@@ -199,6 +208,20 @@ class MarketView:
         if idx == 0:
             return None
         return self._store.hv_30d[self._store.hv_dates[idx - 1]]
+
+    # F4: IVS-derived surface signals (VOL POINTS) — most recent
+    # observation at or before as_of, like every daily analytic series
+    def skew_25d(self) -> float | None:
+        idx = bisect_right(self._store.skew_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.skew_25d[self._store.skew_dates[idx - 1]]
+
+    def term_structure_slope(self) -> float | None:
+        idx = bisect_right(self._store.term_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.term_slope[self._store.term_dates[idx - 1]]
 
 
 @dataclass
@@ -370,6 +393,8 @@ def build_fixture_store(
     vix: dict[str, float] | None = None,
     ivx_30d: dict[str, float] | None = None,
     hv_30d: dict[str, float] | None = None,
+    skew_25d: dict[str, float] | None = None,
+    term_slope: dict[str, float] | None = None,
 ) -> MarketStore:
     """Fixture loader: plain dicts → MarketStore (same shape the real
     loader produces, so fixtures exercise the identical engine path)."""
@@ -413,6 +438,8 @@ def build_fixture_store(
     vix_map = {date.fromisoformat(k): v for k, v in vix.items()}
     ivx_map = {date.fromisoformat(k): v for k, v in (ivx_30d or {}).items()}
     hv_map = {date.fromisoformat(k): v for k, v in (hv_30d or {}).items()}
+    skew_map = {date.fromisoformat(k): v for k, v in (skew_25d or {}).items()}
+    term_map = {date.fromisoformat(k): v for k, v in (term_slope or {}).items()}
     return MarketStore(
         ticker=ticker,
         sessions=sessions,
@@ -426,4 +453,8 @@ def build_fixture_store(
         ivx_30d=ivx_map,
         hv_dates=sorted(hv_map),
         hv_30d=hv_map,
+        skew_dates=sorted(skew_map),
+        skew_25d=skew_map,
+        term_dates=sorted(term_map),
+        term_slope=term_map,
     )

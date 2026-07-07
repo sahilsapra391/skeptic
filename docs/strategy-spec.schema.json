@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://skeptic.local/strategy-spec.schema.json",
   "title": "Skeptic Strategy Spec (IR) v4",
-  "description": "v4 adds backtest.resolution (FX.1: per-session bar resolution at the intraday clock) and entry.intraday_scan (FX.2: continuous opportunity scanning); parser vocabulary lands at FX.5 - the parser gate lives in parse.py, not in this IR contract. v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2, v3 vocabulary requires spec_version 3, and v4 vocabulary requires spec_version 4 (validation enforces).",
+  "description": "v5 (F4) adds the IVS-derived vol-surface indicators skew_25d and term_structure_slope. v4 adds backtest.resolution (FX.1: per-session bar resolution at the intraday clock) and entry.intraday_scan (FX.2: continuous opportunity scanning); parser vocabulary lands at FX.5 - the parser gate lives in parse.py, not in this IR contract. v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2, v3 vocabulary requires spec_version 3, v4 vocabulary requires spec_version 4, and v5 vocabulary requires spec_version 5 (validation enforces).",
   "type": "object",
   "required": ["spec_version", "meta", "underlying", "position", "entry", "exit", "sizing", "costs", "backtest"],
   "additionalProperties": false,
   "properties": {
-    "spec_version": { "enum": [1, 2, 3, 4] },
+    "spec_version": { "enum": [1, 2, 3, 4, 5] },
     "meta": {
       "type": "object",
       "required": ["name", "description_raw"],
@@ -98,8 +98,8 @@
             "required": ["indicator", "operator", "value"],
             "properties": {
               "indicator": {
-                "enum": ["rsi", "sma", "ema", "price_vs_sma_pct", "price_vs_ema_pct", "ema_cross_state", "iv_percentile_1y", "vix_level", "realized_vol_20d", "drawdown_from_high_pct", "ivx_rank_1y", "ivx_level_30d", "hv_iv_spread_30d", "price_vs_vwap_pct"],
-                "description": "All computed on strictly trailing windows over the underlying (or VIX). ema_cross_state compares fast vs slow EMA: value encodes {fast, slow}, operator above/below. spec_version 2 adds the vendor IVX/HV family (2005+ on all tickers): ivx_rank_1y = percentile rank (0-100) of the 30d IV Mean within the trailing 252 observations, unevaluable (False) below 126 trailing observations; ivx_level_30d = the 30d IV Mean in percentage points (like vix_level: 'IVX above 25' -> value 25); hv_iv_spread_30d = (30d IV Mean - 30d HV) in percentage points."
+                "enum": ["rsi", "sma", "ema", "price_vs_sma_pct", "price_vs_ema_pct", "ema_cross_state", "iv_percentile_1y", "vix_level", "realized_vol_20d", "drawdown_from_high_pct", "ivx_rank_1y", "ivx_level_30d", "hv_iv_spread_30d", "price_vs_vwap_pct", "skew_25d", "term_structure_slope"],
+                "description": "All computed on strictly trailing windows over the underlying (or VIX). ema_cross_state compares fast vs slow EMA: value encodes {fast, slow}, operator above/below. spec_version 2 adds the vendor IVX/HV family (2005+ on all tickers): ivx_rank_1y = percentile rank (0-100) of the 30d IV Mean within the trailing 252 observations, unevaluable (False) below 126 trailing observations; ivx_level_30d = the 30d IV Mean in percentage points (like vix_level: 'IVX above 25' -> value 25); hv_iv_spread_30d = (30d IV Mean - 30d HV) in percentage points. spec_version 5 adds the IVS-derived vol-surface signals (2007+, derived nightly from the fitted surface; both in VOL POINTS): skew_25d = IV(25-delta put) - IV(25-delta call) at the 30d tenor, linearly interpolated in delta (positive = puts rich); term_structure_slope = ATM IV(90d) - ATM IV(30d) from each tenor's exact ATM row (negative = inverted). Both are EOD fits: at intraday bars they read the PREVIOUS session's surface. Sessions lacking the tenor or bracketing deltas are unavailable (False), never interpolated across tenors."
               },
               "period": { "type": "integer", "minimum": 2, "maximum": 400 },
               "params": { "type": "object", "description": "Indicator-specific, e.g. {\"fast\": 9, \"slow\": 20} for ema_cross_state." },

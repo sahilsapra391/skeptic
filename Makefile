@@ -13,6 +13,9 @@ nightly-execute: ledger
 ledger:
 	cd collector && uv run python ledger.py
 
+ivs-signals:
+	cd collector && uv run python derive_ivs_signals.py
+
 unlock-scan:
 	cd backend && PYTHONPATH=. uv run python scripts/nightly_improve.py
 

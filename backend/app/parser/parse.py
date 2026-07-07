@@ -21,9 +21,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.honesty.verdict import OPENROUTER_URL, PARSER_MODEL, _extract_json
-from app.models.spec import V2_INDICATORS, StrategySpec
+from app.models.spec import V2_INDICATORS, V5_INDICATORS, StrategySpec
 
 _V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
+_V5_INDICATOR_NAMES = {i.value for i in V5_INDICATORS}
 
 
 def _required_spec_version(raw_spec: dict[str, Any]) -> int:
@@ -36,6 +37,11 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     schedule = entry.get("schedule") or {}
     expiration = position.get("expiration_selection") or {}
     backtest = raw_spec.get("backtest") or {}
+    # v5 (F4): vol-surface indicators — checked first, the version is the MAX
+    # the vocabulary needs (a skew condition on a finest-resolution spec is 5)
+    if any(isinstance(c, dict) and c.get("indicator") in _V5_INDICATOR_NAMES
+           for c in conds):
+        return 5
     # v4 (FX.1/FX.2): per-session resolution + continuous scanning
     if (backtest.get("resolution") is not None
             or entry.get("intraday_scan") is not None):
@@ -113,7 +119,7 @@ THE SPEC (all fields required unless noted):
                           |"ema_cross_state"|"iv_percentile_1y"|"vix_level"
                           |"realized_vol_20d"|"drawdown_from_high_pct"
                           |"ivx_rank_1y"|"ivx_level_30d"|"hv_iv_spread_30d"
-                          |"price_vs_vwap_pct",
+                          |"price_vs_vwap_pct"|"skew_25d"|"term_structure_slope",
                            "period": <int, optional>, "params": {..optional..},
                            "timeframe": "daily" (default) | "5min" (intraday bars;
                                         price-series indicators only),
@@ -210,6 +216,19 @@ CONVENTIONS:
   "operator": ">", "value": 50} (a percentile, 0-100). "IVX above 25" (a
   LEVEL) → ivx_level_30d with value 25 (percentage points, like vix_level).
   "IV rich vs realized by 4 points" → hv_iv_spread_30d with value 4.
+- VARIANCE/VOL RISK PREMIUM is the SAME quantity: "VRP above 4", "variance risk
+  premium positive", "vol premium rich vs realized" → hv_iv_spread_30d (IV minus
+  realized, percentage points). NEVER invent a separate "vrp" indicator.
+- VOL-SURFACE SIGNALS (EOD surface fits, timeframe "daily" ONLY — never "5min";
+  usable at any clock): "25-delta skew above 5" / "put skew over 5 (vols/points)"
+  → {"indicator": "skew_25d", "operator": ">", "value": 5} — IV(25Δ put) −
+  IV(25Δ call) at the 30d tenor, VOL POINTS; positive = puts rich. "term
+  structure inverted" / "vol curve in backwardation" → {"indicator":
+  "term_structure_slope", "operator": "<", "value": 0} — ATM IV(90d) − ATM
+  IV(30d), vol points; "30/90 slope below −1" → value -1. Vague "when skew is
+  high/extreme/steep" with NO number → ask for the threshold (offer e.g. 4, 6).
+  Other tenors/deltas ("10-delta skew", "60-day skew", "1-week vs 6-month
+  slope") are NOT in the vocabulary → ask, offering the two supported signals.
 - "keep position vega under $30 per contract" → max_vega_per_contract 30.
 - INTRADAY (clock "5min"): "0DTE"/"same-day expiry" → target_dte 0, min_dte 0,
   max_dte 0-1, clock "5min". "1DTE" → target_dte 1 (TRADING days at this clock:
@@ -273,9 +292,10 @@ CONVENTIONS:
   "5min"). This is a DATA POLICY, never inferred from strategy shape: a plain 0DTE
   request WITHOUT this phrasing gets NO resolution field — never guess it.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
-  spec_version: always emit 1 — the server recomputes it (intraday_scan or
-  backtest.resolution lifts it to 4; a scale_in ladder or a close_at_time lifts it
-  to 3; v2 vocabulary lifts it to 2).
+  spec_version: always emit 1 — the server recomputes it (skew_25d or
+  term_structure_slope lifts it to 5; intraday_scan or backtest.resolution lifts
+  it to 4; a scale_in ladder or a close_at_time lifts it to 3; v2 vocabulary
+  lifts it to 2).
 
 WHEN TO ASK (result "questions") — the tool's identity depends on this:
 - ZERO exit rules stated → ask. No strike selection (delta/offset/ATM) stated → ask.

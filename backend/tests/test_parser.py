@@ -143,6 +143,22 @@ def test_required_spec_version_detects_v4() -> None:
     assert rsv({"backtest": {"resolution": "finest", "clock": "5min"}}) == 4
 
 
+def test_required_spec_version_detects_v5() -> None:
+    """F4: a vol-surface indicator lifts to 5 — including when v4
+    vocabulary is ALSO present (the version is the MAX the vocabulary
+    needs, checked highest-first)."""
+    rsv = parser_module._required_spec_version
+    skew = {"indicator": "skew_25d", "operator": ">", "value": 5}
+    term = {"indicator": "term_structure_slope", "operator": "<", "value": 0}
+    assert rsv({"entry": {"conditions": [skew]}}) == 5
+    assert rsv({"exit": {"conditions": [term]}}) == 5
+    assert rsv({"entry": {"conditions": [skew]},
+                "backtest": {"resolution": "finest"}}) == 5
+    # the VRP alias maps to hv_iv_spread_30d — v2 vocabulary, NOT v5
+    vrp = {"indicator": "hv_iv_spread_30d", "operator": ">", "value": 4}
+    assert rsv({"entry": {"conditions": [vrp]}}) == 2
+
+
 def _ladder_spec_raw() -> dict:
     # what the LLM emits (spec_version 1, ATM on the leg) — the server
     # normalizes and recomputes the version

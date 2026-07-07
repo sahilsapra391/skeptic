@@ -229,6 +229,19 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         if ivx is None or hv is None:
             return False
         return _compare((ivx - hv) * 100.0, cond.operator, cond.value)
+    if ind_name is Indicator.SKEW_25D:
+        # F4: 25Δ risk reversal @30d, VOL POINTS ("skew above 5" → value 5).
+        # Derived from the previous session's EOD surface at intraday bars.
+        skew = view.skew_25d()
+        if skew is None:
+            return False
+        return _compare(skew, cond.operator, cond.value)
+    if ind_name is Indicator.TERM_STRUCTURE_SLOPE:
+        # F4: ATM IV(90d) − ATM IV(30d), VOL POINTS; "< 0" = inverted
+        slope = view.term_structure_slope()
+        if slope is None:
+            return False
+        return _compare(slope, cond.operator, cond.value)
     raise ValueError(f"unhandled indicator {ind_name}")  # pragma: no cover
 
 

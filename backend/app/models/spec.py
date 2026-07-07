@@ -83,6 +83,9 @@ class Indicator(StrEnum):
     HV_IV_SPREAD_30D = "hv_iv_spread_30d"
     # spec v2 (D2c): intraday-only — % distance from session-anchored VWAP
     PRICE_VS_VWAP_PCT = "price_vs_vwap_pct"
+    # spec v5 (F4): IVS-derived vol-surface signals, 2007+ (VOL POINTS)
+    SKEW_25D = "skew_25d"
+    TERM_STRUCTURE_SLOPE = "term_structure_slope"
 
 
 class Timeframe(StrEnum):
@@ -101,6 +104,13 @@ V2_INDICATORS = {
     Indicator.IVX_LEVEL_30D,
     Indicator.HV_IV_SPREAD_30D,
     Indicator.PRICE_VS_VWAP_PCT,
+}
+
+# F4: vol-surface indicators require spec_version 5 — a versioned
+# migration like every vocabulary addition, never silent.
+V5_INDICATORS = {
+    Indicator.SKEW_25D,
+    Indicator.TERM_STRUCTURE_SLOPE,
 }
 
 # Price-series indicators that can read the 5-minute timeframe; everything
@@ -507,8 +517,24 @@ class StrategySpec(BaseModel):
 
     @model_validator(mode="after")
     def _version_supported(self) -> StrategySpec:
-        if self.spec_version not in (1, 2, 3, 4):
-            raise ValueError("spec_version must be 1, 2, 3, or 4")
+        if self.spec_version not in (1, 2, 3, 4, 5):
+            raise ValueError("spec_version must be 1, 2, 3, 4, or 5")
+        return self
+
+    @model_validator(mode="after")
+    def _v5_vocabulary_needs_v5(self) -> StrategySpec:
+        """v5 vocabulary on an older spec is a loud error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.spec_version >= 5:
+            return self
+        all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        used = sorted({c.indicator.value for c in all_conditions
+                       if c.indicator in V5_INDICATORS})
+        if used:
+            raise ValueError(
+                f"spec_version {self.spec_version} cannot use v5 vocabulary: "
+                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 5"
+            )
         return self
 
     @model_validator(mode="after")

@@ -15,7 +15,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.data import chains, r2, resolution
+from app.data import chains, ivs_signals, r2, resolution
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
@@ -181,6 +181,29 @@ def _ivol_analytics_ranges(s3: Any) -> dict[str, Any]:
     return out
 
 
+def _ivs_signals_ranges(s3: Any) -> dict[str, Any]:
+    """Window of the derived vol-surface signal artifact (F4) — guardrail
+    #6: any surface offering skew/term filters shows the window they were
+    derived on, per signal (a session can carry one and not the other)."""
+    out: dict[str, Any] = {}
+    for ticker in TICKERS:
+        df = r2.get_parquet(s3, ivs_signals.SIGNALS_KEY.format(ticker=ticker))
+        if df is None or df.empty or "date" not in df.columns:
+            out[ticker] = None
+            continue
+        dates = df["date"].astype(str)
+        out[ticker] = {
+            "sessions": int(len(df)),
+            "first": str(dates.min()),
+            "last": str(dates.max()),
+            "skew_sessions": int(df["skew_25d"].notna().sum())
+            if "skew_25d" in df.columns else 0,
+            "term_sessions": int(df["term_slope_30_90"].notna().sum())
+            if "term_slope_30_90" in df.columns else 0,
+        }
+    return out
+
+
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
@@ -259,6 +282,7 @@ def build_coverage() -> dict[str, Any]:
         "underlying": underlying,
         "chain_quality": {t: _chain_quality(t) for t in TICKERS},
         "ivol_analytics": _ivol_analytics_ranges(s3),
+        "ivs_signals": _ivs_signals_ranges(s3),
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": r2.get_json(s3, "state/quality_flags.json", {}),
         # D3d: the weekly demand ranking (build_priorities.py) — what the
