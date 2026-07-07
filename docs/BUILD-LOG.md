@@ -1521,3 +1521,25 @@ schema parity, refusal suite (window-before-signal refused with the
 covered window; default-full-window refused; covered window runs AND
 gates on the qualifying session only; unconditioned spec untouched;
 no-data-at-all refused plainly).
+LIVE EVAL (40 cases): 26/26 clear + 14/14 ambiguous — ACCEPTED, perfect
+score; case 39's raw-unit refusal asks "How would you like to define the
+GEX condition?" offering sign/rank.
+REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
+5 MINOR + 4 NIT — (1) MAJOR FIXED: a window lying ENTIRELY before the
+signal offered an inverted, impossible window ("Run 2025-07-08 →
+2024-01-08") — now offers the real covered window with an
+"entirely before coverage begins" reason, pinned; (2) FIXED: rank-
+condition refusals + the composer note now name the RANK-UNLOCK date
+(first + 126 observations) — the offered window must not hide six
+structurally unevaluable months, pinned; (3) FIXED: the trailing-
+percentile formula existed in FOUR inline copies (iv_percentile, ivx,
+gex, dex) — extracted to _trailing_rank(history, min_obs), byte-
+identical (floors 20/126 as args), battery green; (4) FIXED: a cold
+5-min /estimate no longer blocks on the full daily store build — reads
+the single small greek_exposure parquet directly; (5) schema title
+bumped v6; (6) FIXED: the 5-min-clock refusal was untested — pinned
+with an intraday fixture; (7) window-tile note documented as
+DELIBERATELY partial (trigger-dial only; run-time refusal always
+guards) + shows the rank-unlock date; (8,9,10) NITs: Observatory
+session counts mirror the ivs pattern (noted), BarView test pins
+delegation (named), refusal params renamed win_start/win_end.

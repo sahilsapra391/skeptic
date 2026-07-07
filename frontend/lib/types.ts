@@ -81,7 +81,14 @@ export interface EstimatePayload {
    * composer surfaces the bound pre-submit. */
   signal_windows?: Record<
     string,
-    { first: string; last: string; indicators: string[] }
+    {
+      first: string;
+      last: string;
+      /** first session where *_rank_1y filters are evaluable (the ≥126
+       * trailing-observation floor); null until enough data accrues */
+      rank_first?: string | null;
+      indicators: string[];
+    }
   >;
   options: { key: WindowKind; sessions: number; est_seconds: number | null }[];
   basis: { measured_runs: number; note: string };

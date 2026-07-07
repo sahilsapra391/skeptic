@@ -145,13 +145,22 @@ def get_estimate(
     # (owner decision 2026-07-07: surface the bound while composing)
     signal_windows: dict[str, Any] = {}
     try:
-        store = load_market_store(ticker)
-        firsts = [d[0] for d in (store.gex_dates, store.dex_dates) if d]
-        lasts = [d[-1] for d in (store.gex_dates, store.dex_dates) if d]
-        if firsts:
+        # the single small greek_exposure parquet, NOT the market store —
+        # a cold 5-min estimate must not block on the full daily chain
+        # build just to read two date lists (review finding F1 #4)
+        from app.data import r2 as _r2
+        from app.data.gex_signals import load_dealer_exposure
+
+        gex, dex = load_dealer_exposure(_r2.r2_client(), ticker)
+        all_dates = sorted(set(gex) | set(dex))
+        if all_dates:
+            base = sorted(gex) if gex else sorted(dex)
             signal_windows["dealer_positioning"] = {
-                "first": str(min(firsts)),
-                "last": str(max(lasts)),
+                "first": str(all_dates[0]),
+                "last": str(all_dates[-1]),
+                # rank indicators stay unevaluable until 126 trailing
+                # observations — the composer names the unlock date too
+                "rank_first": str(base[125]) if len(base) > 125 else None,
                 "indicators": ["gex_level", "gex_rank_1y",
                                "dex_level", "dex_rank_1y"],
             }

@@ -335,3 +335,82 @@ class TestSignalCoverageRefusal:
         spec = _run_spec(days, start=days[0], conditions=_GEX_COND)
         with pytest.raises(SliceCoverageError, match="not banked"):
             run_backtest(spec, store)
+
+    def test_entirely_before_window_offers_the_real_covered_window(self) -> None:
+        # review finding F1 #1: start AND end before the signal — the old
+        # message offered "signal_first → win_end", an INVERTED window
+        days = _weekdays(date(2024, 1, 1), 6)
+        gex = {days[4].isoformat(): 5.0, days[5].isoformat(): 5.0}
+        store = _chained_store(days, gex)
+        spec = StrategySpec.model_validate({
+            **_run_spec(days, start=days[0], conditions=_GEX_COND).model_dump(
+                mode="json", exclude_none=True),
+            "backtest": {"start": days[0].isoformat(),
+                         "end": days[2].isoformat(),
+                         "initial_capital": 25000, "seed": 42},
+        })
+        with pytest.raises(SliceCoverageError) as exc:
+            run_backtest(spec, store)
+        msg = str(exc.value)
+        assert "entirely before" in msg
+        # the offered window is the real covered one, never inverted
+        assert f"Run {days[4].isoformat()} → {days[-1].isoformat()}" in msg
+
+    def test_rank_condition_refusal_names_the_unlock_date(self) -> None:
+        # review finding F1 #2: the offered window must not hide six
+        # structurally unevaluable months — the rank floor date is named
+        days = _weekdays(date(2024, 1, 1), 260)
+        gex = {d.isoformat(): float(i) for i, d in enumerate(days[4:])}
+        store = _chained_store(days, gex)
+        spec = _run_spec(days, start=days[0], conditions=[
+            {"indicator": "gex_rank_1y", "operator": ">", "value": 75}])
+        with pytest.raises(SliceCoverageError) as exc:
+            run_backtest(spec, store)
+        # dates[125] of the signal series = days[4 + 125]
+        assert days[129].isoformat() in str(exc.value)
+        assert "126 trailing observations" in str(exc.value)
+
+    def test_refusal_fires_at_the_five_minute_clock_too(self) -> None:
+        # review finding F1 #6: "at BOTH clocks" was untested at 5min
+        from app.engine.market import build_fixture_slice
+        from tests.test_five_min_clock import FixtureIntraday, _put
+
+        days = _weekdays(date(2025, 1, 6), 3)
+        slices = {}
+        underlying = {}
+        for d in days:
+            expiry = (d + timedelta(days=1)).isoformat()
+            slices[d.isoformat()] = build_fixture_slice(
+                d.isoformat(),
+                quotes={"09:30": [_put(2.00, 2.10, -0.50, expiry)]},
+                underlying={"09:30": 100.0},
+            )
+            underlying[d.isoformat()] = (100.0, 100.0)
+        store = build_fixture_store(
+            "SPY", {}, underlying,
+            net_gex={days[2].isoformat(): 5.0})  # signal starts on day 3
+        intraday = FixtureIntraday(slices)
+        spec = StrategySpec.model_validate({
+            "spec_version": 6,
+            "meta": {"name": "5min gex refusal", "description_raw": "f1"},
+            "underlying": {"ticker": "SPY"},
+            "position": {
+                "structure": "short_put",
+                "legs": [{"right": "put", "side": "short", "ratio": 1,
+                          "strike_selection": {"method": "delta", "value": 0.50}}],
+                "expiration_selection": {"target_dte": 1, "min_dte": 0,
+                                         "max_dte": 2},
+            },
+            "entry": {"schedule": {"frequency": "daily"},
+                      "conditions": _GEX_COND, "max_concurrent_positions": 1},
+            "exit": {"profit_target_pct": 50},
+            "sizing": {"method": "fixed_contracts", "value": 1},
+            "costs": {"commission_per_contract": 0.65,
+                      "slippage_half_spread_fraction": 0.5},
+            "backtest": {"start": days[0].isoformat(), "end": None,
+                         "initial_capital": 25000, "seed": 42,
+                         "clock": "5min"},
+        })
+        with pytest.raises(SliceCoverageError,
+                           match=rf"starts {days[2].isoformat()}"):
+            run_backtest(spec, store, intraday)

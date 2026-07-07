@@ -15,6 +15,19 @@ from app.engine.market import MarketViewLike
 from app.models.spec import Condition, Indicator, Operator, Timeframe
 
 
+def _trailing_rank(history: list[float], min_obs: int) -> float | None:
+    """Percentile (0-100) of the latest observation within its trailing
+    252-observation window — ONE implementation for every *_rank/percentile
+    indicator (review finding F1 #3: four inline copies WILL drift). None
+    below min_obs trailing observations — unevaluable, never a thin-window
+    guess (the D1 floor; each indicator declares its own min_obs)."""
+    if len(history) < min_obs:
+        return None
+    window = history[-252:]
+    current = window[-1]
+    return sum(1 for v in window if v <= current) / len(window) * 100.0
+
+
 def _compare(value: float, op: Operator, threshold: float) -> bool:
     if op in (Operator.LT,):
         return value < threshold
@@ -198,23 +211,17 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(vix, cond.operator, cond.value)
     if ind_name is Indicator.IV_PERCENTILE_1Y:
-        history = view.atm_iv_history()
-        if len(history) < 20:
+        rank = _trailing_rank(view.atm_iv_history(), min_obs=20)
+        if rank is None:
             return False
-        window = history[-252:]
-        current = window[-1]
-        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.IVX_RANK_1Y:
         # vendor IVX (30d IV Mean) percentile within the trailing 252
         # observations. Owner amendment 3: below 126 trailing observations
         # the rank is unevaluable that day — False, never a thin-window guess.
-        history = view.ivx_30d_history()
-        if len(history) < 126:
+        rank = _trailing_rank(view.ivx_30d_history(), min_obs=126)
+        if rank is None:
             return False
-        window = history[-252:]
-        current = window[-1]
-        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.IVX_LEVEL_30D:
         # stored as a decimal; compared in percentage points (vix_level
@@ -249,12 +256,9 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         # trailing observations the rank is unevaluable that day — False,
         # never a thin-window guess (owner amendment, inherits the D1
         # ivx_rank floor; unlocks as the UW window crosses it)
-        history = view.gex_history()
-        if len(history) < 126:
+        rank = _trailing_rank(view.gex_history(), min_obs=126)
+        if rank is None:
             return False
-        window = history[-252:]
-        current = window[-1]
-        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.DEX_LEVEL:
         # F1: net dealer delta, vendor units — sign vocabulary only
@@ -263,12 +267,9 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(dex, cond.operator, cond.value)
     if ind_name is Indicator.DEX_RANK_1Y:
-        history = view.dex_history()
-        if len(history) < 126:
+        rank = _trailing_rank(view.dex_history(), min_obs=126)
+        if rank is None:
             return False
-        window = history[-252:]
-        current = window[-1]
-        rank = sum(1 for v in window if v <= current) / len(window) * 100.0
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.TERM_STRUCTURE_SLOPE:
         # F4: ATM IV(90d) − ATM IV(30d), VOL POINTS; "< 0" = inverted

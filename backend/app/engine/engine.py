@@ -1187,10 +1187,19 @@ def _spec_conditions(spec: StrategySpec) -> list[Condition]:
     return conds
 
 
+# rank indicators carry an extra evaluability bound: the D1 floor makes
+# them unevaluable until 126 trailing observations exist, so the refusal
+# names THAT date too — the offered window must not hide six structurally
+# flat months inside itself (review finding F1 #2)
+_RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y}
+
+
 def check_signal_coverage(spec: StrategySpec, store: MarketStore,
-                          eff_start: date, eff_end: date) -> None:
+                          win_start: date, win_end: date) -> None:
     """Refuse BEFORE running when a condition's signal series starts after
-    the effective window does — plain reason, covered window offered."""
+    the (session-aligned) window does — plain reason, covered window
+    offered. `win_start`/`win_end` are the run's first/last simulated
+    sessions."""
     for cond in _spec_conditions(spec):
         entry = _SIGNAL_SERIES.get(cond.indicator)
         if entry is None:
@@ -1204,14 +1213,31 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
                 "on any session"
             )
         first = dates[0]
-        if eff_start < first:
+        if win_start >= first:
+            continue
+        rank_note = ""
+        if cond.indicator in _RANK_INDICATORS:
+            unlock = (dates[125].isoformat() if len(dates) > 125
+                      else "once 126 sessions accrue")
+            rank_note = (" Rank filters additionally need 126 trailing "
+                         f"observations — evaluable from {unlock}.")
+        ticker = spec.underlying.ticker.value
+        if win_end < first:
+            # the requested window lies ENTIRELY before coverage — offering
+            # "first → win_end" would be an inverted, impossible window
+            # (review finding F1 #1); offer the real covered window instead
             raise SliceCoverageError(
-                f"{label} data for {spec.underlying.ticker.value} starts "
-                f"{first.isoformat()}; the requested window starts "
-                f"{eff_start.isoformat()} — the uncovered stretch would sit in "
-                f"flat cash and corrupt the stats. Run {first.isoformat()} → "
-                f"{eff_end.isoformat()} instead."
+                f"{label} data for {ticker} starts {first.isoformat()}; the "
+                f"requested window ends {win_end.isoformat()} — entirely "
+                f"before coverage begins. Run {first.isoformat()} → "
+                f"{store.sessions[-1].isoformat()} instead.{rank_note}"
             )
+        raise SliceCoverageError(
+            f"{label} data for {ticker} starts {first.isoformat()}; the "
+            f"requested window starts {win_start.isoformat()} — the uncovered "
+            f"stretch would sit in flat cash and corrupt the stats. Run "
+            f"{first.isoformat()} → {win_end.isoformat()} instead.{rank_note}"
+        )
 
 
 def _prev_session_view(store: MarketStore, day: date) -> MarketView:
