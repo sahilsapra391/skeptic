@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://skeptic.local/strategy-spec.schema.json",
   "title": "Skeptic Strategy Spec (IR) v3",
-  "description": "v4 (FX.1) adds backtest.resolution (per-session bar resolution at the intraday clock; parser vocabulary lands at FX.5 - the parser gate lives in parse.py, not in this IR contract). v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2, v3 vocabulary requires spec_version 3, and v4 vocabulary requires spec_version 4 (validation enforces).",
+  "description": "v4 adds backtest.resolution (FX.1: per-session bar resolution at the intraday clock) and entry.intraday_scan (FX.2: continuous opportunity scanning); parser vocabulary lands at FX.5 - the parser gate lives in parse.py, not in this IR contract. v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2, v3 vocabulary requires spec_version 3, and v4 vocabulary requires spec_version 4 (validation enforces).",
   "type": "object",
   "required": ["spec_version", "meta", "underlying", "position", "entry", "exit", "sizing", "costs", "backtest"],
   "additionalProperties": false,
@@ -167,6 +167,10 @@
             },
             "max_total_contracts": { "type": "integer", "minimum": 1, "description": "Hard cap on total basket contracts across all rungs - the ruin guardrail. Required whenever scale_in is present; must be >= the largest single rung's add_contracts." }
           }
+        },
+        "intraday_scan": {
+          "enum": ["once_per_session", "every_setup"],
+          "description": "spec_version 4; requires clock 5min. Continuous opportunity scanning (FX.2). Absent and once_per_session are identical (the first fill ends the session's entries - bit-identical D2 behavior). every_setup: one entry per SIGNAL EPISODE (conditions transitioning false->true arm exactly one entry - a persistent signal is one setup, never a burst), re-entry after intraday exits, and condition-less strategies re-arm when a position closes (the position lifecycle is the episode). On minute grids a signal at a quote-less bar ARMS an order that fills at the NEXT quoted bar's real NBBO even if the signal faded (one-quoted-bar validity; liquidity gates still apply; the episode is consumed fill-or-skip; both bars disclosed in the trade detail). Bounded by max_concurrent_positions and capital; every skip is counted with a reason. Mutually exclusive with entry.scale_in."
         }
       }
     },

@@ -258,6 +258,8 @@ export interface RunPayload {
   resolutionRuns?:
     | { first: string; last: string; sessions: number; resolution: string }[]
     | null;
+  /** FX.2: every skipped entry attempt counted by reason (null pre-FX.2) */
+  skipReasons?: Record<string, number> | null;
   /** D3c: 5-min replay receipts (merged at read time; stored trust untouched) */
   receipts?: {
     replay_run_id: string;

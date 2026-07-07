@@ -314,6 +314,23 @@ class ScaleIn(BaseModel):
         return self
 
 
+class IntradayScan(StrEnum):
+    """FX.2 (spec v4): how often the intraday clock may open positions.
+
+    ONCE_PER_SESSION is the D2 behavior (the first fill ends the session's
+    entries). EVERY_SETUP is continuous opportunity scanning: one entry per
+    SIGNAL EPISODE (entry conditions transitioning false→true arm exactly
+    one entry — a persistent signal is one setup, never a burst), re-entry
+    after intraday exits, and for condition-less strategies the position
+    LIFECYCLE is the episode (re-arm when a position closes — the
+    always-in-the-market pattern). Bounded by max_concurrent_positions and
+    capital; every fill still requires a real liquid quote (guardrail #1)
+    and every skip is counted with a reason."""
+
+    ONCE_PER_SESSION = "once_per_session"
+    EVERY_SETUP = "every_setup"
+
+
 class Entry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -323,6 +340,9 @@ class Entry(BaseModel):
     # spec v3 (D5a): the scale-in ladder. Absent ⇒ every pre-D5a spec is
     # unchanged. Present ⇒ the basket engine runs and the D5c interlock applies.
     scale_in: ScaleIn | None = None
+    # FX.2 (spec v4): continuous opportunity scanning at the intraday clock.
+    # None = ONCE_PER_SESSION exactly (absent and explicit are identical).
+    intraday_scan: IntradayScan | None = None
 
 
 class ThetaHarvest(BaseModel):
@@ -495,12 +515,19 @@ class StrategySpec(BaseModel):
     def _v4_vocabulary_needs_v4(self) -> StrategySpec:
         """v4 vocabulary on an older spec is a loud error, never silent
         (module contract: every change is a versioned migration)."""
-        if self.backtest.resolution is None or self.spec_version >= 4:
+        if self.spec_version >= 4:
             return self
-        raise ValueError(
-            f"spec_version {self.spec_version} cannot use v4 vocabulary: "
-            "backtest.resolution — set spec_version 4"
-        )
+        used: list[str] = []
+        if self.backtest.resolution is not None:
+            used.append("backtest.resolution")
+        if self.entry.intraday_scan is not None:
+            used.append("entry.intraday_scan")
+        if used:
+            raise ValueError(
+                f"spec_version {self.spec_version} cannot use v4 vocabulary: "
+                f"{', '.join(used)} — set spec_version 4"
+            )
+        return self
 
     @model_validator(mode="after")
     def _resolution_needs_intraday_clock(self) -> StrategySpec:
@@ -510,6 +537,26 @@ class StrategySpec(BaseModel):
             raise ValueError(
                 'backtest.resolution requires clock "5min" — the daily clock '
                 "has no intraday bars to resolve"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _intraday_scan_constraints(self) -> StrategySpec:
+        """FX.2: continuous scanning is an intraday-clock policy, and the
+        scale-in ladder is its OWN multi-entry semantic — combining them
+        would double-manage the book, so it is refused loudly."""
+        if self.entry.intraday_scan is None:
+            return self
+        if self.backtest.clock is Clock.DAILY:
+            raise ValueError(
+                'entry.intraday_scan requires clock "5min" — the daily clock '
+                "has no intraday bars to scan"
+            )
+        if (self.entry.intraday_scan is IntradayScan.EVERY_SETUP
+                and self.entry.scale_in is not None):
+            raise ValueError(
+                "entry.intraday_scan every_setup cannot combine with "
+                "entry.scale_in — the ladder is its own multi-entry semantic"
             )
         return self
 

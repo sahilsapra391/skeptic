@@ -56,6 +56,7 @@ from app.models.spec import (
     Condition,
     Costs,
     Frequency,
+    IntradayScan,
     LiquidityMode,
     Resolution,
     ScaleIn,
@@ -88,6 +89,9 @@ class _State:
     fills_unknown_liquidity: int = 0
     fill_sources: dict[str, int] = field(default_factory=dict)  # provenance (D2b)
     rung_fills: list[RungFill] = field(default_factory=list)  # scale-in adds (D5a)
+    # FX.2: every skip COUNTED with its reason (the trade log stays deduped;
+    # the counts are the honest denominator behind "maximum honest fills")
+    skip_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -382,6 +386,20 @@ def _risk_per_contract(
     return max(-premium * MULT, 0.0)
 
 
+def _count_skip(
+    state: _State, skip_dedupe: set[str], day: date, reason: str
+) -> None:
+    """FX.2 loop-level skip: counted always, logged once per session
+    (mirror of _try_entry's skip closure for skips the loop itself owns)."""
+    state.skip_counts[reason] = state.skip_counts.get(reason, 0) + 1
+    if reason in skip_dedupe:
+        return
+    skip_dedupe.add(reason)
+    state.trades.append(
+        TradeEvent(day=day, action="SKIP", detail="entry candidate", reason=reason)
+    )
+
+
 def _try_entry(
     spec: StrategySpec,
     state: _State,
@@ -389,15 +407,23 @@ def _try_entry(
     equity_now: float,
     dte_fn: DteFn | None = None,
     skip_dedupe: set[str] | None = None,
+    skip_conditions: bool = False,
 ) -> None:
+    """`skip_conditions=True` is the FX.2 armed-order path: the signal was
+    validated at its trigger bar and the order fills at THIS bar's real
+    quote even if the signal faded meanwhile (a submitted order can't be
+    recalled because RSI ticked back) — everything else (quotes, liquidity
+    gates, sizing) validates normally."""
     day = view.as_of
     slip = spec.costs.slippage_half_spread_fraction
     commission = spec.costs.commission_per_contract
 
     def skip(reason: str, detail: str = "") -> None:
-        # at the 5-min clock an entry is attempted at every bar; the same
-        # reason is logged once per session, not 80 times (dedupe set is
+        # every skip is COUNTED (FX.2 — the run carries the distribution);
+        # at the 5-min clock an entry is attempted at every bar, so the
+        # LOG stays deduped per session, not 80 lines (dedupe set is
         # per-session, supplied by the bar loop; daily passes None)
+        state.skip_counts[reason] = state.skip_counts.get(reason, 0) + 1
         if skip_dedupe is not None:
             if reason in skip_dedupe:
                 return
@@ -413,7 +439,8 @@ def _try_entry(
     if not view.has_chain:
         skip("no_chain_data")
         return
-    if spec.entry.conditions and not all_conditions_pass(view, spec.entry.conditions):
+    if (not skip_conditions and spec.entry.conditions
+            and not all_conditions_pass(view, spec.entry.conditions)):
         skip("conditions_not_met")
         return
 
@@ -1123,6 +1150,16 @@ def run_engine(
         fh, fm = spec.exit.close_at_time.split(":")
         flat_minutes = int(fh) * 60 + int(fm)
 
+    # FX.2: continuous opportunity scanning (spec v4 entry.intraday_scan).
+    # One entry per SIGNAL EPISODE (conditions false→true arm exactly one);
+    # condition-less strategies treat the position LIFECYCLE as the episode
+    # (arm at the window start and again when a position closes). An armed
+    # order is valid until the next QUOTED bar: it fills there at the real
+    # NBBO even if the signal faded (a submitted order can't be recalled),
+    # and is consumed fill-or-skip — never re-armed on the same dip.
+    scanning = five_min and spec.entry.intraday_scan is IntradayScan.EVERY_SETUP
+    has_conditions = bool(spec.entry.conditions)
+
     for day in clock:
         view = MarketView(store, day)
         _unwind_pending_stock(state, view)
@@ -1147,6 +1184,13 @@ def run_engine(
             dte_fn = _trading_dte_fn(store, day)
             session_skips: set[str] = set()
             opened_this_session = False
+            # FX.2 per-session scan state: edges tracked from the window's
+            # first bar (a signal standing at the open IS a setup); armed
+            # orders die with the session (no overnight orders)
+            scan_armed = False
+            scan_armed_bar: str | None = None
+            scan_cond_prev = False
+            scan_window_seen = False
             session_pv = 0.0  # session-anchored VWAP accumulators (D2c)
             session_vol = 0.0
             # nudge: delay the window. entry_shift_bars counts 5-MIN bars
@@ -1180,7 +1224,9 @@ def run_engine(
                 past_flat = flat_minutes is not None and bar_minutes >= flat_minutes
                 if past_flat:
                     # close_at_time overrides everything at/after its bar: flat
-                    # the book, mint nothing (no exits/adds beyond the flatten)
+                    # the book, mint nothing (no exits/adds beyond the flatten,
+                    # and any armed order dies unfilled)
+                    scan_armed = False
                     _force_flat(spec, state, bview)
                     if scale_in is not None and (
                         bstate.basket is not None and bstate.basket.closed
@@ -1192,22 +1238,71 @@ def run_engine(
                     # bar t is first evaluated at bar t+1 (owner amendment 2 —
                     # a stop can never fire on its own entry bar)
                     _check_exits(spec, state, bview, dte_fn)
+                    # event-based (O(events-this-bar), never O(positions) —
+                    # post-OOM rule: no per-bar scans over the whole book)
+                    closed_this_bar = any(
+                        ev.action == "CLOSE" for ev in state.trades[events_before:]
+                    )
+                    in_window = (
+                        _schedule_matches(spec, state, day)
+                        and bar_idx >= entry_from
+                        and (tod_minutes is None or bar_minutes >= tod_minutes)
+                    )
                     if scale_in is not None:
                         if bstate.basket is not None and bstate.basket.closed:
                             bstate.basket = None
                             bstate.armed = False
-                        if (
-                            _schedule_matches(spec, state, day)
-                            and bar_idx >= entry_from
-                            and (tod_minutes is None or bar_minutes >= tod_minutes)
-                        ):
+                        if in_window:
                             _manage_basket(spec, state, bview, bstate, dte_fn,
                                            session_skips, bar_hhmm)
+                    elif scanning and in_window:
+                        # ---- FX.2 continuous scanning (episode/armed) ----
+                        first_window_bar = not scan_window_seen
+                        scan_window_seen = True
+                        if has_conditions:
+                            passes = all_conditions_pass(bview, spec.entry.conditions)
+                            if passes and not scan_cond_prev and not scan_armed:
+                                scan_armed = True  # a fresh setup — one entry
+                                scan_armed_bar = bar_hhmm
+                            scan_cond_prev = passes
+                        elif not scan_armed and (first_window_bar or closed_this_bar):
+                            # condition-less: the position lifecycle is the
+                            # episode — arm at the window start and re-arm
+                            # when a position closes (cycling)
+                            scan_armed = True
+                            scan_armed_bar = bar_hhmm
+                        if scan_armed:
+                            open_count = sum(1 for p in state.positions if not p.closed)
+                            if open_count >= spec.entry.max_concurrent_positions:
+                                _count_skip(state, session_skips, day, "max_concurrent")
+                                scan_armed = False  # consumed — never re-armed
+                            elif not bview.has_chain:
+                                # one-QUOTED-bar validity: the armed order
+                                # waits through quote-less minute bars for
+                                # the next bar carrying a real quote
+                                _count_skip(state, session_skips, day,
+                                            "no_quote_this_bar")
+                            else:
+                                equity_now = state.cash + sum(
+                                    _position_value(p, bview.close() or 0.0)
+                                    for p in state.positions
+                                    if not p.closed
+                                )
+                                before = len(state.positions)
+                                _try_entry(spec, state, bview, equity_now, dte_fn,
+                                           session_skips, skip_conditions=True)
+                                if (len(state.positions) > before
+                                        and scan_armed_bar is not None
+                                        and scan_armed_bar != bar_hhmm):
+                                    # disclose the gap: signal bar → fill bar
+                                    state.trades[-1].detail += (
+                                        f" · armed {scan_armed_bar}")
+                                scan_armed = False  # consumed fill-or-skip
+                                scan_armed_bar = None
                     elif (
-                        not opened_this_session
-                        and _schedule_matches(spec, state, day)
-                        and bar_idx >= entry_from
-                        and (tod_minutes is None or bar_minutes >= tod_minutes)
+                        not scanning
+                        and not opened_this_session
+                        and in_window
                     ):
                         equity_now = state.cash + sum(
                             _position_value(p, bview.close() or 0.0)
@@ -1296,6 +1391,7 @@ def run_engine(
     result.fills_unknown_liquidity = state.fills_unknown_liquidity
     result.fill_sources = state.fill_sources
     result.rung_fills = state.rung_fills
+    result.skip_reasons = state.skip_counts
     if session_resolutions:
         mix: dict[str, int] = {}
         for _, res in session_resolutions:

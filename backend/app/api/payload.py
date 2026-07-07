@@ -629,6 +629,8 @@ def build_run_payload(
         "resolutionMode": result.resolution_mode,
         "resolutionMix": result.resolution_mix or None,
         "resolutionRuns": result.resolution_runs or None,
+        # FX.2: skipped-entry distribution (additive; None on runs without)
+        "skipReasons": result.skip_reasons or None,
         "sessionSplit": report.session_split.model_dump() if report.session_split else None,
         "ladderDepth": _ladder_depth_block(report),
         "greeksSeries": {

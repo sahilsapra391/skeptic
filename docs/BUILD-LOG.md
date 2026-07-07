@@ -1229,3 +1229,24 @@ longer frozen per-process (map TTL governs; engine snapshots per run);
 added; (7) results surface now shows the per-session resolution line when
 a run carries a mix (guardrail #6; hidden on all existing runs, verified);
 (8) seconds-alignment guard. 336 tests green after fixes.
+
+## 2026-07-07 — ENGINE-V4 FX.2: continuous opportunity scanning
+
+spec v4 `entry.intraday_scan every_setup` (absent ≡ once_per_session,
+bit-identical; refuses daily clock + scale_in). Owner decisions baked:
+episodes not bursts (false→true arms ONE entry; cap-hit consumes, never
+queues); re-entry after intraday exits; condition-less strategies cycle on
+the position lifecycle (close = re-arm); ARMED orders fill at the next
+quoted bar's real NBBO even if the signal faded (one-quoted-bar validity,
+gates apply, episode consumed fill-or-skip, both bars in the trade detail,
+die at close_at_time/session end). Every skip counted →
+RunResult.skip_reasons + payload skipReasons (log stays deduped);
+no_quote_this_bar distinct from no_chain_data. Loop refactor keeps the
+once_per_session path byte-identical; closed-this-bar detection is
+event-based (never O(positions) per bar — OOM guard). Honest disclosure:
+scanning edges live at 5-min stamp granularity today (FX.1 indicator
+parity); minute-level triggers arrive with FX.3. 347 tests (+11
+hand-computed: persistent=1 entry, refire=2, cap consumed, PT re-entry
++53.70, armed fade fill at 3.025 w/ both bars disclosed, armed dies at
+flat, unconditional cycle 2.025→PT→1.425, bit-identity, validators,
+schema parity).
