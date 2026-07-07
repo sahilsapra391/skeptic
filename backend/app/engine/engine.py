@@ -228,6 +228,14 @@ class BarView:
     def hv_30d(self) -> float | None:
         return self._prev.hv_30d()
 
+    # F4: surface signals are EOD fits — bounded at the previous session
+    # at intraday bars, like IVX (today's fit doesn't exist at 10:15)
+    def skew_25d(self) -> float | None:
+        return self._prev.skew_25d()
+
+    def term_structure_slope(self) -> float | None:
+        return self._prev.term_structure_slope()
+
     def intraday_closes_upto(self) -> list[float]:
         # AT MOST the trailing lookback window. Copying the WHOLE prefix
         # here was O(bars²) across a run — a full-history 5-min backtest

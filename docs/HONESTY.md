@@ -540,3 +540,47 @@ intelligence lives in the parser's QUESTIONS, never in silent defaults:
   an intraday spec (clock 5min, DTE band 0–2, the intraday slice) instead
   of blocking the run — the minute engine milestone it was waiting on has
   shipped (FX.1–FX.4).
+
+## F4 (ENGINE-V4): vol-surface signals — derive once, never at run time
+
+Two spec-v5 indicators read the fitted IVS surface (2007+), through a
+derived artifact rather than live surface reads:
+
+- **`skew_25d`** — IV(25Δ put) − IV(25Δ call) at the 30d tenor, VOL
+  POINTS. 25Δ is linearly interpolated in |delta| between the bracketing
+  grid rows, calls and puts separately. Positive = puts rich.
+- **`term_structure_slope`** — ATM IV(90d) − ATM IV(30d), vol points,
+  from each tenor's exact ATM row (OTM% = 0). Negative = inverted.
+
+Conventions are FIXED market standards (owner decision 2026-07-07): the
+vocabulary maps to one unambiguous meaning; other tenors/deltas are not
+parameterizable on spec — the parser asks. A raw `iv_surface_point`
+accessor was considered and DEFERRED for its own design pass: it reopens
+exactly that parameterization and would put surface reads in the run
+path. "Variance risk premium" phrasing is an alias onto the existing
+`hv_iv_spread_30d` (the same IV-minus-realized formula) — one
+implementation per formula, because duplicates drift and a drift here is
+a silent inconsistency in the product's own numbers.
+
+Honesty rules the numbers depend on:
+
+- **Derive once, nightly.** `collector/derive_ivs_signals.py` walks new
+  surface sessions past a watermark and appends one row per session to
+  `reference/derived/ivs_signals/ticker={T}.parquet`. The MATH lives in
+  the backend (`app/data/ivs_signals.py`, imported by the collector) —
+  one implementation, fixture-tested. Runs read the artifact O(1); no
+  surface reads in the run path (post-OOM rule). New sessions flow in on
+  the next collector pass — no redeploy (self-improvement thesis).
+- **Fail closed at the grid edge.** A session whose surface lacks the
+  tenor or the bracketing deltas derives NOTHING for that signal — never
+  extrapolated, never interpolated across tenors. Missing rows make the
+  condition unevaluable (False) that day, exactly like a thin IVX rank.
+- **EOD fits obey the intraday boundary.** At intraday bars both signals
+  read the PREVIOUS session's surface — today's fit doesn't exist at
+  10:15 (guardrail #2), same rule as IVX/HV.
+- **Vol points, stored once.** The artifact stores ×100 values; the
+  condition compares them DIRECTLY ("skew above 5" → 5). A re-×100 here
+  is the drift class the derive-once design kills; a fixture pins it.
+- **Coverage is disclosed per signal.** The Observatory shows the derived
+  window with separate skew/term session counts — a session can carry one
+  signal and honestly lack the other (guardrail #6).

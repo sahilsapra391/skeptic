@@ -1401,3 +1401,84 @@ max_concurrent/max_vega pass through, comment/HONESTY claims corrected;
 EVAL (30 cases): 20/20 clear + 10/10 ambiguous — ACCEPTED, perfect score
 (the scoping resolved the case-25 nondeterminism). PR held for the owner
 re-ACCEPT + verbatim golden swap.
+
+## F4 (ENGINE-V4) — vol-surface signals: 25Δ skew + 30v90 term slope (2026-07-07)
+
+WHAT: spec v5 — two IVS-derived indicators usable as entry/exit condition
+filters at any clock: skew_25d (IV 25Δput − 25Δcall @30d tenor, VOL
+POINTS, linear delta interpolation between bracketing grid rows) and
+term_structure_slope (ATM IV 90d − 30d from exact OTM%=0 rows). Owner
+decisions: FIXED market-standard tenors (no parameterization on spec —
+exotic tenors later as explicit named vocabulary if a real strategy needs
+them); iv_surface_point DEFERRED to its own design pass (disclosed, not
+dropped); "variance risk premium" phrasing is a parser ALIAS onto
+hv_iv_spread_30d — one implementation per formula, duplicates drift.
+HOW: derive-once artifact reference/derived/ivs_signals/ticker={T}.parquet
+built nightly by collector/derive_ivs_signals.py (incremental watermark
+state/ivs_signals_derive.json; the MATH is imported from
+app/data/ivs_signals.py — single source, fixture-tested; new surface
+sessions flow in with no redeploy). Engine: MarketStore/MarketView
+bisect accessors (PIT ≤ as_of), BarView reads the PREVIOUS session at
+intraday bars (EOD-fit rule), conditions compare vol points DIRECTLY
+(never re-×100 — pinned against the ivx_level ×100 convention).
+Fail-closed derivation: missing tenor/bracket → None per signal, never
+extrapolated or cross-tenor. spec_version 5 gating both ways (v5 vocab
+on v4 spec is loud; probe bumped to 6), JSON schema updated, TS
+computeSpecVersion mirror. Parser: explicit skew/term phrasing, vague
+"skew is steep" asks for the threshold, unsupported tenors/deltas ask,
+VRP alias pinned NOT to lift the version. Coverage + Observatory: per-
+ticker derived window with per-signal session counts (a session can
+carry skew and honestly lack term). Eval: cases 31-35.
+TESTS: 31 new (415 total green) — hand-computed interpolation (6.0 vol
+points exact; 1/3-weight rounding 5.3333), exact-node, both unbracketed
+directions, cross-tenor refusal, ATM non-pollution, per-signal absence,
+loader NaN handling, PIT boundedness both accessors, BarView prev-day,
+×100-bug canary, unavailable-is-False, v5 gating + schema parity,
+version detection incl. alias, condition-gated e2e (entry fires only on
+the qualifying session).
+LIVE EVAL (35 cases): 23/23 clear + 12/12 ambiguous — ACCEPTED, perfect
+score. Case 34 asks the exact threshold question ("What threshold defines
+'really steep' for the 25-delta skew?"); case 35 refuses the 10Δ/60d remap
+and offers the supported signals; case 33 pins the VRP alias at v2.
+REVIEW (independent agent, clean worktree of the commit): 0 BLOCKER +
+3 MAJOR + 3 MINOR + 3 NIT, must-fixes ALL FIXED — (1) MAJOR: the
+collector watermark advanced past never-derived sessions (transient R2
+read failure = permanent hole; drip-backfilled OLD sessions below the
+watermark never derived) → REDESIGNED to set-difference incrementality:
+each run derives exactly the listed sessions absent from the artifact,
+no state file at all; unreadable sessions write no row and retry next
+night, loudly logged (holes heal by construction — self-improvement
+thesis); (2) MAJOR: the v5 gate scanned only entry/exit conditions — a
+v3 LADDER smuggled skew_25d rungs/rearm past all three mirrors
+(spec.py validator, parser _required_spec_version, spec.ts) → all three
+fold in scale_in.rungs + rearm, pinned both ways (loud at v3, valid at
+v5, parser returns 5); (3) MAJOR: derive_signal_row trusted vendor
+dtypes — a string-typed surface would derive an all-None row silently →
+pd.to_numeric coercion (same rule as load_ivs_surface) + unrecognized-
+shape early return, pinned (string-typed fixture derives identically);
+(4) chains.py loads the F4 series in its OWN try/except (a corrupt skew
+artifact can no longer zero IVX/HV for a v2 strategy); (5) Observatory
+panel gates on any-ticker, not SPY-only (guardrail #6 mid-backfill);
+(6) gated-e2e docstring states the real carry-forward semantics;
+(7) schema title bumped v5; (8) jsonschema added to dev deps — the four
+schema-parity tests (incl. v5) now RUN in CI instead of skipping;
+(9) stable interpolation sort comment. Real-lake acceptance: SPY derived
+4,905/4,905 sessions with skew present on every one.
+OWNER GATE FULFILLED (2026-07-07, same session): golden cases 27/28/36
+are now the owner's VERBATIM prompts (typos preserved — the set protects
+real phrasing, not tidy archetypes). 27 = the 0DTE put seller (cycling +
+finest + flat 15:45 + stop 100% of credit) → parses to spec exactly.
+28 = the 1DTE QQQ cycler; "No holding overnight" has no stated time, so
+the case is kind spec_or_questions (owner-blessed dual outcome): a spec
+with any end-of-session close_at_time passes, and so does asking the
+exact-time question — dropping the constraint silently fails. Grader
+gained the dual kind + close_at_time list matching. 36 = the personal
+RSI scale-in ladder as typed ("by 10 more") → must ask (unstated ruin
+cap). First run on the swapped set exposed a REAL pre-existing flake:
+case 29 (daily, no tenor, no cadence) fabricated frequency "daily" +
+the 45-DTE convention ~1-in-5 runs — the ONE ALLOWED CONVENTION was
+over-applying to bare profit targets. Prompt tightened: the convention
+applies ONLY when a DTE number appears in the exit itself; cadence rule
+gained the case-29 worked negative example. FINAL EVAL (36 cases):
+23/23 clear + 13/13 ambiguous ACCEPTED; case-29 probe 5/5 asks (was
+4/5). All three verbatim goldens pass.

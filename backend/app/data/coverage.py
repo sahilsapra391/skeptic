@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.data import chains, r2, resolution
+from app.data import chains, ivs_signals, r2, resolution
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
@@ -179,6 +179,25 @@ def _ivol_year_range(keys: list[str]) -> dict[str, Any] | None:
     years = sorted({m.group(1) for k in keys if (m := re.search(r"year=(\d{4})", k))})
     return {"years": len(years), "first": years[0], "last": years[-1]} if years else None
 
+
+
+def _ivs_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
+    """Window of the derived vol-surface signal artifact (F4) — guardrail
+    #6: any surface offering skew/term filters shows the window they were
+    derived on, per signal (a session can carry one and not the other)."""
+    if df is None or df.empty or "date" not in df.columns:
+        return None
+    dates = df["date"].astype(str)
+    def _n(col: str) -> int:
+        return int(df[col].notna().sum()) if col in df.columns else 0
+    return {
+        "sessions": int(len(df)),
+        "first": str(dates.min()),
+        "last": str(dates.max()),
+        "skew_sessions": _n("skew_25d"),
+        "term_sessions": _n("term_slope_30_90"),
+    }
+
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
@@ -214,6 +233,12 @@ def build_coverage() -> dict[str, Any]:
             (t, name): pool.submit(r2.list_keys, s3, f"reference/ivol/{name}/ticker={t}/")
             for t in TICKERS
             for name in ("ivx", "hv")
+        }
+        ivs_signals_f = {
+            t: pool.submit(
+                r2.get_parquet, s3, ivs_signals.SIGNALS_KEY.format(ticker=t)
+            )
+            for t in TICKERS
         }
         quality_f = pool.submit(r2.get_json, s3, "state/quality_flags.json", {})
         priorities_f = pool.submit(r2.get_json, s3, "state/collection_priorities.json", None)
@@ -255,6 +280,9 @@ def build_coverage() -> dict[str, Any]:
         ivol_analytics = {
             t: {name: _ivol_year_range(ivol_f[(t, name)].result()) for name in ("ivx", "hv")}
             for t in TICKERS
+        }
+        ivs_signal_cov = {
+            t: _ivs_signals_range(ivs_signals_f[t].result()) for t in TICKERS
         }
         chain_quality = {t: chain_quality_f[t].result() for t in TICKERS}
         resolution_mix = {t: resolution_f[t].result() for t in TICKERS}
@@ -298,6 +326,7 @@ def build_coverage() -> dict[str, Any]:
         "underlying": underlying,
         "chain_quality": chain_quality,
         "ivol_analytics": ivol_analytics,
+        "ivs_signals": ivs_signal_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
         # D3d: the weekly demand ranking (build_priorities.py) — what the

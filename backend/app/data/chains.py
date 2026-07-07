@@ -26,7 +26,7 @@ from typing import Any, cast
 
 import pandas as pd
 
-from app.data import greeks, ivol_analytics, r2
+from app.data import greeks, ivol_analytics, ivs_signals, r2
 from app.engine.market import MarketStore
 from app.engine.types import ContractKey, Quote
 
@@ -249,6 +249,12 @@ def _build_market_store(ticker: str) -> MarketStore:
         hv_30d = ivol_analytics.load_hv_30d(s3, ticker)
     except Exception:
         ivx_30d, hv_30d = {}, {}
+    # F4 series loads in its OWN guard: a corrupt skew artifact must not
+    # zero the IVX/HV a v2 strategy actually asked for (review finding)
+    try:
+        skew_25d, term_slope = ivs_signals.load_ivs_signals(r2.r2_client(), ticker)
+    except Exception:
+        skew_25d, term_slope = {}, {}
 
     return MarketStore(
         ticker=ticker,
@@ -264,4 +270,8 @@ def _build_market_store(ticker: str) -> MarketStore:
         ivx_30d=ivx_30d,
         hv_dates=sorted(hv_30d),
         hv_30d=hv_30d,
+        skew_dates=sorted(skew_25d),
+        skew_25d=skew_25d,
+        term_dates=sorted(term_slope),
+        term_slope=term_slope,
     )

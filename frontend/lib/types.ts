@@ -383,6 +383,20 @@ export interface CoveragePayload {
       hv: { years: number; first: string; last: string } | null;
     }
   >;
+  /** F4 (ENGINE-V4): derived vol-surface signal artifact window (skew_25d /
+   * term_structure_slope, vol points) — null per ticker until the nightly
+   * derivation has built it; per-signal counts because a session can carry
+   * one signal and honestly lack the other. */
+  ivs_signals?: Record<
+    Ticker,
+    {
+      sessions: number;
+      first: string;
+      last: string;
+      skew_sessions: number;
+      term_sessions: number;
+    } | null
+  >;
   /** D3d: weekly demand ranking (build_priorities.py) — the Observatory's
    * "collection wants" line; null until the first weekly pass writes it */
   collection_priorities?: {

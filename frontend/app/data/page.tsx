@@ -406,6 +406,38 @@ export default function DataPage() {
         </div>
       )}
 
+      {(coverage.ivs_signals?.SPY ||
+        coverage.ivs_signals?.QQQ ||
+        coverage.ivs_signals?.IWM) && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-1")}>
+            VOL-SURFACE SIGNALS — 25Δ SKEW / 30v90 TERM SLOPE, DERIVED NIGHTLY
+          </div>
+          <div className="mb-3 text-[11.5px] leading-[1.5] text-ink-4">
+            derived once per session from the fitted IVS surface; sessions
+            missing a tenor or delta bracket carry no value for that signal —
+            filters read them as unavailable, never interpolated
+          </div>
+          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const sig = coverage.ivs_signals?.[t];
+              if (!sig) return null;
+              return (
+                <Lane
+                  key={t}
+                  label={`${t} surface`}
+                  first={sig.first}
+                  last={sig.last}
+                  t0="2007-01-01"
+                  t1={today}
+                  note={`skew ${sig.skew_sessions.toLocaleString()} · term ${sig.term_sessions.toLocaleString()} of ${sig.sessions.toLocaleString()} sessions`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {(coverage.resolution_mix?.SPY ||
         coverage.resolution_mix?.QQQ ||
         coverage.resolution_mix?.IWM) && (

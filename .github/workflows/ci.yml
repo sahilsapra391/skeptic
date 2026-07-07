@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync
-      - run: uv run python -c "import ledger"
+      - run: uv run python -c "import ledger, derive_ivs_signals"
 
   frontend:
     runs-on: ubuntu-latest

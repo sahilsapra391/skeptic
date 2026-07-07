@@ -1,5 +1,5 @@
 {
- "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype).",
+ "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype). F4 adds cases 31-35 (vol-surface vocabulary: skew_25d / term_structure_slope in vol points, the VRP alias onto hv_iv_spread_30d, and the vague-threshold / unsupported-tenor asks). Owner gate fulfilled 2026-07-07: cases 27/28/36 are the owner's VERBATIM prompts (typos preserved — that is the point: the golden set protects the owner's real phrasing, not tidy archetypes); 28 is kind spec_or_questions (owner-blessed dual outcome).",
  "cases": [
   {
    "case": 1,
@@ -762,9 +762,9 @@
   },
   {
    "case": 27,
-   "text": "Sell the 0DTE ATM put on SPY, 25% profit target, force-flat at 15:45, take every setup all day, and run it on the finest data available.",
+   "text": "Sell 0 DTE SPY puts at the money, take profit at 25% and just keep selling new ones all day whenever the last one closes, dont hold anything past 3:45 just close everything by then. Use the best data you have, minute level wherever possible. Stop loss 100% of the credit.",
    "kind": "spec",
-   "comment": "FX.5 golden archetype (acceptance-run strategy; owner swaps in verbatim personal phrasings at the re-ACCEPT gate): full v4 — every_setup + finest + force-flat together.",
+   "comment": "OWNER VERBATIM golden case (gate commitment, replaces the archetype): full v4 — unconditional lifecycle cycling + finest resolution (explicit 'best data / minute level' phrasing) + force-flat 15:45 + PT 25 + stop 100% of credit.",
    "expect": {
     "spec_version": 4,
     "clock": "5min",
@@ -784,6 +784,7 @@
     "resolution": "finest",
     "exit": {
      "profit_target_pct": 25,
+     "stop_loss_pct": 100,
      "close_at_time": "15:45"
     },
     "schedule": {
@@ -796,9 +797,9 @@
   },
   {
    "case": 28,
-   "text": "Buy a 1DTE ATM call on QQQ, sell it at 20% profit, and get right back in after each exit — keep cycling it through the day. Stop loss 50%.",
-   "kind": "spec",
-   "comment": "FX.5 cycling case: condition-less re-entry phrasing ('get right back in after each exit') → every_setup (the position lifecycle is the episode).",
+   "text": "Buy 1 DTE QQQ calls at the money, sell at 20% profit and get back in right after, keep doing this the whole day. If it goes against me 50% then exit. No holding overnight obviously.",
+   "kind": "spec_or_questions",
+   "comment": "OWNER VERBATIM golden case (gate commitment, replaces the archetype): condition-less cycling long. 'No holding overnight' on 1DTE should map to a force-flat (any end-of-session time is faithful — the list); the TIME is unstated, so ASKING is owner-blessed as equally correct. NO resolution field — never asked for.",
    "expect": {
     "spec_version": 4,
     "clock": "5min",
@@ -817,7 +818,13 @@
     "intraday_scan": "every_setup",
     "exit": {
      "profit_target_pct": 20,
-     "stop_loss_pct": 50
+     "stop_loss_pct": 50,
+     "close_at_time": [
+      "15:45",
+      "15:50",
+      "15:55",
+      "16:00"
+     ]
     },
     "schedule": {
      "frequency": [
@@ -876,6 +883,149 @@
      "time_exit_dte": 21
     }
    }
+  },
+  {
+   "case": 31,
+   "text": "Sell a 30-delta put on SPY every Monday, but only when the 25-delta skew is above 5. Close at 50% profit or 21 DTE.",
+   "kind": "spec",
+   "comment": "F4: the skew filter in vol points — 'skew above 5' → skew_25d value 5 (never ×100), spec_version 5 server-computed.",
+   "expect": {
+    "spec_version": 5,
+    "clock": "daily",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ],
+     "day_of_week": "monday"
+    },
+    "conditions": [
+     {
+      "indicator": "skew_25d",
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 5
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 32,
+   "text": "Whenever the vol term structure inverts, buy a 45 DTE ATM put on QQQ. Sell at 40% profit or get out at 21 DTE.",
+   "kind": "spec",
+   "comment": "F4: 'term structure inverts' → term_structure_slope < 0 (ATM IV 90d − 30d, vol points); plain signal_only daily strategy, no intraday fabrication.",
+   "expect": {
+    "spec_version": 5,
+    "clock": "daily",
+    "ticker": "QQQ",
+    "structure": "long_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "term_structure_slope",
+      "operator": [
+       "<",
+       "<=",
+       "below"
+      ],
+      "value": 0
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 40,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 33,
+   "text": "Sell a 25-delta put on SPY weekly when the variance risk premium is above 4 points. Close at 50% profit or 21 DTE.",
+   "kind": "spec",
+   "comment": "F4 owner decision: VRP is an ALIAS onto hv_iv_spread_30d (the same IV-minus-realized formula) — never a fabricated separate indicator, and NOT v5 vocabulary (stays spec_version 2).",
+   "expect": {
+    "spec_version": 2,
+    "clock": "daily",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.25
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "hv_iv_spread_30d",
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 4
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 34,
+   "text": "Sell a put credit spread on SPY when skew gets really steep. 50% profit target.",
+   "kind": "questions",
+   "comment": "F4: vague 'really steep' has NO threshold — the parser must ask (offering concrete vol-point values), never pick one. Spread deltas/width are also unstated."
+  },
+  {
+   "case": 35,
+   "text": "Buy a 45 DTE ATM put on QQQ when the 10-delta skew on 60-day options is above 8. Sell at 30% profit or 21 DTE.",
+   "kind": "questions",
+   "comment": "F4 owner decision: only 25Δ@30d skew and the 30v90 slope exist — other tenors/deltas must ASK (offering the two supported signals), never silently remap to skew_25d."
+  },
+  {
+   "case": 36,
+   "text": "I want you to buy 0 DTE SPY calls whos strike price is the same as the SPY current price so no difference and the entry for this position is that if RSI (14) is below 30 at any time during the day. At RSI 30 buy just 2 contracts and if RSI goes down to 25 then buy 3 more if RSI goes to 20 after that, then buy 5 contracts more, if it goes down to 15 then by 10 more keep buying new contracts until the reversal starts and then stop. The exit it should be a 40% profit. Ask me if you have any questions don't assume",
+   "kind": "questions",
+   "comment": "OWNER VERBATIM golden case (gate commitment, new): the personal RSI scale-in ladder as actually typed ('by 10 more' typo included). Correct behavior = clarifying questions — the ruin cap (max_total_contracts) is UNSTATED ('keep buying... until the reversal' is open-ended past the 4 named rungs); reversal semantics for stop_adding_on and settlement-vs-force-flat are good asks too. On a post-answer spec, resolution must stay ABSENT — finest was never asked for."
   }
  ]
 }
