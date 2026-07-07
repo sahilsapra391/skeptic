@@ -62,6 +62,8 @@ class MarketViewLike(Protocol):
     @property
     def as_of(self) -> date: ...
     @property
+    def is_indicator_stamp(self) -> bool: ...
+    @property
     def has_chain(self) -> bool: ...
     @property
     def fill_source(self) -> str: ...
@@ -110,6 +112,11 @@ class MarketView:
     @property
     def as_of(self) -> date:
         return self._as_of
+
+    @property
+    def is_indicator_stamp(self) -> bool:
+        # daily bars ARE the daily series' own samples
+        return True
 
     @property
     def fill_source(self) -> str:

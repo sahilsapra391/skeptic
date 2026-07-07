@@ -68,6 +68,15 @@ class Position:
     scale_in: bool = False
     fired_rungs: set[int] = field(default_factory=set)  # rung indices already filled
     basket_cost: float = 0.0  # total premium $ paid across adds (excl commission)
+    # FX.3: a LATCHED exit — the trigger was OBSERVED (e.g. a condition
+    # touch at a quote-less minute bar) and the close must complete at the
+    # first quoted bar that can fill it, without re-evaluation: a seen
+    # touch counts (worse-path rule; fade-cancel would be optimism). The
+    # trigger bar is disclosed on the CLOSE event. finest-mode only.
+    exit_latched: str | None = None  # the exit reason to complete
+    latched_bar: str | None = None  # HH:MM of the observed trigger
+    latched_day: date | None = None  # trigger session (dated disclosure
+    # when the fill lands on a LATER session — overnight/gap carry)
 
     @property
     def is_credit(self) -> bool:
