@@ -1344,3 +1344,60 @@ temporal ordering the data doesn't guarantee; (7) dead-assertion
 precedence fixed; (8) sub-half-percent fold shares no longer render "0%
 minute"; (9) retail voice gained the fold caveat. Stats-bundle contract
 test updated (+resolutionMix, quotable by grounded Q&A). 383 tests.
+
+## 2026-07-07 — ENGINE-V4 FX.5: the parser unlock (owner re-ACCEPT gate)
+
+spec v4 vocabulary is now parseable end-to-end. Shipped:
+- parse.py: intraday_scan mapping (explicit continuous-scanning phrasing
+  only; condition-less cycling is COMPLETE as written — the lifecycle is
+  the setup, never ask what defines one; cadence is never a required
+  question); resolution "finest" from EXPLICIT phrasing only (owner: a
+  data policy is never inferred from strategy shape — reproducibility
+  over helpfulness); the exit-less 0DTE seller asks OFFERING force-flat/
+  PT/settlement (suggest never default); entry time never required;
+  _required_spec_version → 4.
+- Eval 22 → 28 cases (+ every_setup, once-contrast, finest, exit-less-
+  0DTE ask, golden archetype, condition-less cycling); grader checks
+  intraday_scan/resolution incl. fabrication; hermetic v4 recompute
+  tests. LIVE EVAL (deepseek-v4-pro): first run REJECTED 14/19 (prompt
+  under-specified condition-less cycling; over-asked entry timing) →
+  prompt tightened → ACCEPTED 18/19 clear + 9/9 ambiguous (1 miss =
+  case 25 asked cadence once, nondeterminism within the 1-miss bar).
+  "dips below" as crosses_below accepted as correct semantics (case 23
+  expectation broadened).
+- FRONTEND 0DTE UNLOCK: the dial path's throw + run-block + warn banner
+  ("refused until the minute engine milestone" — SHIPPED in FX.1-4) are
+  lifted: DTE 0 emits an intraday spec (clock 5min, DTE band 0-2);
+  informative note replaces the refusal. Spec screen gains SCANNING and
+  RESOLUTION dials (intraday only).
+- ROUND-TRIP FIX (closes the D5d follow-up — "negligence-by-adjacency"
+  to leave it): draftToSpec(draft, base) preserves parser-only vocabulary
+  through dial edits (scale_in + conditions[], intraday_scan, resolution,
+  close_at_time, time_of_day, clock); exit label grammar learned
+  "flat HH:MM"; client mirrors the server version computation (server
+  stays authority); spec_to_draft surfaces intradayScan/resolution +
+  force-flat in the exit display.
+GATE: PR held OPEN for owner re-ACCEPT; owner swaps in verbatim personal
+0DTE prompts as golden cases at the gate.
+REVIEW (independent agent, same session): 1 BLOCKER + 3 MAJOR + 4 MINOR +
+NITs, ALL FIXED — (1) BLOCKER: the new dials' OFF state (null) couldn't
+override the parsed base through ?? — flipping SCANNING to "once/session"
+would have silently RUN every_setup while the confirmed screen showed the
+opposite (the PR's own corruption class); fixed with undefined-vs-null
+semantics; (2) prompt self-contradiction on the cadence ask (explained
+the case-25 nondeterministic miss) — scoped: intraday reads a session
+cycle without asking, daily still asks (pinned, new case 29); (3) exit
+edits no longer silently re-attach close_at_time — it is LABEL-OWNED
+("flat 15:45" round-trips; replacement removes it visibly); label-
+inexpressible exit fields (delta stops/theta/exit conditions) pass
+through from base, matching verbatim runs; (4) preservation coverage
+honestly widened: ALL entry conditions survive an unedited trigger
+(multi-condition + timeframes — the case-16 RSI+VWAP flagship no longer
+loses its VWAP filter to a window pick), edited triggers keep timeframe,
+max_concurrent/max_vega pass through, comment/HONESTY claims corrected;
+(5) long-tenor "every time" hijack closed (pinned, new case 30);
+(6) stale 0DTE-refusal copy scrubbed; (7) 0DTE window estimates price the
+5-min clock; (8) 0DTE band aligned {0,0,1} both ingresses. FINAL LIVE
+EVAL (30 cases): 20/20 clear + 10/10 ambiguous — ACCEPTED, perfect score
+(the scoping resolved the case-25 nondeterminism). PR held for the owner
+re-ACCEPT + verbatim golden swap.

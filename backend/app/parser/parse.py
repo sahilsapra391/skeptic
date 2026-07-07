@@ -36,6 +36,10 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     schedule = entry.get("schedule") or {}
     expiration = position.get("expiration_selection") or {}
     backtest = raw_spec.get("backtest") or {}
+    # v4 (FX.1/FX.2): per-session resolution + continuous scanning
+    if (backtest.get("resolution") is not None
+            or entry.get("intraday_scan") is not None):
+        return 4
     # v3 (D5): the scale-in ladder and the session force-flat
     if entry.get("scale_in") is not None or exit_rules.get("close_at_time") is not None:
         return 3
@@ -117,6 +121,10 @@ THE SPEC (all fields required unless noted):
                                      |"crosses_above"|"crosses_below",
                            "value": <number>}],
            "max_concurrent_positions": <1-10>,
+           "intraday_scan": "every_setup" (OPTIONAL, clock "5min" only — continuous
+                            opportunity scanning: one entry per signal episode,
+                            re-entry after intraday exits; omit for the default
+                            one-entry-per-session behavior; NEVER with scale_in),
            "scale_in": {  // OPTIONAL — a scale-in ladder (add size as a signal deepens)
              "mode": "signal_ladder", "basket": true,
              "rungs": [{<a condition: indicator/operator/value/period/timeframe>,
@@ -135,7 +143,9 @@ THE SPEC (all fields required unless noted):
  "sizing": {"method": "fixed_contracts", "value": 1},
  "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
  "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42,
-              "clock": "daily" (default) | "5min"}
+              "clock": "daily" (default) | "5min",
+              "resolution": "finest" (OPTIONAL, clock "5min" only — per-session
+                            finest-honest bar grid; ONLY on explicit phrasing)}
 }
 
 CONVENTIONS:
@@ -239,12 +249,43 @@ CONVENTIONS:
     * sizing stays fixed_contracts (rung counts are absolute) — never risk_pct with a ladder.
 - "flatten by 3:45" / "close everything by 3:45pm" / "no overnight, out by 15:45" (intraday)
   → exit.close_at_time "15:45" (ET, clock "5min"). It is a COMPLETE exit on its own.
+- CONTINUOUS SCANNING — INTRADAY strategies only (0-2 DTE, intraday indicators, or
+  session language like "all day"/"all session"/"through the day"): phrasing like
+  "take every setup", "re-enter after I take profit", "keep selling all day",
+  "trade it all day" → entry.intraday_scan "every_setup" (clock "5min"). One entry
+  per SIGNAL EPISODE — the engine handles episode/re-entry mechanics; do NOT emit a
+  ladder for this. Condition-less continuous scanning ("take every setup all day",
+  "keep selling", "get right back in after each exit" with NO stated trigger) is
+  COMPLETE as written: emit intraday_scan "every_setup" with "conditions": [] and
+  frequency "daily" — the position LIFECYCLE is the setup (the engine re-enters
+  after each exit); NEVER ask what defines a setup. On a LONGER-TENOR strategy
+  ("every time RSI dips below 30, buy a 45 DTE call") the same words are a plain
+  signal_only DAILY strategy — do NOT emit intraday_scan or clock "5min" for them.
+  "once a day" / "each morning" / one entry per session phrasing → OMIT the field
+  entirely (the default). FOR INTRADAY STRATEGIES (0-2 DTE / 5-min), a session
+  cycle is the natural reading: when no cadence is stated use frequency "daily"
+  WITHOUT asking — do not ask "how often should we enter" there (the daily-clock
+  rule below still applies to everything else). NEVER combine intraday_scan with
+  scale_in — a ladder is its own multi-entry semantic (if the user asks for both,
+  ASK which they mean).
+- RESOLUTION ("use the finest data", "minute-level where you have it", "best/highest
+  resolution available", "minute resolution") → backtest.resolution "finest" (clock
+  "5min"). This is a DATA POLICY, never inferred from strategy shape: a plain 0DTE
+  request WITHOUT this phrasing gets NO resolution field — never guess it.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
-  spec_version: always emit 1 — the server recomputes it (a scale_in ladder or a
-  close_at_time lifts it to 3; v2 vocabulary lifts it to 2).
+  spec_version: always emit 1 — the server recomputes it (intraday_scan or
+  backtest.resolution lifts it to 4; a scale_in ladder or a close_at_time lifts it
+  to 3; v2 vocabulary lifts it to 2).
 
 WHEN TO ASK (result "questions") — the tool's identity depends on this:
 - ZERO exit rules stated → ask. No strike selection (delta/offset/ATM) stated → ask.
+  For an exit-less 0DTE SELLING strategy (short premium, same-day expiry), the ask
+  must OFFER the concrete choices: a force-flat time (e.g. "flatten by 15:45"), a
+  profit target, or holding to settlement (0DTE settles at the close: ITM = assignment,
+  OTM = expires worthless). Suggest — NEVER default one in. Entry TIME is never a
+  required question (0DTE included): without time_of_day the entry window is simply
+  the whole session — only ask about entry timing when the user's own words are
+  ambiguous about a time they stated.
 - Underlying missing or not one of SPY/QQQ/IWM → ask (offer the three).
 - Vague triggers ("when it dips", "when it looks oversold") → ask what defines them
   (offer concrete options like "drawdown_from_high_pct >= 2" or "rsi(14) < 30").
@@ -254,7 +295,9 @@ WHEN TO ASK (result "questions") — the tool's identity depends on this:
   profit) → ask; offer a profit target or time exit instead. Never guess.
 - A scale-in ladder with NO stated max-contracts cap → ask for the cap (offer a couple of
   concrete totals). The ladder is supported; the missing RUIN CAP is the only blocker.
-- No entry cadence AND no entry condition → ask.
+- No entry cadence AND no entry condition → ask — EXCEPT intraday strategies
+  (0-2 DTE / 5-min), where a session cycle (frequency "daily") is the natural
+  reading and is used without asking.
 Ask AT MOST 4 questions, each answerable in a word or two, most important first.
 Include 2-4 concrete "options" per question whenever sensible.
 
@@ -429,6 +472,8 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     if exit_rules.get("time_exit_dte") is not None:
         t = exit_rules["time_exit_dte"]
         parts.append("hold to expiry" if t == 0 else f"{t} DTE")
+    if exit_rules.get("close_at_time"):
+        parts.append(f"flat {exit_rules['close_at_time']}")
     if not parts and exit_rules.get("conditions"):
         parts.append("on exit signal")
 
@@ -479,6 +524,9 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         "sizeValue": sizing["value"],
         "capital": backtest.get("initial_capital", 25_000),
         "clock": backtest.get("clock", "daily"),
+        # FX.5 (v4 dials): surfaced so the pre-run screen shows and edits them
+        "intradayScan": spec["entry"].get("intraday_scan"),
+        "resolution": backtest.get("resolution"),
         "window": window,
         "exit": " · ".join(parts) if parts else None,
         "fromChart": False,

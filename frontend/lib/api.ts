@@ -109,9 +109,15 @@ export function windowToDates(draft: SpecDraft): { start: string | null; end: st
 export function startBacktest(
   draft: SpecDraft,
   parsedSpec?: Record<string, unknown> | null,
+  untouched = true,
 ): Promise<{ run_id: string; demo: boolean }> {
-  // an unedited parser spec runs verbatim — dial edits rebuild from the dials
-  const spec = { ...(parsedSpec ?? draftToSpec(draft)) } as Record<string, unknown>;
+  // an unedited parser spec runs verbatim — dial edits rebuild from the
+  // dials WITH the parsed spec as base, so parser-only vocabulary
+  // (ladders, intraday_scan, resolution, force-flat, time-of-day) is
+  // never silently dropped by an unrelated dial edit (FX.5)
+  const spec = {
+    ...(untouched && parsedSpec ? parsedSpec : draftToSpec(draft, parsedSpec)),
+  } as Record<string, unknown>;
   // cost settings apply to EVERY run — the edit in Settings is the edit here
   const { commission, slippage } = getSettings();
   spec.costs = {

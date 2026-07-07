@@ -43,7 +43,7 @@ export interface SpecDraft {
   structure: Structure;
   strikeDelta: number; // whole-number delta, 5..95 in steps of 5 (.05Δ steps)
   strikeLabel?: string | null; // non-delta selection from the parser ("ATM", "5% below spot")
-  dte: number; // 0..50 (0 = 0DTE, refused at run until the minute engine)
+  dte: number; // 0..50 (0 = 0DTE — runs on the 5-minute intraday engine)
   cadence: string; // e.g. "weekly · mon" (display; cadenceSel is the editable truth)
   size: string; // e.g. "1 contract" (display; sizeValue is the editable truth)
   exit: string | null; // null = parser must ask, never guess
@@ -63,6 +63,10 @@ export interface SpecDraft {
   sizeValue?: number;
   capital?: number;
   clock?: "daily" | "5min";
+  /** FX.5 (spec v4 dials): continuous scanning + per-session resolution.
+   * Unset = the defaults (once per session · 5-min grid). */
+  intradayScan?: "once_per_session" | "every_setup" | null;
+  resolution?: "5min" | "finest" | null;
 }
 
 /** /api/data/estimate — window options with real session counts and time

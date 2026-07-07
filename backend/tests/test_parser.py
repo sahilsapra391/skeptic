@@ -132,6 +132,17 @@ def test_required_spec_version_detects_v3() -> None:
     assert rsv({"exit": {"profit_target_pct": 50}}) == 1
 
 
+def test_required_spec_version_detects_v4() -> None:
+    """FX.5: intraday_scan or backtest.resolution lifts to 4 — including
+    when v3 vocabulary is ALSO present (highest wins)."""
+    rsv = parser_module._required_spec_version
+    assert rsv({"entry": {"intraday_scan": "every_setup"}}) == 4
+    assert rsv({"backtest": {"resolution": "finest"}}) == 4
+    assert rsv({"entry": {"intraday_scan": "every_setup"},
+                "exit": {"close_at_time": "15:45"}}) == 4
+    assert rsv({"backtest": {"resolution": "finest", "clock": "5min"}}) == 4
+
+
 def _ladder_spec_raw() -> dict:
     # what the LLM emits (spec_version 1, ATM on the leg) — the server
     # normalizes and recomputes the version

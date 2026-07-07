@@ -251,7 +251,7 @@ export default function NewAnalysisPage() {
     setError(null);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
-      const { run_id } = await startBacktest(draft, untouched ? parsedSpecRef.current : null);
+      const { run_id } = await startBacktest(draft, parsedSpecRef.current, untouched);
       setPhase("running");
       setRun(null);
       // self-scheduling poll: each tick AWAITS the prior response before
