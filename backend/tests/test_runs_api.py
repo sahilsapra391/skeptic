@@ -109,6 +109,7 @@ def test_ask_answers_from_stored_stats(
     assert "1 trade" in resp.json()["answer"]
     # the answerer received ONLY the computed stats bundle
     assert set(seen["stats"]) == {
-        "metrics", "filled", "skipped", "initial_capital", "final_equity", "honesty_report",
+        "metrics", "filled", "skipped", "initial_capital", "final_equity",
+        "honesty_report", "resolutionMix",  # FX.4: the mix is quotable
     }
     assert seen["stats"]["honesty_report"]["trust"]["label"] == "insufficient_evidence"

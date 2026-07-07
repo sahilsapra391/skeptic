@@ -161,6 +161,58 @@ def _pct(v: float | None, digits: int = 0) -> str:
     return "—" if v is None else f"{v * 100:.{digits}f}%"
 
 
+def _resolution_caveat(report: HonestyReport, retail: bool = False) -> str | None:
+    """The mixed-resolution disclosure (FX.4, owner decision 3) — required
+    whenever a run mixed bar resolutions. Every number comes from
+    report.resolution_split, so it is grounded by construction; it rides in
+    the caveats so it surfaces even when the verdict is withheld."""
+    rs = report.resolution_split
+    if rs is None or not rs.meaningful:
+        return None
+    minute, five = rs.minute, rs.five_min
+    if minute.sessions == 0 or five.sessions == 0:
+        return None
+    if retail:
+        line = (
+            f"This test used a minute-by-minute lens on {minute.sessions} "
+            f"days ({minute.first} → {minute.last}) and a 5-minute lens on "
+            f"{five.sessions} days — the finer-lens stretch is measured more "
+            "closely, so treat differences there with care"
+        )
+    else:
+        line = (
+            f"Mixed resolution: minute grid for {minute.sessions} sessions "
+            f"({minute.first} → {minute.last}), 5-minute for {five.sessions} "
+            f"sessions ({five.first} → {five.last}); intra-bar moves remain "
+            "unobserved at both"
+        )
+    if rs.note:
+        line += f". {rs.note}"
+    return line + "."
+
+
+def _fold_resolution_caveat(report: HonestyReport, retail: bool = False) -> str | None:
+    """Names the minute-flavored walk-forward folds (FX.4 owner requirement:
+    the disclosure lives in the RUN) — out-performance in those folds must
+    never read as regime robustness by default. Sub-half-percent shares
+    round to "0%" and are skipped (display floor)."""
+    wf = report.walk_forward
+    if not wf.meaningful:
+        return None
+    flavored = [f for f in wf.folds
+                if f.minute_share is not None and round(f.minute_share * 100) >= 1]
+    if not flavored:
+        return None
+    spans = ", ".join(
+        f"{f.start} → {f.end} ({round((f.minute_share or 0) * 100)}% minute)"
+        for f in flavored)
+    if retail:
+        return (f"Some test periods used the finer minute lens: {spans} — "
+                "better numbers there can come from the lens, not the market.")
+    return (f"Walk-forward folds on the minute grid: {spans} — fold "
+            "differences there can be resolution, not regime.")
+
+
 def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     """One grounded sentence on depth attribution — required whenever a ladder
     ran (brief D5b). Every number comes from report.ladder_depth, so it is
@@ -204,6 +256,7 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     if trust.label == "insufficient_evidence":
         cov = report.coverage
         si = report.scale_in
+        rs = report.resolution_split
         if si is not None and si.caps_trust and si.deep_rung_sign_flip:
             headline = (
                 "Verdict withheld — the edge depends on the deepest, riskiest adds: "
@@ -214,6 +267,16 @@ def template_verdict(report: HonestyReport) -> VerdictText:
             headline = (
                 f"Verdict withheld — ruinous tail: {si.p_ruin * 100:.0f}% of resampled "
                 f"orderings draw the account down more than {si.ruin_threshold * 100:.0f}%."
+            )
+        elif rs is not None and rs.caps_trust:
+            # FX.4 (review finding): the refusal must NAME the resolution
+            # artifact — falling through to the sample arm would print a
+            # factually false "too few trades" on a thick sample
+            headline = (
+                "Verdict withheld — the edge lives in the minute-resolution "
+                f"slice: it flips sign on the {rs.five_min.sessions} "
+                "5-minute-only sessions the deep history was tested at. A "
+                "granularity artifact until proven otherwise."
             )
         elif cov.materially_short:
             headline = (
@@ -297,6 +360,12 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     ladder = _ladder_caveat(report)
     if ladder:
         caveats.append(ladder)
+    res_line = _resolution_caveat(report)
+    if res_line:
+        caveats.append(res_line)
+    fold_line = _fold_resolution_caveat(report)
+    if fold_line:
+        caveats.append(fold_line)
     if not wf.meaningful:
         caveats.append(wf.note or "walk-forward not meaningful at this history length")
 
@@ -319,6 +388,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     if trust.label == "insufficient_evidence":
         cov = report.coverage
         si = report.scale_in
+        rs = report.resolution_split
         if si is not None and si.caps_trust and si.deep_rung_sign_flip:
             headline = (
                 "No verdict — this only makes money because of the deepest, riskiest "
@@ -331,6 +401,13 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
                 f"No verdict — too ruinous: in {si.p_ruin * 100:.0f}% of reshuffles the "
                 f"account fell more than {si.ruin_threshold * 100:.0f}%. Adding into losers "
                 "blows up too often."
+            )
+        elif rs is not None and rs.caps_trust:
+            headline = (
+                "No verdict — the profit only shows up in the finely-measured "
+                "recent stretch and reverses on the "
+                f"{rs.five_min.sessions} days measured the standard way. That "
+                "pattern usually means the measurement, not the market."
             )
         elif cov.materially_short:
             headline = (
@@ -446,6 +523,12 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     ladder = _ladder_caveat(report, retail=True)
     if ladder:
         caveats.append(ladder)
+    res_line = _resolution_caveat(report, retail=True)
+    if res_line:
+        caveats.append(res_line)
+    fold_line = _fold_resolution_caveat(report, retail=True)
+    if fold_line:
+        caveats.append(fold_line)
     if not wf.meaningful:
         caveats.append("Not enough history to test period-by-period yet.")
 

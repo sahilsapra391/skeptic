@@ -1306,3 +1306,41 @@ a pending latch disclosed on the settle event (pinned); (5) _FakeBar
 gained stamp-awareness + crosses coverage. 363 tests green; reviewer
 verified bit-identity off finest incl. 20k randomized IEEE trials of the
 scalar recompute, guardrails #1/#2, latch lifecycle, FX.2 interplay.
+
+## 2026-07-07 — ENGINE-V4 FX.4: mixed-resolution gauntlet honesty
+
+The gauntlet now understands what FX.1–FX.3 built. Shipped (inert on every
+run without a per-session resolution record — 368 pre-existing tests
+untouched): `resolution_split` stage (full vs 5-MIN-ONLY vs minute stats
+from recorded returns/fills, no re-run; RunResult carries the in-process
+per-session map); HARD CAP on the optimistic sign-flip at real-evidence
+floors (≥15 sessions both subsets + ≥MIN_TRADES in the 5-min sub-window —
+owner: "cap hard WHEN it fires, only fire when the evidence is thick
+enough"; resolution flip = data-VALIDITY finding vs OOS flip = robustness
+signal); walk-forward folds carry minute_share (disclosure in the RUN:
+caveats name resolution-flavored folds, tooltips show the share; deeper
+fold redesign flagged as its own future pass per masterplan 4b);
+grounded verdict caveats quant+retail (numbers validated against the
+report); receipts name differing mixes as RESOLUTION UPGRADES (4c);
+payload additive resolutionSplit; ReceiptBanner upgrade line. 381 tests
+(+13 hand-computed: bucket math to the cent, flip cap, floors disarm,
+optimistic-direction-only, inert paths, fold shares, caveat grounding,
+receipt annotation).
+REVIEW (independent agent, same session): 1 BLOCKER + 1 MAJOR + 4 MINOR +
+3 NIT, ALL FIXED — (1) BLOCKER: the receipt "resolution upgrade" note
+would have fired FALSELY on every production receipt (daily parents carry
+no mix; replays always carry five_min → {} != mix always true) while the
+genuine case was unreachable; now requires BOTH runs to carry mixes
+(silent on ordinary receipts, pinned with production-shape test) +
+resolutionMix rides the stats bundle so future finest-parent comparisons
+can fire; (2) MAJOR: a resolution-cap-only refusal fell to the sample
+headline ("too few trades" on a 900-trade run — a false statement from
+the honesty floor); both template voices gained a headline arm naming the
+granularity artifact (pinned); (3) None-sharpe format guard in the cap
+reason; (4) first-session gap day counted in eod_fallback; (5) trade-
+attribution comment rewritten honestly (boundary-straddler pl-vs-sharpe
+divergence + HONESTY.md note); (6) retail caveat no longer asserts
+temporal ordering the data doesn't guarantee; (7) dead-assertion
+precedence fixed; (8) sub-half-percent fold shares no longer render "0%
+minute"; (9) retail voice gained the fold caveat. Stats-bundle contract
+test updated (+resolutionMix, quotable by grounded Q&A). 383 tests.
