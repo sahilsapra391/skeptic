@@ -77,6 +77,7 @@ PULL_LOOKBACK_DAYS = 250     # from = expiration - this; one request = whole lif
 
 STAGE_PREFIX = "ivol_eod_staging"       # raw per-contract (NOT read by the engine)
 CHAIN_PREFIX = "options/source=ivolatility"  # canonical per-date chains (engine reads)
+MAX_CROSSED_FRACTION = 0.05  # per-date quality gate, parity with backfill_ivol.py
 
 _AUTHS: list[dict] = []
 _SECRETS: list[str] = []
@@ -145,12 +146,17 @@ def rows_of(body: object) -> list[dict]:
 
 
 # ------------------------------------------------------------ discovery + pull
-def discover(ticker: str, day: str, deltas: list[float], dtes: list[int]) -> dict[int, str]:
+def discover(
+    ticker: str, day: str, deltas: list[float], dtes: list[int]
+) -> tuple[dict[int, str], int]:
     """nearest-option-tickers across the delta×DTE ladder (puts negative, calls
-    positive). Returns {option_id: option_symbol} for this discovery date."""
+    positive). Returns ({option_id: option_symbol}, error_count) — a nonzero
+    error count means the discovery is INCOMPLETE and the date must not be
+    marked done (review finding: transient errors were permanently lost)."""
     found: dict[int, str] = {}
+    errors = 0
 
-    def one(args):
+    def one(args) -> tuple[list[tuple[int, str]], bool]:
         d, cp, dte = args
         signed = -d if cp == "P" else d
         st, body = _get(EP_NEAR, {"symbol": ticker, "startingDate": day, "region": REGION,
@@ -160,14 +166,16 @@ def discover(ticker: str, day: str, deltas: list[float], dtes: list[int]) -> dic
             oid, osym = r.get("option_id"), r.get("option_symbol")
             if oid and osym:
                 out.append((int(oid), str(osym)))
-        return out
+        return out, st == 200
 
     targets = [(d, cp, dte) for d in deltas for cp in ("P", "C") for dte in dtes]
     with ThreadPoolExecutor(max_workers=_POOL_WORKERS[0]) as pool:
-        for res in pool.map(one, targets):
+        for res, ok in pool.map(one, targets):
+            if not ok:
+                errors += 1
             for oid, osym in res:
                 found[oid] = osym
-    return found
+    return found, errors
 
 
 def _occ_parse(option_symbol: str) -> tuple[str, str, float] | None:
@@ -184,22 +192,27 @@ def _occ_parse(option_symbol: str) -> tuple[str, str, float] | None:
     return exp, ("put" if cp == "P" else "call"), int(strike8) / 1000.0
 
 
-def pull_contract(ticker: str, oid: int, osym: str) -> pd.DataFrame | None:
+def pull_contract(ticker: str, oid: int, osym: str) -> tuple[bool, pd.DataFrame | None]:
+    """(ok, df). ok=False = transient/request error → caller must NOT mark the
+    contract staged (it is retried on a later run). ok=True with df=None = the
+    vendor genuinely has nothing (or unparseable OCC) → skip permanently."""
     parsed = _occ_parse(osym)
     if parsed is None:
-        return None
-    exp, _right, _strike = parsed
+        return True, None
+    exp = parsed[0]
     exp_d = date.fromisoformat(exp)
     frm = (exp_d - timedelta(days=PULL_LOOKBACK_DAYS)).isoformat()
     to = (exp_d + timedelta(days=1)).isoformat()
     st, body = _get(EP_RAWIV, {"symbol": osym, "from": frm, "to": to})
+    if st != 200:
+        return False, None
     rows = rows_of(body)
-    if st != 200 or not rows:
-        return None
+    if not rows:
+        return True, None
     df = pd.DataFrame(rows)
     df["_option_id"] = oid
     df["_option_symbol"] = osym
-    return df
+    return True, df
 
 
 def stage_key(ticker: str, oid: int) -> str:
@@ -246,11 +259,18 @@ def run_fetch(args, s3) -> int:
                      ticker, len(ddates), ddates[-1] if ddates else "-",
                      ddates[0] if ddates else "-", len(staged), len(done_months))
 
+            def _flush() -> None:
+                # state writes are gated on dry_run (review finding: a dry-run
+                # used to persist done_dates and poison subsequent real runs)
+                if not args.dry_run:
+                    tstate["done_dates"] = sorted(done_months)
+                    r2_put_json(s3, state_key, state)
+
             for day in ddates:
                 if day in done_months:
                     continue
                 try:
-                    contracts = discover(ticker, day, args.deltas, args.dtes)
+                    contracts, disc_errors = discover(ticker, day, args.deltas, args.dtes)
                 except Exception as exc:  # noqa: BLE001
                     log.warning("%s discover %s failed: %s", ticker, day, _scrub(repr(exc)))
                     continue
@@ -258,32 +278,39 @@ def run_fetch(args, s3) -> int:
                 # pull the new contracts (concurrent, rate-gated)
                 def _do(item):
                     oid, osym = item
-                    df = pull_contract(ticker, oid, osym)
-                    return oid, osym, df
+                    ok, df = pull_contract(ticker, oid, osym)
+                    return oid, osym, ok, df
                 pulled = 0
-                for oid, osym, df in pool.map(_do, list(new.items())):
+                pull_errors = 0
+                for oid, osym, ok, df in pool.map(_do, list(new.items())):
+                    if not ok:
+                        pull_errors += 1  # transient — NOT staged, retried next run
+                        continue
                     if df is not None and len(df):
                         if not args.dry_run:
                             r2_put_parquet(s3, stage_key(ticker, oid), df)
                         staged.add(oid)
                         pulled += 1
                     else:
-                        staged.add(oid)  # empty/bad contract — don't retry
-                done_months.add(day)
+                        staged.add(oid)  # vendor-empty/bad OCC — don't retry
+                if disc_errors or pull_errors:
+                    # incomplete date: leave it OUT of done_dates so a later run
+                    # re-discovers it (already-staged pulls are skipped — cheap)
+                    log.warning("%s %s: INCOMPLETE (%d discovery / %d pull errors) — will retry",
+                                ticker, day, disc_errors, pull_errors)
+                else:
+                    done_months.add(day)
                 if pulled:
                     log.info("%s %s: +%d contracts staged (total %d) [req=%d]",
                              ticker, day, pulled, len(staged), _req_count[0])
                 if len(done_months) % STATE_FLUSH_EVERY == 0:
-                    tstate["done_dates"] = sorted(done_months)
-                    r2_put_json(s3, state_key, state)
+                    _flush()
                 if args.max_requests and _req_count[0] >= args.max_requests:
-                    tstate["done_dates"] = sorted(done_months)
-                    r2_put_json(s3, state_key, state)
+                    _flush()
                     log.info("max-requests %d reached — stopping cleanly", args.max_requests)
                     return 0
 
-            tstate["done_dates"] = sorted(done_months)
-            r2_put_json(s3, state_key, state)
+            _flush()
             log.info("%s [eod] fetch done: %d contracts staged, req=%d", ticker, len(staged), _req_count[0])
     return 0
 
@@ -320,7 +347,26 @@ def _to_canonical(raw: pd.DataFrame, ticker: str) -> pd.DataFrame:
         "spot": _num(raw.get("Unadjusted close")),
         "source": "ivolatility",
     })
+    # vendor sentinel: preiv == -1.0 marks rows whose IV/greeks were not
+    # computed (observed live: delta=-1.0 with gamma/vega/theta all 0) —
+    # null the analytics, keep the real NBBO row
+    sent = (_num(raw.get("preiv")) == -1.0).fillna(False).to_numpy()
+    if sent.any():
+        out.loc[sent, ["iv", "delta", "gamma", "theta", "vega", "rho"]] = pd.NA
     return out.dropna(subset=["trading_date", "strike", "right", "expiration"])[CANONICAL_COLUMNS]
+
+
+def _other_source_dates(s3, ticker: str) -> set[str]:
+    """Chain dates already covered by other EOD sources. Guard (review
+    finding): ivolatility OUTRANKS every source in the engine's precedence and
+    a delta ladder is SPARSER than a full chain — so by default regroup must
+    never supersede a date a fuller source already covers."""
+    covered: set[str] = set()
+    for src in ("dolthub", "alphavantage", "yahoo"):
+        for k in r2_list_keys(s3, f"options/source={src}/ticker={ticker}/"):
+            if m := re.search(r"date=(\d{4}-\d{2}-\d{2})", k):
+                covered.add(m.group(1))
+    return covered
 
 
 def run_regroup(args, s3) -> int:
@@ -329,6 +375,7 @@ def run_regroup(args, s3) -> int:
         log.info("%s [regroup]: %d staged contracts", ticker, len(keys))
         if not keys:
             continue
+        covered = set() if args.allow_supersede else _other_source_dates(s3, ticker)
         frames = []
         for i, k in enumerate(keys):
             df = r2_get_parquet(s3, k)
@@ -341,17 +388,47 @@ def run_regroup(args, s3) -> int:
         allrows = pd.concat(frames, ignore_index=True)
         allrows = allrows.dropna(subset=["dte"])
         allrows = allrows[allrows["dte"] >= 0]
+        # quality gates (parity with backfill_ivol.py _validate)
+        bad_delta = allrows["delta"].abs().gt(1.0).fillna(False)
+        if bad_delta.any():
+            log.warning("%s: dropping %d rows with |delta|>1", ticker, int(bad_delta.sum()))
+            allrows = allrows[~bad_delta]
         # one chain parquet per trading_date; de-dup (contract, date)
         allrows = allrows.drop_duplicates(subset=["trading_date", "expiration", "right", "strike"])
-        n_dates = 0
+
+        groups: list[tuple[str, pd.DataFrame]] = []
+        skipped_covered = 0
+        skipped_quality = 0
         for d, g in allrows.groupby("trading_date"):
-            key = f"{CHAIN_PREFIX}/ticker={ticker}/date={d}/chain.parquet"
+            if d in covered:
+                skipped_covered += 1
+                continue
+            quoted = g.dropna(subset=["bid", "ask"])
+            if len(quoted):
+                crossed = quoted["bid"] > quoted["ask"]
+                if crossed.mean() > MAX_CROSSED_FRACTION:
+                    log.warning("%s %s REJECTED: %.1f%% crossed quotes", ticker, d,
+                                crossed.mean() * 100.0)
+                    skipped_quality += 1
+                    continue
+                if crossed.any():
+                    g = g.drop(quoted.index[crossed])
+            groups.append((str(d), g.reset_index(drop=True)))
+
+        def _put(item: tuple[str, pd.DataFrame]) -> None:
+            d, g = item
             if not args.dry_run:
-                r2_put_parquet(s3, key, g.reset_index(drop=True))
-            n_dates += 1
-            if n_dates % 500 == 0:
-                log.info("  %s: wrote %d date-chains", ticker, n_dates)
-        log.info("%s [regroup] done: %d date-chains from %d rows", ticker, n_dates, len(allrows))
+                r2_put_parquet(s3, f"{CHAIN_PREFIX}/ticker={ticker}/date={d}/chain.parquet", g)
+
+        written = 0
+        with ThreadPoolExecutor(max_workers=4) as wpool:  # boto3 clients are thread-safe
+            for _ in wpool.map(_put, groups):
+                written += 1
+                if written % 500 == 0:
+                    log.info("  %s: wrote %d/%d date-chains", ticker, written, len(groups))
+        log.info("%s [regroup] done: %d date-chains written · %d skipped (covered by "
+                 "fuller sources — use --allow-supersede to override) · %d rejected (quality)",
+                 ticker, written, skipped_covered, skipped_quality)
     return 0
 
 
@@ -391,6 +468,8 @@ def main() -> int:
     ap.add_argument("--rate", type=int, default=DEFAULT_RATE)
     ap.add_argument("--max-requests", type=int, default=0)
     ap.add_argument("--limit-dates", type=int, default=0, help="only newest N discovery dates (verify)")
+    ap.add_argument("--allow-supersede", action="store_true",
+                    help="regroup: also write dates covered by fuller sources (dolthub/av/yahoo)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     args.tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
