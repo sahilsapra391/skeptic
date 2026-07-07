@@ -758,7 +758,7 @@
    "case": 26,
    "text": "Sell 0DTE at-the-money puts on SPY every day.",
    "kind": "questions",
-   "comment": "FX.5 guardrail-#3 case: an exit-less 0DTE SELLING strategy must ASK — and the ask should OFFER the concrete choices (force-flat time / profit target / hold to settlement). Suggest, never default."
+   "comment": "FX.5 guardrail-#3 case: an exit-less 0DTE SELLING strategy must ASK — and the ask should OFFER the concrete choices (force-flat time / profit target / hold to settlement). Suggest, never default. NOTE: the harness grades kind only — it cannot verify the ask OFFERS the three choices; that behavior is prompt-specified and owner-checked at the gate."
   },
   {
    "case": 27,
@@ -824,6 +824,56 @@
       "daily",
       "signal_only"
      ]
+    }
+   }
+  },
+  {
+   "case": 29,
+   "text": "Sell a 30-delta put on SPY, close at 50% profit.",
+   "kind": "questions",
+   "comment": "Review finding: the intraday cadence carve-out must NOT leak to daily strategies — no cadence AND no condition on a DAILY-clock strategy still asks (guardrail #3)."
+  },
+  {
+   "case": 30,
+   "text": "Every time RSI(14) dips below 30, buy a 45 DTE ATM call on SPY. Sell at 30% profit or 21 DTE.",
+   "kind": "spec",
+   "comment": "Review finding: 'every time' on a LONGER-TENOR strategy is plain signal_only daily vocabulary — intraday_scan/clock 5min must NOT be fabricated.",
+   "expect": {
+    "spec_version": 1,
+    "clock": "daily",
+    "ticker": "SPY",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "rsi",
+      "period": 14,
+      "operator": [
+       "<",
+       "<=",
+       "below",
+       "crosses_below"
+      ],
+      "value": 30
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 30,
+     "time_exit_dte": 21
     }
    }
   }

@@ -1379,3 +1379,25 @@ spec v4 vocabulary is now parseable end-to-end. Shipped:
   force-flat in the exit display.
 GATE: PR held OPEN for owner re-ACCEPT; owner swaps in verbatim personal
 0DTE prompts as golden cases at the gate.
+REVIEW (independent agent, same session): 1 BLOCKER + 3 MAJOR + 4 MINOR +
+NITs, ALL FIXED — (1) BLOCKER: the new dials' OFF state (null) couldn't
+override the parsed base through ?? — flipping SCANNING to "once/session"
+would have silently RUN every_setup while the confirmed screen showed the
+opposite (the PR's own corruption class); fixed with undefined-vs-null
+semantics; (2) prompt self-contradiction on the cadence ask (explained
+the case-25 nondeterministic miss) — scoped: intraday reads a session
+cycle without asking, daily still asks (pinned, new case 29); (3) exit
+edits no longer silently re-attach close_at_time — it is LABEL-OWNED
+("flat 15:45" round-trips; replacement removes it visibly); label-
+inexpressible exit fields (delta stops/theta/exit conditions) pass
+through from base, matching verbatim runs; (4) preservation coverage
+honestly widened: ALL entry conditions survive an unedited trigger
+(multi-condition + timeframes — the case-16 RSI+VWAP flagship no longer
+loses its VWAP filter to a window pick), edited triggers keep timeframe,
+max_concurrent/max_vega pass through, comment/HONESTY claims corrected;
+(5) long-tenor "every time" hijack closed (pinned, new case 30);
+(6) stale 0DTE-refusal copy scrubbed; (7) 0DTE window estimates price the
+5-min clock; (8) 0DTE band aligned {0,0,1} both ingresses. FINAL LIVE
+EVAL (30 cases): 20/20 clear + 10/10 ambiguous — ACCEPTED, perfect score
+(the scoping resolved the case-25 nondeterminism). PR held for the owner
+re-ACCEPT + verbatim golden swap.

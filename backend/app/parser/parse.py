@@ -249,18 +249,23 @@ CONVENTIONS:
     * sizing stays fixed_contracts (rung counts are absolute) — never risk_pct with a ladder.
 - "flatten by 3:45" / "close everything by 3:45pm" / "no overnight, out by 15:45" (intraday)
   → exit.close_at_time "15:45" (ET, clock "5min"). It is a COMPLETE exit on its own.
-- CONTINUOUS SCANNING ("take every setup", "every time RSI dips below 30", "re-enter
-  after I take profit", "keep selling all day/session", "trade it all day", "whenever
-  the signal fires") → entry.intraday_scan "every_setup" (clock "5min"). One entry per
-  SIGNAL EPISODE — the engine handles episode/re-entry mechanics; do NOT emit a ladder
-  for this. Condition-less continuous scanning ("take every setup all day", "keep
-  selling", "get right back in after each exit" with NO stated trigger) is COMPLETE
-  as written: emit intraday_scan "every_setup" with "conditions": [] — the position
-  LIFECYCLE is the setup (the engine re-enters after each exit); NEVER ask what
-  defines a setup. "once a day" / "each morning" / one entry per session phrasing →
-  OMIT the field entirely (the default). When NO scanning phrasing is present, the
-  default one-entry-per-session applies silently — entry cadence is NEVER a required
-  question, do not ask "how often should we enter". NEVER combine intraday_scan with
+- CONTINUOUS SCANNING — INTRADAY strategies only (0-2 DTE, intraday indicators, or
+  session language like "all day"/"all session"/"through the day"): phrasing like
+  "take every setup", "re-enter after I take profit", "keep selling all day",
+  "trade it all day" → entry.intraday_scan "every_setup" (clock "5min"). One entry
+  per SIGNAL EPISODE — the engine handles episode/re-entry mechanics; do NOT emit a
+  ladder for this. Condition-less continuous scanning ("take every setup all day",
+  "keep selling", "get right back in after each exit" with NO stated trigger) is
+  COMPLETE as written: emit intraday_scan "every_setup" with "conditions": [] and
+  frequency "daily" — the position LIFECYCLE is the setup (the engine re-enters
+  after each exit); NEVER ask what defines a setup. On a LONGER-TENOR strategy
+  ("every time RSI dips below 30, buy a 45 DTE call") the same words are a plain
+  signal_only DAILY strategy — do NOT emit intraday_scan or clock "5min" for them.
+  "once a day" / "each morning" / one entry per session phrasing → OMIT the field
+  entirely (the default). FOR INTRADAY STRATEGIES (0-2 DTE / 5-min), a session
+  cycle is the natural reading: when no cadence is stated use frequency "daily"
+  WITHOUT asking — do not ask "how often should we enter" there (the daily-clock
+  rule below still applies to everything else). NEVER combine intraday_scan with
   scale_in — a ladder is its own multi-entry semantic (if the user asks for both,
   ASK which they mean).
 - RESOLUTION ("use the finest data", "minute-level where you have it", "best/highest
@@ -290,7 +295,9 @@ WHEN TO ASK (result "questions") — the tool's identity depends on this:
   profit) → ask; offer a profit target or time exit instead. Never guess.
 - A scale-in ladder with NO stated max-contracts cap → ask for the cap (offer a couple of
   concrete totals). The ladder is supported; the missing RUIN CAP is the only blocker.
-- No entry cadence AND no entry condition → ask.
+- No entry cadence AND no entry condition → ask — EXCEPT intraday strategies
+  (0-2 DTE / 5-min), where a session cycle (frequency "daily") is the natural
+  reading and is used without asking.
 Ask AT MOST 4 questions, each answerable in a word or two, most important first.
 Include 2-4 concrete "options" per question whenever sensible.
 

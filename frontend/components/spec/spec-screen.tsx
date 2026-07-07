@@ -213,7 +213,8 @@ export function SpecScreen({
 
   // real session counts + measured time estimates per window (per ticker+clock)
   const [estimate, setEstimate] = useState<EstimatePayload | null>(null);
-  const clock = draft.clock ?? "daily";
+  // a 0DTE dial runs intraday — the window estimates must price THAT clock
+  const clock = draft.dte === 0 ? "5min" : (draft.clock ?? "daily");
   useEffect(() => {
     let alive = true;
     setEstimate(null);
