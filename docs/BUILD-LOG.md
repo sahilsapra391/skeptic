@@ -1129,3 +1129,52 @@ Helpers (rows_of/_distinct_dates/to_frame/sessions_desc) unit-tested; ruff clean
 DATA-PIPELINE §9 has the trial-day runbook. NOT wired into coverage/engine yet —
 that's the deliberate "collect now, use later" phase. UW options depth ≈2022+, so
 this complements (never replaces) the iVol 20-yr analytics + the pre-2022 chain gap.
+
+## 2026-07-07 — ENGINE-V4 F0: data spine (PIT readers + resolution ledger)
+
+V4 program approved (masterplan MD: F0 → FX 0DTE intraday engine → F4/F1/F5/
+F2-F3/F7/F8). F0 ships the safety plumbing with ZERO engine-behavior change:
+- PIT readers for every new lake source: `app/data/uw.py` (24 per-ticker + 4
+  market-wide daily families, 21 series families, 1-min contract bars),
+  `app/data/massive.py` (OHLCV aggs; contract directory exposed as non-PIT
+  reference only), IVS surfaces in `app/data/ivol_analytics.py`. All require
+  as_of, raise LookaheadError beyond it, truncate ROWS at intra-session
+  moments (UW files carry intraday stamps), return None when absent, and
+  never read `captured_at` as observation time. Bounded LRU caches.
+- KEY FINDING baked into the design (owner-confirmed): UW 1-min bars are
+  side-attributed trade candles with NO NBBO → minute data upgrades the
+  decision CLOCK and validates fills; fill quotes stay on the NBBO hierarchy.
+- Per-session resolution map: `app/data/resolution.py` derives
+  clock_resolution (minute>five_min>none) + quote_resolution by QUALITY
+  (ivol_5min>cboe_2min>eod_only>none, D2 amendment 1) — single
+  implementation, imported by `collector/ledger.py`, which rebuilds
+  `state/resolution_map/ticker={T}.parquet` + `state/source_coverage.json`
+  every run (nightly workflow already calls ledger.py — self-improvement:
+  new data upgrades eligibility with no redeploy). Live maps banked: SPY
+  4,907 sessions (minute 91 · five_min 2,888), QQQ minute already 10 and
+  growing, IWM five_min 2,508.
+- Coverage payload: additive `resolution_mix` + `new_sources` blocks;
+  Observatory gains the resolution-mix timeline strips + new-sources panel.
+- Tests: 303 pass (+28): per-source truncation fixtures (hand-computed),
+  LookaheadError canaries in the permanent canary file, an intentionally
+  lookahead "evil reader" red test, resolution derivation combos incl. the
+  real 2026-07-06 edge (minute+recorder, no iVol yet), summary/timeline
+  compression, absent-artifact honesty. Daily-clock + seventeen regression
+  digests bit-identical; ruff/mypy/eslint/tsc clean.
+Ops: UW intraday collector relaunched QQQ→IWM→SPY (SPY complete at 500
+contracts); daily budget hit 29,975/30,000 → budget-aware retry loop armed.
+QQQ iVol 5-min backfill completes ~2026-07-08 and flows in via the nightly
+ledger rebuild automatically.
+REVIEW (independent agent, same session): 2 MAJOR + 6 lesser findings, ALL
+FIXED — (1) same-day EOD observations (UW series / Massive daily aggs / IVS
+fits) were visible at intra-session moments → datetime as_of now EXCLUDES
+the as_of session in those readers; (2) tz-naive stamps were localized as
+UTC (fail-open) → new app/data/pit.py detects offsets at the VALUE level
+and fails closed; (3) session bound now derives from the UTC-normalized
+moment, not the caller's local calendar; (4) contracts_reference returns a
+copy (cache-poisoning); (5) CI smoke-imports collector/ledger.py so the
+cross-project import chain breaks in CI, not at the 2 AM nightly; (6)
+Observatory panels null-guard artifact drift; (7) dead branch removed +
+family validation in daily_sessions; (8) ledger gathers UW listings once
+per run instead of 3×. 310 tests green after fixes; 7 new fixtures pin the
+corrected contracts (incl. the reviewer's exotic-offset probe).

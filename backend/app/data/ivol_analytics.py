@@ -14,13 +14,16 @@ absences — the indicators evaluate False, never a guess.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
 
 from app.data import r2
+from app.data.pit import as_of_parts
+from app.engine.market import LookaheadError
 
 FETCH_WORKERS = 8
 IVX_COLUMN = "30d IV Mean"
@@ -62,3 +65,56 @@ def load_ivx_30d(s3: Any, ticker: str) -> dict[date, float]:
 def load_hv_30d(s3: Any, ticker: str) -> dict[date, float]:
     """date → 30d HV (decimal), full banked history."""
     return _series_from_years(s3, f"reference/ivol/hv/ticker={ticker}/", HV_COLUMN)
+
+
+# ── IVS surfaces (F0, ENGINE-V4 data spine) ─────────────────────────────────
+# reference/ivol/ivs/ticker={T}/date={D}/surface.parquet — one fitted vol
+# surface per session (2007+ · ~4,905 sessions/ticker · period × strike ×
+# call/put grid, IV and delta as decimals). PIT-bounded here so the F4
+# skew/term-structure phase inherits the contract; nothing consumes it yet.
+
+_IVS_NUMERIC = ["period", "strike", "IV", "delta"]
+_IVS_CACHE: OrderedDict[str, pd.DataFrame] = OrderedDict()
+_IVS_CACHE_MAX = 16  # bounded — post-OOM rule
+
+
+def load_ivs_surface(
+    s3: Any, ticker: str, session: date, as_of: date | datetime
+) -> pd.DataFrame | None:
+    """The fitted vol surface observed on `session`, or None if not banked.
+
+    Raises LookaheadError when session lies beyond as_of (guardrail #2 —
+    a surface is a same-day observation; reading tomorrow's fit is lookahead).
+    A surface is an END-OF-DAY fit, so at an intra-session moment the as_of
+    session's own surface does not exist yet — honest None (docs/HONESTY.md).
+    """
+    bound, moment = as_of_parts(as_of)
+    if session > bound:
+        raise LookaheadError(f"ivs surface {ticker} {session} requested with as_of {bound}")
+    if moment is not None and session == bound:
+        return None  # the EOD fit isn't observable mid-session
+    key = f"reference/ivol/ivs/ticker={ticker}/date={session}/surface.parquet"
+    if key in _IVS_CACHE:
+        _IVS_CACHE.move_to_end(key)
+        return _IVS_CACHE[key].copy()
+    df = r2.get_parquet(s3, key)
+    if df is None or df.empty:
+        return None
+    out = df.copy()
+    for col in _IVS_NUMERIC:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    present = [c for c in _IVS_NUMERIC if c in out.columns]
+    out = out.dropna(subset=present).reset_index(drop=True)
+    if out.empty:
+        return None
+    _IVS_CACHE[key] = out
+    while len(_IVS_CACHE) > _IVS_CACHE_MAX:
+        _IVS_CACHE.popitem(last=False)
+    return out.copy()
+
+
+def ivs_sessions(s3: Any, ticker: str) -> list[str]:
+    """Sessions with a banked surface (coverage/ledger use — lake listing,
+    never called from an engine hot path)."""
+    return r2.list_date_prefixes(s3, f"reference/ivol/ivs/ticker={ticker}/")

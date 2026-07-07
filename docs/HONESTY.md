@@ -252,3 +252,57 @@ way iVolatility's P&L-by-ladder-depth table did. `ladder_depth_attribution`
   volume column is diffed at load); the record carries no intra-bar H/L.
 - Daily-history indicators at an intraday bar read ≤ the PREVIOUS session's
   close — today's daily close does not exist at 10:15.
+
+## F0 (ENGINE-V4): new-source point-in-time + the resolution ledger
+
+The V4 data spine adds Unusual Whales, Massive, and iVolatility-IVS readers
+(app/data/uw.py, massive.py, ivol_analytics.py) and a per-session resolution
+map (app/data/resolution.py, built by collector/ledger.py). Rules:
+
+- **Row-level truncation.** UW per-session files carry intraday timestamps
+  (market_tide 5-min buckets, spot_exposures ~minute rows). A reader at
+  as_of 10:35 returns only rows stamped ≤ 10:35 — filtering by file date
+  alone is NOT point-in-time for intraday data. Rows with no recognizable
+  observation timestamp are visible at a date-level view and honestly EMPTY
+  at an intra-session moment (a same-day observation cannot be assumed to
+  exist mid-session).
+- **Session-level observations are end-of-day facts.** UW series rows,
+  Massive daily aggregates and IVS surface fits for session D do not exist
+  at 10:35 on D: a datetime as_of EXCLUDES the as_of session in those
+  readers (same rule as "today's daily close does not exist at 10:15").
+  A bare-date as_of is the end-of-day view and includes it.
+- **Timezone honesty (fail closed).** A stamp with no timezone reference
+  (naive wall clock) could mean ET or UTC; localizing it by assumption can
+  hide most of a session of lookahead. Offset-less stamps are treated as
+  unobservable at intra-session moments — dropped, never guessed
+  (app/data/pit.py, value-level offset detection). The session bound of a
+  datetime as_of derives from its UTC-normalized moment, never the
+  caller's local calendar date.
+- **`captured_at` is metadata, never observation time.** Rows predating our
+  capture start carry the vendor's own historical timestamps; we trust them
+  as observation time the same way we trust dolthub/iVol dating, and say so
+  here rather than pretending we verified the vendor's clock.
+- **Absent → unavailable.** Every reader returns None when the lake has
+  nothing; no zeros, no interpolation, no guesses. Requests beyond as_of
+  raise LookaheadError (canary-tested per source, plus a deliberately
+  lookahead "evil reader" test that proves the assertions bite).
+- **Clock vs quote (owner decision 2026-07-07).** UW 1-min bars are
+  side-attributed TRADE CANDLES with no NBBO. Minute data therefore upgrades
+  the DECISION CLOCK (when the engine may look) and validates fills; the
+  fill price always comes from the NBBO hierarchy. The resolution map
+  records both facts independently per session:
+  `clock_resolution` (minute > five_min > none) and `quote_resolution`
+  by QUALITY precedence (ivol_5min > cboe_2min > eod_only > none — real
+  NBBO outranks the finer-but-delayed recorder, D2 amendment 1).
+- **The map is rebuilt, never hand-pinned.** collector/ledger.py rebuilds
+  state/resolution_map/ticker={T}.parquet after every collection run
+  (nightly workflow + manual), so newly-banked sessions and finer data
+  upgrade eligibility automatically; the backend only reads the artifact
+  (TTL-cached, O(1) per-session lookups — never a live lake probe in a hot
+  path). A re-run whose result changes because a session's resolution
+  improved must be explained as a RESOLUTION UPGRADE (wired in FX.4 via the
+  D3 receipts loop).
+- **Massive is never a fill source.** OHLCV aggregates only (no bid/ask):
+  coverage and volume cross-checks. Its contract directory carries no
+  listing timestamps and is exposed as non-point-in-time REFERENCE metadata
+  only — simulation code must never derive contract existence from it.

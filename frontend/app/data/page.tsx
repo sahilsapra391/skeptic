@@ -8,7 +8,7 @@
  * so instead of inventing numbers.
  */
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage } from "@/lib/api";
@@ -402,6 +402,146 @@ export default function DataPage() {
                 />
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {(coverage.resolution_mix?.SPY ||
+        coverage.resolution_mix?.QQQ ||
+        coverage.resolution_mix?.IWM) && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-1")}>
+            RESOLUTION MIX — FINEST HONEST DECISION CLOCK PER SESSION
+          </div>
+          <div className="mb-3 text-[11.5px] leading-[1.5] text-ink-4">
+            rebuilt nightly from the lake; minute bars upgrade the clock only —
+            fills always quote from real NBBO (5-min iVol / recorder)
+          </div>
+          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const mix = coverage.resolution_mix?.[t];
+              if (!mix) return null;
+              const clockNote = [
+                `minute ${(mix.clock.minute ?? 0).toLocaleString()}`,
+                `5-min ${(mix.clock.five_min ?? 0).toLocaleString()}`,
+                `daily ${(mix.clock.none ?? 0).toLocaleString()}`,
+              ].join(" · ");
+              return (
+                <Fragment key={t}>
+                  <span>{t}</span>
+                  <div className="relative h-[9px] overflow-hidden rounded-[3px] bg-line-softer">
+                    {mix.timeline.map((run, i) => {
+                      const geo = laneGeometry(run.first, run.last, "2007-01-01", today);
+                      const tone =
+                        run.clock === "minute"
+                          ? "bg-trust"
+                          : run.clock === "five_min"
+                            ? "bg-trust/40"
+                            : "bg-line-hover";
+                      return (
+                        <div
+                          key={i}
+                          className={clsx("absolute h-full", tone)}
+                          style={{ left: geo.left, width: geo.width }}
+                          title={`${run.first} → ${run.last} · ${run.sessions} sessions · clock ${run.clock} · quote ${run.quote}`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <span className="text-ink-3">{clockNote}</span>
+                </Fragment>
+              );
+            })}
+          </div>
+          <div className="mt-2.5 flex items-center gap-4 font-mono text-[10.5px] text-ink-4">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[7px] w-[14px] rounded-[2px] bg-trust" />
+              minute clock
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[7px] w-[14px] rounded-[2px] bg-trust/40" />
+              5-min clock
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-[7px] w-[14px] rounded-[2px] bg-line-hover" />
+              daily only
+            </span>
+          </div>
+        </div>
+      )}
+
+      {coverage.new_sources && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-2.5")}>
+            NEW SIGNAL SOURCES (ENGINE-V4) · banked, not yet consumed ·{" "}
+            {(coverage.new_sources.generated_at ?? "").slice(0, 10)}
+          </div>
+          <div className="flex flex-col gap-1.5 text-[12.5px] leading-[1.55] text-ink-2">
+            <div className="flex gap-2">
+              <span className="text-ink-4">·</span>
+              <span>
+                Unusual Whales signal families:{" "}
+                <span className="font-mono">
+                  {Object.keys(coverage.new_sources.uw_daily ?? {}).length}
+                </span>{" "}
+                banked per session
+                {coverage.new_sources.uw_daily?.market_tide?.market && (
+                  <span className="text-ink-4">
+                    {" "}
+                    — {coverage.new_sources.uw_daily.market_tide.market.first} →{" "}
+                    {coverage.new_sources.uw_daily.market_tide.market.last}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-ink-4">·</span>
+              <span>
+                UW 1-min contract bars (trade candles, clock/validation only):{" "}
+                {(["SPY", "QQQ", "IWM"] as const).map((t, i) => {
+                  const w = coverage.new_sources?.uw_minute?.[t];
+                  return (
+                    <span key={t}>
+                      {i > 0 && " · "}
+                      {t}{" "}
+                      <span className="font-mono">
+                        {w ? `${w.sessions.toLocaleString()} sessions` : "pending"}
+                      </span>
+                    </span>
+                  );
+                })}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-ink-4">·</span>
+              <span>
+                iVol IVS vol surfaces:{" "}
+                {coverage.new_sources.ivs?.SPY ? (
+                  <span className="font-mono">
+                    {coverage.new_sources.ivs.SPY.sessions.toLocaleString()} sessions ·{" "}
+                    {coverage.new_sources.ivs.SPY.first} → {coverage.new_sources.ivs.SPY.last}
+                  </span>
+                ) : (
+                  "pending"
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-ink-4">·</span>
+              <span>
+                Massive OHLCV aggregates (coverage cross-check, never fills):{" "}
+                {(["SPY", "QQQ", "IWM"] as const).map((t, i) => (
+                  <span key={t}>
+                    {i > 0 && " · "}
+                    {t}{" "}
+                    <span className="font-mono">
+                      {(coverage.new_sources?.massive?.[t]?.agg_symbols ?? 0).toLocaleString()}{" "}
+                      contracts
+                    </span>
+                  </span>
+                ))}
+              </span>
+            </div>
           </div>
         </div>
       )}
