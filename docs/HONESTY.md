@@ -393,3 +393,51 @@ bit-identical; mutually exclusive with the scale-in ladder). Rules:
   and a run that opens more than MAX_RUN_FILLS (20,000) positions is
   REFUSED loudly mid-run with a plain reason — never silently truncated,
   never an unbounded payload.
+
+## FX.3 (ENGINE-V4): the intrabar-unknown rule + latched exits
+
+Moves inside a bar are unobservable at EVERY resolution — finer data
+shrinks the blind spot, never removes it. How the engine resolves that,
+now formalized (owner decisions 2026-07-07):
+
+- **The live-price side (finest mode; entries AND exits — one semantic).**
+  On a minute grid, price-vs-indicator conditions compare the CURRENT
+  bar's real underlying print against the indicator; the indicator SERIES
+  stays stamp-sampled (the live price refines WHEN a touch is observable,
+  never the indicator's defined cadence — minute jitter cannot manufacture
+  RSI-type signals that don't exist at the indicator's resolution). On
+  5-min grids this is bit-identical by construction: the current print at
+  a stamp IS the sampled value. Rejecting the same touch for entries while
+  honoring it for exits would be incoherent — the same bar's price cannot
+  be real enough for a stop but not for an entry.
+- **Latched exits (directional honesty).** An exit-condition trigger
+  OBSERVED at a bar that cannot fill the close (a quote-less minute bar,
+  or a quote-gap stamp) LATCHES on the position: the close completes at
+  the first quoted bar that can fill it, WITHOUT re-evaluation and with
+  no expiry — a seen touch counts, exactly as a real stop works (once
+  triggered you're out at the next liquidity; no un-triggering on a
+  bounce). Trigger and fill bars are both disclosed in the trade detail
+  ("· triggered 09:41 · 09:45"), so the gap and any worse fill are
+  visible. Gated to finest mode: fixed-5min runs keep their pre-FX.3
+  retry-and-re-evaluate behavior bit-identically.
+- **Why entries and exits latch DIFFERENTLY (the governing principle).**
+  Entries have one-quoted-bar validity and can be liquidity-skipped;
+  exits persist until fillable. Not a contradiction: entries and exits
+  have opposite RISK POLARITY. A missed entry is neutral (not trading is
+  safe); a missed exit is optimism (the dropped exit would have closed a
+  position that keeps accruing outcomes you chose not to see). The right
+  consistency is the same DIRECTION of honesty, which requires opposite
+  validity mechanics.
+- **Profit targets confirm at observed quotes, always.** PT (and stop_
+  loss/delta/theta) evaluate from the position's real option quotes —
+  profit can never be claimed from an underlying-only bar; there is no
+  quote to prove it (guardrail #1's exit-side mirror).
+- **The gap-bar tie.** Point-quote records make the classic OHLC
+  "both stop and target inside one bar" ambiguity structurally absent —
+  evaluation happens only at observed quote points, and the canonical
+  priority (stop → delta_stop → PT → …, D2 amendment 3) resolves any
+  residual same-quote tie toward the WORSE outcome.
+- **The blind spot is pinned, not hidden.** The same minute touch that
+  latches an exit on the minute grid is fixture-proven INVISIBLE at the
+  5-min grid — the difference between resolutions is a documented,
+  testable fact, feeding FX.4's mixed-resolution honesty.

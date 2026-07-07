@@ -27,15 +27,23 @@ from tests.test_five_min_clock import FixtureIntraday, _put
 class _FakeBar:
     """Minimal MarketViewLike for unit-testing the intraday branch."""
 
-    def __init__(self, lasts: list[float], vwap: float | None) -> None:
+    def __init__(self, lasts: list[float], vwap: float | None,
+                 live: float | None = None) -> None:
         self._lasts = lasts
         self._vwap = vwap
+        # FX.3: the live-price side; None mimics a print-less bar (falls
+        # back to the sampled last — the pre-FX.3 semantics)
+        self._live = live
 
     def intraday_closes_upto(self) -> list[float]:
         return self._lasts
 
     def intraday_vwap(self) -> float | None:
         return self._vwap
+
+    def close(self, d=None):  # type: ignore[no-untyped-def]
+        return self._live if self._live is not None else (
+            self._lasts[-1] if self._lasts else None)
 
 
 class TestVwapUnit:

@@ -884,13 +884,28 @@ def _delta_stop_hit(pos: Position, view: MarketViewLike, threshold: float) -> bo
 
 
 def _check_exits(
-    spec: StrategySpec, state: _State, view: MarketViewLike, dte_fn: DteFn | None = None
+    spec: StrategySpec, state: _State, view: MarketViewLike, dte_fn: DteFn | None = None,
+    latch: bool = False, bar_hhmm: str | None = None,
 ) -> None:
+    """latch=True (FX.3, finest mode only) arms the latched-exit rule: a
+    condition-exit trigger OBSERVED at a bar that cannot fill the close
+    (no usable quotes, e.g. a minute bar between NBBO stamps) is
+    remembered on the position and COMPLETED at the first quoted bar that
+    can fill it, without re-evaluation. A seen touch counts; an exit
+    order is never un-triggered by a bounce (directional honesty: a
+    forgotten exit is optimism). Trigger + fill bars are disclosed."""
     if dte_fn is None:
         dte_fn = _calendar_dte_fn(view.as_of)
     exit_rules = spec.exit
     for pos in state.live:
         if pos.closed or all(leg.settled for leg in pos.legs):
+            continue
+        if pos.exit_latched is not None:
+            # complete the latched exit before any re-evaluation; if this
+            # bar still can't fill it, the latch persists (no expiry)
+            if _close_position(pos, view, state, spec, pos.exit_latched):
+                if pos.latched_bar is not None:
+                    state.trades[-1].detail += f" · triggered {pos.latched_bar}"
             continue
         liq = _liq_value_per_share(pos, view, spec.costs)
         base = abs(pos.premium)
@@ -934,7 +949,12 @@ def _check_exits(
                 _close_position(pos, view, state, spec, "time_exit")
                 continue
         if exit_rules.conditions and all_conditions_pass(view, exit_rules.conditions):
-            _close_position(pos, view, state, spec, "condition_exit")
+            closed = _close_position(pos, view, state, spec, "condition_exit")
+            if not closed and latch:
+                # the trigger was OBSERVED but this bar cannot fill the
+                # close — latch it (completed at the next fillable quote)
+                pos.exit_latched = "condition_exit"
+                pos.latched_bar = bar_hhmm
 
 
 def _settle_expirations(spec: StrategySpec, state: _State, view: MarketViewLike) -> None:
@@ -1274,7 +1294,8 @@ def run_engine(
                     # exits BEFORE entries at every bar: a position opened at
                     # bar t is first evaluated at bar t+1 (owner amendment 2 —
                     # a stop can never fire on its own entry bar)
-                    _check_exits(spec, state, bview, dte_fn)
+                    _check_exits(spec, state, bview, dte_fn,
+                                 latch=finest, bar_hhmm=bar_hhmm)
                     # event-based (O(events-this-bar), never O(positions) —
                     # post-OOM rule); only the condition-less lifecycle
                     # re-arm consumes it. NOTE: a covered-call CLOSE keeps

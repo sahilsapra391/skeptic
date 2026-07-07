@@ -1265,3 +1265,29 @@ comments now truthful about attempt-level vs episode-level counts; (6) armed
 no-hunting bound pinned (refusing quote bar consumes the episode, later good
 quotes untouched); (7) closed_this_bar gated to its consumer + covered-call
 slot note; (8) schema title v3→v4; (9) lifecycle re-arm comment. 351 tests.
+
+## 2026-07-07 — ENGINE-V4 FX.3: latched exits + the intrabar-unknown rule
+
+Survey: most named FX.3 deliverables already existed (PT/stops/theta/
+close_at_time/settlement; stop-first priority IS the worse-path tie rule).
+What was missing: nothing could TRIGGER at a minute bar (conditions read
+the stamp-sampled series). Shipped (all finest-gated; fixed-5min
+bit-identical by construction — the live print at a stamp equals the
+sampled value, print-less bars fall back):
+- Live-price condition side (owner: entries AND exits, one semantic —
+  asymmetric visibility would be "lookahead-flavored"): price-vs-SMA/EMA/
+  VWAP compare the current bar's real print against the stamp-sampled
+  indicator (_live_price_tail; series cadence untouched).
+- Latched exits (owner: directional honesty — "a forgotten exit is
+  optimism"; entries/exits have opposite risk polarity so the right
+  consistency is same honesty-direction, OPPOSITE validity mechanics): a
+  condition-exit trigger observed at an unfillable bar latches on the
+  Position (exit_latched/latched_bar), completes at the first fillable
+  quote, no re-evaluation, no expiry, "triggered HH:MM" disclosed.
+- 0DTE default unchanged (owner: force-flat stays opt-in vocabulary;
+  parser SUGGESTS at FX.5 — ask, never default, guardrail #3).
+- Fixtures (hand-computed): touch at 09:41 latches → fills 09:45 at the
+  real quote (−106.30 pinned, fade-proof); latch survives an unfillable
+  stamp (no expiry); the SAME touch invisible at 5-min (blind spot
+  pinned); FX.2+FX.3 end-to-end (minute dip arms entry, fills at next
+  quote, "armed 09:41"); live-price VWAP/SMA units. 360 tests.
