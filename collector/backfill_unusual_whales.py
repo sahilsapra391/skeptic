@@ -39,8 +39,10 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
+import zipfile
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -510,12 +512,85 @@ def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end:
             _flush(s3, state)
 
 
+def _underlying_col(df: pd.DataFrame) -> str | None:
+    for c in ("underlying_symbol", "underlying", "root_symbol", "root", "ticker"):
+        if c in df.columns:
+            return c
+    return None
+
+
+def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: bool) -> None:
+    """FINEST granularity: the full options tape — EVERY trade market-wide per day
+    (~1.8 GB zipped CSV each) — streamed, unzipped and filtered to our tickers.
+    One request per session, newest-first, depth-floor aware, resumable.
+    → uw/option_tape/ticker={T}/date={D}/trades.parquet."""
+    ts = state.setdefault("tape", {"done": [], "empty": [], "blocked": []})
+    want = {t.upper() for t in tickers}
+    seen = set(ts["done"]) | set(ts["empty"]) | set(ts["blocked"])
+    sessions = sessions_desc(start, end)
+    todo = [x for x in sessions if x not in seen]
+    log.info("tape: %d sessions to pull (~1.8 GB download each)", len(todo))
+    hdr = {"Authorization": f"Bearer {_TOKEN}"}
+    for d in todo:
+        _LIM.wait()
+        try:
+            r = requests.get(f"{BASE}/api/option-trades/full-tape/{d}",
+                             headers=hdr, stream=True, timeout=900)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("tape %s: %s", d, exc)
+            continue
+        _LIM.observe(r.headers)
+        if r.status_code == 403:
+            ts["blocked"].extend(x for x in todo if x <= d and x not in ts["blocked"])
+            log.info("tape: history floor at %s", d)
+            break
+        if r.status_code != 200:
+            ts["empty"].append(d)
+            _flush(s3, state)
+            continue
+        with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+            for chunk in r.iter_content(chunk_size=1 << 20):  # stream to disk, 1 MB
+                tmp.write(chunk)
+            tmp.flush()
+            parts: dict[str, list[pd.DataFrame]] = {t: [] for t in want}
+            try:
+                with zipfile.ZipFile(tmp.name) as z:
+                    name = next((n for n in z.namelist() if n.endswith(".csv")), None)
+                    if name:
+                        with z.open(name) as f:
+                            for ch in pd.read_csv(f, chunksize=500_000, dtype=str,
+                                                  low_memory=False):
+                                col = _underlying_col(ch)
+                                if col is None:
+                                    break
+                                hit = ch[ch[col].str.upper().isin(want)]
+                                for t in want:
+                                    tt = hit[hit[col].str.upper() == t]
+                                    if len(tt):
+                                        parts[t].append(tt)
+            except Exception as exc:  # noqa: BLE001 — bad zip/csv → retry next run
+                log.warning("tape %s parse error: %s", d, exc)
+                continue
+        wrote = 0
+        for t in want:
+            if parts[t]:
+                df = pd.concat(parts[t], ignore_index=True)
+                df["captured_at"] = datetime.now(timezone.utc).isoformat()
+                if not dry:
+                    r2_put_parquet(s3, f"uw/option_tape/ticker={t}/date={d}/trades.parquet", df)
+                wrote += len(df)
+        ts["done"].append(d)
+        log.info("tape %s: %d trades kept for %s", d, wrote, "/".join(sorted(want)))
+        _flush(s3, state)
+
+
 # ------------------------------------------------------------ main
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mode",
-                    choices=("probe", "series", "daily", "expiry", "contracts", "intraday", "all"),
+                    choices=("probe", "series", "daily", "expiry", "contracts",
+                             "intraday", "tape", "all"),
                     default="probe")
     ap.add_argument("--tickers", default=",".join(TICKERS))
     ap.add_argument("--from", dest="start", default=OPTIONS_FLOOR)
@@ -554,6 +629,8 @@ def main() -> int:
             run_contracts(s3, state, tickers, args.dry_run)
         if args.mode == "intraday":  # heavy; explicit opt-in, not part of "all"
             run_contracts_intraday(s3, state, tickers, args.start, end, args.dry_run)
+        if args.mode == "tape":  # finest + heaviest (~1.8 GB/day); explicit opt-in
+            run_tape(s3, state, tickers, args.start, end, args.dry_run)
     except BudgetExhausted as exc:
         _flush(s3, state)
         log.warning("STOPPED: %s — rerun tomorrow to resume", exc)
