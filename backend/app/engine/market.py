@@ -204,7 +204,10 @@ class SessionSlice:
     underlying: dict[datetime, float]  # per-bar underlying last
     quote_source: str  # "ivol_5min" | "cboe_minute"
     # per-bar underlying volume (D2c, session-anchored VWAP input); empty
-    # when the source carries none (CBOE) — VWAP is honestly unevaluable then
+    # when the source carries none (CBOE) — VWAP is honestly unevaluable then.
+    # A bar ABSENT from a populated dict means its volume is UNKNOWN (e.g. an
+    # unparseable vendor cell): the bar sits out of session VWAP — consumers
+    # read it as 0 weight, never as a fabricated value.
     underlying_volume: dict[datetime, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

@@ -55,6 +55,11 @@ CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
 CACHE_SCHEMA_VERSION = 3  # v3: mid-session NaN cum-volume no longer injects
 #     the session cumulative as one bar's volume (v2: per-bar volume, D2c)
+# Spread stats version independently: its schema is untouched by session-cache
+# bumps, and a needless recompute is a full serial Yahoo-EOD rescan in the
+# request path (worse: a transient R2 outage during it persists None and
+# silently drops every alpaca_modeled session from coverage).
+SPREAD_STATS_VERSION = 2
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "intraday"
 LRU_SESSIONS = 32
 CBOE_FETCH_WORKERS = 16
@@ -112,6 +117,9 @@ def _ivol_frames(
     })[SLICE_COLUMNS]
     und_out: pd.DataFrame | None = None
     if und is not None and not und.empty and "last" in und.columns:
+        # the cumulative diff below is order-sensitive and the lake preserves
+        # vendor row order unguarded — never trust it, sort by stamp first
+        und = und.sort_values("minute_ts")
         if "volume" in und.columns:
             cum_vol = pd.to_numeric(und["volume"], errors="coerce")
             # the vendor volume column is CUMULATIVE within the session
@@ -268,7 +276,7 @@ def _spread_stats(s3: Any, ticker: str) -> float | None:
     if cache.exists():
         try:
             meta = json.loads(cache.read_text())
-            if meta.get("v") == CACHE_SCHEMA_VERSION:
+            if meta.get("v") == SPREAD_STATS_VERSION:
                 value = meta.get("median_spread_frac")
                 return None if value is None else float(value)
         except Exception:
@@ -298,7 +306,7 @@ def _spread_stats(s3: Any, ticker: str) -> float | None:
     value = float(pd.Series(fracs).median()) if fracs else None
     try:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps({"v": CACHE_SCHEMA_VERSION,
+        cache.write_text(json.dumps({"v": SPREAD_STATS_VERSION,
                                      "median_spread_frac": value}))
     except Exception:
         pass
@@ -446,6 +454,10 @@ def _write_cache(ticker: str, d: str, opt: pd.DataFrame,
         opt.to_parquet(opt_p, index=False)
         if und is not None and not und.empty:
             und.to_parquet(und_p, index=False)
+        else:
+            # a prior version's und file must never survive under the new
+            # manifest — _read_cached serves whatever und parquet exists
+            und_p.unlink(missing_ok=True)
         meta_p.write_text(json.dumps({"v": CACHE_SCHEMA_VERSION, "source": source}))
     except Exception:
         pass  # cache is an optimization, never a requirement

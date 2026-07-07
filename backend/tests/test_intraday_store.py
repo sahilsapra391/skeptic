@@ -142,6 +142,40 @@ class TestIvolSessions:
         assert vol == 1_600
         assert pv / vol == pytest.approx(100.15)
 
+        # the unknown bars must survive the disk-cache round-trip too — a
+        # future cast/fillna in _write_cache would regress ONLY cached reads
+        cached = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert cached is not None
+        assert datetime(2025, 1, 6, 9, 40) not in cached.underlying_volume
+        assert datetime(2025, 1, 6, 9, 45) not in cached.underlying_volume
+
+    def test_unsorted_underlying_rows_are_time_ordered_before_diff(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The lake preserves vendor row order unguarded; if a payload ever
+        arrives out of time order, the cumulative diff must not anchor on a
+        mid-session row (which would inject its cumulative as one bar)."""
+        und = pd.DataFrame([
+            {"minute_ts": f"{D} 09:40:00", "last": 100.6, "volume": 30_000_000},
+            {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
+            {"minute_ts": f"{D} 09:35:00", "last": 100.4, "volume": 1_600},
+        ])
+
+        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+            return [D] if "ivolatility" in prefix else []
+
+        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
+
+        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 40)] == 29_998_400
+
     def test_disk_cache_serves_second_store(self, store: intraday.IntradayStore,
                                             env: dict[str, Any]) -> None:
         store.slice_for(date(2025, 1, 6))
@@ -160,6 +194,39 @@ class TestIvolSessions:
         fresh = intraday.IntradayStore("SPY")
         assert fresh.slice_for(date(2025, 1, 6)) is not None
         assert env["parquet_fetches"] > fetches  # rebuilt from the lake
+
+    def test_stale_und_parquet_never_survives_refetch(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A refetch whose underlying GET fails (r2 swallows errors → None)
+        must not leave the prior version's und parquet behind the fresh
+        manifest — _read_cached serves whatever und file exists, so a stale
+        frame would ride along under the new schema version forever."""
+        state = {"und_available": True}
+
+        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+            return [D] if "ivolatility" in prefix else []
+
+        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+            if "underlying_intraday" in key:
+                return _ivol_und_frame(D) if state["und_available"] else None
+            return _ivol_opt_frame(D)
+
+        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+        intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        und_p = tmp_path / "SPY" / f"{D}_und.parquet"
+        assert und_p.exists()
+
+        # stale manifest (older schema) + underlying outage on the refetch
+        (tmp_path / "SPY" / f"{D}_meta.json").write_text(
+            '{"v": 0, "source": "ivol_5min"}')
+        state["und_available"] = False
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        assert not und_p.exists()  # the old-schema volumes went with it
+        assert slc.underlying == {}
 
     def test_lru_is_bounded(self, store: intraday.IntradayStore,
                             monkeypatch: pytest.MonkeyPatch) -> None:
