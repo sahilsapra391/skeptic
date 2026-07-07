@@ -102,6 +102,46 @@ class TestIvolSessions:
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
 
+    def test_mid_session_nan_volume_does_not_distort_vwap(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A single unparseable cumulative-volume cell mid-session must NOT
+        inject the whole session cumulative (~52M) as one bar's volume —
+        the affected bars sit out of session-anchored VWAP instead."""
+        und = pd.DataFrame([
+            {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
+            {"minute_ts": f"{D} 09:35:00", "last": 100.4, "volume": 1_600},
+            {"minute_ts": f"{D} 09:40:00", "last": 100.2, "volume": "bad"},
+            {"minute_ts": f"{D} 09:45:00", "last": 120.0, "volume": 52_000_000},
+        ])
+
+        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+            return [D] if "ivolatility" in prefix else []
+
+        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
+
+        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
+        # the bad cell's bar AND the next (diff spans the gap) are unknown
+        assert datetime(2025, 1, 6, 9, 40) not in slc.underlying_volume
+        assert datetime(2025, 1, 6, 9, 45) not in slc.underlying_volume
+
+        # session VWAP exactly as the engine accumulates it (missing → 0):
+        # (100.0×1000 + 100.4×600) / 1600 = 100.15 — hand-computed. The old
+        # fillna(cum_vol) put 52M on the 09:45 bar, dragging VWAP to ~120.
+        pv = sum(slc.underlying[b] * slc.underlying_volume.get(b, 0.0)
+                 for b in slc.bars if b in slc.underlying)
+        vol = sum(slc.underlying_volume.get(b, 0.0)
+                  for b in slc.bars if b in slc.underlying)
+        assert vol == 1_600
+        assert pv / vol == pytest.approx(100.15)
+
     def test_disk_cache_serves_second_store(self, store: intraday.IntradayStore,
                                             env: dict[str, Any]) -> None:
         store.slice_for(date(2025, 1, 6))

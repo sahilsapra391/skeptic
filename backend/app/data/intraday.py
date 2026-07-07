@@ -53,7 +53,8 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 # (covers a weekend); documented approximation for the tiny forward corpus.
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
-CACHE_SCHEMA_VERSION = 2  # v2 (D2c): underlying frames carry per-bar volume
+CACHE_SCHEMA_VERSION = 3  # v3: mid-session NaN cum-volume no longer injects
+#     the session cumulative as one bar's volume (v2: per-bar volume, D2c)
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "intraday"
 LRU_SESSIONS = 32
 CBOE_FETCH_WORKERS = 16
@@ -114,8 +115,14 @@ def _ivol_frames(
         if "volume" in und.columns:
             cum_vol = pd.to_numeric(und["volume"], errors="coerce")
             # the vendor volume column is CUMULATIVE within the session
-            # (probed: monotonic 0 → ~52M) — per-bar volume is the diff
-            bar_vol = cum_vol.diff().fillna(cum_vol).clip(lower=0)
+            # (probed: monotonic 0 → ~52M) — per-bar volume is the diff.
+            # Only the FIRST bar takes its cumulative as-is; an unparseable
+            # cell mid-session leaves ITS bar and the next NaN (volume
+            # unknown → the bar sits out of session VWAP) rather than
+            # injecting the whole session cumulative as one bar's volume.
+            bar_vol = cum_vol.diff()
+            bar_vol.iloc[0] = cum_vol.iloc[0]
+            bar_vol = bar_vol.clip(lower=0)
         else:
             bar_vol = pd.Series(0.0, index=und.index)  # VWAP unevaluable
         und_out = pd.DataFrame({
