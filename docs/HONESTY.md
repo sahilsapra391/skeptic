@@ -509,3 +509,34 @@ A finest-mode run can mix bar resolutions session by session. The rules
 - **High trade counts are never trust.** 0DTE scanning runs produce many
   trades; the regime/DSR/coverage machinery judges them unchanged — count
   clears floors, it never substitutes for regimes or robustness.
+
+## FX.5 (ENGINE-V4): the parser unlock — vocabulary, never inference
+
+spec v4 vocabulary is now parseable, under the standing rule that
+intelligence lives in the parser's QUESTIONS, never in silent defaults:
+
+- **`entry.intraday_scan "every_setup"`** maps from explicit continuous-
+  scanning phrasing ("take every setup", "every time RSI dips", "re-enter
+  after I take profit", "keep selling all day"); once-per-session phrasing
+  leaves the field ABSENT. Never combined with a ladder — conflicting
+  phrasing asks.
+- **`backtest.resolution "finest"`** maps ONLY from explicit resolution
+  language ("use the finest data", "minute-level where you have it").
+  Resolution is a DATA POLICY, never inferred from strategy shape: a plain
+  0DTE prompt gets no resolution field — the same spec must mean the same
+  thing across time (owner decision 2026-07-07; reproducibility over
+  helpfulness).
+- **The exit-less 0DTE seller asks, offering the choices**: a force-flat
+  time, a profit target, or hold-to-settlement (ITM = assignment, OTM =
+  worthless). Suggest, never default (guardrail #3).
+- **The dial round-trip preserves parser-only vocabulary.** Editing a
+  pre-run dial rebuilds the spec WITH the parsed spec as base: ladders,
+  intraday_scan, resolution, close_at_time and time_of_day all survive a
+  dial edit (closing the D5d follow-up where an unrelated dial edit
+  silently DROPPED the whole ladder — silent strategy corruption, the
+  wrong-answer-no-error class). The client mirrors the server's
+  vocabulary→version computation; the server remains the authority.
+- **The 0DTE dial refusal is lifted**: DTE 0 on the spec screen now emits
+  an intraday spec (clock 5min, DTE band 0–2, the intraday slice) instead
+  of blocking the run — the minute engine milestone it was waiting on has
+  shipped (FX.1–FX.4).

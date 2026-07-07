@@ -115,17 +115,105 @@ function exitRules(draft: SpecDraft): Json {
   if (label.includes("expiry")) out.time_exit_dte = 0;
   const stop = label.match(/stop\s*(\d+(?:\.\d+)?)(×|%)/);
   if (stop) out.stop_loss_pct = stop[2] === "×" ? Number(stop[1]) * 100 : Number(stop[1]);
+  // "flat 15:45" — the session force-flat is a complete exit on its own
+  const flat = label.match(/flat\s*(\d{2}:\d{2})/);
+  if (flat) out.close_at_time = flat[1];
   return out;
 }
 
-export function draftToSpec(draft: SpecDraft): Json {
+/** Mirror of the server's _required_spec_version — the version is a
+ * contract computed from the vocabulary actually used, so a dial-rebuilt
+ * spec must carry the same version the server would compute. */
+function computeSpecVersion(spec: Json): number {
+  const entry = (spec.entry ?? {}) as Json;
+  const exit = (spec.exit ?? {}) as Json;
+  const backtest = (spec.backtest ?? {}) as Json;
+  const position = (spec.position ?? {}) as Json;
+  const sel = (position.expiration_selection ?? {}) as Json;
+  const sched = (entry.schedule ?? {}) as Json;
+  const conds = [
+    ...((entry.conditions as Json[] | undefined) ?? []),
+    ...((exit.conditions as Json[] | undefined) ?? []),
+  ];
+  const V2_INDICATORS = new Set([
+    "ivx_rank_1y", "ivx_level_30d", "hv_iv_spread_30d", "price_vs_vwap_pct",
+  ]);
+  if (backtest.resolution != null || entry.intraday_scan != null) return 4;
+  if (entry.scale_in != null || exit.close_at_time != null) return 3;
+  if (
+    exit.delta_stop_abs != null ||
+    exit.theta_harvest != null ||
+    position.max_vega_per_contract != null ||
+    (backtest.clock != null && backtest.clock !== "daily") ||
+    sched.time_of_day != null ||
+    sel.min_dte === 0 ||
+    sel.target_dte === 0 ||
+    conds.some(
+      (c) => V2_INDICATORS.has(String(c.indicator)) || c.timeframe === "5min",
+    )
+  )
+    return 2;
+  return 1;
+}
+
+export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
   if (!draft.exit) {
     throw new Error("exit is unset — the spec screen must ask, never default");
   }
-  if (draft.dte < 1) {
-    throw new Error("0DTE needs the minute engine — refused on EOD data (set DTE ≥ 1)");
+  // FX.5: 0DTE runs on the 5-minute intraday engine (shipped) — a 0DTE
+  // dial now emits an intraday spec instead of refusing. The DTE band is
+  // the intraday slice (0–2 trading DTE).
+  const zeroDte = draft.dte === 0;
+  const baseEntry = ((base?.entry ?? {}) as Json) ?? {};
+  const baseExit = ((base?.exit ?? {}) as Json) ?? {};
+  const baseBacktest = ((base?.backtest ?? {}) as Json) ?? {};
+  const baseSchedule = (baseEntry.schedule ?? {}) as Json;
+  const intraday =
+    zeroDte ||
+    draft.clock === "5min" ||
+    baseBacktest.clock === "5min" ||
+    draft.resolution === "finest" ||
+    draft.intradayScan === "every_setup";
+
+  // parser-only vocabulary the dials cannot express survives a dial edit
+  // (review of D5d: the rebuild silently DROPPED the ladder — silent
+  // strategy corruption; same preservation now covers every such field)
+  const scaleIn = baseEntry.scale_in ?? null;
+  const entry: Json = {
+    schedule: {
+      ...schedule(draft),
+      ...(baseSchedule.time_of_day != null
+        ? { time_of_day: baseSchedule.time_of_day }
+        : {}),
+    },
+    // a ladder IS the entry signal — its conditions stay empty; dials
+    // cannot edit rungs, so the base ladder passes through whole
+    conditions: scaleIn != null ? [] : conditions(draft),
+    max_concurrent_positions: 5,
+  };
+  if (scaleIn != null) entry.scale_in = scaleIn;
+  const scan = draft.intradayScan ?? (baseEntry.intraday_scan as string | undefined);
+  if (scan === "every_setup") entry.intraday_scan = "every_setup";
+
+  const exit: Json = exitRules(draft);
+  if (exit.close_at_time == null && baseExit.close_at_time != null) {
+    exit.close_at_time = baseExit.close_at_time;
   }
-  return {
+
+  const backtest: Json = {
+    // start/end are set by startBacktest from the CONFIRMED window —
+    // building a spec without one is a bug it will throw on
+    start: null,
+    end: null,
+    initial_capital: draft.capital ?? 25000,
+    seed: 42,
+  };
+  if (intraday) backtest.clock = "5min";
+  const resolution =
+    draft.resolution ?? (baseBacktest.resolution as string | undefined);
+  if (resolution === "finest" && intraday) backtest.resolution = "finest";
+
+  const spec: Json = {
     spec_version: 1,
     meta: {
       name: `${draft.ticker} .${draft.strikeDelta}Δ ${draft.structure.replace(/_/g, " ")}`.slice(0, 80),
@@ -135,25 +223,23 @@ export function draftToSpec(draft: SpecDraft): Json {
     position: {
       structure: draft.structure,
       legs: legs(draft),
-      expiration_selection: {
-        target_dte: draft.dte,
-        min_dte: Math.max(1, draft.dte - 10),
-        max_dte: Math.min(120, draft.dte + 15),
-      },
+      expiration_selection: zeroDte
+        ? { target_dte: 0, min_dte: 0, max_dte: 2 }
+        : {
+            target_dte: draft.dte,
+            min_dte: Math.max(intraday ? 0 : 1, draft.dte - 10),
+            max_dte: Math.min(120, draft.dte + 15),
+          },
     },
-    entry: {
-      schedule: schedule(draft),
-      conditions: conditions(draft),
-      max_concurrent_positions: 5,
-    },
-    exit: exitRules(draft),
+    entry,
+    exit,
     sizing: {
       method: draft.sizeMethod ?? "fixed_contracts",
       value: draft.sizeValue ?? 1,
     },
     costs: { commission_per_contract: 0.65, slippage_half_spread_fraction: 0.5 },
-    // start/end are set by startBacktest from the CONFIRMED window —
-    // building a spec without one is a bug it will throw on
-    backtest: { start: null, end: null, initial_capital: draft.capital ?? 25000, seed: 42 },
+    backtest,
   };
+  spec.spec_version = computeSpecVersion(spec);
+  return spec;
 }

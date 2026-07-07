@@ -1,583 +1,831 @@
 {
-  "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free.",
-  "cases": [
-    {
-      "case": 1,
-      "text": "Sell a 30 delta put on SPY every Monday, close at 50% profit or 21 DTE.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "SPY",
-        "structure": "short_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.3
-          }
-        ],
-        "target_dte": 45,
-        "schedule": {
-          "frequency": [
-            "weekly"
-          ],
-          "day_of_week": "monday"
-        },
-        "conditions": [],
-        "exit": {
-          "profit_target_pct": 50,
-          "time_exit_dte": 21
-        }
-      }
+ "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype).",
+ "cases": [
+  {
+   "case": 1,
+   "text": "Sell a 30 delta put on SPY every Monday, close at 50% profit or 21 DTE.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ],
+     "day_of_week": "monday"
     },
-    {
-      "case": 2,
-      "text": "Put credit spread on QQQ, short leg 25 delta, $5 wide, 45 DTE, exit at 50% profit, stop at 2x credit, weekly entries.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "QQQ",
-        "structure": "put_credit_spread",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.25
-          },
-          {
-            "right": "put",
-            "side": "long",
-            "method": "width_from_leg",
-            "value": 5,
-            "reference_leg": 0
-          }
-        ],
-        "target_dte": 45,
-        "schedule": {
-          "frequency": [
-            "weekly"
-          ]
-        },
-        "conditions": [],
-        "exit": {
-          "profit_target_pct": 50,
-          "stop_loss_pct": 200
-        }
-      }
-    },
-    {
-      "case": 3,
-      "text": "Iron condor on IWM, 20 delta wings, shorts at 20 delta, longs $3 wider, 30 DTE, take profit 40%, time exit 10 DTE, enter monthly.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "IWM",
-        "structure": "iron_condor",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.2
-          },
-          {
-            "right": "put",
-            "side": "long",
-            "method": "width_from_leg",
-            "value": 3,
-            "reference_leg": 0
-          },
-          {
-            "right": "call",
-            "side": "short",
-            "method": "delta",
-            "value": 0.2
-          },
-          {
-            "right": "call",
-            "side": "long",
-            "method": "width_from_leg",
-            "value": 3,
-            "reference_leg": 2
-          }
-        ],
-        "target_dte": 30,
-        "schedule": {
-          "frequency": [
-            "monthly"
-          ]
-        },
-        "conditions": [],
-        "exit": {
-          "profit_target_pct": 40,
-          "time_exit_dte": 10
-        }
-      }
-    },
-    {
-      "case": 4,
-      "text": "Covered call on SPY, sell the 30 DTE call at 20 delta, exit at expiration, enter monthly.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "SPY",
-        "structure": "covered_call",
-        "legs": [
-          {
-            "right": "call",
-            "side": "short",
-            "method": "delta",
-            "value": 0.2
-          }
-        ],
-        "target_dte": 30,
-        "schedule": {
-          "frequency": [
-            "monthly"
-          ]
-        },
-        "conditions": [],
-        "exit": {
-          "time_exit_dte": 0
-        }
-      }
-    },
-    {
-      "case": 5,
-      "text": "Buy a 60 DTE ATM call on QQQ when RSI(14) < 30, sell at 100% gain or 20 DTE, one at a time.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "QQQ",
-        "structure": "long_call",
-        "legs": [
-          {
-            "right": "call",
-            "side": "long",
-            "method": "delta",
-            "value": 0.5
-          }
-        ],
-        "target_dte": 60,
-        "schedule": {
-          "frequency": [
-            "signal_only",
-            "daily"
-          ]
-        },
-        "conditions": [
-          {
-            "indicator": "rsi",
-            "period": 14,
-            "operator": [
-              "<",
-              "<=",
-              "below"
-            ],
-            "value": 30
-          }
-        ],
-        "max_concurrent_positions": 1,
-        "exit": {
-          "profit_target_pct": 100,
-          "time_exit_dte": 20
-        }
-      }
-    },
-    {
-      "case": 6,
-      "text": "Short put on SPY at 5% below spot, 30 DTE, profit target 60%, stop 300%, enter every Friday.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "SPY",
-        "structure": "short_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "offset_pct",
-            "value": -0.05
-          }
-        ],
-        "target_dte": 30,
-        "schedule": {
-          "frequency": [
-            "weekly"
-          ],
-          "day_of_week": "friday"
-        },
-        "conditions": [],
-        "exit": {
-          "profit_target_pct": 60,
-          "stop_loss_pct": 300
-        }
-      }
-    },
-    {
-      "case": 7,
-      "text": "When the 9 EMA is below the 20 EMA on SPY, sell a 25 delta call spread $5 wide, 21 DTE, 50% profit target, stop at 150%, daily signal.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "SPY",
-        "structure": "call_credit_spread",
-        "legs": [
-          {
-            "right": "call",
-            "side": "short",
-            "method": "delta",
-            "value": 0.25
-          },
-          {
-            "right": "call",
-            "side": "long",
-            "method": "width_from_leg",
-            "value": 5,
-            "reference_leg": 0
-          }
-        ],
-        "target_dte": 21,
-        "schedule": {
-          "frequency": [
-            "daily",
-            "signal_only"
-          ]
-        },
-        "conditions": [
-          {
-            "indicator": "ema_cross_state",
-            "operator": [
-              "below",
-              "<"
-            ],
-            "params": {
-              "fast": 9,
-              "slow": 20
-            }
-          }
-        ],
-        "exit": {
-          "profit_target_pct": 50,
-          "stop_loss_pct": 150
-        }
-      }
-    },
-    {
-      "case": 8,
-      "text": "Long put on IWM when price is 3% above its 50 SMA, 45 DTE ATM, exit 21 DTE or 75% profit.",
-      "kind": "spec",
-      "expect": {
-        "ticker": "IWM",
-        "structure": "long_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "long",
-            "method": "delta",
-            "value": 0.5
-          }
-        ],
-        "target_dte": 45,
-        "schedule": {
-          "frequency": [
-            "signal_only",
-            "daily"
-          ]
-        },
-        "conditions": [
-          {
-            "indicator": "price_vs_sma_pct",
-            "period": 50,
-            "operator": [
-              ">",
-              ">=",
-              "above"
-            ],
-            "value": 3
-          }
-        ],
-        "exit": {
-          "profit_target_pct": 75,
-          "time_exit_dte": 21
-        }
-      }
-    },
-    {
-      "case": 9,
-      "text": "Sell puts on SPY when the market dips.",
-      "kind": "questions"
-    },
-    {
-      "case": 10,
-      "text": "Iron condor every week, manage at 21 days.",
-      "kind": "questions"
-    },
-    {
-      "case": 11,
-      "text": "Do the wheel on QQQ.",
-      "kind": "questions"
-    },
-    {
-      "case": 12,
-      "text": "Buy calls when it looks oversold, sell when it recovers.",
-      "kind": "questions"
-    },
-    {
-      "case": 13,
-      "text": "Sell a 30 delta put on SPY weekly, 45 DTE, close if the short strike reaches 60 delta, otherwise take profits at 50% between 21 and 7 DTE.",
-      "kind": "spec",
-      "expect": {
-        "spec_version": 2,
-        "ticker": "SPY",
-        "structure": "short_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.3
-          }
-        ],
-        "target_dte": 45,
-        "schedule": {
-          "frequency": [
-            "weekly"
-          ]
-        },
-        "conditions": [],
-        "exit": {
-          "delta_stop_abs": 0.6,
-          "theta_harvest": {
-            "dte_from": 21,
-            "dte_to": 7,
-            "profit_pct": 50
-          }
-        }
-      }
-    },
-    {
-      "case": 14,
-      "text": "Short put on QQQ at 30 delta, 45 DTE, weekly entries, 50% profit target, but only when IV rank is above 50.",
-      "kind": "spec",
-      "expect": {
-        "spec_version": 2,
-        "ticker": "QQQ",
-        "structure": "short_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.3
-          }
-        ],
-        "target_dte": 45,
-        "schedule": {
-          "frequency": [
-            "weekly"
-          ]
-        },
-        "conditions": [
-          {
-            "indicator": "ivx_rank_1y",
-            "operator": [
-              ">",
-              ">=",
-              "above"
-            ],
-            "value": 50
-          }
-        ],
-        "exit": {
-          "profit_target_pct": 50
-        }
-      }
-    },
-    {
-      "case": 15,
-      "text": "Buy a 60 DTE ATM call on QQQ and harvest theta between 21 and 7 DTE at 50% profit.",
-      "kind": "questions",
-      "comment": "Owner amendment 1 golden case: theta_harvest has no defined max profit on a long option — the parser must ASK (offering a plain profit target or time exit), never emit theta_harvest on a long_call."
-    },
-    {
-      "case": 16,
-      "text": "Sell a 1DTE ATM put on SPY when the 5-minute RSI(14) is under 30 and price is below VWAP, take profit at 50%, stop at 200%.",
-      "kind": "spec",
-      "comment": "The founder's 0/1DTE mean-reversion family (D2 acceptance phrasing): must infer clock 5min, both intraday conditions, trading-day DTE 1.",
-      "expect": {
-        "spec_version": 2,
-        "clock": "5min",
-        "ticker": "SPY",
-        "structure": "short_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.5
-          }
-        ],
-        "target_dte": 1,
-        "schedule": {
-          "frequency": [
-            "signal_only",
-            "daily"
-          ]
-        },
-        "conditions": [
-          {
-            "indicator": "rsi",
-            "period": 14,
-            "timeframe": "5min",
-            "operator": [
-              "<",
-              "<=",
-              "below"
-            ],
-            "value": 30
-          },
-          {
-            "indicator": "price_vs_vwap_pct",
-            "timeframe": "5min",
-            "operator": [
-              "<",
-              "<=",
-              "below"
-            ],
-            "value": 0
-          }
-        ],
-        "exit": {
-          "profit_target_pct": 50,
-          "stop_loss_pct": 200
-        }
-      }
-    },
-    {
-      "case": 17,
-      "text": "0DTE short put on SPY at 30 delta, enter after 10:00, close at 50% profit.",
-      "kind": "spec",
-      "expect": {
-        "spec_version": 2,
-        "clock": "5min",
-        "time_of_day": "10:00",
-        "ticker": "SPY",
-        "structure": "short_put",
-        "legs": [
-          {
-            "right": "put",
-            "side": "short",
-            "method": "delta",
-            "value": 0.3
-          }
-        ],
-        "target_dte": 0,
-        "schedule": {
-          "frequency": [
-            "daily",
-            "signal_only"
-          ]
-        },
-        "conditions": [],
-        "exit": {
-          "profit_target_pct": 50
-        }
-      }
-    },
-    {
-      "case": 18,
-      "text": "Scalp SPY 0DTE puts off the 1-minute chart, in at 9:32, out by 9:47.",
-      "kind": "questions",
-      "comment": "Sub-5-minute vocabulary: the record is 5-minute bars — the parser must ASK (offering the 5-min grid), never silently round 9:32 to 9:30 or emit a 1-minute indicator."
-    },
-    {
-      "case": 19,
-      "text": "Buy a 1DTE ATM call on SPY and scale in as the 5-minute RSI(14) falls: 2 contracts at RSI 30, 3 more at 25, 5 at 20, 10 at 15. Stop adding once RSI stops making new lows. Cap the whole basket at 20 contracts. Take profit at 40% of the blended cost, stop out at 75%, and flatten by 3:45 — no overnight.",
-      "kind": "spec",
-      "comment": "D5 GOLDEN — the founder's scale-in ladder family. Runs AS WRITTEN: a 4-rung intraday RSI ladder on a 1DTE ATM call, not flattened to a single entry. Owner may swap in their verbatim prompt; the ground truth is the decision-relevant subset.",
-      "expect": {
-        "spec_version": 3,
-        "clock": "5min",
-        "ticker": "SPY",
-        "structure": "long_call",
-        "legs": [
-          {
-            "right": "call",
-            "side": "long",
-            "method": "delta",
-            "value": 0.5
-          }
-        ],
-        "target_dte": 1,
-        "schedule": {
-          "frequency": [
-            "signal_only",
-            "daily"
-          ]
-        },
-        "conditions": [],
-        "scale_in": {
-          "rungs": [
-            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 30, "add_contracts": 2 },
-            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 25, "add_contracts": 3 },
-            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 20, "add_contracts": 5 },
-            { "indicator": "rsi", "period": 14, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 15, "add_contracts": 10 }
-          ],
-          "max_total_contracts": 20
-        },
-        "exit": {
-          "profit_target_pct": 40,
-          "stop_loss_pct": 75,
-          "close_at_time": "15:45"
-        }
-      }
-    },
-    {
-      "case": 20,
-      "text": "On QQQ, buy the nearest same-day-expiry ATM call and add as the 5-minute RSI(2) drops — 1 contract at 25, then 2 more at 15 — capped at 5 contracts total. Take profit 50%, out by 3:50, nothing held overnight.",
-      "kind": "spec",
-      "comment": "A second, shorter ladder (0DTE QQQ) to prove generality — the primitive isn't special-cased to SPY or to four rungs.",
-      "expect": {
-        "spec_version": 3,
-        "clock": "5min",
-        "ticker": "QQQ",
-        "structure": "long_call",
-        "legs": [
-          {
-            "right": "call",
-            "side": "long",
-            "method": "delta",
-            "value": 0.5
-          }
-        ],
-        "target_dte": 0,
-        "schedule": {
-          "frequency": [
-            "signal_only",
-            "daily"
-          ]
-        },
-        "conditions": [],
-        "scale_in": {
-          "rungs": [
-            { "indicator": "rsi", "period": 2, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 25, "add_contracts": 1 },
-            { "indicator": "rsi", "period": 2, "timeframe": "5min", "operator": ["<=", "<", "below"], "value": 15, "add_contracts": 2 }
-          ],
-          "max_total_contracts": 5
-        },
-        "exit": {
-          "profit_target_pct": 50,
-          "close_at_time": "15:50"
-        }
-      }
-    },
-    {
-      "case": 21,
-      "text": "Scale into SPY 1DTE ATM calls on the 5-minute RSI(14): 2 at 30, 3 at 25, 5 at 20. Take profit at 40%, flatten by 3:45.",
-      "kind": "questions",
-      "comment": "The ladder is supported and fully specified EXCEPT the ruin cap — a scale-in with no max_total_contracts is unbounded ruin. The parser must ASK for the cap, never default it (guardrail #3)."
-    },
-    {
-      "case": 22,
-      "text": "Buy SPY 1DTE ATM calls and add more as the 5-minute RSI(14) drops — 2 at 30, 3 at 25, 5 at 20 — max 15 contracts.",
-      "kind": "questions",
-      "comment": "A ladder with a cap but ZERO exit rules — the parser must ASK for an exit, exactly as it does for any structure with no stated exit."
+    "conditions": [],
+    "exit": {
+     "profit_target_pct": 50,
+     "time_exit_dte": 21
     }
-  ]
+   }
+  },
+  {
+   "case": 2,
+   "text": "Put credit spread on QQQ, short leg 25 delta, $5 wide, 45 DTE, exit at 50% profit, stop at 2x credit, weekly entries.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "QQQ",
+    "structure": "put_credit_spread",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.25
+     },
+     {
+      "right": "put",
+      "side": "long",
+      "method": "width_from_leg",
+      "value": 5,
+      "reference_leg": 0
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ]
+    },
+    "conditions": [],
+    "exit": {
+     "profit_target_pct": 50,
+     "stop_loss_pct": 200
+    }
+   }
+  },
+  {
+   "case": 3,
+   "text": "Iron condor on IWM, 20 delta wings, shorts at 20 delta, longs $3 wider, 30 DTE, take profit 40%, time exit 10 DTE, enter monthly.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "IWM",
+    "structure": "iron_condor",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.2
+     },
+     {
+      "right": "put",
+      "side": "long",
+      "method": "width_from_leg",
+      "value": 3,
+      "reference_leg": 0
+     },
+     {
+      "right": "call",
+      "side": "short",
+      "method": "delta",
+      "value": 0.2
+     },
+     {
+      "right": "call",
+      "side": "long",
+      "method": "width_from_leg",
+      "value": 3,
+      "reference_leg": 2
+     }
+    ],
+    "target_dte": 30,
+    "schedule": {
+     "frequency": [
+      "monthly"
+     ]
+    },
+    "conditions": [],
+    "exit": {
+     "profit_target_pct": 40,
+     "time_exit_dte": 10
+    }
+   }
+  },
+  {
+   "case": 4,
+   "text": "Covered call on SPY, sell the 30 DTE call at 20 delta, exit at expiration, enter monthly.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "SPY",
+    "structure": "covered_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "short",
+      "method": "delta",
+      "value": 0.2
+     }
+    ],
+    "target_dte": 30,
+    "schedule": {
+     "frequency": [
+      "monthly"
+     ]
+    },
+    "conditions": [],
+    "exit": {
+     "time_exit_dte": 0
+    }
+   }
+  },
+  {
+   "case": 5,
+   "text": "Buy a 60 DTE ATM call on QQQ when RSI(14) < 30, sell at 100% gain or 20 DTE, one at a time.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "QQQ",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 60,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "rsi",
+      "period": 14,
+      "operator": [
+       "<",
+       "<=",
+       "below"
+      ],
+      "value": 30
+     }
+    ],
+    "max_concurrent_positions": 1,
+    "exit": {
+     "profit_target_pct": 100,
+     "time_exit_dte": 20
+    }
+   }
+  },
+  {
+   "case": 6,
+   "text": "Short put on SPY at 5% below spot, 30 DTE, profit target 60%, stop 300%, enter every Friday.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "offset_pct",
+      "value": -0.05
+     }
+    ],
+    "target_dte": 30,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ],
+     "day_of_week": "friday"
+    },
+    "conditions": [],
+    "exit": {
+     "profit_target_pct": 60,
+     "stop_loss_pct": 300
+    }
+   }
+  },
+  {
+   "case": 7,
+   "text": "When the 9 EMA is below the 20 EMA on SPY, sell a 25 delta call spread $5 wide, 21 DTE, 50% profit target, stop at 150%, daily signal.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "SPY",
+    "structure": "call_credit_spread",
+    "legs": [
+     {
+      "right": "call",
+      "side": "short",
+      "method": "delta",
+      "value": 0.25
+     },
+     {
+      "right": "call",
+      "side": "long",
+      "method": "width_from_leg",
+      "value": 5,
+      "reference_leg": 0
+     }
+    ],
+    "target_dte": 21,
+    "schedule": {
+     "frequency": [
+      "daily",
+      "signal_only"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "ema_cross_state",
+      "operator": [
+       "below",
+       "<"
+      ],
+      "params": {
+       "fast": 9,
+       "slow": 20
+      }
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50,
+     "stop_loss_pct": 150
+    }
+   }
+  },
+  {
+   "case": 8,
+   "text": "Long put on IWM when price is 3% above its 50 SMA, 45 DTE ATM, exit 21 DTE or 75% profit.",
+   "kind": "spec",
+   "expect": {
+    "ticker": "IWM",
+    "structure": "long_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "price_vs_sma_pct",
+      "period": 50,
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 3
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 75,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 9,
+   "text": "Sell puts on SPY when the market dips.",
+   "kind": "questions"
+  },
+  {
+   "case": 10,
+   "text": "Iron condor every week, manage at 21 days.",
+   "kind": "questions"
+  },
+  {
+   "case": 11,
+   "text": "Do the wheel on QQQ.",
+   "kind": "questions"
+  },
+  {
+   "case": 12,
+   "text": "Buy calls when it looks oversold, sell when it recovers.",
+   "kind": "questions"
+  },
+  {
+   "case": 13,
+   "text": "Sell a 30 delta put on SPY weekly, 45 DTE, close if the short strike reaches 60 delta, otherwise take profits at 50% between 21 and 7 DTE.",
+   "kind": "spec",
+   "expect": {
+    "spec_version": 2,
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ]
+    },
+    "conditions": [],
+    "exit": {
+     "delta_stop_abs": 0.6,
+     "theta_harvest": {
+      "dte_from": 21,
+      "dte_to": 7,
+      "profit_pct": 50
+     }
+    }
+   }
+  },
+  {
+   "case": 14,
+   "text": "Short put on QQQ at 30 delta, 45 DTE, weekly entries, 50% profit target, but only when IV rank is above 50.",
+   "kind": "spec",
+   "expect": {
+    "spec_version": 2,
+    "ticker": "QQQ",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "ivx_rank_1y",
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 50
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50
+    }
+   }
+  },
+  {
+   "case": 15,
+   "text": "Buy a 60 DTE ATM call on QQQ and harvest theta between 21 and 7 DTE at 50% profit.",
+   "kind": "questions",
+   "comment": "Owner amendment 1 golden case: theta_harvest has no defined max profit on a long option — the parser must ASK (offering a plain profit target or time exit), never emit theta_harvest on a long_call."
+  },
+  {
+   "case": 16,
+   "text": "Sell a 1DTE ATM put on SPY when the 5-minute RSI(14) is under 30 and price is below VWAP, take profit at 50%, stop at 200%.",
+   "kind": "spec",
+   "comment": "The founder's 0/1DTE mean-reversion family (D2 acceptance phrasing): must infer clock 5min, both intraday conditions, trading-day DTE 1.",
+   "expect": {
+    "spec_version": 2,
+    "clock": "5min",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 1,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "rsi",
+      "period": 14,
+      "timeframe": "5min",
+      "operator": [
+       "<",
+       "<=",
+       "below"
+      ],
+      "value": 30
+     },
+     {
+      "indicator": "price_vs_vwap_pct",
+      "timeframe": "5min",
+      "operator": [
+       "<",
+       "<=",
+       "below"
+      ],
+      "value": 0
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50,
+     "stop_loss_pct": 200
+    }
+   }
+  },
+  {
+   "case": 17,
+   "text": "0DTE short put on SPY at 30 delta, enter after 10:00, close at 50% profit.",
+   "kind": "spec",
+   "expect": {
+    "spec_version": 2,
+    "clock": "5min",
+    "time_of_day": "10:00",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 0,
+    "schedule": {
+     "frequency": [
+      "daily",
+      "signal_only"
+     ]
+    },
+    "conditions": [],
+    "exit": {
+     "profit_target_pct": 50
+    }
+   }
+  },
+  {
+   "case": 18,
+   "text": "Scalp SPY 0DTE puts off the 1-minute chart, in at 9:32, out by 9:47.",
+   "kind": "questions",
+   "comment": "Sub-5-minute vocabulary: the record is 5-minute bars — the parser must ASK (offering the 5-min grid), never silently round 9:32 to 9:30 or emit a 1-minute indicator."
+  },
+  {
+   "case": 19,
+   "text": "Buy a 1DTE ATM call on SPY and scale in as the 5-minute RSI(14) falls: 2 contracts at RSI 30, 3 more at 25, 5 at 20, 10 at 15. Stop adding once RSI stops making new lows. Cap the whole basket at 20 contracts. Take profit at 40% of the blended cost, stop out at 75%, and flatten by 3:45 — no overnight.",
+   "kind": "spec",
+   "comment": "D5 GOLDEN — the founder's scale-in ladder family. Runs AS WRITTEN: a 4-rung intraday RSI ladder on a 1DTE ATM call, not flattened to a single entry. Owner may swap in their verbatim prompt; the ground truth is the decision-relevant subset.",
+   "expect": {
+    "spec_version": 3,
+    "clock": "5min",
+    "ticker": "SPY",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 1,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [],
+    "scale_in": {
+     "rungs": [
+      {
+       "indicator": "rsi",
+       "period": 14,
+       "timeframe": "5min",
+       "operator": [
+        "<=",
+        "<",
+        "below"
+       ],
+       "value": 30,
+       "add_contracts": 2
+      },
+      {
+       "indicator": "rsi",
+       "period": 14,
+       "timeframe": "5min",
+       "operator": [
+        "<=",
+        "<",
+        "below"
+       ],
+       "value": 25,
+       "add_contracts": 3
+      },
+      {
+       "indicator": "rsi",
+       "period": 14,
+       "timeframe": "5min",
+       "operator": [
+        "<=",
+        "<",
+        "below"
+       ],
+       "value": 20,
+       "add_contracts": 5
+      },
+      {
+       "indicator": "rsi",
+       "period": 14,
+       "timeframe": "5min",
+       "operator": [
+        "<=",
+        "<",
+        "below"
+       ],
+       "value": 15,
+       "add_contracts": 10
+      }
+     ],
+     "max_total_contracts": 20
+    },
+    "exit": {
+     "profit_target_pct": 40,
+     "stop_loss_pct": 75,
+     "close_at_time": "15:45"
+    }
+   }
+  },
+  {
+   "case": 20,
+   "text": "On QQQ, buy the nearest same-day-expiry ATM call and add as the 5-minute RSI(2) drops — 1 contract at 25, then 2 more at 15 — capped at 5 contracts total. Take profit 50%, out by 3:50, nothing held overnight.",
+   "kind": "spec",
+   "comment": "A second, shorter ladder (0DTE QQQ) to prove generality — the primitive isn't special-cased to SPY or to four rungs.",
+   "expect": {
+    "spec_version": 3,
+    "clock": "5min",
+    "ticker": "QQQ",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 0,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [],
+    "scale_in": {
+     "rungs": [
+      {
+       "indicator": "rsi",
+       "period": 2,
+       "timeframe": "5min",
+       "operator": [
+        "<=",
+        "<",
+        "below"
+       ],
+       "value": 25,
+       "add_contracts": 1
+      },
+      {
+       "indicator": "rsi",
+       "period": 2,
+       "timeframe": "5min",
+       "operator": [
+        "<=",
+        "<",
+        "below"
+       ],
+       "value": 15,
+       "add_contracts": 2
+      }
+     ],
+     "max_total_contracts": 5
+    },
+    "exit": {
+     "profit_target_pct": 50,
+     "close_at_time": "15:50"
+    }
+   }
+  },
+  {
+   "case": 21,
+   "text": "Scale into SPY 1DTE ATM calls on the 5-minute RSI(14): 2 at 30, 3 at 25, 5 at 20. Take profit at 40%, flatten by 3:45.",
+   "kind": "questions",
+   "comment": "The ladder is supported and fully specified EXCEPT the ruin cap — a scale-in with no max_total_contracts is unbounded ruin. The parser must ASK for the cap, never default it (guardrail #3)."
+  },
+  {
+   "case": 22,
+   "text": "Buy SPY 1DTE ATM calls and add more as the 5-minute RSI(14) drops — 2 at 30, 3 at 25, 5 at 20 — max 15 contracts.",
+   "kind": "questions",
+   "comment": "A ladder with a cap but ZERO exit rules — the parser must ASK for an exit, exactly as it does for any structure with no stated exit."
+  },
+  {
+   "case": 23,
+   "text": "Sell a 0DTE at-the-money put on SPY every time the 5-minute RSI(14) dips below 30 — take every setup, don't stop after the first. 25% profit target, flatten everything by 15:45.",
+   "kind": "spec",
+   "comment": "FX.5 clear case: 'every time / take every setup' phrasing → entry.intraday_scan every_setup (one entry per signal episode, engine-managed). No resolution phrasing → NO resolution field (never inferred from 0DTE).",
+   "expect": {
+    "spec_version": 4,
+    "clock": "5min",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 0,
+    "conditions": [
+     {
+      "indicator": "rsi",
+      "period": 14,
+      "operator": [
+       "<",
+       "<=",
+       "below",
+       "crosses_below"
+      ],
+      "value": 30,
+      "timeframe": "5min"
+     }
+    ],
+    "intraday_scan": "every_setup",
+    "exit": {
+     "profit_target_pct": 25,
+     "close_at_time": "15:45"
+    },
+    "schedule": {
+     "frequency": [
+      "daily",
+      "signal_only"
+     ]
+    }
+   }
+  },
+  {
+   "case": 24,
+   "text": "Each morning sell one 0DTE ATM put on SPY, 25% profit target, flat by 15:45.",
+   "kind": "spec",
+   "comment": "FX.5 contrast case: 'each morning ... one' is once-per-session phrasing — intraday_scan must be ABSENT (fabricating it changes the strategy).",
+   "expect": {
+    "spec_version": 3,
+    "clock": "5min",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 0,
+    "conditions": [],
+    "exit": {
+     "profit_target_pct": 25,
+     "close_at_time": "15:45"
+    },
+    "schedule": {
+     "frequency": [
+      "daily"
+     ]
+    }
+   }
+  },
+  {
+   "case": 25,
+   "text": "Sell 0DTE ATM SPY puts with a 25% profit target, flat by 15:45 — use the finest data you have, minute-level where it exists.",
+   "kind": "spec",
+   "comment": "FX.5 clear case: explicit resolution phrasing → backtest.resolution finest. Data policy mapped ONLY from explicit language.",
+   "expect": {
+    "spec_version": 4,
+    "clock": "5min",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 0,
+    "conditions": [],
+    "resolution": "finest",
+    "exit": {
+     "profit_target_pct": 25,
+     "close_at_time": "15:45"
+    },
+    "schedule": {
+     "frequency": [
+      "daily"
+     ]
+    }
+   }
+  },
+  {
+   "case": 26,
+   "text": "Sell 0DTE at-the-money puts on SPY every day.",
+   "kind": "questions",
+   "comment": "FX.5 guardrail-#3 case: an exit-less 0DTE SELLING strategy must ASK — and the ask should OFFER the concrete choices (force-flat time / profit target / hold to settlement). Suggest, never default."
+  },
+  {
+   "case": 27,
+   "text": "Sell the 0DTE ATM put on SPY, 25% profit target, force-flat at 15:45, take every setup all day, and run it on the finest data available.",
+   "kind": "spec",
+   "comment": "FX.5 golden archetype (acceptance-run strategy; owner swaps in verbatim personal phrasings at the re-ACCEPT gate): full v4 — every_setup + finest + force-flat together.",
+   "expect": {
+    "spec_version": 4,
+    "clock": "5min",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 0,
+    "conditions": [],
+    "intraday_scan": "every_setup",
+    "resolution": "finest",
+    "exit": {
+     "profit_target_pct": 25,
+     "close_at_time": "15:45"
+    },
+    "schedule": {
+     "frequency": [
+      "daily",
+      "signal_only"
+     ]
+    }
+   }
+  },
+  {
+   "case": 28,
+   "text": "Buy a 1DTE ATM call on QQQ, sell it at 20% profit, and get right back in after each exit — keep cycling it through the day. Stop loss 50%.",
+   "kind": "spec",
+   "comment": "FX.5 cycling case: condition-less re-entry phrasing ('get right back in after each exit') → every_setup (the position lifecycle is the episode).",
+   "expect": {
+    "spec_version": 4,
+    "clock": "5min",
+    "ticker": "QQQ",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 1,
+    "conditions": [],
+    "intraday_scan": "every_setup",
+    "exit": {
+     "profit_target_pct": 20,
+     "stop_loss_pct": 50
+    },
+    "schedule": {
+     "frequency": [
+      "daily",
+      "signal_only"
+     ]
+    }
+   }
+  }
+ ]
 }

@@ -63,6 +63,10 @@ export interface SpecDraft {
   sizeValue?: number;
   capital?: number;
   clock?: "daily" | "5min";
+  /** FX.5 (spec v4 dials): continuous scanning + per-session resolution.
+   * Unset = the defaults (once per session · 5-min grid). */
+  intradayScan?: "once_per_session" | "every_setup" | null;
+  resolution?: "5min" | "finest" | null;
 }
 
 /** /api/data/estimate — window options with real session counts and time

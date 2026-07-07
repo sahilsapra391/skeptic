@@ -181,6 +181,24 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
     elif got_cat != exp_cat:
         errs.append(f"exit.close_at_time {got_cat} != {exp_cat}")
 
+    # FX.5 (v4): continuous scanning + resolution — fabrication is as wrong
+    # as omission (a field the user never asked for changes the strategy)
+    exp_scan = expect.get("intraday_scan")
+    got_scan = spec["entry"].get("intraday_scan")
+    if exp_scan is None:
+        if got_scan is not None:
+            errs.append(f"fabricated entry.intraday_scan={got_scan}")
+    elif got_scan != exp_scan:
+        errs.append(f"entry.intraday_scan {got_scan} != {exp_scan}")
+
+    exp_res = expect.get("resolution")
+    got_res = (spec.get("backtest") or {}).get("resolution")
+    if exp_res is None:
+        if got_res is not None:
+            errs.append(f"fabricated backtest.resolution={got_res}")
+    elif got_res != exp_res:
+        errs.append(f"backtest.resolution {got_res} != {exp_res}")
+
     if "spec_version" in expect and spec.get("spec_version") != expect["spec_version"]:
         errs.append(f"spec_version {spec.get('spec_version')} != {expect['spec_version']}")
     if "clock" in expect:

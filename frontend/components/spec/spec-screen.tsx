@@ -335,8 +335,8 @@ export function SpecScreen({
             ))}
           </select>
         </div>
-        <div className={clsx(TILE, zeroDte && "!border-warn/50")}>
-          <TileLabel name="DTE ▾" warn={zeroDte} />
+        <div className={TILE}>
+          <TileLabel name="DTE ▾" />
           <select
             value={draft.dte}
             onChange={(e) => set({ dte: Number(e.target.value) })}
@@ -350,6 +350,42 @@ export function SpecScreen({
             ))}
           </select>
         </div>
+
+        {(clock === "5min" || zeroDte) && (
+          <>
+            <div className={TILE}>
+              <TileLabel name="SCANNING ▾" />
+              <select
+                value={draft.intradayScan ?? ""}
+                onChange={(e) =>
+                  set({
+                    intradayScan: e.target.value === "every_setup" ? "every_setup" : null,
+                  })
+                }
+                className={TILE_SELECT_CLS}
+                title="How often the intraday clock may open positions — every_setup takes one entry per signal episode and re-enters after intraday exits"
+              >
+                <option value="">once / session</option>
+                <option value="every_setup">every setup</option>
+              </select>
+            </div>
+
+            <div className={TILE}>
+              <TileLabel name="RESOLUTION ▾" />
+              <select
+                value={draft.resolution ?? ""}
+                onChange={(e) =>
+                  set({ resolution: e.target.value === "finest" ? "finest" : null })
+                }
+                className={TILE_SELECT_CLS}
+                title="Bar resolution per session — finest uses the minute grid where minute data is banked (the run discloses its mix); default is the 5-minute grid everywhere"
+              >
+                <option value="">5-min grid</option>
+                <option value="finest">finest available</option>
+              </select>
+            </div>
+          </>
+        )}
 
         {draft.fromChart ? (
           <>
@@ -648,9 +684,9 @@ export function SpecScreen({
       )}
 
       {zeroDte && (
-        <div className="mt-3 rounded-xl border border-warn/50 px-3.5 py-3 text-[13px] leading-[1.5] text-warn">
-          0DTE needs minute-level simulation — refused until the minute engine milestone. Set DTE
-          to 1 or more to run on EOD data.
+        <div className="mt-3 rounded-xl border border-line px-3.5 py-3 text-[13px] leading-[1.5] text-ink-3">
+          0DTE runs on the 5-minute intraday engine — sessions with intraday coverage only
+          (the results page shows the exact window and resolution mix it was computed on).
         </div>
       )}
 
@@ -669,10 +705,10 @@ export function SpecScreen({
         </span>
         <button
           onClick={onRun}
-          disabled={!exitSet || zeroDte || !windowSet}
+          disabled={!exitSet || !windowSet}
           className={clsx(
             "rounded-[11px] px-6 py-3 text-[15.5px]",
-            exitSet && !zeroDte && windowSet
+            exitSet && windowSet
               ? "bg-trust font-bold text-on-accent"
               : "cursor-not-allowed bg-raised-2 text-ink-4",
           )}
