@@ -124,6 +124,35 @@ MANIFEST: list[dict[str, Any]] = [
     {"name": "darkpool", "path": "/api/darkpool/{ticker}", "mode": "ticker_date", "priority": 2},
     {"name": "lit_flow", "path": "/api/lit-flow/{ticker}", "mode": "ticker_date", "priority": 2},
 
+    # ---- P1b: full ticker coverage — every remaining one-call ticker endpoint
+    #      (owner directive 2026-07-06: get EVERY endpoint for these tickers).
+    #      Fundamentals/corporate/positioning; banked now, use decided later. --
+    {"name": "financials", "path": "/api/stock/{ticker}/financials", "mode": "ticker_series", "priority": 1},
+    {"name": "balance_sheets", "path": "/api/stock/{ticker}/balance-sheets", "mode": "ticker_series", "priority": 1},
+    {"name": "cash_flows", "path": "/api/stock/{ticker}/cash-flows", "mode": "ticker_series", "priority": 1},
+    {"name": "income_statements", "path": "/api/stock/{ticker}/income-statements", "mode": "ticker_series", "priority": 1},
+    {"name": "fundamental_breakdown", "path": "/api/stock/{ticker}/fundamental-breakdown",
+     "mode": "ticker_series", "priority": 1},
+    {"name": "flow_alerts", "path": "/api/stock/{ticker}/flow-alerts", "mode": "ticker_series", "priority": 1},
+    {"name": "insider_buy_sells", "path": "/api/stock/{ticker}/insider-buy-sells", "mode": "ticker_series", "priority": 1},
+    {"name": "option_contracts", "path": "/api/stock/{ticker}/option-contracts", "mode": "ticker_series", "priority": 1},
+    {"name": "earnings_ticker", "path": "/api/earnings/{ticker}", "mode": "ticker_series", "priority": 1},
+    {"name": "insider_ticker", "path": "/api/insider/{ticker}", "mode": "ticker_series", "priority": 1},
+    {"name": "insider_ticker_flow", "path": "/api/insider/{ticker}/ticker-flow", "mode": "ticker_series", "priority": 1},
+    {"name": "institution_ownership", "path": "/api/institution/{ticker}/ownership", "mode": "ticker_series", "priority": 1},
+    {"name": "shorts_interest_float_v1", "path": "/api/shorts/{ticker}/interest-float",
+     "mode": "ticker_series", "priority": 1},
+    {"name": "companies_profile", "path": "/api/companies/{ticker}/profile", "mode": "ticker_series", "priority": 1},
+    {"name": "companies_dividends", "path": "/api/companies/{ticker}/dividends", "mode": "ticker_series", "priority": 1},
+    {"name": "companies_splits", "path": "/api/companies/{ticker}/splits", "mode": "ticker_series", "priority": 1},
+    {"name": "companies_earnings_estimates", "path": "/api/companies/{ticker}/earnings-estimates",
+     "mode": "ticker_series", "priority": 1},
+    {"name": "seasonality_monthly", "path": "/api/seasonality/{ticker}/monthly", "mode": "ticker_series", "priority": 1},
+    {"name": "seasonality_year_month", "path": "/api/seasonality/{ticker}/year-month",
+     "mode": "ticker_series", "priority": 1},
+    {"name": "politician_holders", "path": "/api/politician-portfolios/holders/{ticker}",
+     "mode": "ticker_series", "priority": 1},
+
     # ---- P3: market-wide per-date series --------------------------------------
     {"name": "market_tide", "path": "/api/market/market-tide", "mode": "market_date",
      "priority": 3, "min_date": "2022-09-28"},
@@ -133,12 +162,35 @@ MANIFEST: list[dict[str, Any]] = [
     {"name": "net_flow_expiry", "path": "/api/net-flow/expiry", "mode": "market_date", "priority": 3},
 ]
 
+# ---- expiry-sliced endpoints (mode `expiry`): enumerate each ticker's active
+#      expiries, pull a CURRENT snapshot per expiry (historical is depth-capped on
+#      the tariff anyway) → uw/{name}/ticker={T}/expiry={E}/rows.parquet.
+#      `param`: "path" = expiry goes in the URL; else the query-param name. -------
+EXPIRY_ENDPOINTS: list[dict[str, str]] = [
+    {"name": "atm_chains", "path": "/api/stock/{ticker}/atm-chains", "param": "expirations[]"},
+    {"name": "greek_exposure_strike_expiry", "path": "/api/stock/{ticker}/greek-exposure/strike-expiry",
+     "param": "expiry"},
+    {"name": "greek_flow_expiry", "path": "/api/stock/{ticker}/greek-flow/{expiry}", "param": "path"},
+    {"name": "spot_exposures_by_expiry", "path": "/api/stock/{ticker}/spot-exposures/{expiry}/strike",
+     "param": "path"},
+    {"name": "spot_exposures_expiry_strike", "path": "/api/stock/{ticker}/spot-exposures/expiry-strike",
+     "param": "expirations[]"},
+]
+
+# per-contract sub-endpoints (mode `contracts`): one call each per option symbol
+# seen in the banked option_chains listings. historic = daily OHLC/NBBO/IV/OI.
+CONTRACT_SUBS: list[tuple[str, str]] = [
+    ("historic", "/api/option-contract/{id}/historic"),
+    ("flow", "/api/option-contract/{id}/flow"),
+    ("volume_profile", "/api/option-contract/{id}/volume-profile"),
+]
+
 # ---- deliberately excluded (documented, not forgotten) -----------------------
-# Needs a param we can't enumerate cheaply / not our tickers / not options-strategy
-# data: /group-flow/{flow_group}, /stock/{sector}/tickers, /market/{sector}/sector-tide,
-# /technical-indicator/{function} (we compute our own), /option-trades/full-tape/{date}
-# and /exchange-breakdown/{date} (whole-market tape, enormous), congress·crypto·forex·
-# digital-currencies·commodities·private-markets·predictions·politician·institutions·
-# insider·companies·economy·calendar·screener·news·socket (websockets, live-only).
-# Per-contract history (/option-contract/{id}/historic) is its OWN mode: `contracts`,
-# fed by the banked option_chains listings — see backfill_unusual_whales.py.
+# stock/{ticker}/ownership — enterprise-only (confirmed 422, not on this plan).
+# technical-indicator/{function} — derived indicators the engine already computes
+#   natively (rsi/sma/ema…), not source data; function enum unpublished.
+# companies/{ticker}/transcripts/{quarter} — earnings-call TEXT, no backtest value,
+#   quarter format unconfirmed. option-contract/{id}/intraday — per-contract-per-day,
+#   astronomically many requests (we hold iVol 5-min options already). NOT our
+#   tickers / not options data: group-flow, sector-*, whole-market tape, congress·
+#   crypto·forex·private-markets·predictions·news·socket (live-only websockets).
