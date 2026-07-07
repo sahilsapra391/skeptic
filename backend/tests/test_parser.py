@@ -157,6 +157,11 @@ def test_required_spec_version_detects_v5() -> None:
     # the VRP alias maps to hv_iv_spread_30d — v2 vocabulary, NOT v5
     vrp = {"indicator": "hv_iv_spread_30d", "operator": ">", "value": 4}
     assert rsv({"entry": {"conditions": [vrp]}}) == 2
+    # review finding: ladder rungs and the rearm are conditions too
+    assert rsv({"entry": {"scale_in": {"rungs": [skew]}}}) == 5
+    assert rsv({"entry": {"scale_in": {"rungs": [
+        {"indicator": "rsi", "operator": "<", "value": 30}],
+        "rearm": term}}}) == 5
 
 
 def _ladder_spec_raw() -> dict:

@@ -528,6 +528,13 @@ class StrategySpec(BaseModel):
         if self.spec_version >= 5:
             return self
         all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        # a Rung IS a Condition and the rearm is one too — the gate must see
+        # the ladder's vocabulary or a v3 ladder smuggles v5 in silently
+        # (review finding; the D5d wrong-answer-no-error class)
+        if self.entry.scale_in is not None:
+            all_conditions += list(self.entry.scale_in.rungs)
+            if self.entry.scale_in.rearm is not None:
+                all_conditions.append(self.entry.scale_in.rearm)
         used = sorted({c.indicator.value for c in all_conditions
                        if c.indicator in V5_INDICATORS})
         if used:

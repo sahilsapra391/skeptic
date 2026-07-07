@@ -247,9 +247,13 @@ def _build_market_store(ticker: str) -> MarketStore:
         s3 = r2.r2_client()
         ivx_30d = ivol_analytics.load_ivx_30d(s3, ticker)
         hv_30d = ivol_analytics.load_hv_30d(s3, ticker)
-        skew_25d, term_slope = ivs_signals.load_ivs_signals(s3, ticker)
     except Exception:
         ivx_30d, hv_30d = {}, {}
+    # F4 series loads in its OWN guard: a corrupt skew artifact must not
+    # zero the IVX/HV a v2 strategy actually asked for (review finding)
+    try:
+        skew_25d, term_slope = ivs_signals.load_ivs_signals(r2.r2_client(), ticker)
+    except Exception:
         skew_25d, term_slope = {}, {}
 
     return MarketStore(

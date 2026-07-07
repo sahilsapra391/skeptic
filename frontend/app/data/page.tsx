@@ -406,7 +406,9 @@ export default function DataPage() {
         </div>
       )}
 
-      {coverage.ivs_signals?.SPY && (
+      {(coverage.ivs_signals?.SPY ||
+        coverage.ivs_signals?.QQQ ||
+        coverage.ivs_signals?.IWM) && (
         <div className={clsx(PANEL, "mt-3")}>
           <div className={clsx(PANEL_TITLE, "mb-1")}>
             VOL-SURFACE SIGNALS — 25Δ SKEW / 30v90 TERM SLOPE, DERIVED NIGHTLY

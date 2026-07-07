@@ -48,7 +48,9 @@ def _interp_iv_at_delta(rows: pd.DataFrame, target_abs_delta: float) -> float | 
         return None
     pts = rows[["delta", "IV"]].copy()
     pts["abs_delta"] = pts["delta"].abs()
-    pts = pts.dropna().sort_values("abs_delta")
+    # stable sort: if a grid ever carried duplicate |delta| rows, the pick
+    # is deterministic (last-listed below, first-listed above)
+    pts = pts.dropna().sort_values("abs_delta", kind="stable")
     below = pts[pts["abs_delta"] <= target_abs_delta]
     above = pts[pts["abs_delta"] >= target_abs_delta]
     if below.empty or above.empty:
@@ -84,6 +86,16 @@ def derive_signal_row(surface: pd.DataFrame) -> dict[str, float | None]:
     }
     if surface is None or surface.empty:
         return out
+    if not {"period", "Call/Put", "delta", "IV", "out-of-the-money %"}.issubset(
+        surface.columns
+    ):
+        return out  # unrecognized surface shape — honest absence, never a guess
+    # vendor JSON dtypes are untrusted (same rule as load_ivs_surface's
+    # coercion): a string-typed period would make every == comparison
+    # silently False and derive an all-None row — coerce first
+    surface = surface.copy()
+    for col in ("period", "delta", "IV", "out-of-the-money %"):
+        surface[col] = pd.to_numeric(surface[col], errors="coerce")
     t30 = surface[surface["period"] == SKEW_TENOR_DAYS]
     put_iv = _interp_iv_at_delta(t30[t30["Call/Put"] == "P"], SKEW_DELTA)
     call_iv = _interp_iv_at_delta(t30[t30["Call/Put"] == "C"], SKEW_DELTA)

@@ -1436,3 +1436,31 @@ loader NaN handling, PIT boundedness both accessors, BarView prev-day,
 ×100-bug canary, unavailable-is-False, v5 gating + schema parity,
 version detection incl. alias, condition-gated e2e (entry fires only on
 the qualifying session).
+LIVE EVAL (35 cases): 23/23 clear + 12/12 ambiguous — ACCEPTED, perfect
+score. Case 34 asks the exact threshold question ("What threshold defines
+'really steep' for the 25-delta skew?"); case 35 refuses the 10Δ/60d remap
+and offers the supported signals; case 33 pins the VRP alias at v2.
+REVIEW (independent agent, clean worktree of the commit): 0 BLOCKER +
+3 MAJOR + 3 MINOR + 3 NIT, must-fixes ALL FIXED — (1) MAJOR: the
+collector watermark advanced past never-derived sessions (transient R2
+read failure = permanent hole; drip-backfilled OLD sessions below the
+watermark never derived) → REDESIGNED to set-difference incrementality:
+each run derives exactly the listed sessions absent from the artifact,
+no state file at all; unreadable sessions write no row and retry next
+night, loudly logged (holes heal by construction — self-improvement
+thesis); (2) MAJOR: the v5 gate scanned only entry/exit conditions — a
+v3 LADDER smuggled skew_25d rungs/rearm past all three mirrors
+(spec.py validator, parser _required_spec_version, spec.ts) → all three
+fold in scale_in.rungs + rearm, pinned both ways (loud at v3, valid at
+v5, parser returns 5); (3) MAJOR: derive_signal_row trusted vendor
+dtypes — a string-typed surface would derive an all-None row silently →
+pd.to_numeric coercion (same rule as load_ivs_surface) + unrecognized-
+shape early return, pinned (string-typed fixture derives identically);
+(4) chains.py loads the F4 series in its OWN try/except (a corrupt skew
+artifact can no longer zero IVX/HV for a v2 strategy); (5) Observatory
+panel gates on any-ticker, not SPY-only (guardrail #6 mid-backfill);
+(6) gated-e2e docstring states the real carry-forward semantics;
+(7) schema title bumped v5; (8) jsonschema added to dev deps — the four
+schema-parity tests (incl. v5) now RUN in CI instead of skipping;
+(9) stable interpolation sort comment. Real-lake acceptance: SPY derived
+4,905/4,905 sessions with skew present on every one.

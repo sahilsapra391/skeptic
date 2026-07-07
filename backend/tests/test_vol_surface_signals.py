@@ -304,8 +304,12 @@ from app.engine.runner import run_backtest  # noqa: E402
 
 def _gated_run_result():
     """signal_only short put gated on skew_25d > 5; the skew series makes
-    the condition true on exactly ONE session (6.0 on day 1; 3.0 / 4.0
-    elsewhere; days 3-4 have NO derived row → unevaluable → no entry)."""
+    the condition true on exactly ONE session: 3.0 on day 0, 6.0 on day 1,
+    4.0 on day 2. Days 3-4 have no derived row, so the accessor CARRIES
+    FORWARD day 2's 4.0 (most recent at-or-before, like every daily
+    analytic series) — which fails the > 5 test. Carry-forward staleness
+    is unbounded by design, matching the IVX precedent; a series with NO
+    prior observation at all is unevaluable (pinned above)."""
     days = _weekdays(date(2024, 1, 1), 5)
     expiry = date(2024, 1, 12)
     chains = {}
@@ -347,3 +351,64 @@ class TestConditionGatedRun:
         result, days = _gated_run_result()
         opens = [t for t in result.trades if t.action == "OPEN"]
         assert [t.day for t in opens] == [days[1]]
+
+
+class TestLadderVocabularyGate:
+    """Review finding (F4 #2): a Rung IS a Condition and the rearm is one
+    too — a v3 ladder must not smuggle v5 vocabulary past the gate."""
+
+    def _ladder_doc(self, rung_indicator: str, rearm_indicator: str) -> dict:
+        doc = copy.deepcopy(CANONICAL)
+        doc["spec_version"] = 3
+        doc["position"] = {
+            "structure": "long_call",
+            "legs": [{"right": "call", "side": "long", "ratio": 1,
+                      "strike_selection": {"method": "delta", "value": 0.50}}],
+            "expiration_selection": {"target_dte": 45, "min_dte": 35,
+                                     "max_dte": 60},
+        }
+        doc["entry"] = {
+            "schedule": {"frequency": "signal_only"}, "conditions": [],
+            "max_concurrent_positions": 1,
+            "scale_in": {
+                "mode": "signal_ladder",
+                "basket": True,
+                "rungs": [{"indicator": rung_indicator, "operator": ">",
+                           "value": 5, "add_contracts": 1}],
+                "rearm": {"indicator": rearm_indicator, "operator": "<",
+                          "value": 2},
+                "max_total_contracts": 3,
+            },
+        }
+        return doc
+
+    def test_v5_rung_on_v3_is_loud(self) -> None:
+        with pytest.raises(ValidationError, match="cannot use v5 vocabulary"):
+            StrategySpec.model_validate(self._ladder_doc("skew_25d", "rsi"))
+
+    def test_v5_rearm_on_v3_is_loud(self) -> None:
+        with pytest.raises(ValidationError, match="cannot use v5 vocabulary"):
+            StrategySpec.model_validate(
+                self._ladder_doc("drawdown_from_high_pct", "skew_25d"))
+
+    def test_v5_ladder_validates_at_v5(self) -> None:
+        doc = self._ladder_doc("skew_25d", "skew_25d")
+        doc["spec_version"] = 5
+        assert StrategySpec.model_validate(doc).spec_version == 5
+
+
+class TestDtypeCoercion:
+    """Review finding (F4 #3): vendor JSON dtypes are untrusted — a
+    string-typed surface must derive the same numbers, never a silent
+    all-None row."""
+
+    def test_string_typed_surface_derives_identically(self) -> None:
+        stringy = _surf([(str(p), cp, str(d), str(iv), str(o))
+                         for (p, cp, d, iv, o) in _BASE_ROWS])
+        row = derive_signal_row(stringy)
+        assert row["skew_25d"] == 6.0
+        assert row["term_slope_30_90"] == 4.0
+
+    def test_unrecognized_surface_shape_is_all_none(self) -> None:
+        df = pd.DataFrame({"period": [30], "IV": [0.2]})  # missing columns
+        assert all(v is None for v in derive_signal_row(df).values())

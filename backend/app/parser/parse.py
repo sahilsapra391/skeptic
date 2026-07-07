@@ -38,9 +38,14 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     expiration = position.get("expiration_selection") or {}
     backtest = raw_spec.get("backtest") or {}
     # v5 (F4): vol-surface indicators — checked first, the version is the MAX
-    # the vocabulary needs (a skew condition on a finest-resolution spec is 5)
+    # the vocabulary needs (a skew condition on a finest-resolution spec is 5).
+    # Ladder rungs and the rearm are conditions too (review finding).
+    scale_in = entry.get("scale_in") or {}
+    ladder_conds = list(scale_in.get("rungs") or [])
+    if isinstance(scale_in.get("rearm"), dict):
+        ladder_conds.append(scale_in["rearm"])
     if any(isinstance(c, dict) and c.get("indicator") in _V5_INDICATOR_NAMES
-           for c in conds):
+           for c in conds + ladder_conds):
         return 5
     # v4 (FX.1/FX.2): per-session resolution + continuous scanning
     if (backtest.get("resolution") is not None
