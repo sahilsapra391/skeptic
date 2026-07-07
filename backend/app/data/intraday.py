@@ -30,9 +30,10 @@ the network once.
 from __future__ import annotations
 
 import json
+import logging
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ import numpy as np
 import pandas as pd
 
 from app.data import r2
+from app.data.bars import per_bar_volume
 from app.engine.market import SessionSlice
 from app.engine.types import ContractKey, Quote
 
@@ -53,8 +55,10 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 # (covers a weekend); documented approximation for the tiny forward corpus.
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
-CACHE_SCHEMA_VERSION = 3  # v3: mid-session NaN cum-volume no longer injects
-#     the session cumulative as one bar's volume (v2: per-bar volume, D2c)
+CACHE_SCHEMA_VERSION = 4  # v4: vendor-shape hardening — duplicate stamps keep
+#     the last-written row, head-truncated payloads no longer seed bar 0 with
+#     the cumulative-so-far (v3: NaN cum-volume no longer injects the session
+#     cumulative as one bar's volume; v2: per-bar volume, D2c)
 # Spread stats version independently: its schema is untouched by session-cache
 # bumps, and a needless recompute is a full serial Yahoo-EOD rescan in the
 # request path (worse: a transient R2 outage during it persists None and
@@ -94,7 +98,36 @@ def _num_i(v: Any) -> int | None:
     return None if v is None or pd.isna(v) else int(v)
 
 
+SESSION_OPEN = time(9, 30)  # ET wall-clock; bars are stamped at bar START
+
+# counts only, never chain-data rows (repo rule) — the point is telling
+# "one bad row dropped" apart from "the whole session evaporated"
+log = logging.getLogger("skeptic.intraday")
+
+
 # ------------------------------------------------------------ transformations
+
+def _ivol_und_rows(und: pd.DataFrame | None, ctx: str) -> pd.DataFrame | None:
+    """Vendor underlying rows → clean, time-ordered bars (`bar_ts` parsed).
+    Defensive against vendor shape defects, each one row's problem and never
+    the session's: a malformed stamp is coerced + dropped (the volume column
+    already gets that tolerance), and a duplicated stamp keeps only the
+    last-written row — a duplicate's cumulative diff is 0 and its dict insert
+    would erase the bar's real volume in _build_slice. Row losses are logged
+    (counts only) so systemic evaporation is never silent."""
+    if und is None or und.empty or "last" not in und.columns:
+        return None
+    parsed = und.assign(bar_ts=pd.to_datetime(und["minute_ts"], errors="coerce"))
+    und = parsed.dropna(subset=["bar_ts"])
+    if len(und) < len(parsed):
+        log.warning("ivol underlying %s: %d/%d rows dropped (unparseable stamp)",
+                    ctx, len(parsed) - len(und), len(parsed))
+    # the cumulative diff downstream is order-sensitive and the lake
+    # preserves vendor row order unguarded — sort by stamp, never trust it
+    und = und.sort_values("bar_ts", kind="stable")
+    und = und.drop_duplicates(subset=["bar_ts"], keep="last")
+    return None if und.empty else und
+
 
 def _ivol_frames(
     s3: Any, ticker: str, d: str
@@ -104,7 +137,9 @@ def _ivol_frames(
         return None
     und = r2.get_parquet(s3, f"{IVOL_UND}/ticker={ticker}/date={d}/bars.parquet")
     out = pd.DataFrame({
-        "bar_ts": pd.to_datetime(opt["minute_ts"]),
+        # coerce: one malformed stamp drops its row (_build_slice dropna),
+        # never the session — raising here killed the whole load
+        "bar_ts": pd.to_datetime(opt["minute_ts"], errors="coerce"),
         "expiration": opt["expiration"],
         "right": opt["right"],
         "strike": pd.to_numeric(opt["strike"], errors="coerce"),
@@ -120,27 +155,39 @@ def _ivol_frames(
         "vega": pd.to_numeric(opt["vega"], errors="coerce"),
         "rho": pd.to_numeric(opt["rho"], errors="coerce"),
     })[SLICE_COLUMNS]
+    n_bad = int(out["bar_ts"].isna().sum())
+    if n_bad == len(out):
+        # every stamp evaporated — never serve (or cache) a hollow session;
+        # left uncached, the next run rereads the possibly-repaired object
+        log.warning("ivol options %s %s: all %d stamps unparseable — skipped",
+                    ticker, d, n_bad)
+        return None
+    if n_bad:
+        log.warning("ivol options %s %s: %d/%d rows carry unparseable stamps",
+                    ticker, d, n_bad, len(out))
     und_out: pd.DataFrame | None = None
-    if und is not None and not und.empty and "last" in und.columns:
-        # the cumulative diff below is order-sensitive and the lake preserves
-        # vendor row order unguarded — never trust it, sort by stamp first
-        und = und.sort_values("minute_ts")
-        if "volume" in und.columns:
-            cum_vol = pd.to_numeric(und["volume"], errors="coerce")
+    und_rows = _ivol_und_rows(und, f"{ticker} {d}")
+    if und_rows is not None:
+        if "volume" in und_rows.columns:
+            cum_vol = pd.to_numeric(und_rows["volume"], errors="coerce")
             # the vendor volume column is CUMULATIVE within the session
             # (probed: monotonic 0 → ~52M) — per-bar volume is the diff.
-            # Only the FIRST bar takes its cumulative as-is; an unparseable
-            # cell mid-session leaves ITS bar and the next NaN (volume
-            # unknown → the bar sits out of session VWAP) rather than
-            # injecting the whole session cumulative as one bar's volume.
-            bar_vol = cum_vol.diff()
-            bar_vol.iloc[0] = cum_vol.iloc[0]
-            bar_vol = bar_vol.clip(lower=0)
+            # An unparseable cell mid-session leaves ITS bar and the next
+            # NaN (volume unknown → the bar sits out of session VWAP)
+            # rather than injecting the whole session cumulative as one
+            # bar's volume.
+            bar_vol = per_bar_volume(
+                cum_vol,
+                # per-bar ≡ cumulative ONLY at the session open: a
+                # head-truncated payload's first cumulative is hours of
+                # volume, not a bar's — unknown, like an unparseable cell
+                seed_first=und_rows["bar_ts"].iloc[0].time() == SESSION_OPEN,
+            )
         else:
-            bar_vol = pd.Series(0.0, index=und.index)  # VWAP unevaluable
+            bar_vol = pd.Series(0.0, index=und_rows.index)  # VWAP unevaluable
         und_out = pd.DataFrame({
-            "bar_ts": pd.to_datetime(und["minute_ts"]),
-            "last": pd.to_numeric(und["last"], errors="coerce"),
+            "bar_ts": und_rows["bar_ts"],
+            "last": pd.to_numeric(und_rows["last"], errors="coerce"),
             "volume": bar_vol,
         }).dropna(subset=["bar_ts", "last"])
     return out, und_out
@@ -286,9 +333,15 @@ def _build_slice(
     bar_resolution: str = "5min",
     indicator_stamps: set[datetime] | None = None,
 ) -> SessionSlice:
-    opt = opt.dropna(subset=["bar_ts", "expiration", "right", "strike"])
+    opt = opt.dropna(subset=["bar_ts", "right", "strike"])
+    # a malformed expiration is that row's defect, never the session's —
+    # coerce + drop (the NaN-only dropna can't catch it). This is the ONE
+    # spot covering all sources AND cache-served frames: a raise here would
+    # recur from the version-valid cache on every retry.
+    exp_ts = pd.to_datetime(opt["expiration"], errors="coerce")
+    opt = opt[exp_ts.notna()]
     quotes: dict[datetime, dict[ContractKey, Quote]] = {}
-    exp = pd.to_datetime(opt["expiration"]).dt.date
+    exp = exp_ts[exp_ts.notna()].dt.date
     groups = opt.groupby(pd.to_datetime(opt["bar_ts"])).groups
     for bar_key, group_idx in groups.items():
         bar = pd.Timestamp(str(bar_key))  # Hashable → concrete timestamp for mypy
@@ -450,7 +503,9 @@ def _alpaca_frames(
     )
     o["strike"] = pd.to_numeric(o["strike"], errors="coerce")
     o["close"] = pd.to_numeric(o["close"], errors="coerce")
-    o["dte_cal"] = (pd.to_datetime(o["expiration"]) - day_start).dt.days
+    # coerce: a malformed expiration gives NaN dte_cal → filtered right below
+    o["dte_cal"] = (pd.to_datetime(o["expiration"], errors="coerce")
+                    - day_start).dt.days
     o = o[(o["dte_cal"] >= 0) & (o["dte_cal"] <= ALPACA_SLICE_MAX_CALENDAR_DTE)]
     o = o.dropna(subset=["minute_ts", "strike", "close"]).sort_values("minute_ts")
     if o.empty:
