@@ -76,6 +76,20 @@ export interface EstimatePayload {
   ticker: string;
   clock: string;
   first_session: string | null;
+  /** F1: coverage-capped signal families — a spec conditioned on one
+   * refuses windows starting before the signal's first session, so the
+   * composer surfaces the bound pre-submit. */
+  signal_windows?: Record<
+    string,
+    {
+      first: string;
+      last: string;
+      /** first session where *_rank_1y filters are evaluable (the ≥126
+       * trailing-observation floor); null until enough data accrues */
+      rank_first?: string | null;
+      indicators: string[];
+    }
+  >;
   options: { key: WindowKind; sessions: number; est_seconds: number | null }[];
   basis: { measured_runs: number; note: string };
 }
@@ -395,6 +409,19 @@ export interface CoveragePayload {
       last: string;
       skew_sessions: number;
       term_sessions: number;
+    } | null
+  >;
+  /** F1 (ENGINE-V4): banked UW greek_exposure window (gex/dex sign+rank
+   * vocabulary) — null per ticker until the UW collector banks it. The
+   * pre-run refusal quotes the same first session. */
+  dealer_positioning?: Record<
+    Ticker,
+    {
+      sessions: number;
+      first: string;
+      last: string;
+      gex_sessions: number;
+      dex_sessions: number;
     } | null
   >;
   /** D3d: weekly demand ranking (build_priorities.py) — the Observatory's

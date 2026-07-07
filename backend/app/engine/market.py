@@ -50,6 +50,12 @@ class MarketStore:
     skew_25d: dict[date, float] = field(default_factory=dict)
     term_dates: list[date] = field(default_factory=list)
     term_slope: dict[date, float] = field(default_factory=dict)
+    # UW dealer positioning (VENDOR UNITS — sign/rank vocabulary only),
+    # 2025-07-08+ — spec-v6 filters (F1)
+    gex_dates: list[date] = field(default_factory=list)
+    net_gex: dict[date, float] = field(default_factory=dict)
+    dex_dates: list[date] = field(default_factory=list)
+    net_dex: dict[date, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.sessions = sorted(self.sessions)
@@ -58,6 +64,8 @@ class MarketStore:
         self.hv_dates = sorted(self.hv_dates)
         self.skew_dates = sorted(self.skew_dates)
         self.term_dates = sorted(self.term_dates)
+        self.gex_dates = sorted(self.gex_dates)
+        self.dex_dates = sorted(self.dex_dates)
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
 
 
@@ -85,6 +93,10 @@ class MarketViewLike(Protocol):
     def hv_30d(self) -> float | None: ...
     def skew_25d(self) -> float | None: ...
     def term_structure_slope(self) -> float | None: ...
+    def gex_level(self) -> float | None: ...
+    def gex_history(self) -> list[float]: ...
+    def dex_level(self) -> float | None: ...
+    def dex_history(self) -> list[float]: ...
     # D2c: the run's rolling 5-minute underlying lasts (≤ current bar,
     # across sessions) and the session-anchored VWAP at the current bar.
     # The daily view has no bars: empty / None. Implementations return AT
@@ -222,6 +234,30 @@ class MarketView:
         if idx == 0:
             return None
         return self._store.term_slope[self._store.term_dates[idx - 1]]
+
+    # F1: UW dealer positioning (vendor units) — most recent observation
+    # at or before as_of; histories are the bounded rank inputs
+    def gex_level(self) -> float | None:
+        idx = bisect_right(self._store.gex_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.net_gex[self._store.gex_dates[idx - 1]]
+
+    def gex_history(self) -> list[float]:
+        """All net-GEX observations ≤ as_of, oldest → newest (rank input)."""
+        idx = bisect_right(self._store.gex_dates, self._as_of)
+        return [self._store.net_gex[d] for d in self._store.gex_dates[:idx]]
+
+    def dex_level(self) -> float | None:
+        idx = bisect_right(self._store.dex_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.net_dex[self._store.dex_dates[idx - 1]]
+
+    def dex_history(self) -> list[float]:
+        """All net-DEX observations ≤ as_of, oldest → newest (rank input)."""
+        idx = bisect_right(self._store.dex_dates, self._as_of)
+        return [self._store.net_dex[d] for d in self._store.dex_dates[:idx]]
 
 
 @dataclass
@@ -395,6 +431,8 @@ def build_fixture_store(
     hv_30d: dict[str, float] | None = None,
     skew_25d: dict[str, float] | None = None,
     term_slope: dict[str, float] | None = None,
+    net_gex: dict[str, float] | None = None,
+    net_dex: dict[str, float] | None = None,
 ) -> MarketStore:
     """Fixture loader: plain dicts → MarketStore (same shape the real
     loader produces, so fixtures exercise the identical engine path)."""
@@ -440,6 +478,8 @@ def build_fixture_store(
     hv_map = {date.fromisoformat(k): v for k, v in (hv_30d or {}).items()}
     skew_map = {date.fromisoformat(k): v for k, v in (skew_25d or {}).items()}
     term_map = {date.fromisoformat(k): v for k, v in (term_slope or {}).items()}
+    gex_map = {date.fromisoformat(k): v for k, v in (net_gex or {}).items()}
+    dex_map = {date.fromisoformat(k): v for k, v in (net_dex or {}).items()}
     return MarketStore(
         ticker=ticker,
         sessions=sessions,
@@ -457,4 +497,8 @@ def build_fixture_store(
         skew_25d=skew_map,
         term_dates=sorted(term_map),
         term_slope=term_map,
+        gex_dates=sorted(gex_map),
+        net_gex=gex_map,
+        dex_dates=sorted(dex_map),
+        net_dex=dex_map,
     )

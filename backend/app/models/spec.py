@@ -86,6 +86,12 @@ class Indicator(StrEnum):
     # spec v5 (F4): IVS-derived vol-surface signals, 2007+ (VOL POINTS)
     SKEW_25D = "skew_25d"
     TERM_STRUCTURE_SLOPE = "term_structure_slope"
+    # spec v6 (F1): UW dealer positioning, 2025-07-08+ (vendor units —
+    # sign/rank vocabulary only; raw thresholds refused by the parser)
+    GEX_LEVEL = "gex_level"
+    GEX_RANK_1Y = "gex_rank_1y"
+    DEX_LEVEL = "dex_level"
+    DEX_RANK_1Y = "dex_rank_1y"
 
 
 class Timeframe(StrEnum):
@@ -111,6 +117,15 @@ V2_INDICATORS = {
 V5_INDICATORS = {
     Indicator.SKEW_25D,
     Indicator.TERM_STRUCTURE_SLOPE,
+}
+
+# F1: dealer-positioning indicators require spec_version 6 — a versioned
+# migration like every vocabulary addition, never silent.
+V6_INDICATORS = {
+    Indicator.GEX_LEVEL,
+    Indicator.GEX_RANK_1Y,
+    Indicator.DEX_LEVEL,
+    Indicator.DEX_RANK_1Y,
 }
 
 # Price-series indicators that can read the 5-minute timeframe; everything
@@ -517,8 +532,29 @@ class StrategySpec(BaseModel):
 
     @model_validator(mode="after")
     def _version_supported(self) -> StrategySpec:
-        if self.spec_version not in (1, 2, 3, 4, 5):
-            raise ValueError("spec_version must be 1, 2, 3, 4, or 5")
+        if self.spec_version not in (1, 2, 3, 4, 5, 6):
+            raise ValueError("spec_version must be 1, 2, 3, 4, 5, or 6")
+        return self
+
+    @model_validator(mode="after")
+    def _v6_vocabulary_needs_v6(self) -> StrategySpec:
+        """v6 vocabulary on an older spec is a loud error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.spec_version >= 6:
+            return self
+        all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        # ladder rungs and the rearm are conditions too (F4 review lesson)
+        if self.entry.scale_in is not None:
+            all_conditions += list(self.entry.scale_in.rungs)
+            if self.entry.scale_in.rearm is not None:
+                all_conditions.append(self.entry.scale_in.rearm)
+        used = sorted({c.indicator.value for c in all_conditions
+                       if c.indicator in V6_INDICATORS})
+        if used:
+            raise ValueError(
+                f"spec_version {self.spec_version} cannot use v6 vocabulary: "
+                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 6"
+            )
         return self
 
     @model_validator(mode="after")

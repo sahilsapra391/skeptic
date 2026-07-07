@@ -26,7 +26,7 @@ from typing import Any, cast
 
 import pandas as pd
 
-from app.data import greeks, ivol_analytics, ivs_signals, r2
+from app.data import gex_signals, greeks, ivol_analytics, ivs_signals, r2
 from app.engine.market import MarketStore
 from app.engine.types import ContractKey, Quote
 
@@ -255,6 +255,10 @@ def _build_market_store(ticker: str) -> MarketStore:
         skew_25d, term_slope = ivs_signals.load_ivs_signals(r2.r2_client(), ticker)
     except Exception:
         skew_25d, term_slope = {}, {}
+    try:
+        net_gex, net_dex = gex_signals.load_dealer_exposure(r2.r2_client(), ticker)
+    except Exception:
+        net_gex, net_dex = {}, {}
 
     return MarketStore(
         ticker=ticker,
@@ -274,4 +278,8 @@ def _build_market_store(ticker: str) -> MarketStore:
         skew_25d=skew_25d,
         term_dates=sorted(term_slope),
         term_slope=term_slope,
+        gex_dates=sorted(net_gex),
+        net_gex=net_gex,
+        dex_dates=sorted(net_dex),
+        net_dex=net_dex,
     )
