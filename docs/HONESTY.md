@@ -455,3 +455,49 @@ now formalized (owner decisions 2026-07-07):
   latches an exit on the minute grid is fixture-proven INVISIBLE at the
   5-min grid — the difference between resolutions is a documented,
   testable fact, feeding FX.4's mixed-resolution honesty.
+
+## FX.4 (ENGINE-V4): mixed-resolution honesty — the gauntlet learns the mix
+
+A finest-mode run can mix bar resolutions session by session. The rules
+(owner decisions 2026-07-07):
+
+- **The resolution split.** Every mixed run recomputes its headline on the
+  5-MIN-ONLY sub-window from recorded per-session returns and closed
+  trades — cheap, no re-run (stage `resolution_split`). The verdict
+  caveats disclose the mix with grounded numbers ("minute grid for N
+  sessions (first → last), 5-minute for M before that"), in both quant
+  and retail voices.
+- **A resolution sign-flip is a data-VALIDITY finding, not a robustness
+  signal.** If the full-run edge is positive but the 5-min-only sub-window
+  is negative, the edge appears only on the recent minute slice and
+  reverses at the resolution the deep history was tested at — a
+  granularity mirage until proven otherwise → HARD CAP to
+  insufficient_evidence, refused, never weakly blessed. Contrast the OOS
+  sign-flip: both windows there are measured at EQUAL resolution, so a
+  flip is a robustness signal and earns a low level instead. Different
+  findings, categorically different messages.
+- **The cap fires only on real evidence.** Judged only when both subsets
+  hold ≥ 15 sessions AND the 5-min subset holds ≥ MIN_TRADES (15) closed
+  trades — the SAME evidentiary bar any main result must clear (it would
+  be incoherent to refuse a main result under 15 trades yet let a
+  9-trade sub-window deliver a verdict-flipping judgment). Below the
+  floors: "too thin to cross-check", a disclosed caveat — never a
+  noise-cap, never a silent pass. Only the OPTIMISTIC direction caps; a
+  negative full run blesses nothing to protect.
+- **Walk-forward folds disclose their minute share IN the run.** Each fold
+  carries `minute_share`; minute-flavored folds are named in the caveats
+  ("fold differences there can be resolution, not regime") and on the
+  fold tooltips. The deeper fold-construction redesign (windows that never
+  straddle the resolution boundary) is a FLAGGED future design pass — a
+  substantial change to a pinned honesty stage that deserves its own
+  reviewed chunk; disclosed-not-solved until then. Monte Carlo is
+  unchanged: it resamples recorded per-session returns, and attribution
+  belongs to the split stage.
+- **Resolution upgrades are named, never silent.** When a receipt compares
+  two runs whose per-session resolution mixes differ, the comparison
+  carries "resolution changed between runs: minute sessions A → B … —
+  differences may be a resolution upgrade, not a market change" (the
+  FX.1 record powering the D3 receipts loop).
+- **High trade counts are never trust.** 0DTE scanning runs produce many
+  trades; the regime/DSR/coverage machinery judges them unchanged — count
+  clears floors, it never substitutes for regimes or robustness.

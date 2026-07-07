@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import math
 from collections.abc import Callable
+from datetime import date
 from statistics import NormalDist
 from typing import Any
 
@@ -30,6 +31,8 @@ from app.honesty.report import (
     OosSplit,
     ParamSweep,
     RegimeSample,
+    ResolutionBucket,
+    ResolutionSplit,
     ScaleInHonesty,
     Sensitivity,
     SessionBucket,
@@ -177,12 +180,25 @@ def walk_forward(result: RunResult) -> WalkForward:
         end = min(start + test_len, n) - 1
         eq0, eq1 = result.equity[start], result.equity[end]
         d0, d1 = result.dates[start], result.dates[end]
+        # FX.4: a fold's minute-session share is disclosed IN the run —
+        # out-performance coinciding with a high share must be readable as
+        # resolution-flavored, never silently as regime robustness (the
+        # deeper fold redesign is a flagged future pass; docs/HONESTY.md)
+        minute_share: float | None = None
+        if result.resolution_by_session:
+            fold_days = result.dates[start:end + 1]
+            labeled = [result.resolution_by_session.get(d) for d in fold_days]
+            covered = [x for x in labeled if x is not None]
+            if covered:
+                minute_share = round(
+                    sum(1 for x in covered if x == "minute") / len(covered), 4)
         folds.append(
             WalkForwardFold(
                 start=d0.isoformat(),
                 end=d1.isoformat(),
                 ret=(eq1 / eq0 - 1.0) if eq0 > 0 else 0.0,
                 trades=sum(1 for t in closed if d0 <= t.day <= d1),
+                minute_share=minute_share,
             )
         )
     positive = sum(1 for f in folds if f.ret > 0)
@@ -441,6 +457,100 @@ def session_split(result: RunResult) -> SessionSplit:
         return SessionSplit(meaningful=False, note="no bar-stamped entries")
     return SessionSplit(meaningful=True, open_=buckets["open_"],
                         mid=buckets["mid"], close=buckets["close"])
+
+
+# --------------------------------- FX.4: mixed-resolution defense (owner 4a)
+RESOLUTION_MIN_SESSIONS = 15  # each subset needs this many covered sessions
+
+
+def resolution_split(result: RunResult) -> ResolutionSplit:
+    """The headline recomputed on the 5-MIN-ONLY sub-window from recorded
+    per-session returns and closed trades — cheap, no re-run. Judged only
+    at real-evidence floors (both subsets ≥ 15 sessions AND the 5-min
+    subset ≥ MIN_TRADES closed trades — the SAME evidentiary bar any main
+    result must clear); a sign flip then caps trust hard: a resolution
+    flip is a data-VALIDITY finding, not a robustness signal. Only the
+    optimistic direction caps (full-run edge positive, 5-min-only
+    negative) — a negative full run blesses nothing to protect."""
+    by_session = result.resolution_by_session
+    if result.clock != "5min" or not by_session:
+        return ResolutionSplit(
+            meaningful=False, note="no per-session resolution record")
+    kinds = set(by_session.values())
+    if not {"minute", "five_min"} <= kinds:
+        return ResolutionSplit(
+            meaningful=False,
+            note="single-resolution run — nothing to cross-check")
+
+    # per-session returns attributed to the session's own grid; sessions
+    # outside the record (EOD-fallback gap days) are counted, not judged
+    rets: dict[str, list[float]] = {"minute": [], "five_min": []}
+    windows: dict[str, list[date]] = {"minute": [], "five_min": []}
+    eod_fallback = 0
+    for i in range(1, len(result.dates)):
+        d = result.dates[i]
+        label = by_session.get(d)
+        prev_eq = result.equity[i - 1]
+        if label not in rets:
+            eod_fallback += 1
+            continue
+        if prev_eq > 0:
+            rets[label].append(result.equity[i] / prev_eq - 1.0)
+            windows[label].append(d)
+    # the first equity date has no return; count its session for the window
+    if result.dates:
+        d0 = result.dates[0]
+        label0 = by_session.get(d0)
+        if label0 in windows and d0 not in windows[label0]:
+            windows[label0].insert(0, d0)
+
+    # closed trades attributed to their REALIZATION day (matches how the
+    # equity returns above carry the P&L)
+    trades: dict[str, int] = {"minute": 0, "five_min": 0}
+    pl: dict[str, float] = {"minute": 0.0, "five_min": 0.0}
+    for t in result.trades:
+        if t.pl is None:
+            continue
+        label = by_session.get(t.day)
+        if label in trades:
+            trades[label] += 1
+            pl[label] += t.pl
+
+    def bucket(label: str) -> ResolutionBucket:
+        days = windows[label]
+        return ResolutionBucket(
+            sessions=len(days),
+            trades=trades[label],
+            pl=round(pl[label], 2),
+            sharpe=_sharpe(rets[label]),
+            first=days[0].isoformat() if days else None,
+            last=days[-1].isoformat() if days else None,
+        )
+
+    five = bucket("five_min")
+    minute = bucket("minute")
+    full = _sharpe(_returns(result.equity))
+    judged = (
+        five.sessions >= RESOLUTION_MIN_SESSIONS
+        and minute.sessions >= RESOLUTION_MIN_SESSIONS
+        and five.trades >= MIN_TRADES
+    )
+    sign_flip = bool(
+        judged
+        and full is not None and full > 0
+        and five.sharpe is not None and five.sharpe < 0
+    )
+    note = None
+    if not judged:
+        note = ("mixed resolution, but the sub-windows are too thin to "
+                "cross-check (5-min: "
+                f"{five.sessions} sessions / {five.trades} trades; minute: "
+                f"{minute.sessions} sessions) — disclosed, not judged")
+    return ResolutionSplit(
+        meaningful=True, note=note, judged=judged, full_sharpe=full,
+        five_min=five, minute=minute, eod_fallback_sessions=eod_fallback,
+        sign_flip=sign_flip,
+    )
 
 
 # ------------------------------------------ D5b/D5c: scale-in ladder shared

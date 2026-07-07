@@ -148,6 +148,10 @@ class RunResult:
     resolution_mode: str | None = None  # None (pre-v4) | "5min" | "finest"
     resolution_mix: dict[str, int] = field(default_factory=dict)
     resolution_runs: list[dict[str, object]] = field(default_factory=list)
+    # FX.4: the full per-session record, in-process only (the payload keeps
+    # the compressed runs) — the resolution_split stage and walk-forward
+    # fold annotation read per-session labels from here.
+    resolution_by_session: dict[date, str] = field(default_factory=dict)
     # FX.2: every skipped entry attempt counted by reason — the honest
     # denominator behind "maximum honest fills" (the trade log stays deduped)
     skip_reasons: dict[str, int] = field(default_factory=dict)

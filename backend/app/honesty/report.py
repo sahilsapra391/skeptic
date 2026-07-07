@@ -28,6 +28,12 @@ class WalkForwardFold(BaseModel):
     end: str
     ret: float
     trades: int
+    # FX.4 (owner decision: disclosure lives in the RUN, not only docs) —
+    # the share of this fold's sessions that ran the MINUTE grid. A fold
+    # whose out-performance coincides with a high minute share must be
+    # readable as resolution-flavored, never silently as regime robustness.
+    # None on runs without a resolution mix (bit-identical off finest).
+    minute_share: float | None = None
 
 
 class WalkForward(BaseModel):
@@ -163,6 +169,49 @@ class SessionBucket(BaseModel):
     trades: int = 0
     wins: int = 0
     pl: float = 0.0
+
+
+class ResolutionBucket(BaseModel):
+    """One resolution subset of a mixed run (FX.4)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sessions: int = 0
+    trades: int = 0  # closed trades realized on this subset's sessions
+    pl: float = 0.0
+    sharpe: float | None = None
+    first: str | None = None
+    last: str | None = None
+
+
+class ResolutionSplit(BaseModel):
+    """Mixed-resolution defense (FX.4, masterplan owner decision 4a): the
+    headline recomputed on the 5-MIN-ONLY sub-window from recorded returns
+    and fills — cheap, no re-run. A SIGN FLIP (full-run edge positive,
+    5-min-only negative) is a DATA-VALIDITY finding, not a robustness
+    signal: the edge appears only on the recent minute slice and reverses
+    on the resolution the deep history was tested at — a granularity
+    mirage until proven otherwise → hard cap (insufficient_evidence),
+    refused not weakly blessed. The cap only ARMS on real evidence
+    (judged=True: both subsets ≥ 15 sessions AND the 5-min subset ≥
+    MIN_TRADES closed trades); below the floors the run carries a
+    "too thin to cross-check" caveat instead — disclosed, never a
+    noise-cap and never a silent pass."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    meaningful: bool
+    note: str | None = None
+    judged: bool = False
+    full_sharpe: float | None = None
+    five_min: ResolutionBucket = ResolutionBucket()
+    minute: ResolutionBucket = ResolutionBucket()
+    eod_fallback_sessions: int = 0  # covered by neither grid (gap days)
+    sign_flip: bool = False
+
+    @property
+    def caps_trust(self) -> bool:
+        return self.judged and self.sign_flip
 
 
 class SessionSplit(BaseModel):
@@ -319,6 +368,7 @@ class HonestyReport(BaseModel):
     liquidity: LiquidityProfile | None = None  # None only on pre-D1b reports
     concentration: Concentration | None = None  # None only on pre-D1d reports
     session_split: SessionSplit | None = None  # 5-min clock only (D2d)
+    resolution_split: ResolutionSplit | None = None  # mixed-resolution runs (FX.4)
     ladder_depth: LadderDepth | None = None  # scale-in runs only (D5b)
     scale_in: ScaleInHonesty | None = None  # scale-in martingale defenses (D5c)
     fill_sources: dict[str, int] = {}  # per-leg fill provenance (D2b/D2d)

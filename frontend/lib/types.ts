@@ -262,9 +262,24 @@ export interface RunPayload {
    * attempted bar) beside episode-level ones (once per setup);
    * absent only on stored pre-FX.2 payloads */
   skipReasons?: Record<string, number> | null;
+  /** FX.4: the mixed-resolution split (full vs 5-min-only vs minute) —
+   * null on runs without a per-session resolution record */
+  resolutionSplit?: {
+    meaningful: boolean;
+    note?: string | null;
+    judged: boolean;
+    full_sharpe?: number | null;
+    five_min: ResolutionBucketBlock;
+    minute: ResolutionBucketBlock;
+    eod_fallback_sessions: number;
+    sign_flip: boolean;
+  } | null;
   /** D3c: 5-min replay receipts (merged at read time; stored trust untouched) */
   receipts?: {
     replay_run_id: string;
+    /** FX.4: named when the runs' resolution mixes differ — differences may
+     * be a resolution upgrade, not a market change */
+    resolution_upgrade?: string | null;
     created_at: string;
     daily_sharpe: number | null;
     five_min_sharpe: number | null;
@@ -396,6 +411,15 @@ export interface CoveragePayload {
     ivs?: Record<Ticker, CoverageRange | null>;
     massive?: Record<Ticker, { agg_symbols: number }>;
   } | null;
+}
+
+export interface ResolutionBucketBlock {
+  sessions: number;
+  trades: number;
+  pl: number;
+  sharpe?: number | null;
+  first?: string | null;
+  last?: string | null;
 }
 
 /** One compressed run of consecutive sessions sharing (clock, quote). */

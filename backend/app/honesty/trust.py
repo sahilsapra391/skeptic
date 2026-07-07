@@ -24,6 +24,7 @@ from app.honesty.report import (
     MonteCarlo,
     OosSplit,
     RegimeSample,
+    ResolutionSplit,
     ScaleInHonesty,
     Sensitivity,
     Trust,
@@ -43,6 +44,7 @@ def compute_trust(
     coverage: Coverage | None = None,
     concentration: Concentration | None = None,
     scale_in: ScaleInHonesty | None = None,
+    resolution: ResolutionSplit | None = None,
 ) -> Trust:
     survived = {
         "oos": not oos.flagged,
@@ -62,6 +64,21 @@ def compute_trust(
     # (docs/HONESTY.md · scale-in defenses).
     if scale_in is not None and scale_in.caps_trust:
         cap_reasons.extend(scale_in.reasons)
+    # FX.4 mixed-resolution defense: a sign flip on the 5-min-only
+    # sub-window is a DATA-VALIDITY finding — the edge appears only on the
+    # recent minute slice and reverses at the resolution the deep history
+    # was tested at. A granularity mirage is refused, never weakly blessed
+    # (owner decision; contrast the OOS flip, a ROBUSTNESS signal measured
+    # at equal resolution, which earns a low level instead).
+    if resolution is not None and resolution.caps_trust:
+        full = resolution.full_sharpe
+        sub = resolution.five_min.sharpe
+        cap_reasons.append(
+            "the edge lives in the minute-resolution slice — it flips sign "
+            f"on the 5-min-only sub-window (Sharpe {full:.2f} full vs "
+            f"{sub:.2f} on {resolution.five_min.sessions} 5-min sessions): "
+            "a data artifact until proven otherwise"
+        )
     if coverage is not None and coverage.materially_short:
         cap_reasons.append(coverage.reason or "requested window mostly lacks chain data")
     if sample.capped:

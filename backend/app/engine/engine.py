@@ -1525,6 +1525,7 @@ def run_engine(
             mix[res] = mix.get(res, 0) + 1
         result.resolution_mix = mix
         result.resolution_runs = _compress_resolutions(session_resolutions)
+        result.resolution_by_session = dict(session_resolutions)
     return result
 
 

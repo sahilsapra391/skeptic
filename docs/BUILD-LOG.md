@@ -1306,3 +1306,23 @@ a pending latch disclosed on the settle event (pinned); (5) _FakeBar
 gained stamp-awareness + crosses coverage. 363 tests green; reviewer
 verified bit-identity off finest incl. 20k randomized IEEE trials of the
 scalar recompute, guardrails #1/#2, latch lifecycle, FX.2 interplay.
+
+## 2026-07-07 — ENGINE-V4 FX.4: mixed-resolution gauntlet honesty
+
+The gauntlet now understands what FX.1–FX.3 built. Shipped (inert on every
+run without a per-session resolution record — 368 pre-existing tests
+untouched): `resolution_split` stage (full vs 5-MIN-ONLY vs minute stats
+from recorded returns/fills, no re-run; RunResult carries the in-process
+per-session map); HARD CAP on the optimistic sign-flip at real-evidence
+floors (≥15 sessions both subsets + ≥MIN_TRADES in the 5-min sub-window —
+owner: "cap hard WHEN it fires, only fire when the evidence is thick
+enough"; resolution flip = data-VALIDITY finding vs OOS flip = robustness
+signal); walk-forward folds carry minute_share (disclosure in the RUN:
+caveats name resolution-flavored folds, tooltips show the share; deeper
+fold redesign flagged as its own future pass per masterplan 4b);
+grounded verdict caveats quant+retail (numbers validated against the
+report); receipts name differing mixes as RESOLUTION UPGRADES (4c);
+payload additive resolutionSplit; ReceiptBanner upgrade line. 381 tests
+(+13 hand-computed: bucket math to the cent, flip cap, floors disarm,
+optimistic-direction-only, inert paths, fold shares, caveat grounding,
+receipt annotation).

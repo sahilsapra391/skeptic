@@ -63,6 +63,21 @@ def build_receipt(replay_run_id: str, daily_stats: dict[str, Any],
         worse = (replay_sharpe < daily_sharpe - RECEIPT_WORSE_DELTA) or (
             daily_sharpe > 0 > replay_sharpe
         )
+    # FX.4 (masterplan defense 4c): when the two runs carry per-session
+    # resolution records that DIFFER, the receipt names the change as a
+    # RESOLUTION UPGRADE — a re-run that improved because minute data newly
+    # arrived is explained, never a silent shift.
+    daily_mix = daily_stats.get("resolutionMix") or {}
+    replay_mix = replay_payload.get("resolutionMix") or {}
+    resolution_upgrade = None
+    if replay_mix and daily_mix != replay_mix:
+        resolution_upgrade = (
+            f"resolution changed between runs: minute sessions "
+            f"{daily_mix.get('minute', 0)} → {replay_mix.get('minute', 0)}, "
+            f"5-min {daily_mix.get('five_min', 0)} → "
+            f"{replay_mix.get('five_min', 0)} — differences may be a "
+            "resolution upgrade, not a market change"
+        )
     return {
         "replay_run_id": replay_run_id,
         "created_at": created_at,
@@ -72,4 +87,5 @@ def build_receipt(replay_run_id: str, daily_stats: dict[str, Any],
         "five_min_return": (replay_stats.get("metrics") or {}).get("total_return"),
         "fill_sources": replay_payload.get("fillSources") or {},
         "worse": worse,
+        "resolution_upgrade": resolution_upgrade,
     }

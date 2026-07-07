@@ -161,6 +161,54 @@ def _pct(v: float | None, digits: int = 0) -> str:
     return "—" if v is None else f"{v * 100:.{digits}f}%"
 
 
+def _resolution_caveat(report: HonestyReport, retail: bool = False) -> str | None:
+    """The mixed-resolution disclosure (FX.4, owner decision 3) — required
+    whenever a run mixed bar resolutions. Every number comes from
+    report.resolution_split, so it is grounded by construction; it rides in
+    the caveats so it surfaces even when the verdict is withheld."""
+    rs = report.resolution_split
+    if rs is None or not rs.meaningful:
+        return None
+    minute, five = rs.minute, rs.five_min
+    if minute.sessions == 0 or five.sessions == 0:
+        return None
+    if retail:
+        line = (
+            f"This test looked minute-by-minute for {minute.sessions} recent "
+            f"days ({minute.first} → {minute.last}) and every 5 minutes for "
+            f"the {five.sessions} days before that — the recent stretch is "
+            "measured with a finer lens, so treat differences there with care"
+        )
+    else:
+        line = (
+            f"Mixed resolution: minute grid for {minute.sessions} sessions "
+            f"({minute.first} → {minute.last}), 5-minute for {five.sessions} "
+            f"sessions ({five.first} → {five.last}); intra-bar moves remain "
+            "unobserved at both"
+        )
+    if rs.note:
+        line += f". {rs.note}"
+    return line + "."
+
+
+def _fold_resolution_caveat(report: HonestyReport) -> str | None:
+    """Names the minute-flavored walk-forward folds (FX.4 owner requirement:
+    the disclosure lives in the RUN) — out-performance in those folds must
+    never read as regime robustness by default."""
+    wf = report.walk_forward
+    if not wf.meaningful:
+        return None
+    flavored = [f for f in wf.folds
+                if f.minute_share is not None and f.minute_share > 0]
+    if not flavored:
+        return None
+    spans = ", ".join(
+        f"{f.start} → {f.end} ({round((f.minute_share or 0) * 100)}% minute)"
+        for f in flavored)
+    return (f"Walk-forward folds on the minute grid: {spans} — fold "
+            "differences there can be resolution, not regime.")
+
+
 def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     """One grounded sentence on depth attribution — required whenever a ladder
     ran (brief D5b). Every number comes from report.ladder_depth, so it is
@@ -297,6 +345,12 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     ladder = _ladder_caveat(report)
     if ladder:
         caveats.append(ladder)
+    res_line = _resolution_caveat(report)
+    if res_line:
+        caveats.append(res_line)
+    fold_line = _fold_resolution_caveat(report)
+    if fold_line:
+        caveats.append(fold_line)
     if not wf.meaningful:
         caveats.append(wf.note or "walk-forward not meaningful at this history length")
 
@@ -446,6 +500,9 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     ladder = _ladder_caveat(report, retail=True)
     if ladder:
         caveats.append(ladder)
+    res_line = _resolution_caveat(report, retail=True)
+    if res_line:
+        caveats.append(res_line)
     if not wf.meaningful:
         caveats.append("Not enough history to test period-by-period yet.")
 

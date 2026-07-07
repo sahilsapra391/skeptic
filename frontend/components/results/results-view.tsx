@@ -582,6 +582,12 @@ function ReceiptBanner({ run }: { run: RunPayload }) {
               </span>
             )}
           </div>
+          {latest.resolution_upgrade && (
+            // FX.4: a differing resolution mix is NAMED — never a silent shift
+            <div className="mt-1 font-mono text-[11.5px] text-ink-4">
+              ⟲ {latest.resolution_upgrade}
+            </div>
+          )}
         </div>
       )}
       {!latest && run.replayEligible && (

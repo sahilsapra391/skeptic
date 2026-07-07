@@ -338,6 +338,10 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
             "t": (
                 f"{_short_iso(f.start)} → {_short_iso(f.end)} · "
                 f"{f.ret * 100:+.1f}% · {f.trades} trade{'s' if f.trades != 1 else ''}"
+                # FX.4: a minute-flavored fold says so on its tooltip — the
+                # disclosure lives in the run, not only the docs
+                + (f" · {round(f.minute_share * 100)}% minute grid"
+                   if f.minute_share else "")
             ),
         }
         for f in folds
@@ -636,6 +640,11 @@ def build_run_payload(
         # run at any clock; None only on stored pre-FX.2 payloads.
         "skipReasons": result.skip_reasons or None,
         "sessionSplit": report.session_split.model_dump() if report.session_split else None,
+        # FX.4: the mixed-resolution split (full vs 5-min-only vs minute) —
+        # additive; None on runs without a per-session resolution record
+        "resolutionSplit": (report.resolution_split.model_dump()
+                            if report.resolution_split
+                            and report.resolution_split.meaningful else None),
         "ladderDepth": _ladder_depth_block(report),
         "greeksSeries": {
             "delta": _downsample_nullable(result.dates, result.portfolio_delta),
