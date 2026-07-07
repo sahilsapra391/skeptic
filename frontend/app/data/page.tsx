@@ -406,7 +406,9 @@ export default function DataPage() {
         </div>
       )}
 
-      {coverage.resolution_mix?.SPY && (
+      {(coverage.resolution_mix?.SPY ||
+        coverage.resolution_mix?.QQQ ||
+        coverage.resolution_mix?.IWM) && (
         <div className={clsx(PANEL, "mt-3")}>
           <div className={clsx(PANEL_TITLE, "mb-1")}>
             RESOLUTION MIX — FINEST HONEST DECISION CLOCK PER SESSION
@@ -472,7 +474,7 @@ export default function DataPage() {
         <div className={clsx(PANEL, "mt-3")}>
           <div className={clsx(PANEL_TITLE, "mb-2.5")}>
             NEW SIGNAL SOURCES (ENGINE-V4) · banked, not yet consumed ·{" "}
-            {coverage.new_sources.generated_at.slice(0, 10)}
+            {(coverage.new_sources.generated_at ?? "").slice(0, 10)}
           </div>
           <div className="flex flex-col gap-1.5 text-[12.5px] leading-[1.55] text-ink-2">
             <div className="flex gap-2">
@@ -480,10 +482,10 @@ export default function DataPage() {
               <span>
                 Unusual Whales signal families:{" "}
                 <span className="font-mono">
-                  {Object.keys(coverage.new_sources.uw_daily).length}
+                  {Object.keys(coverage.new_sources.uw_daily ?? {}).length}
                 </span>{" "}
                 banked per session
-                {coverage.new_sources.uw_daily.market_tide?.market && (
+                {coverage.new_sources.uw_daily?.market_tide?.market && (
                   <span className="text-ink-4">
                     {" "}
                     — {coverage.new_sources.uw_daily.market_tide.market.first} →{" "}

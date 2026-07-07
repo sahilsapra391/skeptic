@@ -266,6 +266,18 @@ map (app/data/resolution.py, built by collector/ledger.py). Rules:
   observation timestamp are visible at a date-level view and honestly EMPTY
   at an intra-session moment (a same-day observation cannot be assumed to
   exist mid-session).
+- **Session-level observations are end-of-day facts.** UW series rows,
+  Massive daily aggregates and IVS surface fits for session D do not exist
+  at 10:35 on D: a datetime as_of EXCLUDES the as_of session in those
+  readers (same rule as "today's daily close does not exist at 10:15").
+  A bare-date as_of is the end-of-day view and includes it.
+- **Timezone honesty (fail closed).** A stamp with no timezone reference
+  (naive wall clock) could mean ET or UTC; localizing it by assumption can
+  hide most of a session of lookahead. Offset-less stamps are treated as
+  unobservable at intra-session moments — dropped, never guessed
+  (app/data/pit.py, value-level offset detection). The session bound of a
+  datetime as_of derives from its UTC-normalized moment, never the
+  caller's local calendar date.
 - **`captured_at` is metadata, never observation time.** Rows predating our
   capture start carry the vendor's own historical timestamps; we trust them
   as observation time the same way we trust dolthub/iVol dating, and say so

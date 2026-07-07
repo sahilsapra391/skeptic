@@ -374,15 +374,16 @@ export interface CoveragePayload {
       timeline: TimelineRun[];
     } | null
   >;
-  /** F0: new-source coverage windows (state/source_coverage.json) —
-   * UW signal families, UW minute bars/tape, IVS surfaces, Massive */
+  /** F0: new-source coverage windows (state/source_coverage.json) — a
+   * pass-through R2 artifact, so every field is optional: an older-schema
+   * artifact must degrade gracefully, never crash the page */
   new_sources?: {
-    generated_at: string;
-    uw_daily: Record<string, Record<string, CoverageRange>>;
-    uw_minute: Record<Ticker, CoverageRange | null>;
-    uw_tape: Record<Ticker, CoverageRange | null>;
-    ivs: Record<Ticker, CoverageRange | null>;
-    massive: Record<Ticker, { agg_symbols: number }>;
+    generated_at?: string;
+    uw_daily?: Record<string, Record<string, CoverageRange>>;
+    uw_minute?: Record<Ticker, CoverageRange | null>;
+    uw_tape?: Record<Ticker, CoverageRange | null>;
+    ivs?: Record<Ticker, CoverageRange | null>;
+    massive?: Record<Ticker, { agg_symbols: number }>;
   } | null;
 }
 

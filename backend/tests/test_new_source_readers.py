@@ -118,6 +118,52 @@ def test_uw_rows_without_timestamps_hidden_intrasession(
     assert uw.daily_rows(None, "max_pain", "SPY", D, midday) is None
 
 
+def test_uw_naive_stamps_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # review finding: a tz-naive stamp could mean ET or UTC — localizing by
+    # assumption can hide a session of lookahead, so rows whose wall-clock
+    # reference is unknowable are UNOBSERVABLE at an intra-session moment
+    frame = pd.DataFrame({
+        "timestamp": [f"{D} 09:30:00", f"{D} 15:30:00"],  # naive — ET? UTC?
+        "net_call_premium": [1.0, 2.0],
+    })
+    _install(monkeypatch, {f"uw/market_tide/date={D}/rows.parquet": frame})
+    midday = datetime(2026, 6, 5, 20, 0, tzinfo=UTC)
+    assert uw.daily_rows(None, "market_tide", None, D, midday) is None  # fail closed
+    # ...but a date-level (end-of-day) view still sees the session's file
+    assert uw.daily_rows(None, "market_tide", None, D, D) is not None
+
+
+def test_uw_mixed_naive_rows_drop_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    # one naive stamp among aware ones: the naive ROW drops (fail closed),
+    # the aware rows keep honest ≤-moment behavior
+    frame = pd.DataFrame({
+        "timestamp": [f"{D}T13:30:00Z", f"{D} 13:31:00", f"{D}T13:40:00Z"],
+        "net_call_premium": [1.0, 2.0, 3.0],
+    })
+    _install(monkeypatch, {f"uw/market_tide/date={D}/rows.parquet": frame})
+    as_of = datetime(2026, 6, 5, 13, 35, tzinfo=UTC)
+    out = uw.daily_rows(None, "market_tide", None, D, as_of)
+    assert out is not None and list(out["net_call_premium"]) == [1.0]
+
+
+def test_uw_exotic_offset_as_of_bound_is_utc_normalized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # review finding: as_of 09:00+14:00 on the 6th IS 19:00 UTC on the 5th
+    # (15:00 ET, mid-session). The bound must derive from the UTC-normalized
+    # moment: D stays the LIVE session and its 15:30 ET row stays invisible.
+    frame = pd.DataFrame({
+        "timestamp": [f"{D}T09:30:00-04:00", f"{D}T15:30:00-04:00"],
+        "net_call_premium": [1.0, 2.0],
+    })
+    _install(monkeypatch, {f"uw/market_tide/date={D}/rows.parquet": frame})
+    from datetime import timedelta, timezone
+
+    as_of = datetime(2026, 6, 6, 9, 0, tzinfo=timezone(timedelta(hours=14)))
+    out = uw.daily_rows(None, "market_tide", None, D, as_of)
+    assert out is not None and list(out["net_call_premium"]) == [1.0]
+
+
 # ── UW series: observation-date truncation ──────────────────────────────────
 def test_uw_series_truncates_by_observation_date(monkeypatch: pytest.MonkeyPatch) -> None:
     frame = pd.DataFrame({
@@ -127,6 +173,20 @@ def test_uw_series_truncates_by_observation_date(monkeypatch: pytest.MonkeyPatch
     _install(monkeypatch, {"reference/uw/iv_rank/ticker=SPY.parquet": frame})
     out = uw.series(None, "iv_rank", "SPY", D)
     assert out is not None and list(out["iv_rank"]) == [10.0, 20.0]
+
+
+def test_uw_series_same_day_hidden_intrasession(monkeypatch: pytest.MonkeyPatch) -> None:
+    # review finding: series rows are END-OF-DAY observations — at 09:35 ET
+    # on D, D's own observation must NOT exist yet (only strictly-earlier
+    # sessions), matching the daily-close rule in docs/HONESTY.md
+    frame = pd.DataFrame({
+        "date": [str(D_PREV), str(D)],
+        "iv_rank": [10.0, 20.0],
+    })
+    _install(monkeypatch, {"reference/uw/iv_rank/ticker=SPY.parquet": frame})
+    midday = datetime(2026, 6, 5, 13, 35, tzinfo=UTC)  # 09:35 ET on D
+    out = uw.series(None, "iv_rank", "SPY", midday)
+    assert out is not None and list(out["iv_rank"]) == [10.0]  # D excluded
 
 
 def test_uw_series_unboundable_rows_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -202,6 +262,30 @@ def test_massive_agg_nothing_visible_is_unavailable(
     assert massive.option_agg(None, "QQQ", "O:QQQTEST", date(2026, 6, 1)) is None
 
 
+def test_massive_same_day_hidden_intrasession(monkeypatch: pytest.MonkeyPatch) -> None:
+    # review finding: daily OHLCV aggregates are END-OF-DAY observations —
+    # at 09:35 ET on D, D's own row must not exist yet
+    key = "reference/massive/option_agg/ticker=QQQ/symbol=O:QQQTEST.parquet"
+    _install(monkeypatch, {key: _agg_frame()})
+    midday = datetime(2026, 6, 5, 13, 35, tzinfo=UTC)
+    out = massive.option_agg(None, "QQQ", "O:QQQTEST", midday)
+    assert out is not None and list(out["c"]) == [88.0]  # D_PREV only
+
+
+def test_massive_contracts_reference_returns_a_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # review finding: never hand out the cached frame — caller mutation must
+    # not poison the process-wide cache
+    key = "reference/massive/contracts/ticker=QQQ.parquet"
+    _install(monkeypatch, {key: pd.DataFrame({"ticker": ["O:QQQTEST"]})})
+    first = massive.contracts_reference(None, "QQQ")
+    assert first is not None
+    first["ticker"] = "MUTATED"
+    second = massive.contracts_reference(None, "QQQ")
+    assert second is not None and list(second["ticker"]) == ["O:QQQTEST"]
+
+
 # ── iVol IVS surfaces ────────────────────────────────────────────────────────
 def _surface_frame() -> pd.DataFrame:
     return pd.DataFrame({
@@ -228,6 +312,20 @@ def test_ivs_surface_beyond_as_of_raises(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_ivs_surface_absent_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     _install(monkeypatch, {})
     assert ivol_analytics.load_ivs_surface(None, "SPY", D, D) is None
+
+
+def test_ivs_surface_same_day_hidden_intrasession(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # review finding: a surface is an END-OF-DAY fit — at 09:35 ET on D,
+    # D's own surface does not exist yet (honest None, not a raise: the
+    # session itself is not beyond as_of)
+    key = f"reference/ivol/ivs/ticker=SPY/date={D}/surface.parquet"
+    _install(monkeypatch, {key: _surface_frame()})
+    midday = datetime(2026, 6, 5, 13, 35, tzinfo=UTC)
+    assert ivol_analytics.load_ivs_surface(None, "SPY", D, midday) is None
+    # and it appears at the end-of-day view
+    assert ivol_analytics.load_ivs_surface(None, "SPY", D, D) is not None
 
 
 # ── the evil reader: proof the assertions have teeth ─────────────────────────

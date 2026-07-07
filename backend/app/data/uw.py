@@ -35,6 +35,7 @@ from typing import Any
 import pandas as pd
 
 from app.data import r2
+from app.data.pit import as_of_parts, stamps_utc
 from app.engine.market import LookaheadError
 
 # ── family registry (probe-verified against the lake, 2026-07-07) ──────────
@@ -88,16 +89,6 @@ def _cached_frame(s3: Any, key: str) -> pd.DataFrame | None:
     return df
 
 
-def _as_of_parts(as_of: date | datetime) -> tuple[date, pd.Timestamp | None]:
-    """(session bound, intra-session moment). A bare date means the whole
-    session is visible (end-of-day view); a datetime bounds rows within it."""
-    if isinstance(as_of, datetime):
-        ts = pd.Timestamp(as_of)
-        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
-        return as_of.date(), ts
-    return as_of, None
-
-
 def _time_column(df: pd.DataFrame) -> str | None:
     for col in _TIME_COLUMNS:
         if col in df.columns:
@@ -119,7 +110,12 @@ def _truncate_rows(
         # same-day observation — visible only at a date-level view, so an
         # intra-session moment honestly sees nothing rather than guessing.
         return df.iloc[0:0]
-    stamps = pd.to_datetime(df[col], errors="coerce", utc=True, format="mixed")
+    stamps = stamps_utc(df[col])
+    if stamps is None:
+        # stamps carry no timezone reference — FAIL CLOSED rather than
+        # localize by assumption (a naive ET stamp read as UTC would leak
+        # up to a session of lookahead)
+        return df.iloc[0:0]
     return df.loc[stamps.notna() & (stamps <= moment)].reset_index(drop=True)
 
 
@@ -143,7 +139,7 @@ def daily_rows(
         if family not in TICKER_DATE_FAMILIES:
             raise ValueError(f"unknown per-ticker UW family: {family}")
         key = f"uw/{family}/ticker={ticker}/date={session}/rows.parquet"
-    session_bound, moment = _as_of_parts(as_of)
+    session_bound, moment = as_of_parts(as_of)
     if session > session_bound:
         raise LookaheadError(f"uw/{family} at {session} requested with as_of {as_of}")
     df = _cached_frame(s3, key)
@@ -158,12 +154,14 @@ def series(
 ) -> pd.DataFrame | None:
     """A reference series truncated to observations dated at or before as_of.
 
-    Series files carry one row per observation date; rows without a
+    Series rows are session-level (typically end-of-day) observations, so a
+    datetime as_of EXCLUDES the as_of session itself — today's daily
+    observation does not exist mid-session (docs/HONESTY.md). Rows without a
     recognizable date column cannot be bounded and are dropped (never
     returned unbounded)."""
     if family not in SERIES_FAMILIES:
         raise ValueError(f"unknown UW series family: {family}")
-    session_bound, _ = _as_of_parts(as_of)
+    session_bound, moment = as_of_parts(as_of)
     df = _cached_frame(s3, f"reference/uw/{family}/ticker={ticker}.parquet")
     if df is None or df.empty:
         return None
@@ -173,7 +171,9 @@ def series(
     if col is None:
         return None  # unboundable rows are unavailable, not unbounded
     stamps = pd.to_datetime(df[col], errors="coerce", utc=True, format="mixed")
-    out = df.loc[stamps.notna() & (stamps.dt.date <= session_bound)]
+    dates = stamps.dt.date
+    visible = dates < session_bound if moment is not None else dates <= session_bound
+    out = df.loc[stamps.notna() & visible]
     return out.reset_index(drop=True).copy() if not out.empty else None
 
 
@@ -184,7 +184,7 @@ def minute_bars(
 
     These are side-attributed TRADE CANDLES (no NBBO) — decision-clock and
     validation data only, never a fill source (guardrail #1)."""
-    session_bound, moment = _as_of_parts(as_of)
+    session_bound, moment = as_of_parts(as_of)
     if session > session_bound:
         raise LookaheadError(
             f"uw/option_intraday {occ_symbol} at {session} requested with as_of {as_of}"
@@ -208,9 +208,10 @@ def minute_bars(
 def daily_sessions(s3: Any, family: str, ticker: str | None) -> list[str]:
     """Sessions banked for a per-session family (coverage/ledger use — this
     is a lake listing, never called from an engine hot path)."""
-    prefix = (
-        f"uw/{family}/date=" if ticker is None else f"uw/{family}/ticker={ticker}/"
-    )
     if ticker is None:
+        if family not in MARKET_DATE_FAMILIES:
+            raise ValueError(f"unknown market-wide UW family: {family}")
         return r2.list_date_prefixes(s3, f"uw/{family}/")
-    return r2.list_date_prefixes(s3, prefix)
+    if family not in TICKER_DATE_FAMILIES:
+        raise ValueError(f"unknown per-ticker UW family: {family}")
+    return r2.list_date_prefixes(s3, f"uw/{family}/ticker={ticker}/")

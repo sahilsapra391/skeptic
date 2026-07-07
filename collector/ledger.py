@@ -137,24 +137,44 @@ def _uw_minute_by_session(s3, ticker: str) -> dict[str, int]:
     return {d: len(syms) for d, syms in per_date.items()}
 
 
-def _uw_families_by_session(s3, ticker: str) -> dict[str, int]:
-    """session → count of UW per-session signal families banked that date
-    (per-ticker families + the market-wide ones, which apply to every
-    ticker's session)."""
+def gather_uw(s3) -> dict:
+    """One pass over the UW prefixes, shared by the ledger row, the
+    resolution maps and the source-coverage artifact (the option_intraday
+    key listing is the expensive one — never list it three times)."""
+    return {
+        "minute": {t: _uw_minute_by_session(s3, t) for t in TICKERS},
+        "fam_ticker": {
+            t: {
+                f: _date_prefixes(s3, f"uw/{f}/ticker={t}")
+                for f in sorted(TICKER_DATE_FAMILIES)
+            }
+            for t in TICKERS
+        },
+        "fam_market": {
+            f: _date_prefixes(s3, f"uw/{f}") for f in sorted(MARKET_DATE_FAMILIES)
+        },
+    }
+
+
+def _families_by_session(gathered: dict, ticker: str) -> dict[str, int]:
+    """session → count of UW signal families banked that date (per-ticker
+    families + the market-wide ones, which apply to every ticker)."""
     counts: dict[str, int] = defaultdict(int)
-    for family in sorted(TICKER_DATE_FAMILIES):
-        for d in _date_prefixes(s3, f"uw/{family}/ticker={ticker}"):
+    for dates in gathered["fam_ticker"][ticker].values():
+        for d in dates:
             counts[d] += 1
-    for family in sorted(MARKET_DATE_FAMILIES):
-        for d in _date_prefixes(s3, f"uw/{family}"):
+    for dates in gathered["fam_market"].values():
+        for d in dates:
             counts[d] += 1
     return dict(counts)
 
 
-def snapshot_rows(s3) -> list[dict]:
+def snapshot_rows(s3, gathered: dict | None = None) -> list[dict]:
     """One ledger row per ticker: the lake's coverage right now.
     F0 columns are ADDITIVE — D3b/D3d readers of the original columns are
     untouched; pre-F0 rows read back with NaN in the new columns."""
+    if gathered is None:
+        gathered = gather_uw(s3)
     ts = datetime.now(UTC).isoformat()
     rows: list[dict] = []
     for ticker in TICKERS:
@@ -165,7 +185,7 @@ def snapshot_rows(s3) -> list[dict]:
         for prefix in INTRADAY_PREFIXES:
             intraday.update(_date_prefixes(s3, f"{prefix}/ticker={ticker}"))
         ivx_obs, ivx_last = _ivx_stats(s3, ticker)
-        minute = _uw_minute_by_session(s3, ticker)
+        minute = gathered["minute"][ticker]
         ivs = _date_prefixes(s3, f"reference/ivol/ivs/ticker={ticker}")
         massive_aggs = len(_list_keys(
             s3, f"reference/massive/option_agg/ticker={ticker}/"))
@@ -190,13 +210,14 @@ def snapshot_rows(s3) -> list[dict]:
     return rows
 
 
-def build_resolution_maps(s3) -> None:
+def build_resolution_maps(s3, gathered: dict | None = None) -> None:
     """Rebuild state/resolution_map/ticker={T}.parquet per ticker (F0).
     Derivation is the backend's single implementation; this side only
     gathers the listings. Runs after every collection — new sessions and
     finer data upgrade the map automatically (self-improvement thesis)."""
+    if gathered is None:
+        gathered = gather_uw(s3)
     for ticker in TICKERS:
-        minute = _uw_minute_by_session(s3, ticker)
         ivol_5m = _date_prefixes(
             s3, f"options_intraday/source=ivolatility/ticker={ticker}")
         recorder = _date_prefixes(
@@ -205,9 +226,9 @@ def build_resolution_maps(s3) -> None:
         for source in EOD_SOURCES:
             eod.update(list_chain_dates(s3, source, ticker))
         ivs = _date_prefixes(s3, f"reference/ivol/ivs/ticker={ticker}")
-        families = _uw_families_by_session(s3, ticker)
+        families = _families_by_session(gathered, ticker)
         rows = derive_resolution_rows(
-            minute_contracts_by_session=minute,
+            minute_contracts_by_session=gathered["minute"][ticker],
             ivol_5min_sessions=ivol_5m,
             recorder_sessions=recorder,
             eod_sessions=sorted(eod),
@@ -225,9 +246,12 @@ def build_resolution_maps(s3) -> None:
 SOURCE_COVERAGE_KEY = "state/source_coverage.json"
 
 
-def build_source_coverage(s3) -> None:
+def build_source_coverage(s3, gathered: dict | None = None) -> None:
     """New-source coverage windows for /api/data/coverage (F0) — computed
     here so the backend never lists these prefixes in a request path."""
+    if gathered is None:
+        gathered = gather_uw(s3)
+
     def _window(dates: list[str]) -> dict | None:
         if not dates:
             return None
@@ -237,12 +261,12 @@ def build_source_coverage(s3) -> None:
     for family in sorted(TICKER_DATE_FAMILIES):
         per_ticker = {
             t: w for t in TICKERS
-            if (w := _window(_date_prefixes(s3, f"uw/{family}/ticker={t}")))
+            if (w := _window(gathered["fam_ticker"][t][family]))
         }
         if per_ticker:
             uw_daily[family] = per_ticker
     for family in sorted(MARKET_DATE_FAMILIES):
-        w = _window(_date_prefixes(s3, f"uw/{family}"))
+        w = _window(gathered["fam_market"][family])
         if w:
             uw_daily[family] = {"market": w}
 
@@ -250,7 +274,7 @@ def build_source_coverage(s3) -> None:
         "generated_at": datetime.now(UTC).isoformat(),
         "uw_daily": uw_daily,
         "uw_minute": {
-            t: _window(sorted(_uw_minute_by_session(s3, t))) for t in TICKERS
+            t: _window(sorted(gathered["minute"][t])) for t in TICKERS
         },
         "uw_tape": {
             t: _window(_date_prefixes(s3, f"uw/option_tape/ticker={t}"))
@@ -275,9 +299,10 @@ def build_source_coverage(s3) -> None:
              SOURCE_COVERAGE_KEY, len(uw_daily))
 
 
-def append_snapshot() -> pd.DataFrame:
-    s3 = r2_client()
-    rows = snapshot_rows(s3)
+def append_snapshot(s3=None, gathered: dict | None = None) -> pd.DataFrame:
+    if s3 is None:
+        s3 = r2_client()
+    rows = snapshot_rows(s3, gathered)
     fresh = pd.DataFrame(rows)
     existing = r2_get_parquet(s3, LEDGER_KEY)
     combined = (
@@ -302,12 +327,13 @@ def main() -> int:
     ap.add_argument("--skip-resolution", action="store_true",
                     help="append the ledger row only (skip F0 artifacts)")
     args = ap.parse_args()
-    combined = append_snapshot()
+    s3 = r2_client()
+    gathered = gather_uw(s3)  # one pass, shared by all three artifacts
+    combined = append_snapshot(s3, gathered)
     log.info("coverage ledger: %d rows total → r2://%s", len(combined), LEDGER_KEY)
     if not args.skip_resolution:
-        s3 = r2_client()
-        build_resolution_maps(s3)
-        build_source_coverage(s3)
+        build_resolution_maps(s3, gathered)
+        build_source_coverage(s3, gathered)
     return 0
 
 

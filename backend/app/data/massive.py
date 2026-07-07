@@ -26,6 +26,7 @@ from typing import Any
 import pandas as pd
 
 from app.data import r2
+from app.data.pit import as_of_parts
 from app.engine.market import LookaheadError
 
 _FRAME_CACHE: OrderedDict[str, pd.DataFrame] = OrderedDict()
@@ -61,8 +62,12 @@ def option_agg(
     `session` narrows to one session and raises LookaheadError when that
     session lies beyond as_of (an explicit future request — guardrail #2);
     without it, rows are truncated at as_of and a contract with nothing
-    visible yet is an honest None, not an error."""
-    bound = as_of.date() if isinstance(as_of, datetime) else as_of
+    visible yet is an honest None, not an error.
+
+    Rows are DAILY aggregates — end-of-day observations — so a datetime
+    as_of excludes the as_of session itself: today's daily OHLCV does not
+    exist mid-session (docs/HONESTY.md)."""
+    bound, moment = as_of_parts(as_of)
     if session is not None and session > bound:
         raise LookaheadError(
             f"massive option_agg {occ_symbol} at {session} requested with as_of {bound}"
@@ -72,9 +77,11 @@ def option_agg(
     if df is None or df.empty or "date" not in df.columns:
         return None
     stamps = pd.to_datetime(df["date"], errors="coerce")
-    keep = stamps.notna() & (stamps.dt.date <= bound)
+    dates = stamps.dt.date
+    visible = dates < bound if moment is not None else dates <= bound
+    keep = stamps.notna() & visible
     if session is not None:
-        keep &= stamps.dt.date == session
+        keep &= dates == session
     out = df.loc[keep]
     return out.reset_index(drop=True).copy() if not out.empty else None
 
@@ -85,7 +92,8 @@ def contracts_reference(s3: Any, ticker: str) -> pd.DataFrame | None:
     Massive's contract list carries no listing timestamps, so it cannot say
     which contracts existed at a past date. Coverage counting only; simulation
     code must never derive contract existence from it."""
-    return _cached_frame(s3, f"reference/massive/contracts/ticker={ticker}.parquet")
+    df = _cached_frame(s3, f"reference/massive/contracts/ticker={ticker}.parquet")
+    return df.copy() if df is not None else None  # never hand out the cache
 
 
 def agg_symbols(s3: Any, ticker: str) -> list[str]:

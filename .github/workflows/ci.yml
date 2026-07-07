@@ -22,6 +22,24 @@ jobs:
       - run: uv run mypy app
       - run: uv run pytest -q
 
+  # F0 guard: collector/ledger.py imports backend modules by path
+  # (app.data.resolution + app.data.uw). This smoke-import fails in CI —
+  # instead of at the 2 AM nightly ledger — if that chain ever grows a
+  # dependency the collector env doesn't ship (the resolution-map rebuild
+  # the self-improvement loop depends on rides on this import).
+  collector-import:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - run: uv run python -c "import ledger"
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

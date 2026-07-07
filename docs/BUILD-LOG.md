@@ -1165,3 +1165,16 @@ Ops: UW intraday collector relaunched QQQ→IWM→SPY (SPY complete at 500
 contracts); daily budget hit 29,975/30,000 → budget-aware retry loop armed.
 QQQ iVol 5-min backfill completes ~2026-07-08 and flows in via the nightly
 ledger rebuild automatically.
+REVIEW (independent agent, same session): 2 MAJOR + 6 lesser findings, ALL
+FIXED — (1) same-day EOD observations (UW series / Massive daily aggs / IVS
+fits) were visible at intra-session moments → datetime as_of now EXCLUDES
+the as_of session in those readers; (2) tz-naive stamps were localized as
+UTC (fail-open) → new app/data/pit.py detects offsets at the VALUE level
+and fails closed; (3) session bound now derives from the UTC-normalized
+moment, not the caller's local calendar; (4) contracts_reference returns a
+copy (cache-poisoning); (5) CI smoke-imports collector/ledger.py so the
+cross-project import chain breaks in CI, not at the 2 AM nightly; (6)
+Observatory panels null-guard artifact drift; (7) dead branch removed +
+family validation in daily_sessions; (8) ledger gathers UW listings once
+per run instead of 3×. 310 tests green after fixes; 7 new fixtures pin the
+corrected contracts (incl. the reviewer's exotic-offset probe).

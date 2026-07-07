@@ -22,6 +22,7 @@ from typing import Any
 import pandas as pd
 
 from app.data import r2
+from app.data.pit import as_of_parts
 from app.engine.market import LookaheadError
 
 FETCH_WORKERS = 8
@@ -84,10 +85,14 @@ def load_ivs_surface(
 
     Raises LookaheadError when session lies beyond as_of (guardrail #2 —
     a surface is a same-day observation; reading tomorrow's fit is lookahead).
+    A surface is an END-OF-DAY fit, so at an intra-session moment the as_of
+    session's own surface does not exist yet — honest None (docs/HONESTY.md).
     """
-    bound = as_of.date() if isinstance(as_of, datetime) else as_of
+    bound, moment = as_of_parts(as_of)
     if session > bound:
         raise LookaheadError(f"ivs surface {ticker} {session} requested with as_of {bound}")
+    if moment is not None and session == bound:
+        return None  # the EOD fit isn't observable mid-session
     key = f"reference/ivol/ivs/ticker={ticker}/date={session}/surface.parquet"
     if key in _IVS_CACHE:
         _IVS_CACHE.move_to_end(key)
