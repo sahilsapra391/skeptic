@@ -178,6 +178,13 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
     if exp_cat is None:
         if got_cat is not None:
             errs.append(f"fabricated exit.close_at_time={got_cat}")
+    elif isinstance(exp_cat, list):
+        # a list = any of these times is faithful (e.g. "no holding
+        # overnight" pins SOME end-of-session flat, not one exact minute);
+        # ABSENT still fails — dropping the constraint is fabrication-by-
+        # omission
+        if got_cat not in exp_cat:
+            errs.append(f"exit.close_at_time {got_cat} not in {exp_cat}")
     elif got_cat != exp_cat:
         errs.append(f"exit.close_at_time {got_cat} != {exp_cat}")
 
@@ -222,6 +229,17 @@ def main() -> int:
             return 2
 
         n, kind = case["case"], case["kind"]
+        if kind == "spec_or_questions" and outcome.status == "questions":
+            # owner-blessed dual outcome: a clarifying ask is as correct as
+            # the spec (used where the verbatim phrasing is genuinely on the
+            # boundary, e.g. an unstated force-flat time)
+            ok = outcome.spec is None
+            clear_pass += ok
+            qs = " · ".join(q.question for q in outcome.questions)[:150]
+            lines.append(
+                f"case {n:>2} [{'PASS' if ok else 'FAIL'}] (spec_or_questions) "
+                f"asked (acceptable): {qs}")
+            continue
         if kind == "questions":
             ok = outcome.status == "questions" and outcome.spec is None
             ambiguous_pass += ok
@@ -241,7 +259,7 @@ def main() -> int:
             detail = "matches ground truth" if not errs else "; ".join(errs)[:220]
             lines.append(f"case {n:>2} [{'PASS' if not errs else 'FAIL'}] (spec) {detail}")
 
-    clear_total = sum(1 for c in CASES if c["kind"] == "spec")
+    clear_total = sum(1 for c in CASES if c["kind"] in ("spec", "spec_or_questions"))
     ambiguous_total = sum(1 for c in CASES if c["kind"] == "questions")
     print("\n".join(lines))
     print(

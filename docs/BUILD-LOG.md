@@ -1464,3 +1464,21 @@ panel gates on any-ticker, not SPY-only (guardrail #6 mid-backfill);
 schema-parity tests (incl. v5) now RUN in CI instead of skipping;
 (9) stable interpolation sort comment. Real-lake acceptance: SPY derived
 4,905/4,905 sessions with skew present on every one.
+OWNER GATE FULFILLED (2026-07-07, same session): golden cases 27/28/36
+are now the owner's VERBATIM prompts (typos preserved — the set protects
+real phrasing, not tidy archetypes). 27 = the 0DTE put seller (cycling +
+finest + flat 15:45 + stop 100% of credit) → parses to spec exactly.
+28 = the 1DTE QQQ cycler; "No holding overnight" has no stated time, so
+the case is kind spec_or_questions (owner-blessed dual outcome): a spec
+with any end-of-session close_at_time passes, and so does asking the
+exact-time question — dropping the constraint silently fails. Grader
+gained the dual kind + close_at_time list matching. 36 = the personal
+RSI scale-in ladder as typed ("by 10 more") → must ask (unstated ruin
+cap). First run on the swapped set exposed a REAL pre-existing flake:
+case 29 (daily, no tenor, no cadence) fabricated frequency "daily" +
+the 45-DTE convention ~1-in-5 runs — the ONE ALLOWED CONVENTION was
+over-applying to bare profit targets. Prompt tightened: the convention
+applies ONLY when a DTE number appears in the exit itself; cadence rule
+gained the case-29 worked negative example. FINAL EVAL (36 cases):
+23/23 clear + 13/13 ambiguous ACCEPTED; case-29 probe 5/5 asks (was
+4/5). All three verbatim goldens pass.

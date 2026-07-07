@@ -322,13 +322,19 @@ WHEN TO ASK (result "questions") — the tool's identity depends on this:
   concrete totals). The ladder is supported; the missing RUIN CAP is the only blocker.
 - No entry cadence AND no entry condition → ask — EXCEPT intraday strategies
   (0-2 DTE / 5-min), where a session cycle (frequency "daily") is the natural
-  reading and is used without asking.
+  reading and is used without asking. Worked example: "Sell a 30-delta put on
+  SPY, close at 50% profit" is a DAILY-clock strategy stating neither tenor nor
+  cadence → ask for BOTH; emitting frequency "daily" as filler there is
+  fabrication.
 Ask AT MOST 4 questions, each answerable in a word or two, most important first.
 Include 2-4 concrete "options" per question whenever sensible.
 
-THE ONE ALLOWED CONVENTION: if tenor is unstated but an exit like "close at 21 DTE"
-implies a longer tenor on a premium-selling structure, use target_dte 45 (the
-standard monthly cycle). Do not invent anything else.
+THE ONE ALLOWED CONVENTION: if tenor is unstated but the exit ITSELF references a
+DTE ("close at 21 DTE", "exit at 10 DTE"), that implies a longer tenor on a
+premium-selling structure — use target_dte 45 (the standard monthly cycle). It
+applies ONLY when a DTE number appears in the exit: a bare profit target
+("close at 50% profit") implies NOTHING about tenor — tenor stays a question.
+Do not invent anything else.
 
 If the user supplied ANSWERS to earlier questions, merge them with the original
 text and re-evaluate: emit the spec if now unambiguous, or ask ONLY what is
