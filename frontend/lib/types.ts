@@ -258,7 +258,9 @@ export interface RunPayload {
   resolutionRuns?:
     | { first: string; last: string; sessions: number; resolution: string }[]
     | null;
-  /** FX.2: every skipped entry attempt counted by reason (null pre-FX.2) */
+  /** FX.2: skip-reason distribution — attempt-level reasons (per
+   * attempted bar) beside episode-level ones (once per setup);
+   * absent only on stored pre-FX.2 payloads */
   skipReasons?: Record<string, number> | null;
   /** D3c: 5-min replay receipts (merged at read time; stored trust untouched) */
   receipts?: {

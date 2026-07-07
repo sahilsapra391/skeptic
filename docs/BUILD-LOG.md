@@ -1250,3 +1250,18 @@ hand-computed: persistent=1 entry, refire=2, cap consumed, PT re-entry
 +53.70, armed fade fill at 3.025 w/ both bars disclosed, armed dies at
 flat, unconditional cycle 2.025→PT→1.425, bit-identity, validators,
 schema parity).
+REVIEW (independent agent, same session): 1 MAJOR + 4 MINOR + 3 NIT, ALL
+FIXED — (1) MAJOR: scanning made position count scale with BARS while three
+per-bar paths iterated ALL positions ever (incl. pre-existing _check_exits)
+→ quadratic on cyclers; introduced the LIVE book (state.live, swept O(open)
+per bar; _check_exits/_force_flat/_settle/_unwind/equity/marks all moved) +
+MAX_RUN_FILLS=20,000 loud refusal (RunFillCapError, tested via pathological
+per-bar cycler); (2) second edge while armed now counted order_in_flight
+(one-working-order model disclosed); (3) waiting bars are NOT skips —
+no_quote_this_bar counts once per episode only at unfilled death (session
+end/flatten); filled armed orders contribute no count; (4) ANY intraday_scan
++ scale_in refused (schema said mutually exclusive); (5) payload/types
+comments now truthful about attempt-level vs episode-level counts; (6) armed
+no-hunting bound pinned (refusing quote bar consumes the episode, later good
+quotes untouched); (7) closed_this_bar gated to its consumer + covered-call
+slot note; (8) schema title v3→v4; (9) lifecycle re-arm comment. 351 tests.

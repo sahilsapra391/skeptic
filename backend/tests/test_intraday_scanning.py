@@ -186,7 +186,8 @@ class TestArmedOrders:
         assert opens[0].bar_time == "09:45"
         assert "armed 09:40" in opens[0].detail
         assert "3.02" in opens[0].detail  # filled at 09:45's quote, not 09:40's
-        assert result.skip_reasons.get("no_quote_this_bar") == 1
+        # waiting bars are NOT skips — the order FILLED; nothing to count
+        assert "no_quote_this_bar" not in result.skip_reasons
 
     def test_armed_order_dies_at_session_flat(self) -> None:
         # an edge just before close_at_time never fills — the flatten bar
@@ -199,6 +200,62 @@ class TestArmedOrders:
         spec = _spec({"profit_target_pct": 500, "close_at_time": "09:45"})
         result = _run(spec, _slice(quotes, und))
         assert result.filled == 0
+        # the unfilled episode is counted ONCE at its death, not per wait bar
+        assert result.skip_reasons.get("no_quote_this_bar") == 1
+
+
+class TestArmedHonestyBounds:
+    def test_second_edge_while_armed_is_counted_order_in_flight(self) -> None:
+        # review finding: one working order at a time — an edge arriving
+        # while an order is armed is a REAL missed setup, counted and never
+        # silently absorbed. Edges at 09:40 and 09:55 across a long quote
+        # gap → ONE fill (10:00, the next quoted bar) + order_in_flight 1.
+        und = {"09:30": 100.0, "09:35": 101.0, "09:40": 102.0,
+               "09:45": 103.0, "09:50": 85.0, "09:55": 104.0, "10:00": 105.0}
+        quotes = {"09:30": [_put(2.00, 2.10, EXP)],
+                  "09:35": [_put(2.00, 2.10, EXP)],
+                  # 09:40 → 09:55 all quote-less; next quote at 10:00
+                  "10:00": [_put(2.00, 2.10, EXP)]}
+        result = _run(_spec({"profit_target_pct": 500}), _slice(quotes, und))
+        opens = _opens(result)
+        assert len(opens) == 1 and opens[0].bar_time == "10:00"
+        assert "armed 09:40" in opens[0].detail  # the FIRST episode's order
+        assert result.skip_reasons.get("order_in_flight") == 1
+
+    def test_armed_order_never_hunts_past_a_refusing_quote_bar(self) -> None:
+        # review finding (test gap): the sharpest bound of the armed
+        # mechanism — the first quoted bar REFUSES the fill (zero bid on a
+        # short) and the episode is CONSUMED; later good quotes stay
+        # untouched (no hunting).
+        und = {"09:30": 100.0, "09:35": 101.0, "09:40": 102.0,
+               "09:45": 102.5, "09:50": 103.0}
+        quotes = {"09:30": [_put(2.00, 2.10, EXP)],
+                  "09:35": [_put(2.00, 2.10, EXP)],
+                  # 09:40 gap arms; 09:45 quote is unfillable for a short
+                  "09:45": [_put(0.00, 0.10, EXP)],
+                  "09:50": [_put(2.00, 2.10, EXP)]}  # good quote — must stay unused
+        result = _run(_spec({"profit_target_pct": 500}), _slice(quotes, und))
+        assert result.filled == 0
+        assert result.skip_reasons.get("zero_bid_short") == 1
+
+
+class TestRunFillCap:
+    def test_pathological_cycler_is_refused_loudly(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        # review finding: scanning removes the one-entry-per-session bound —
+        # a per-bar cycler must hit a LOUD cap, never grind unbounded
+        from app.engine import engine as eng
+
+        monkeypatch.setattr(eng, "MAX_RUN_FILLS", 2)
+        und = {"09:30": 100.0, "09:35": 100.0, "09:40": 100.0, "09:45": 100.0}
+        # declining quotes: every re-entry's PT hits at the very next bar →
+        # close + lifecycle re-arm + re-enter, once per bar
+        quotes = {"09:30": [_put(2.00, 2.10, EXP)],
+                  "09:35": [_put(1.80, 1.90, EXP)],
+                  "09:40": [_put(1.60, 1.70, EXP)],
+                  "09:45": [_put(1.40, 1.50, EXP)]}
+        spec = _spec({"profit_target_pct": 0.01}, cap=1, conditions=[])
+        with pytest.raises(eng.RunFillCapError, match="narrow the window"):
+            _run(spec, _slice(quotes, und))
 
 
 class TestUnconditionalCycling:
@@ -247,9 +304,12 @@ class TestSpecValidation:
             _spec({"profit_target_pct": 50}, clock="daily", target_dte=30,
                   max_dte=45)
 
-    def test_scan_refuses_scale_in(self) -> None:
+    @pytest.mark.parametrize("mode", ["every_setup", "once_per_session"])
+    def test_scan_refuses_scale_in(self, mode: str) -> None:
+        # ANY intraday_scan value + ladder is refused — "once_per_session"
+        # would misdescribe a rung-firing ladder (review finding)
         with pytest.raises(ValidationError, match="scale_in"):
-            _spec({"profit_target_pct": 50}, conditions=[], scale_in={
+            _spec({"profit_target_pct": 50}, scan=mode, conditions=[], scale_in={
                 "rungs": [{"condition": {"indicator": "rsi", "operator": "<",
                                          "value": 30, "timeframe": "5min"},
                            "add_contracts": 1}],

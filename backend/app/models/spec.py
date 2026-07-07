@@ -552,11 +552,11 @@ class StrategySpec(BaseModel):
                 'entry.intraday_scan requires clock "5min" — the daily clock '
                 "has no intraday bars to scan"
             )
-        if (self.entry.intraday_scan is IntradayScan.EVERY_SETUP
-                and self.entry.scale_in is not None):
+        if self.entry.scale_in is not None:
             raise ValueError(
-                "entry.intraday_scan every_setup cannot combine with "
-                "entry.scale_in — the ladder is its own multi-entry semantic"
+                "entry.intraday_scan cannot combine with entry.scale_in — "
+                "the ladder is its own multi-entry semantic (and "
+                '"once_per_session" would misdescribe a rung-firing ladder)'
             )
         return self
 
