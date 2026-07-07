@@ -15,7 +15,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.data import chains, r2
+from app.data import chains, r2, resolution
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
@@ -270,6 +270,12 @@ def build_coverage() -> dict[str, Any]:
             "archive_gaps": len(dolthub_state.get("missing_in_archive") or []),
             "commit": dolthub_state.get("commit_hash"),
         },
+        # F0 (ENGINE-V4): per-session resolution mix + new-source windows.
+        # Both are collector-built artifacts (state/resolution_map/*,
+        # state/source_coverage.json) — cheap reads, honest None until the
+        # ledger has run. Additive keys only; nothing above changes shape.
+        "resolution_mix": {t: resolution.summary(s3, t) for t in TICKERS},
+        "new_sources": r2.get_json(s3, "state/source_coverage.json", None),
         "blind_spots": _blind_spots(dolthub_state, minute),
         "sources_status": {
             "yahoo_eod": bool(eod["yahoo"].get("SPY")),

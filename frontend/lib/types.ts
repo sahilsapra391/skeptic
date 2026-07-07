@@ -359,6 +359,40 @@ export interface CoveragePayload {
     generated_at: string;
     priorities: { rank: number; want: string; why: string; score: number }[];
   } | null;
+  /** F0 (ENGINE-V4): per-session resolution mix from the collector-built
+   * resolution map (state/resolution_map/) — null per ticker until the
+   * nightly ledger has built it. clock = finest decision clock; quote =
+   * best fill-grade source by quality (ivol_5min > cboe_2min > eod_only). */
+  resolution_mix?: Record<
+    Ticker,
+    {
+      sessions: number;
+      clock: Record<string, number>;
+      quote: Record<string, number>;
+      minute_window: CoverageRange | null;
+      five_min_window: CoverageRange | null;
+      timeline: TimelineRun[];
+    } | null
+  >;
+  /** F0: new-source coverage windows (state/source_coverage.json) —
+   * UW signal families, UW minute bars/tape, IVS surfaces, Massive */
+  new_sources?: {
+    generated_at: string;
+    uw_daily: Record<string, Record<string, CoverageRange>>;
+    uw_minute: Record<Ticker, CoverageRange | null>;
+    uw_tape: Record<Ticker, CoverageRange | null>;
+    ivs: Record<Ticker, CoverageRange | null>;
+    massive: Record<Ticker, { agg_symbols: number }>;
+  } | null;
+}
+
+/** One compressed run of consecutive sessions sharing (clock, quote). */
+export interface TimelineRun {
+  first: string;
+  last: string;
+  sessions: number;
+  clock: string;
+  quote: string;
 }
 
 export interface UnderlyingPoint {

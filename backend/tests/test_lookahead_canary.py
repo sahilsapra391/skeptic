@@ -44,3 +44,26 @@ def test_chain_is_as_of_only() -> None:
     # the 2025-01-13 snapshot has a different quote; it must be invisible now
     q = view.quote(keys[0])
     assert q is not None and q.bid == 2.00  # entry-day quote, not the later 3.00
+
+
+# ── F0 (ENGINE-V4): every new lake source honors the same contract ──────────
+# UW daily/series/minute, Massive aggregates and iVol IVS surfaces all raise
+# LookaheadError beyond as_of and truncate rows AT it. The hand-computed
+# fixtures (incl. row-level intra-session truncation and the deliberately-
+# lookahead "evil reader" red test) live in test_new_source_readers.py; this
+# section keeps the beyond-as_of raise visible in the permanent canary.
+
+def test_new_sources_raise_beyond_as_of(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.data import ivol_analytics, massive, r2, uw
+    from app.engine.market import LookaheadError as LE
+
+    monkeypatch.setattr(r2, "get_parquet", lambda s3, key: None)
+    t, t_next = date(2026, 6, 5), date(2026, 6, 8)
+    with pytest.raises(LE):
+        uw.daily_rows(None, "market_tide", None, t_next, t)
+    with pytest.raises(LE):
+        uw.minute_bars(None, "SPY", "SPY260706C00739000", t_next, t)
+    with pytest.raises(LE):
+        massive.option_agg(None, "QQQ", "O:QQQTEST", t, session=t_next)
+    with pytest.raises(LE):
+        ivol_analytics.load_ivs_surface(None, "SPY", t_next, t)
