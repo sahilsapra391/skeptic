@@ -1178,3 +1178,36 @@ Observatory panels null-guard artifact drift; (7) dead branch removed +
 family validation in daily_sessions; (8) ledger gathers UW listings once
 per run instead of 3×. 310 tests green after fixes; 7 new fixtures pin the
 corrected contracts (incl. the reviewer's exotic-offset probe).
+
+## 2026-07-07 — ENGINE-V4 FX.1: intraday PIT loop + per-session resolution
+
+Survey correction first: 0DTE was ALREADY legal at the 5-min clock (D2:
+trading-DTE, same-session settle, SliceCoverage refusal) — FX.1 proves it
+end-to-end instead of rebuilding it. Shipped (spec v4, additive):
+- `backtest.resolution: "5min"|"finest"` (v4 vocabulary, loud on older
+  specs; requires the intraday clock; absent ≡ "5min" bit-identically).
+- Per-session selection: engine asks the provider once per run; the
+  provider reads the F0 resolution map (clock=minute AND bars_1m grid —
+  new additive `has_minute_underlying` column, ledger rebuilt). Minute
+  sessions step a 1-min bar grid built from bars_1m underlying NBBO
+  (stale prior-session prints dropped, regular hours only) with option
+  quotes at their real 5-min NBBO stamps; separate bounded LRU, the 5-min
+  disk cache untouched.
+- Loop is resolution-parametric: nudge scales to the grid; timeframe-5min
+  indicator series samples only 5-min boundaries on minute grids (owner
+  decision 4 groundwork); VWAP native-granularity. RunResult records
+  resolution_mode/mix/compressed runs; payload additive
+  (resolutionMode/Mix/Runs).
+- Tests 331 (+21): masterplan mixed-run fixture (mix recorded, runs
+  compressed), quote-less minute bars fill nothing (skip logged, fill
+  detail pins WHICH quote), stop on minute grid = same dollars as 5-min,
+  indicator-pollution red test, honest degrade (map empty / grid
+  unbuildable), absent≡"5min" bit-identity, 0DTE sell-the-winner
+  (PT/force-flat, never settles, to the cent), minute-grid canary.
+- Real-lake smoke: SPY finest 2026-05-01→07-02 — 43/43 covered sessions
+  at the minute grid, 43 fills all ivol_5min NBBO, exits 38 profit_target
+  + 5 session_flat, ZERO settlements ("sell winners, don't settle"),
+  23.5s, RSS Δ+22MB flat across re-runs, deterministic re-run identical.
+Deliberately NOT here (owner-confirmed split): armed entries (FX.2),
+latched stops / worse-path (FX.3), verdict disclosure + mixed-resolution
+gauntlet (FX.4), parser vocabulary (FX.5 re-ACCEPT).

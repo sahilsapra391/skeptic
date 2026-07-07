@@ -92,6 +92,12 @@ class IntradayProvider(Protocol):
     def slice_max_trading_dte(self) -> int: ...
     def sessions(self) -> list[date]: ...
     def slice_for(self, session: date) -> SessionSlice | None: ...
+    # FX.1 (resolution="finest"): sessions eligible for the minute grid per
+    # the F0 resolution map, and the 1-min slice itself. A provider with no
+    # minute data returns empty/None — the engine falls back to 5-min and
+    # RECORDS the session as five_min (honest degrade, never an error).
+    def minute_sessions(self) -> set[date]: ...
+    def minute_slice_for(self, session: date) -> SessionSlice | None: ...
 
 
 class MarketView:
@@ -206,6 +212,10 @@ class SessionSlice:
     # per-bar underlying volume (D2c, session-anchored VWAP input); empty
     # when the source carries none (CBOE) — VWAP is honestly unevaluable then
     underlying_volume: dict[datetime, float] = field(default_factory=dict)
+    # FX.1: the session's bar grid ("5min" | "1min"). Minute grids carry the
+    # SAME 5-min NBBO quote stamps — bars between stamps have no chain and
+    # can fill nothing (guardrail #1); they refine when the engine LOOKS.
+    bar_resolution: str = "5min"
 
     def __post_init__(self) -> None:
         self.bars = sorted(self.bars)
@@ -280,6 +290,7 @@ def build_fixture_slice(
     underlying: dict[str, float],
     quote_source: str = "ivol_5min",
     volumes: dict[str, float] | None = None,
+    bar_resolution: str = "5min",
 ) -> SessionSlice:
     """Fixture loader: {'HH:MM': rows} → SessionSlice (same shape the real
     loader produces). Bar keys are ET wall-clock times within `session`."""
@@ -324,6 +335,7 @@ def build_fixture_slice(
         underlying={_ts(k): float(v) for k, v in underlying.items()},
         underlying_volume={_ts(k): float(v) for k, v in (volumes or {}).items()},
         quote_source=quote_source,
+        bar_resolution=bar_resolution,
     )
 
 

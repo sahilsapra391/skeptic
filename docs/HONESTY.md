@@ -306,3 +306,34 @@ map (app/data/resolution.py, built by collector/ledger.py). Rules:
   coverage and volume cross-checks. Its contract directory carries no
   listing timestamps and is exposed as non-point-in-time REFERENCE metadata
   only — simulation code must never derive contract existence from it.
+
+## FX.1 (ENGINE-V4): per-session resolution — the finest honest clock
+
+spec v4 adds `backtest.resolution: "finest"` (intraday clock only; absent ≡
+"5min" exactly, bit-identical). Rules:
+
+- **Resolution is selected PER SESSION** from the collector-built resolution
+  map (an O(1) artifact lookup at run start — never a live lake probe): the
+  minute grid where UW minute data AND the bars_1m 1-min underlying exist,
+  else the 5-min grid. The chosen resolution of every covered session is
+  recorded on the run (`resolution_mix` + compressed `resolution_runs`) —
+  the receipts loop must explain a re-run that changed because minute data
+  newly arrived as a RESOLUTION UPGRADE, never a silent shift.
+- **Minute bars refine when the engine LOOKS, never what it can fill.**
+  Option quotes stay the 5-min NBBO stamps; a minute bar between stamps
+  serves no chain and can fill nothing (skip `no_chain_data`, logged). True
+  minute-level quotes remain the paid-tape upgrade path.
+- **timeframe-"5min" indicators mean ONE thing at every session.** On a
+  minute grid the rolling indicator series samples only 5-min boundaries;
+  intermediate minutes never enter it (fixture-pinned) — resolution must
+  never silently change signal meaning. Session VWAP accumulates at the
+  session's native granularity: a finer sampling of the same quantity.
+- **Honest degrade.** Map pending / grid unbuildable → the session runs
+  5-min and is RECORDED as five_min; the next nightly ledger rebuild
+  upgrades eligibility automatically. bars_1m rows carrying stale
+  prior-session prints (the vendor repeats the last print) are dropped —
+  a Friday print is not a Monday price.
+- **Reachability.** "finest" is engine/API vocabulary only until FX.5's
+  parser unlock (owner re-ACCEPT gate) and FX.4's verdict disclosure; no
+  user-facing surface can produce a finest run before its disclosure
+  exists.

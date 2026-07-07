@@ -227,6 +227,9 @@ def build_resolution_maps(s3, gathered: dict | None = None) -> None:
             eod.update(list_chain_dates(s3, source, ticker))
         ivs = _date_prefixes(s3, f"reference/ivol/ivs/ticker={ticker}")
         families = _families_by_session(gathered, ticker)
+        # FX.1: 1-min underlying NBBO bars — the minute bar GRID; a
+        # minute-clock session is only steppable at 1-min when these exist
+        und_1m = _date_prefixes(s3, f"bars_1m/source=ivolatility/ticker={ticker}")
         rows = derive_resolution_rows(
             minute_contracts_by_session=gathered["minute"][ticker],
             ivol_5min_sessions=ivol_5m,
@@ -234,6 +237,7 @@ def build_resolution_maps(s3, gathered: dict | None = None) -> None:
             eod_sessions=sorted(eod),
             ivs_sessions=ivs,
             uw_families_by_session=families,
+            minute_underlying_sessions=und_1m,
         )
         key = RESOLUTION_MAP_KEY.format(ticker=ticker)
         r2_put_parquet(s3, key, pd.DataFrame(rows))

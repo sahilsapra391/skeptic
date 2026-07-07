@@ -57,6 +57,7 @@ from app.models.spec import (
     Costs,
     Frequency,
     LiquidityMode,
+    Resolution,
     ScaleIn,
     Side,
     SizingMethod,
@@ -1089,6 +1090,20 @@ def run_engine(
         requested_sessions=requested_sessions,
         clock=spec.backtest.clock.value,
     )
+
+    # FX.1: per-session bar resolution. FINEST asks the provider which
+    # sessions the F0 resolution map marks minute-eligible (an O(1) artifact
+    # lookup done ONCE per run); everything else — and every run without the
+    # v4 field — steps the 5-min grid exactly as D2 shipped it. The chosen
+    # resolution of every covered session is recorded for disclosure,
+    # receipts, and FX.4's mixed-resolution honesty.
+    finest = five_min and spec.backtest.resolution is Resolution.FINEST
+    minute_days: set[date] = set()
+    if finest and intraday is not None:
+        minute_days = intraday.minute_sessions()
+    if spec.backtest.resolution is not None:
+        result.resolution_mode = spec.backtest.resolution.value
+    session_resolutions: list[tuple[date, str]] = []
     covered_sessions = 0
     intraday_lasts: list[float] = []  # rolling 5-min lasts across the run (D2c)
     tod = spec.entry.schedule.time_of_day
@@ -1112,9 +1127,19 @@ def run_engine(
         view = MarketView(store, day)
         _unwind_pending_stock(state, view)
 
-        slc = intraday.slice_for(day) if five_min and intraday is not None else None
+        slc = None
+        if five_min and intraday is not None:
+            if finest and day in minute_days:
+                # minute grid if the provider can actually build it; a
+                # missing grid falls back to 5-min and is RECORDED as such
+                slc = intraday.minute_slice_for(day)
+            if slc is None or not slc.bars:
+                slc = intraday.slice_for(day)
         if slc is not None and slc.bars:
-            # ------------------------- 5-min bar loop (the declared clock)
+            # -------------------- intraday bar loop (the declared clock;
+            # bar size is a PER-SESSION value under resolution="finest")
+            is_minute = slc.bar_resolution == "1min"
+            session_resolutions.append((day, "minute" if is_minute else "five_min"))
             covered_sessions += 1
             if progress is not None and covered_sessions % PROGRESS_EVERY_SESSIONS == 0:
                 progress(covered_sessions, len(clock))
@@ -1124,14 +1149,23 @@ def run_engine(
             opened_this_session = False
             session_pv = 0.0  # session-anchored VWAP accumulators (D2c)
             session_vol = 0.0
-            entry_from = max(entry_shift_bars, 0)  # nudge: delay the window
+            # nudge: delay the window. entry_shift_bars counts 5-MIN bars
+            # (the D2d lever's unit); a minute grid has 5 bars per unit.
+            entry_from = max(entry_shift_bars, 0) * (5 if is_minute else 1)
             # a flat ladder re-arms for a fresh oversold episode each session
             if scale_in is not None and bstate.basket is None:
                 bstate.armed = True
             for bar_idx, bar in enumerate(slc.bars):
                 last = slc.underlying.get(bar)
                 if last is not None:
-                    intraday_lasts.append(last)
+                    # timeframe-"5min" indicators mean ONE thing at every
+                    # session of a run: on a minute grid the rolling series
+                    # still samples only 5-min boundaries (owner decision 4 —
+                    # resolution must never silently change signal meaning).
+                    # VWAP accumulates at the session's native granularity:
+                    # finer sampling of the same quantity, disclosed.
+                    if not is_minute or bar.minute % 5 == 0:
+                        intraday_lasts.append(last)
                     vol = slc.underlying_volume.get(bar, 0.0)
                     session_pv += last * vol
                     session_vol += vol
@@ -1260,4 +1294,26 @@ def run_engine(
     result.fills_unknown_liquidity = state.fills_unknown_liquidity
     result.fill_sources = state.fill_sources
     result.rung_fills = state.rung_fills
+    if session_resolutions:
+        mix: dict[str, int] = {}
+        for _, res in session_resolutions:
+            mix[res] = mix.get(res, 0) + 1
+        result.resolution_mix = mix
+        result.resolution_runs = _compress_resolutions(session_resolutions)
     return result
+
+
+def _compress_resolutions(
+    session_resolutions: list[tuple[date, str]],
+) -> list[dict[str, object]]:
+    """Consecutive same-resolution covered sessions → compact runs (the
+    payload/receipts shape; a multi-year run stays a handful of rows)."""
+    runs: list[dict[str, object]] = []
+    for day, res in session_resolutions:
+        if runs and runs[-1]["resolution"] == res:
+            runs[-1]["last"] = day.isoformat()
+            runs[-1]["sessions"] = int(runs[-1]["sessions"]) + 1  # type: ignore[call-overload]
+        else:
+            runs.append({"first": day.isoformat(), "last": day.isoformat(),
+                         "sessions": 1, "resolution": res})
+    return runs

@@ -63,6 +63,11 @@ IVOL_UND = "underlying_intraday/source=ivolatility"
 CBOE_OPT = "options_intraday/source=cboe_delayed"
 ALPACA_OPT = "options_minute/source=alpaca"
 ALPACA_UND = "underlying_minute"
+# FX.1: 1-min underlying NBBO bars (iVolatility, 2011+) — the MINUTE bar
+# grid for resolution="finest" sessions. Options quotes stay the 5-min NBBO
+# stamps; minute bars between stamps carry no chain and fill nothing.
+BARS_1M = "bars_1m/source=ivolatility"
+LRU_MINUTE_SESSIONS = 16  # separate, bounded (post-OOM rule)
 # a trade print older than this is NOT a usable price for the bar — stale
 # prints on sparse contracts would otherwise masquerade as quotes
 ALPACA_STALE_PRINT_MIN = 5
@@ -124,6 +129,41 @@ def _ivol_frames(
             "volume": bar_vol,
         }).dropna(subset=["bar_ts", "last"])
     return out, und_out
+
+
+def _minute_und_frame(s3: Any, ticker: str, d: str) -> pd.DataFrame | None:
+    """The 1-min underlying series for one session (FX.1 minute grid).
+
+    bars_1m rows carry the MOST RECENT print (lastPrice/lastDateTime), so
+    the session open repeats the prior session's close until a fresh print
+    lands — those stale rows are dropped (a Friday print is not a Monday
+    price; fail closed, same spirit as app/data/pit.py). Grid bounded to
+    regular hours [09:30, 16:00); volume is cumulative → per-bar diff,
+    matching the 5-min underlying convention."""
+    df = r2.get_parquet(s3, f"{BARS_1M}/ticker={ticker}/date={d}/bars.parquet")
+    needed = {"timestamp", "lastPrice", "lastDateTime", "volume"}
+    if df is None or df.empty or not needed.issubset(df.columns):
+        return None
+    ts = pd.to_datetime(df["timestamp"], errors="coerce")
+    last = pd.to_numeric(df["lastPrice"], errors="coerce")
+    last_dt = pd.to_datetime(df["lastDateTime"], errors="coerce")
+    session = pd.Timestamp(d).date()
+    fresh = last_dt.notna() & (last_dt.dt.date == session)
+    in_session = (
+        ts.notna()
+        & (ts.dt.time >= pd.Timestamp("09:30").time())
+        & (ts.dt.time < pd.Timestamp("16:00").time())
+    )
+    keep = fresh & in_session & last.notna()
+    if not bool(keep.any()):
+        return None
+    cum_vol = pd.to_numeric(df["volume"], errors="coerce")[keep]
+    bar_vol = cum_vol.diff().fillna(cum_vol).clip(lower=0)
+    return pd.DataFrame({
+        "bar_ts": ts[keep],
+        "last": last[keep],
+        "volume": bar_vol,
+    }).dropna(subset=["bar_ts", "last"]).reset_index(drop=True)
 
 
 def _cboe_frames(
@@ -203,7 +243,8 @@ def _cboe_frames(
 
 
 def _build_slice(
-    session: date, opt: pd.DataFrame, und: pd.DataFrame | None, source: str
+    session: date, opt: pd.DataFrame, und: pd.DataFrame | None, source: str,
+    bar_resolution: str = "5min",
 ) -> SessionSlice:
     opt = opt.dropna(subset=["bar_ts", "expiration", "right", "strike"])
     quotes: dict[datetime, dict[ContractKey, Quote]] = {}
@@ -246,7 +287,7 @@ def _build_slice(
     return SessionSlice(
         session=session, bars=bars, quotes=quotes,
         underlying=underlying, underlying_volume=underlying_volume,
-        quote_source=source,
+        quote_source=source, bar_resolution=bar_resolution,
     )
 
 
@@ -454,6 +495,10 @@ class IntradayStore:
         self.ticker = ticker
         self._sessions: dict[date, str] | None = None  # session -> source
         self._lru: OrderedDict[date, SessionSlice | None] = OrderedDict()
+        # FX.1: minute-grid state, fully separate from the 5-min path so the
+        # default clock's cache behavior is untouched
+        self._minute_days: set[date] | None = None
+        self._lru_1m: OrderedDict[date, SessionSlice | None] = OrderedDict()
 
     @property
     def slice_max_trading_dte(self) -> int:
@@ -536,6 +581,49 @@ class IntradayStore:
         self._lru[session] = slc
         while len(self._lru) > LRU_SESSIONS:
             self._lru.popitem(last=False)
+
+    # ------------------------------------------------ FX.1: the minute grid
+
+    def minute_sessions(self) -> set[date]:
+        """Sessions eligible for the 1-min grid, from the F0 resolution map
+        (an artifact lookup, never a live listing — post-OOM rule). Empty
+        when the map is pending or R2 is unconfigured: the engine falls back
+        to 5-min and records it; the next nightly ledger rebuild upgrades
+        eligibility automatically (self-improvement thesis)."""
+        if self._minute_days is None:
+            from app.data import resolution  # local: keeps import graph flat
+
+            try:
+                s3 = r2.r2_client()
+                iso = resolution.minute_clock_sessions(s3, self.ticker)
+            except r2.R2NotConfigured:
+                iso = set()
+            self._minute_days = {date.fromisoformat(s) for s in iso}
+        return self._minute_days
+
+    def minute_slice_for(self, session: date) -> SessionSlice | None:
+        """The session at the 1-min grid: bars_1m underlying (fresh prints
+        only) + the SAME 5-min NBBO quote stamps. None when the grid can't
+        be built — the engine falls back to the 5-min slice and records the
+        session as five_min. No disk cache: minute sessions are few (UW
+        window) and the frames are ~30KB; the LRU holds built slices."""
+        if session in self._lru_1m:
+            self._lru_1m.move_to_end(session)
+            return self._lru_1m[session]
+        slc: SessionSlice | None = None
+        if session in self.minute_sessions():
+            frames = self._ensure_cached(session)  # options via the 5-min path
+            if frames is not None:
+                opt, _und5, source = frames
+                und1 = _minute_und_frame(r2.r2_client(), self.ticker,
+                                         session.isoformat())
+                if und1 is not None and not und1.empty:
+                    slc = _build_slice(session, opt, und1, source,
+                                       bar_resolution="1min")
+        self._lru_1m[session] = slc
+        while len(self._lru_1m) > LRU_MINUTE_SESSIONS:
+            self._lru_1m.popitem(last=False)
+        return slc
 
 
 _STORE_CACHE: dict[str, IntradayStore] = {}

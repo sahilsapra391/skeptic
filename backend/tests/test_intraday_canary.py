@@ -163,3 +163,33 @@ def test_scale_in_add_fills_at_the_reached_bar_never_the_next() -> None:
     assert rung1[0].bar_time == "09:55"  # reached here — not the next bar
     assert rung1[0].fill_price == pytest.approx(0.475)  # 09:55 ask, not 10:00's 0.10
 
+
+
+# ── FX.1: the canary holds on a MINUTE grid ─────────────────────────────────
+# The finest-resolution loop steps 1-min bars; a view at 09:31 must not see
+# 09:32's underlying nor 09:35's quote. Same structural guarantee, finer grid.
+
+def _minute_grid_slice() -> SessionSlice:
+    return build_fixture_slice(
+        SESSION,
+        quotes={"09:30": [_row(2.00, 2.10)], "09:35": [_row(0.50, 0.60)]},
+        underlying={"09:30": 100.0, "09:31": 99.5, "09:32": 99.0,
+                    "09:33": 98.5, "09:34": 98.0, "09:35": 97.0},
+        bar_resolution="1min",
+    )
+
+
+def test_minute_bar_cannot_read_forward_underlying() -> None:
+    view = IntradayView(_minute_grid_slice(), datetime(2025, 1, 6, 9, 31))
+    with pytest.raises(LookaheadError):
+        view.underlying_last(datetime(2025, 1, 6, 9, 32))
+    # history ends AT the current minute bar
+    assert view.underlying_history() == [100.0, 99.5]
+
+
+def test_minute_bar_between_stamps_has_no_quotes() -> None:
+    # guardrail #1 mechanics: a quote-less minute bar serves NO chain — the
+    # collapsed 09:35 quote is unreachable from 09:31 by construction
+    view = IntradayView(_minute_grid_slice(), datetime(2025, 1, 6, 9, 31))
+    assert view.chain() == {}
+    assert view.quote_at(KEY) is None
