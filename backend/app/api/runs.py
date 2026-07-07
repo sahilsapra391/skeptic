@@ -57,6 +57,15 @@ VALID_ORIGINS = {"user", "auto_unlock", "receipt"}
 AUTO_NOTE_MAX = 120
 
 
+def _validation_detail(exc: ValidationError, limit: int | None = None) -> list[Any]:
+    """Pydantic errors stripped to JSON-safe fields (type/loc/msg). Raw
+    errors() embeds the live ValueError in ctx for every model_validator
+    refusal, and the HTTPException handler json.dumps's the detail — so an
+    honest 422 explanation became a bare `500: {}` in the UI (2026-07-07)."""
+    errors = exc.errors(include_url=False, include_context=False, include_input=False)
+    return errors if limit is None else errors[:limit]
+
+
 class BacktestRequest(BaseModel):
     spec: dict[str, Any]
     seed: int | None = None
@@ -321,7 +330,7 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
     try:
         spec = StrategySpec.model_validate(req.spec)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     if req.seed is not None:
         spec.backtest.seed = req.seed
 
@@ -469,7 +478,7 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
     try:
         replay_spec = StrategySpec.model_validate(build_replay_spec(spec_dict))
     except ValidationError as exc:
-        raise HTTPException(status_code=409, detail=exc.errors()[:3]) from exc
+        raise HTTPException(status_code=409, detail=_validation_detail(exc, limit=3)) from exc
 
     new_id = uuid.uuid4().hex[:12]
     with db.session() as s:

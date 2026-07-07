@@ -136,10 +136,21 @@ app.include_router(runs_api.router, prefix="/api", tags=["runs"])
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> Response:
+    """Every refusal must reach the user as JSON. A raw json.dumps chokes on
+    non-serializable detail (pydantic ctx once carried live ValueError objects)
+    and the handler's own crash turned honest 422s into bare plaintext 500s —
+    the UI showed `500: {}` instead of the explanation (2026-07-07)."""
     import json
 
+    from fastapi.encoders import jsonable_encoder
+
+    try:
+        content = json.dumps({"detail": jsonable_encoder(exc.detail)})
+    except Exception:
+        content = json.dumps({"detail": str(exc.detail)})
     return Response(
         status_code=exc.status_code,
-        content=json.dumps({"detail": exc.detail}),
+        content=content,
         media_type="application/json",
+        headers=exc.headers,
     )
