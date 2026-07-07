@@ -80,7 +80,10 @@ MANIFEST: list[dict[str, Any]] = [
 
     # ---- P2: ticker × date sweeps (dealer positioning, flow, vol — the signal
     #          families no other lake source carries) --------------------------
-    {"name": "greek_exposure", "path": "/api/stock/{ticker}/greek-exposure", "mode": "ticker_date", "priority": 2},
+    # probe 2026-07-06: no-date call returns the full aggregate-GEX TIME SERIES
+    # (≈250 sessions) in ONE request — bank as a series, not per-date. Strike/
+    # expiry-level GEX cross-sections still come per-date below.
+    {"name": "greek_exposure", "path": "/api/stock/{ticker}/greek-exposure", "mode": "ticker_series", "priority": 1},
     {"name": "greek_exposure_strike", "path": "/api/stock/{ticker}/greek-exposure/strike",
      "mode": "ticker_date", "priority": 2},
     {"name": "greek_exposure_expiry", "path": "/api/stock/{ticker}/greek-exposure/expiry",
@@ -114,8 +117,9 @@ MANIFEST: list[dict[str, Any]] = [
     {"name": "vol_stats", "path": "/api/stock/{ticker}/volatility/stats", "mode": "ticker_date", "priority": 2},
     {"name": "vol_term_structure", "path": "/api/stock/{ticker}/volatility/term-structure",
      "mode": "ticker_date", "priority": 2},
+    # probe 2026-07-06: returns the full VRP time series (≈231 sessions) in one call
     {"name": "vol_variance_risk_premium", "path": "/api/stock/{ticker}/volatility/variance-risk-premium",
-     "mode": "ticker_date", "priority": 2},
+     "mode": "ticker_series", "priority": 1},
     {"name": "etf_tide", "path": "/api/market/{ticker}/etf-tide", "mode": "ticker_date", "priority": 2},
     {"name": "darkpool", "path": "/api/darkpool/{ticker}", "mode": "ticker_date", "priority": 2},
     {"name": "lit_flow", "path": "/api/lit-flow/{ticker}", "mode": "ticker_date", "priority": 2},
