@@ -176,6 +176,93 @@ class TestIvolSessions:
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 40)] == 29_998_400
 
+    def test_duplicate_stamp_rows_keep_last_not_zero(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A duplicated stamp's cumulative diff is 0 and its dict insert
+        used to ERASE the bar's real volume in _build_slice — the
+        last-written row per stamp must win instead."""
+        und = pd.DataFrame([
+            {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
+            {"minute_ts": f"{D} 09:35:00", "last": 100.4, "volume": 1_600},
+            # vendor restatement of the same bar — later row supersedes
+            {"minute_ts": f"{D} 09:35:00", "last": 100.5, "volume": 1_700},
+        ])
+
+        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+            return [D] if "ivolatility" in prefix else []
+
+        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
+
+        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 700
+        assert slc.underlying[datetime(2025, 1, 6, 9, 35)] == 100.5
+
+    def test_head_truncated_payload_does_not_inject_cumulative(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A payload missing its opening bars starts mid-session; its first
+        cumulative is hours of volume, not one bar's — it must stay unknown
+        (out of VWAP), not dominate it."""
+        und = pd.DataFrame([
+            {"minute_ts": f"{D} 13:00:00", "last": 100.0, "volume": 30_000_000},
+            {"minute_ts": f"{D} 13:05:00", "last": 100.4, "volume": 30_000_600},
+        ])
+
+        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+            return [D] if "ivolatility" in prefix else []
+
+        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+            return und if "underlying_intraday" in key else _ivol_opt_frame(D)
+
+        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        assert datetime(2025, 1, 6, 13, 0) not in slc.underlying_volume
+        assert slc.underlying_volume[datetime(2025, 1, 6, 13, 5)] == 600
+        assert slc.underlying[datetime(2025, 1, 6, 13, 0)] == 100.0  # price kept
+
+    def test_malformed_stamp_drops_row_not_session(
+        self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One unparseable minute_ts cell (in either frame) must cost that
+        row only — it used to raise ValueError and kill the whole session."""
+        und = pd.DataFrame([
+            {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
+            {"minute_ts": "not-a-time", "last": 100.2, "volume": 1_600},
+            {"minute_ts": f"{D} 09:40:00", "last": 100.4, "volume": 2_000},
+        ])
+        opt = _ivol_opt_frame(D)
+        bad = opt.iloc[[0]].assign(minute_ts="not-a-time")
+        opt = pd.concat([opt, bad], ignore_index=True)
+
+        def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
+            return [D] if "ivolatility" in prefix else []
+
+        def fake_parquet(_s3: Any, key: str) -> pd.DataFrame | None:
+            return und if "underlying_intraday" in key else opt
+
+        monkeypatch.setattr(r2, "list_date_prefixes", fake_prefixes)
+        monkeypatch.setattr(r2, "get_parquet", fake_parquet)
+
+        slc = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
+        assert slc is not None
+        assert set(slc.quotes) == {datetime(2025, 1, 6, 9, 30),
+                                   datetime(2025, 1, 6, 9, 35)}
+        assert set(slc.underlying) == {datetime(2025, 1, 6, 9, 30),
+                                       datetime(2025, 1, 6, 9, 40)}
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        # the dropped row's interval rides into the next surviving diff
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 40)] == 1_000
+
     def test_disk_cache_serves_second_store(self, store: intraday.IntradayStore,
                                             env: dict[str, Any]) -> None:
         store.slice_for(date(2025, 1, 6))
