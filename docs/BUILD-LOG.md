@@ -1178,3 +1178,54 @@ Observatory panels null-guard artifact drift; (7) dead branch removed +
 family validation in daily_sessions; (8) ledger gathers UW listings once
 per run instead of 3×. 310 tests green after fixes; 7 new fixtures pin the
 corrected contracts (incl. the reviewer's exotic-offset probe).
+
+## 2026-07-07 — ENGINE-V4 FX.1: intraday PIT loop + per-session resolution
+
+Survey correction first: 0DTE was ALREADY legal at the 5-min clock (D2:
+trading-DTE, same-session settle, SliceCoverage refusal) — FX.1 proves it
+end-to-end instead of rebuilding it. Shipped (spec v4, additive):
+- `backtest.resolution: "5min"|"finest"` (v4 vocabulary, loud on older
+  specs; requires the intraday clock; absent ≡ "5min" bit-identically).
+- Per-session selection: engine asks the provider once per run; the
+  provider reads the F0 resolution map (clock=minute AND bars_1m grid —
+  new additive `has_minute_underlying` column, ledger rebuilt). Minute
+  sessions step a 1-min bar grid built from bars_1m underlying NBBO
+  (stale prior-session prints dropped, regular hours only) with option
+  quotes at their real 5-min NBBO stamps; separate bounded LRU, the 5-min
+  disk cache untouched.
+- Loop is resolution-parametric: nudge scales to the grid; timeframe-5min
+  indicator series + session VWAP read ONLY the 5-min underlying frame's
+  stamps on minute grids (same artifact/values/bounds as the 5-min grid —
+  review finding 1 hardened; bars_1m rows are price-only refinement). RunResult records
+  resolution_mode/mix/compressed runs; payload additive
+  (resolutionMode/Mix/Runs).
+- Tests 331 (+21): masterplan mixed-run fixture (mix recorded, runs
+  compressed), quote-less minute bars fill nothing (skip logged, fill
+  detail pins WHICH quote), stop on minute grid = same dollars as 5-min,
+  indicator-pollution red test, honest degrade (map empty / grid
+  unbuildable), absent≡"5min" bit-identity, 0DTE sell-the-winner
+  (PT/force-flat, never settles, to the cent), minute-grid canary.
+- Real-lake smoke: SPY finest 2026-05-01→07-02 — 43/43 covered sessions
+  at the minute grid, 43 fills all ivol_5min NBBO, exits 38 profit_target
+  + 5 session_flat, ZERO settlements ("sell winners, don't settle"),
+  23.5s, RSS Δ+22MB flat across re-runs, deterministic re-run identical.
+Deliberately NOT here (owner-confirmed split): armed entries (FX.2),
+latched stops / worse-path (FX.3), verdict disclosure + mixed-resolution
+gauntlet (FX.4), parser vocabulary (FX.5 re-ACCEPT).
+REVIEW (independent agent, same session): 1 BLOCKER + 2 MAJOR + 5 lesser,
+ALL FIXED — (1) BLOCKER: the minute grid sampled indicators from bars_1m
+at %5 minutes, a DIFFERENT artifact with different session bounds than the
+5-min underlying record (82 rows to 16:15) → minute slices now merge the
+5-MIN frame (wins at stamps, carries ALL indicator samples + VWAP volume,
+16:00+ tail included) with price-only bars_1m rows between; engine samples
+by stamp membership; REAL-LAKE PARITY PROVEN: finest ≡ fixed-5min exactly
+(equity+fills+sources) on SPY 2026-05→07; (2) strategy-spec.schema.json
+gained v4 + backtest.resolution (+ parity test); (3) minute und frames now
+disk-cached beside the 5-min caches (finest gauntlet was ~1,000 R2 round
+trips); (4) bars_1m volume dropped entirely (its diff-after-filter hazard
+gone — 5-min frame is the only VWAP source); (5) minute eligibility no
+longer frozen per-process (map TTL governs; engine snapshots per run);
+(6) negatives never cached + compression-extension and store-glue tests
+added; (7) results surface now shows the per-session resolution line when
+a run carries a mix (guardrail #6; hidden on all existing runs, verified);
+(8) seconds-alignment guard. 336 tests green after fixes.

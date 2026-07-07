@@ -56,7 +56,7 @@ RESOLUTION_MAP_KEY = "state/resolution_map/ticker={ticker}.parquet"
 MAP_COLUMNS = [
     "session", "clock_resolution", "quote_resolution",
     "minute_contract_count", "has_eod_chain", "uw_families_present",
-    "ivs_present",
+    "ivs_present", "has_minute_underlying",
 ]
 
 
@@ -67,6 +67,7 @@ def derive_resolution_rows(
     eod_sessions: Iterable[str],
     ivs_sessions: Iterable[str],
     uw_families_by_session: Mapping[str, int] | None = None,
+    minute_underlying_sessions: Iterable[str] | None = None,
 ) -> list[dict[str, Any]]:
     """One row per session (union of every source), ISO-date keyed.
 
@@ -74,6 +75,9 @@ def derive_resolution_rows(
     bars (0-contract sessions are treated as no minute data).
     uw_families_by_session: session → count of UW per-session signal families
     banked for that date (coverage context, not part of the resolution pick).
+    minute_underlying_sessions (FX.1): sessions with banked 1-min underlying
+    NBBO bars (bars_1m/) — the minute bar GRID. A minute-clock session also
+    needs this before the engine can actually step it at 1-min.
     """
     minute = {d: int(n) for d, n in minute_contracts_by_session.items() if int(n) > 0}
     ivol = set(ivol_5min_sessions)
@@ -81,6 +85,7 @@ def derive_resolution_rows(
     eod = set(eod_sessions)
     ivs = set(ivs_sessions)
     families = dict(uw_families_by_session or {})
+    und_1m = set(minute_underlying_sessions or ())
 
     rows: list[dict[str, Any]] = []
     for session in sorted(set(minute) | ivol | recorder | eod | ivs | set(families)):
@@ -108,6 +113,7 @@ def derive_resolution_rows(
             "has_eod_chain": session in eod,
             "uw_families_present": int(families.get(session, 0)),
             "ivs_present": session in ivs,
+            "has_minute_underlying": session in und_1m,
         })
     return rows
 
@@ -181,6 +187,20 @@ def summary(s3: Any, ticker: str) -> dict[str, Any] | None:
         "five_min_window": _window(df["clock_resolution"] == CLOCK_FIVE_MIN),
         "timeline": timeline_runs(rows),
     }
+
+
+def minute_clock_sessions(s3: Any, ticker: str) -> set[str]:
+    """Sessions the engine may step at the MINUTE grid (FX.1, owner
+    decision: UW-window sessions only): clock_resolution == minute AND the
+    1-min underlying grid is banked. Returns ISO date strings; empty until
+    the ledger has built the map or when the map predates the
+    has_minute_underlying column — honest degrade to 5-min, upgraded
+    automatically by the next nightly rebuild (self-improvement thesis)."""
+    df = _load_map(s3, ticker)
+    if df is None or "has_minute_underlying" not in df.columns:
+        return set()
+    mask = (df["clock_resolution"] == CLOCK_MINUTE) & df["has_minute_underlying"].fillna(False)
+    return {str(s) for s in df.loc[mask, "session"]}
 
 
 def clear_cache() -> None:

@@ -623,6 +623,12 @@ def build_run_payload(
         # per-fill provenance (D2b): which quote record priced each leg fill
         "fillSources": result.fill_sources,
         "clock": result.clock,
+        # FX.1: per-session bar-resolution record (guardrail #6 — a surface
+        # showing results shows what they were computed on). Additive keys;
+        # None/empty on daily and pre-v4 runs.
+        "resolutionMode": result.resolution_mode,
+        "resolutionMix": result.resolution_mix or None,
+        "resolutionRuns": result.resolution_runs or None,
         "sessionSplit": report.session_split.model_dump() if report.session_split else None,
         "ladderDepth": _ladder_depth_block(report),
         "greeksSeries": {

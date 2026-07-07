@@ -299,6 +299,18 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
           </span>
         )}
       </div>
+      {run.resolutionMix && Object.keys(run.resolutionMix).length > 0 && (
+        // FX.1 (guardrail #6): a run that mixed bar resolutions says so —
+        // per-session grid counts, right under the numbers they produced
+        <div className="mt-1 font-mono text-[10.5px] text-ink-4">
+          bar resolution per session:{" "}
+          {Object.entries(run.resolutionMix)
+            .map(([k, v]) => `${k === "five_min" ? "5-min" : k} ${v.toLocaleString()}`)
+            .join(" · ")}
+          {run.resolutionMode === "finest" &&
+            " — finest honest grid per session; fills always at real 5-min NBBO stamps"}
+        </div>
+      )}
     </div>
   );
 }

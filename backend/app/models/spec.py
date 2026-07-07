@@ -434,6 +434,19 @@ class Clock(StrEnum):
     FIVE_MIN = "5min"
 
 
+class Resolution(StrEnum):
+    """Intraday bar-resolution policy (FX.1, spec v4). FIXED_5MIN is the
+    D2 behavior (every covered session steps 5-minute bars). FINEST selects
+    the finest HONEST resolution PER SESSION from the F0 resolution map:
+    minute where minute data is banked for that session, else 5-min — the
+    mix is recorded on the run and disclosed (ENGINE-V4 owner decisions
+    2-4). Fills quote from real NBBO at every resolution; minute bars
+    between quote stamps cannot fill anything (guardrail #1)."""
+
+    FIXED_5MIN = "5min"
+    FINEST = "finest"
+
+
 class BacktestWindow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -442,6 +455,9 @@ class BacktestWindow(BaseModel):
     initial_capital: float = Field(default=10_000, ge=1000)
     seed: int = 42
     clock: Clock = Clock.DAILY  # spec v2 vocabulary when not daily
+    # FX.1 (spec v4): per-session resolution policy at the intraday clock.
+    # None = FIXED_5MIN exactly (absent and explicit "5min" are identical).
+    resolution: Resolution | None = None
 
 
 # Structures with a DEFINED maximum profit (the collected credit / capped
@@ -471,8 +487,30 @@ class StrategySpec(BaseModel):
 
     @model_validator(mode="after")
     def _version_supported(self) -> StrategySpec:
-        if self.spec_version not in (1, 2, 3):
-            raise ValueError("spec_version must be 1, 2, or 3")
+        if self.spec_version not in (1, 2, 3, 4):
+            raise ValueError("spec_version must be 1, 2, 3, or 4")
+        return self
+
+    @model_validator(mode="after")
+    def _v4_vocabulary_needs_v4(self) -> StrategySpec:
+        """v4 vocabulary on an older spec is a loud error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.backtest.resolution is None or self.spec_version >= 4:
+            return self
+        raise ValueError(
+            f"spec_version {self.spec_version} cannot use v4 vocabulary: "
+            "backtest.resolution — set spec_version 4"
+        )
+
+    @model_validator(mode="after")
+    def _resolution_needs_intraday_clock(self) -> StrategySpec:
+        """Resolution is a policy over intraday bars — meaningless at the
+        daily clock, so it is refused there rather than silently ignored."""
+        if self.backtest.resolution is not None and self.backtest.clock is Clock.DAILY:
+            raise ValueError(
+                'backtest.resolution requires clock "5min" — the daily clock '
+                "has no intraday bars to resolve"
+            )
         return self
 
     @model_validator(mode="after")

@@ -131,3 +131,41 @@ def test_summary_from_banked_artifact(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_summary_absent_artifact_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(r2, "get_parquet", lambda s3, key: None)
     assert resolution.summary(None, "SPY") is None
+
+
+# ── FX.1: minute-clock eligibility (clock minute AND the 1-min grid) ────────
+def test_has_minute_underlying_column() -> None:
+    rows = _derive(
+        minute_contracts_by_session={"2026-07-01": 70, "2026-07-02": 70},
+        ivol_5min_sessions=["2026-07-01", "2026-07-02"],
+        minute_underlying_sessions=["2026-07-01"],
+    )
+    by = {r["session"]: r for r in rows}
+    assert by["2026-07-01"]["has_minute_underlying"] is True
+    assert by["2026-07-02"]["has_minute_underlying"] is False
+
+
+def test_minute_clock_sessions_requires_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = _derive(
+        minute_contracts_by_session={"2026-07-01": 70, "2026-07-02": 70},
+        ivol_5min_sessions=["2026-06-30", "2026-07-01", "2026-07-02"],
+        minute_underlying_sessions=["2026-07-01"],
+    )
+    frame = pd.DataFrame(rows)
+    monkeypatch.setattr(r2, "get_parquet", lambda s3, key: frame)
+    # minute clock needs BOTH the UW minute data AND the bars_1m grid
+    assert resolution.minute_clock_sessions(None, "SPY") == {"2026-07-01"}
+
+
+def test_minute_clock_sessions_degrades_on_old_map(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a pre-FX.1 map artifact (no has_minute_underlying column) → empty set,
+    # honest degrade; the next nightly rebuild upgrades it automatically
+    rows = _derive(minute_contracts_by_session={"2026-07-01": 70})
+    frame = pd.DataFrame(rows).drop(columns=["has_minute_underlying"])
+    monkeypatch.setattr(r2, "get_parquet", lambda s3, key: frame)
+    assert resolution.minute_clock_sessions(None, "SPY") == set()
+    monkeypatch.setattr(r2, "get_parquet", lambda s3, key: None)
+    resolution.clear_cache()
+    assert resolution.minute_clock_sessions(None, "SPY") == set()  # map absent

@@ -130,6 +130,15 @@ class RunResult:
     # came from each quote record (eod_chain / ivol_5min / cboe_minute)
     clock: str = "daily"
     fill_sources: dict[str, int] = field(default_factory=dict)
+    # FX.1: per-session bar-resolution record (owner decisions 2-4): which
+    # policy ran, how many covered sessions stepped each grid, and the
+    # compressed per-session timeline (consecutive same-resolution runs) —
+    # the receipts loop and FX.4's mixed-resolution honesty read from here.
+    # A re-run that changed because minute data newly arrived must be
+    # explained as a RESOLUTION UPGRADE, never a silent shift.
+    resolution_mode: str | None = None  # None (pre-v4) | "5min" | "finest"
+    resolution_mix: dict[str, int] = field(default_factory=dict)
+    resolution_runs: list[dict[str, object]] = field(default_factory=list)
     # portfolio greeks per marked session (D1d), aligned with `dates`.
     # Units: delta/gamma in share-equivalents (greek × qty × 100, stock at
     # 1Δ/share), theta in $/day, vega in $/vol-point. A flat book is 0.0;
