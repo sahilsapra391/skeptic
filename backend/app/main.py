@@ -22,15 +22,20 @@ load_local_env()
 
 
 def _warm_lake() -> None:
-    """Prewarm the SPY chain store in the background so the first user run
-    on a fresh container doesn't pay the cold R2 pull (minutes)."""
+    """Prewarm the SPY chain store, the default chart views and the coverage
+    payload in the background so neither the first user run nor the first
+    chart/Observatory paint on a fresh container pays the cold R2 pull."""
     import threading
 
+    from app.data.bars import warm_charts
     from app.data.chains import warm_store
+    from app.data.coverage import warm_coverage
     from app.data.r2 import r2_configured
 
     if r2_configured():
         threading.Thread(target=warm_store, name="lake-warmer", daemon=True).start()
+        threading.Thread(target=warm_charts, name="chart-warmer", daemon=True).start()
+        threading.Thread(target=warm_coverage, name="coverage-warmer", daemon=True).start()
 
 
 _warm_lake()

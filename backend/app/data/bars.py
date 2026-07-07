@@ -17,6 +17,7 @@ data and no $0 source provides it (docs/INTRADAY-OPTIONS-DATA-EVAL.md).
 from __future__ import annotations
 
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -71,22 +72,56 @@ WINDOWS = ["1d", "1w", "1mo", "3mo", "ytd", "1y", "5y", "all"]
 
 _month_cache: dict[tuple[str, str], tuple[float, pd.DataFrame | None]] = {}
 _daily_cache: dict[str, tuple[float, pd.DataFrame | None]] = {}
+# cache ceiling (OOM guard): full history for all three tickers is ~90 month
+# frames (~0.4 MB each); the cap only exists so the cache can never grow
+# unbounded if the lake layout changes under us
+_MONTH_CACHE_MAX = 120
+_MONTH_FETCH_WORKERS = 8
+# the check-evict-insert sequence must be atomic: pool workers and separate
+# request threads hit this cache concurrently, and an unlocked min() over a
+# mutating dict raises RuntimeError (and racing len checks break the bound)
+_month_cache_lock = threading.Lock()
+
+
+def _month_ttl(month: str) -> float:
+    return 600 if month == datetime.now(UTC).strftime("%Y-%m") else 86_400
 
 
 def _cached_month(s3: Any, ticker: str, month: str) -> pd.DataFrame | None:
     now = time.time()
-    current_month = datetime.now(UTC).strftime("%Y-%m")
-    ttl = 600 if month == current_month else 86_400
-    hit = _month_cache.get((ticker, month))
-    if hit and now - hit[0] < ttl:
-        return hit[1]
+    with _month_cache_lock:
+        hit = _month_cache.get((ticker, month))
+        if hit and now - hit[0] < _month_ttl(month):
+            return hit[1]
+    # R2 I/O stays outside the lock — only the dict mutations serialize
     df = r2.get_parquet(s3, f"underlying_minute/ticker={ticker}/month={month}/bars.parquet")
     if df is not None and not df.empty:
         df = df[["minute_ts", "open", "high", "low", "close", "volume"]].copy()
         df["minute_ts"] = pd.to_datetime(df["minute_ts"], utc=True)
         df = df.sort_values("minute_ts")
-    _month_cache[(ticker, month)] = (now, df)
+    with _month_cache_lock:
+        if len(_month_cache) >= _MONTH_CACHE_MAX:
+            oldest = min(_month_cache, key=lambda k: _month_cache[k][0])
+            _month_cache.pop(oldest, None)
+        _month_cache[(ticker, month)] = (now, df)
     return df
+
+
+def _cached_months(s3: Any, ticker: str, months: list[str]) -> list[pd.DataFrame]:
+    """The requested month frames, fetching cache misses CONCURRENTLY. A cold
+    view needs 3–11 month objects and paying R2 round-trip latency serially
+    is exactly what made the first chart paint take seconds."""
+    now = time.time()
+    with _month_cache_lock:
+        misses = [
+            m
+            for m in months
+            if not ((hit := _month_cache.get((ticker, m))) and now - hit[0] < _month_ttl(m))
+        ]
+    if len(misses) > 1:
+        with ThreadPoolExecutor(max_workers=min(_MONTH_FETCH_WORKERS, len(misses))) as pool:
+            list(pool.map(lambda m: _cached_month(s3, ticker, m), misses))
+    return [f for m in months if (f := _cached_month(s3, ticker, m)) is not None]
 
 
 def _cached_daily(s3: Any, ticker: str) -> pd.DataFrame | None:
@@ -309,7 +344,7 @@ def _intraday_frame(
     months = all_months[-months_needed:]
     truncated_months = len(all_months) > len(months)
 
-    frames = [m for month in months if (m := _cached_month(s3, ticker, month)) is not None]
+    frames = _cached_months(s3, ticker, months)
     minutes = (
         pd.concat(frames, ignore_index=True).drop_duplicates(subset="minute_ts")
         if frames
@@ -528,3 +563,17 @@ def get_bars(
         "bars": payload_bars,
         "indicators": indicators,
     }
+
+
+def warm_charts() -> None:
+    """Boot prewarm (main.py runs this in a daemon thread): the exact views
+    MarketChart asks for first — 5m·1w plus the daily frame — for all three
+    tickers, so a first chart paint after a deploy reads from memory instead
+    of paying the cold R2 pulls. Best-effort: no creds / empty lake is the
+    request path's problem to report, never the warmer's."""
+    for ticker in TICKERS:
+        for interval, window in (("5m", "1w"), ("1d", "1y")):
+            try:
+                get_bars(ticker, interval, window, [])
+            except Exception:  # noqa: BLE001 — warming must never take down boot
+                pass
