@@ -1160,11 +1160,13 @@ def run_engine(
                 if last is not None:
                     # timeframe-"5min" indicators mean ONE thing at every
                     # session of a run: on a minute grid the rolling series
-                    # still samples only 5-min boundaries (owner decision 4 —
-                    # resolution must never silently change signal meaning).
-                    # VWAP accumulates at the session's native granularity:
-                    # finer sampling of the same quantity, disclosed.
-                    if not is_minute or bar.minute % 5 == 0:
+                    # samples ONLY the slice's 5-min underlying stamps —
+                    # the same artifact, values and session bounds the 5-min
+                    # grid reads (owner decision 4: resolution must never
+                    # silently change signal meaning). Minute bars carry no
+                    # volume, so session VWAP is stamp-identical too; they
+                    # only refine the PRICE between stamps.
+                    if slc.indicator_stamps is None or bar in slc.indicator_stamps:
                         intraday_lasts.append(last)
                     vol = slc.underlying_volume.get(bar, 0.0)
                     session_pv += last * vol

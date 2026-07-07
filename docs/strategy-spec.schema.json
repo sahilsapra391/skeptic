@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://skeptic.local/strategy-spec.schema.json",
   "title": "Skeptic Strategy Spec (IR) v3",
-  "description": "v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2 and v3 vocabulary requires spec_version 3 (validation enforces).",
+  "description": "v4 (FX.1) adds backtest.resolution (per-session bar resolution at the intraday clock; parser vocabulary lands at FX.5 - the parser gate lives in parse.py, not in this IR contract). v3 (D5a) adds the scale-in ladder primitive (entry.scale_in) and a general intraday session force-flat (exit.close_at_time). v2 (D1c) adds greek-based exits (delta_stop_abs, theta_harvest), position.max_vega_per_contract, and the IVX/HV indicators. v1/v2 specs remain valid; v2 vocabulary requires spec_version 2, v3 vocabulary requires spec_version 3, and v4 vocabulary requires spec_version 4 (validation enforces).",
   "type": "object",
   "required": ["spec_version", "meta", "underlying", "position", "entry", "exit", "sizing", "costs", "backtest"],
   "additionalProperties": false,
   "properties": {
-    "spec_version": { "enum": [1, 2, 3] },
+    "spec_version": { "enum": [1, 2, 3, 4] },
     "meta": {
       "type": "object",
       "required": ["name", "description_raw"],
@@ -259,6 +259,10 @@
           "enum": ["daily", "5min"],
           "default": "daily",
           "description": "spec_version 2 when not daily. The engine's declared decision cadence. daily: decisions at each session close (original engine, bit-identical). 5min: decisions at each 5-minute bar; entries fill at the DECISION bar's quote and exits evaluate starting the NEXT bar (a stop can never fire on its entry bar); fills come from REAL intraday NBBO only (iVolatility 5-min, CBOE minute forward) - no synthetic quotes, a gap is a gap; intraday coverage is a short-DTE slice (0-2 trading-DTE, ATM+/-$8) and specs needing more are refused before running; equity is marked once per session close at every clock. Exit priority is identical at every clock: stop_loss -> delta_stop -> profit_target -> theta_harvest -> time_exit -> condition exits."
+        },
+        "resolution": {
+          "enum": ["5min", "finest"],
+          "description": "spec_version 4; requires clock 5min. Per-session bar-resolution policy (FX.1). Absent and explicit 5min are identical (bit-identical runs). finest selects the finest HONEST grid PER SESSION from the collector-built resolution map: the minute grid where minute data is banked for that session, else 5-min. Fills quote from real 5-min NBBO stamps at every resolution - minute bars between stamps carry no chain and can fill nothing; timeframe-5min indicators sample only the 5-min underlying stamps on minute grids (resolution never changes signal meaning); the per-session mix is recorded on the run (resolution_mix + compressed resolution_runs) and a re-run that changed because minute data newly arrived is a RESOLUTION UPGRADE, never a silent shift."
         }
       }
     }

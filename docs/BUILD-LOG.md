@@ -1194,8 +1194,9 @@ end-to-end instead of rebuilding it. Shipped (spec v4, additive):
   quotes at their real 5-min NBBO stamps; separate bounded LRU, the 5-min
   disk cache untouched.
 - Loop is resolution-parametric: nudge scales to the grid; timeframe-5min
-  indicator series samples only 5-min boundaries on minute grids (owner
-  decision 4 groundwork); VWAP native-granularity. RunResult records
+  indicator series + session VWAP read ONLY the 5-min underlying frame's
+  stamps on minute grids (same artifact/values/bounds as the 5-min grid —
+  review finding 1 hardened; bars_1m rows are price-only refinement). RunResult records
   resolution_mode/mix/compressed runs; payload additive
   (resolutionMode/Mix/Runs).
 - Tests 331 (+21): masterplan mixed-run fixture (mix recorded, runs
@@ -1211,3 +1212,20 @@ end-to-end instead of rebuilding it. Shipped (spec v4, additive):
 Deliberately NOT here (owner-confirmed split): armed entries (FX.2),
 latched stops / worse-path (FX.3), verdict disclosure + mixed-resolution
 gauntlet (FX.4), parser vocabulary (FX.5 re-ACCEPT).
+REVIEW (independent agent, same session): 1 BLOCKER + 2 MAJOR + 5 lesser,
+ALL FIXED — (1) BLOCKER: the minute grid sampled indicators from bars_1m
+at %5 minutes, a DIFFERENT artifact with different session bounds than the
+5-min underlying record (82 rows to 16:15) → minute slices now merge the
+5-MIN frame (wins at stamps, carries ALL indicator samples + VWAP volume,
+16:00+ tail included) with price-only bars_1m rows between; engine samples
+by stamp membership; REAL-LAKE PARITY PROVEN: finest ≡ fixed-5min exactly
+(equity+fills+sources) on SPY 2026-05→07; (2) strategy-spec.schema.json
+gained v4 + backtest.resolution (+ parity test); (3) minute und frames now
+disk-cached beside the 5-min caches (finest gauntlet was ~1,000 R2 round
+trips); (4) bars_1m volume dropped entirely (its diff-after-filter hazard
+gone — 5-min frame is the only VWAP source); (5) minute eligibility no
+longer frozen per-process (map TTL governs; engine snapshots per run);
+(6) negatives never cached + compression-extension and store-glue tests
+added; (7) results surface now shows the per-session resolution line when
+a run carries a mix (guardrail #6; hidden on all existing runs, verified);
+(8) seconds-alignment guard. 336 tests green after fixes.

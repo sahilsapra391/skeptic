@@ -132,16 +132,23 @@ def _ivol_frames(
 
 
 def _minute_und_frame(s3: Any, ticker: str, d: str) -> pd.DataFrame | None:
-    """The 1-min underlying series for one session (FX.1 minute grid).
+    """The 1-min underlying PRICE series for one session (FX.1 minute grid).
+
+    PRICE ONLY, deliberately: on a minute grid the 5-min underlying frame
+    remains the single source of indicator samples AND session-VWAP volume
+    (review finding: bars_1m is a different vendor artifact with different
+    session bounds — mixing its volumes would double-count and its values
+    would silently shift timeframe-"5min" signal meaning). These rows only
+    refine the price between 5-min stamps.
 
     bars_1m rows carry the MOST RECENT print (lastPrice/lastDateTime), so
     the session open repeats the prior session's close until a fresh print
     lands — those stale rows are dropped (a Friday print is not a Monday
     price; fail closed, same spirit as app/data/pit.py). Grid bounded to
-    regular hours [09:30, 16:00); volume is cumulative → per-bar diff,
-    matching the 5-min underlying convention."""
+    regular hours [09:30, 16:00); stamps not aligned to whole minutes are
+    dropped (alignment is what the bar loop's time math assumes)."""
     df = r2.get_parquet(s3, f"{BARS_1M}/ticker={ticker}/date={d}/bars.parquet")
-    needed = {"timestamp", "lastPrice", "lastDateTime", "volume"}
+    needed = {"timestamp", "lastPrice", "lastDateTime"}
     if df is None or df.empty or not needed.issubset(df.columns):
         return None
     ts = pd.to_datetime(df["timestamp"], errors="coerce")
@@ -154,16 +161,14 @@ def _minute_und_frame(s3: Any, ticker: str, d: str) -> pd.DataFrame | None:
         & (ts.dt.time >= pd.Timestamp("09:30").time())
         & (ts.dt.time < pd.Timestamp("16:00").time())
     )
-    keep = fresh & in_session & last.notna()
+    aligned = ts.notna() & (ts.dt.second == 0) & (ts.dt.microsecond == 0)
+    keep = fresh & in_session & aligned & last.notna()
     if not bool(keep.any()):
         return None
-    cum_vol = pd.to_numeric(df["volume"], errors="coerce")[keep]
-    bar_vol = cum_vol.diff().fillna(cum_vol).clip(lower=0)
     return pd.DataFrame({
         "bar_ts": ts[keep],
         "last": last[keep],
-        "volume": bar_vol,
-    }).dropna(subset=["bar_ts", "last"]).reset_index(drop=True)
+    }).reset_index(drop=True)
 
 
 def _cboe_frames(
@@ -242,9 +247,29 @@ def _cboe_frames(
     return pd.concat(frames, ignore_index=True), und
 
 
+def _merge_minute_underlying(
+    und5: pd.DataFrame, und1: pd.DataFrame
+) -> tuple[pd.DataFrame, set[datetime]]:
+    """The minute grid's underlying frame: the 5-min frame's rows WIN at
+    their stamps (price + volume — the indicator/VWAP record, identical to
+    what the 5-min grid sees, including its 16:00+ tail), and bars_1m rows
+    fill the minutes between as PRICE-ONLY (volume absent → they never move
+    session VWAP). Returns the merged frame and the 5-min stamp set — the
+    indicator sampling stamps."""
+    stamps = {pd.Timestamp(r).to_pydatetime() for r in und5["bar_ts"]}
+    extra = und1.loc[~pd.to_datetime(und1["bar_ts"]).isin(list(stamps))].copy()
+    extra["volume"] = float("nan")  # price-only rows never move session VWAP
+    merged = pd.concat(
+        [und5[["bar_ts", "last", "volume"]], extra[["bar_ts", "last", "volume"]]],
+        ignore_index=True,
+    ).sort_values("bar_ts")
+    return merged.reset_index(drop=True), stamps
+
+
 def _build_slice(
     session: date, opt: pd.DataFrame, und: pd.DataFrame | None, source: str,
     bar_resolution: str = "5min",
+    indicator_stamps: set[datetime] | None = None,
 ) -> SessionSlice:
     opt = opt.dropna(subset=["bar_ts", "expiration", "right", "strike"])
     quotes: dict[datetime, dict[ContractKey, Quote]] = {}
@@ -288,6 +313,7 @@ def _build_slice(
         session=session, bars=bars, quotes=quotes,
         underlying=underlying, underlying_volume=underlying_volume,
         quote_source=source, bar_resolution=bar_resolution,
+        indicator_stamps=indicator_stamps,
     )
 
 
@@ -495,10 +521,11 @@ class IntradayStore:
         self.ticker = ticker
         self._sessions: dict[date, str] | None = None  # session -> source
         self._lru: OrderedDict[date, SessionSlice | None] = OrderedDict()
-        # FX.1: minute-grid state, fully separate from the 5-min path so the
-        # default clock's cache behavior is untouched
-        self._minute_days: set[date] | None = None
-        self._lru_1m: OrderedDict[date, SessionSlice | None] = OrderedDict()
+        # FX.1: minute-grid slice LRU, fully separate from the 5-min path so
+        # the default clock's cache behavior is untouched. Built slices only
+        # — a failed build is NOT cached (bars_1m may arrive later; a stale
+        # negative would defeat the nightly upgrade).
+        self._lru_1m: OrderedDict[date, SessionSlice] = OrderedDict()
 
     @property
     def slice_max_trading_dte(self) -> int:
@@ -586,40 +613,69 @@ class IntradayStore:
 
     def minute_sessions(self) -> set[date]:
         """Sessions eligible for the 1-min grid, from the F0 resolution map
-        (an artifact lookup, never a live listing — post-OOM rule). Empty
-        when the map is pending or R2 is unconfigured: the engine falls back
-        to 5-min and records it; the next nightly ledger rebuild upgrades
-        eligibility automatically (self-improvement thesis)."""
-        if self._minute_days is None:
-            from app.data import resolution  # local: keeps import graph flat
+        (an artifact lookup, never a live listing — post-OOM rule). NOT
+        memoized on the store: the map's own 300s TTL governs freshness, so
+        a long-lived process picks up the nightly ledger rebuild without a
+        restart (self-improvement thesis); the engine snapshots the set once
+        per run for determinism. Empty when the map is pending or R2 is
+        unconfigured — honest degrade, recorded five_min."""
+        from app.data import resolution  # local: keeps import graph flat
 
+        try:
+            s3 = r2.r2_client()
+            iso = resolution.minute_clock_sessions(s3, self.ticker)
+        except r2.R2NotConfigured:
+            iso = set()
+        return {date.fromisoformat(s) for s in iso}
+
+    def _minute_und_cached(self, session: date) -> pd.DataFrame | None:
+        """The bars_1m price frame, disk-cached beside the 5-min frames —
+        a finest gauntlet re-runs the engine ~25×, and re-fetching every
+        minute session from R2 per sweep cell is 1,000+ round-trips."""
+        d = session.isoformat()
+        base = CACHE_DIR / self.ticker
+        frame_p, meta_p = base / f"{d}_und_1m.parquet", base / f"{d}_meta_1m.json"
+        if frame_p.exists() and meta_p.exists():
             try:
-                s3 = r2.r2_client()
-                iso = resolution.minute_clock_sessions(s3, self.ticker)
-            except r2.R2NotConfigured:
-                iso = set()
-            self._minute_days = {date.fromisoformat(s) for s in iso}
-        return self._minute_days
+                if json.loads(meta_p.read_text()).get("v") == CACHE_SCHEMA_VERSION:
+                    return pd.read_parquet(frame_p)
+            except Exception:
+                pass
+        und1 = _minute_und_frame(r2.r2_client(), self.ticker, d)
+        if und1 is None or und1.empty:
+            return None  # never disk-cache a negative — bars_1m may arrive
+        try:
+            frame_p.parent.mkdir(parents=True, exist_ok=True)
+            und1.to_parquet(frame_p, index=False)
+            meta_p.write_text(json.dumps({"v": CACHE_SCHEMA_VERSION}))
+        except Exception:
+            pass  # cache is an optimization, never a requirement
+        return und1
 
     def minute_slice_for(self, session: date) -> SessionSlice | None:
-        """The session at the 1-min grid: bars_1m underlying (fresh prints
-        only) + the SAME 5-min NBBO quote stamps. None when the grid can't
-        be built — the engine falls back to the 5-min slice and records the
-        session as five_min. No disk cache: minute sessions are few (UW
-        window) and the frames are ~30KB; the LRU holds built slices."""
+        """The session at the 1-min grid. The underlying record is the
+        5-MIN frame's rows at their stamps (price + volume — indicator and
+        VWAP inputs identical to the 5-min grid, 16:00+ tail included) with
+        bars_1m PRICE-ONLY rows between; quotes are the same 5-min NBBO
+        stamps. None when the grid can't be built — the engine falls back
+        to the 5-min slice and records the session as five_min."""
         if session in self._lru_1m:
             self._lru_1m.move_to_end(session)
             return self._lru_1m[session]
-        slc: SessionSlice | None = None
-        if session in self.minute_sessions():
-            frames = self._ensure_cached(session)  # options via the 5-min path
-            if frames is not None:
-                opt, _und5, source = frames
-                und1 = _minute_und_frame(r2.r2_client(), self.ticker,
-                                         session.isoformat())
-                if und1 is not None and not und1.empty:
-                    slc = _build_slice(session, opt, und1, source,
-                                       bar_resolution="1min")
+        if session not in self.minute_sessions():
+            return None
+        frames = self._ensure_cached(session)  # options + und5, disk-cached
+        if frames is None:
+            return None
+        opt, und5, source = frames
+        if und5 is None or und5.empty:
+            return None  # no 5-min underlying record → no honest minute grid
+        und1 = self._minute_und_cached(session)
+        if und1 is None or und1.empty:
+            return None
+        merged, stamps = _merge_minute_underlying(und5, und1)
+        slc = _build_slice(session, opt, merged, source,
+                           bar_resolution="1min", indicator_stamps=stamps)
         self._lru_1m[session] = slc
         while len(self._lru_1m) > LRU_MINUTE_SESSIONS:
             self._lru_1m.popitem(last=False)

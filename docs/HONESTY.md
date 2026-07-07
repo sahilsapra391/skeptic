@@ -324,10 +324,14 @@ spec v4 adds `backtest.resolution: "finest"` (intraday clock only; absent ≡
   serves no chain and can fill nothing (skip `no_chain_data`, logged). True
   minute-level quotes remain the paid-tape upgrade path.
 - **timeframe-"5min" indicators mean ONE thing at every session.** On a
-  minute grid the rolling indicator series samples only 5-min boundaries;
-  intermediate minutes never enter it (fixture-pinned) — resolution must
-  never silently change signal meaning. Session VWAP accumulates at the
-  session's native granularity: a finer sampling of the same quantity.
+  minute grid the rolling indicator series samples ONLY the 5-min
+  underlying frame's stamps — the same artifact, values, and session
+  bounds (incl. its 16:00+ tail) the 5-min grid reads; bars_1m rows are
+  PRICE-ONLY refinement between stamps and never enter the series or move
+  session VWAP (review-hardened; fixture- and store-glue-pinned). A
+  stamp-only strategy therefore produces IDENTICAL results at both
+  resolutions — behavioral differences arrive only with FX.2 (armed
+  entries) and FX.3 (latched stops).
 - **Honest degrade.** Map pending / grid unbuildable → the session runs
   5-min and is RECORDED as five_min; the next nightly ledger rebuild
   upgrades eligibility automatically. bars_1m rows carrying stale

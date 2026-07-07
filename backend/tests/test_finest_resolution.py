@@ -157,6 +157,30 @@ class TestResolutionRecording:
              "resolution": "minute"},
         ]
 
+    def test_resolution_runs_compression_extends_runs(self) -> None:
+        # review finding: the run-EXTENSION path (sessions += 1, last moves)
+        # must be exercised — two consecutive minute sessions compress into
+        # one run whose `last` is the second session
+        underlying = dict(UNDERLYING_2D)
+        underlying["2025-01-09"] = (100.0, 100.5)
+        store = build_fixture_store("SPY", {}, underlying)
+        provider = FinestFixtureIntraday(
+            slices={"2025-01-06": _five_min_slice("2025-01-06", "2025-01-09"),
+                    "2025-01-07": _five_min_slice("2025-01-07", "2025-01-09"),
+                    "2025-01-08": _five_min_slice("2025-01-08", "2025-01-09")},
+            minute={"2025-01-07": _minute_slice("2025-01-07", "2025-01-09"),
+                    "2025-01-08": _minute_slice("2025-01-08", "2025-01-09")},
+        )
+        result = run_backtest(
+            _spec({"profit_target_pct": 500}, end="2025-01-08"), store, provider)
+        assert result.resolution_mix == {"five_min": 1, "minute": 2}
+        assert result.resolution_runs == [
+            {"first": "2025-01-06", "last": "2025-01-06", "sessions": 1,
+             "resolution": "five_min"},
+            {"first": "2025-01-07", "last": "2025-01-08", "sessions": 2,
+             "resolution": "minute"},
+        ]
+
     def test_default_runs_record_nothing_new(self) -> None:
         # a spec without the v4 field records mode None and all-five_min mix
         store = build_fixture_store("SPY", {}, UNDERLYING_2D)
@@ -369,3 +393,20 @@ class TestSpecV4Validation:
         spec = _spec({"profit_target_pct": 50})
         assert spec.backtest.resolution is not None
         assert spec.backtest.resolution.value == "finest"
+
+    def test_spec_v4_matches_json_schema(self) -> None:
+        # the pydantic models and docs/strategy-spec.schema.json must agree
+        # a full v4 finest spec is valid (the IR contract — CLAUDE.md)
+        import json
+        from pathlib import Path
+
+        schema_path = (Path(__file__).resolve().parents[2]
+                       / "docs" / "strategy-spec.schema.json")
+        schema = json.loads(schema_path.read_text())
+        try:
+            import jsonschema
+        except ImportError:
+            pytest.skip("jsonschema not installed")
+        raw = _spec({"profit_target_pct": 50}).model_dump(mode="json",
+                                                          exclude_none=True)
+        jsonschema.validate(raw, schema)

@@ -216,6 +216,11 @@ class SessionSlice:
     # SAME 5-min NBBO quote stamps — bars between stamps have no chain and
     # can fill nothing (guardrail #1); they refine when the engine LOOKS.
     bar_resolution: str = "5min"
+    # FX.1: on a minute grid, the 5-MIN underlying stamps — the ONLY bars
+    # whose underlying value enters the rolling timeframe-"5min" indicator
+    # series (identical inputs to the 5-min grid; resolution never changes
+    # signal meaning). None = every underlying bar samples (the 5-min grid).
+    indicator_stamps: set[datetime] | None = None
 
     def __post_init__(self) -> None:
         self.bars = sorted(self.bars)
@@ -291,9 +296,12 @@ def build_fixture_slice(
     quote_source: str = "ivol_5min",
     volumes: dict[str, float] | None = None,
     bar_resolution: str = "5min",
+    indicator_stamps: list[str] | None = None,
 ) -> SessionSlice:
     """Fixture loader: {'HH:MM': rows} → SessionSlice (same shape the real
-    loader produces). Bar keys are ET wall-clock times within `session`."""
+    loader produces). Bar keys are ET wall-clock times within `session`.
+    On a 1min grid, indicator_stamps defaults to the %5-minute underlying
+    bars (the fixture stand-in for the real loader's 5-min-frame stamps)."""
 
     def _ts(hhmm: str) -> datetime:
         d = date.fromisoformat(session)
@@ -328,6 +336,11 @@ def build_fixture_slice(
         quote_map[_ts(hhmm)] = per
 
     bars = sorted(set(quote_map) | {_ts(k) for k in underlying})
+    stamps: set[datetime] | None = None
+    if indicator_stamps is not None:
+        stamps = {_ts(k) for k in indicator_stamps}
+    elif bar_resolution == "1min":
+        stamps = {_ts(k) for k in underlying if int(k.split(":")[1]) % 5 == 0}
     return SessionSlice(
         session=date.fromisoformat(session),
         bars=bars,
@@ -336,6 +349,7 @@ def build_fixture_slice(
         underlying_volume={_ts(k): float(v) for k, v in (volumes or {}).items()},
         quote_source=quote_source,
         bar_resolution=bar_resolution,
+        indicator_stamps=stamps,
     )
 
 

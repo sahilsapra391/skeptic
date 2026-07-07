@@ -251,6 +251,13 @@ export interface RunPayload {
    * (eod_chain / ivol_5min / cboe_minute → leg-fill counts) */
   clock?: string;
   fillSources?: Record<string, number>;
+  /** FX.1: per-session bar-resolution record (null on daily / pre-v4 runs).
+   * A results surface showing a finest run must show the mix (guardrail #6). */
+  resolutionMode?: string | null;
+  resolutionMix?: Record<string, number> | null;
+  resolutionRuns?:
+    | { first: string; last: string; sessions: number; resolution: string }[]
+    | null;
   /** D3c: 5-min replay receipts (merged at read time; stored trust untouched) */
   receipts?: {
     replay_run_id: string;
