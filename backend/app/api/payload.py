@@ -629,6 +629,12 @@ def build_run_payload(
         "resolutionMode": result.resolution_mode,
         "resolutionMix": result.resolution_mix or None,
         "resolutionRuns": result.resolution_runs or None,
+        # FX.2: skip-reason distribution. Attempt-level reasons (e.g.
+        # conditions_not_met, counted per attempted bar) sit beside
+        # episode-level ones (max_concurrent, order_in_flight,
+        # no_quote_this_bar — once per setup). Populated for every NEW
+        # run at any clock; None only on stored pre-FX.2 payloads.
+        "skipReasons": result.skip_reasons or None,
         "sessionSplit": report.session_split.model_dump() if report.session_split else None,
         "ladderDepth": _ladder_depth_block(report),
         "greeksSeries": {

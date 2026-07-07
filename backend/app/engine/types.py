@@ -139,6 +139,9 @@ class RunResult:
     resolution_mode: str | None = None  # None (pre-v4) | "5min" | "finest"
     resolution_mix: dict[str, int] = field(default_factory=dict)
     resolution_runs: list[dict[str, object]] = field(default_factory=list)
+    # FX.2: every skipped entry attempt counted by reason — the honest
+    # denominator behind "maximum honest fills" (the trade log stays deduped)
+    skip_reasons: dict[str, int] = field(default_factory=dict)
     # portfolio greeks per marked session (D1d), aligned with `dates`.
     # Units: delta/gamma in share-equivalents (greek × qty × 100, stock at
     # 1Δ/share), theta in $/day, vega in $/vol-point. A flat book is 0.0;

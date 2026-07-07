@@ -341,3 +341,55 @@ spec v4 adds `backtest.resolution: "finest"` (intraday clock only; absent ≡
   parser unlock (owner re-ACCEPT gate) and FX.4's verdict disclosure; no
   user-facing surface can produce a finest run before its disclosure
   exists.
+
+## FX.2 (ENGINE-V4): continuous opportunity scanning — maximum honest fills
+
+spec v4 adds `entry.intraday_scan: "every_setup"` (intraday clock only;
+absent ≡ "once_per_session" ≡ the D2 one-entry-per-session behavior,
+bit-identical; mutually exclusive with the scale-in ladder). Rules:
+
+- **A setup is an EPISODE, not a persistent state.** Entry conditions
+  transitioning false→true arm exactly one entry; a signal that stays true
+  for an hour is ONE opportunity, never a burst to the concurrency cap.
+  Distinct episodes each fill, bounded by max_concurrent_positions and
+  capital. An episode that fires at the cap is consumed (skip counted) —
+  never queued or re-armed on the same dip. Intraday exits free their slot
+  for later episodes (same-session round trips).
+- **Condition-less strategies cycle on the position lifecycle.** With no
+  signal to arm on, the position CLOSING is the re-arm trigger (plus the
+  window start) — the always-in-the-market premium seller re-enters at the
+  next quoted bar after each exit, one position lifecycle at a time.
+- **Armed orders (owner decision 2026-07-07).** A signal that fires at a
+  bar with no usable chain (a quote-gap stamp, or a minute bar between
+  NBBO stamps) ARMS an order that fills at the NEXT quoted bar's real
+  NBBO — even if the signal faded meanwhile, because a submitted order
+  cannot be recalled when RSI ticks back before the fill prints. Honesty
+  bounds: ONE-quoted-bar validity (the order never hunts across bars);
+  liquidity gates still apply at the fill bar; the episode is consumed
+  fill-or-skip; both bars are disclosed in the trade detail
+  ("… · armed 09:40 · 09:45"); armed orders die at close_at_time and at
+  the session end (no overnight orders). Skipping faded signals outright
+  was rejected as dishonest in the OTHER direction — it systematically
+  drops fills a live trader would have gotten.
+- **Signal granularity is the indicator's, disclosed.** timeframe-"5min"
+  indicators are sampled at 5-min stamps (FX.1 parity rule), so scanning
+  edges occur at stamp granularity today; minute-bar-level triggers arrive
+  with FX.3's price-touch exits and any future minute-native conditions —
+  more data or finer grids never silently change where a signal can fire.
+- **Every skip is counted, at the right granularity.** The run carries a
+  skip-reason distribution (`skip_reasons`). EPISODE-level reasons count
+  once per setup: `max_concurrent` (fired at the cap, consumed),
+  `order_in_flight` (a fresh edge arrived while an order was armed — one
+  working order at a time, so the second setup is a REAL missed
+  opportunity, disclosed never absorbed), `no_quote_this_bar` (an armed
+  order died unfilled at the session end or the flatten bar). WAITING at
+  quote-less bars is not a skip — a filled armed order contributes no
+  count. ATTEMPT-level reasons (conditions_not_met, illiquid_*,
+  zero_bid_short, …) count per attempted bar, as they always have. The
+  trade log stays deduped per session; the counts do not.
+- **Bounded by construction (OOM-guard directive).** Scanning makes
+  position count scale with bars, so every per-bar path iterates the LIVE
+  book (open positions, swept O(open) per bar), never the full history;
+  and a run that opens more than MAX_RUN_FILLS (20,000) positions is
+  REFUSED loudly mid-run with a plain reason — never silently truncated,
+  never an unbounded payload.
