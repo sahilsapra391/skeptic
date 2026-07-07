@@ -410,6 +410,28 @@ def run_expiry(s3, state: dict, tickers: list[str], dry: bool) -> None:
             _flush(s3, state)
 
 
+def _contract_symbols(s3, ticker: str) -> list[str]:
+    """The option-symbol universe for a ticker: the per-date chain listings we
+    banked plus the current option-contracts snapshot."""
+    symbols: set[str] = set()
+    keys = r2_list_keys(s3, f"uw/option_chains/ticker={ticker}/")
+    keys.append(f"reference/uw/option_contracts/ticker={ticker}.parquet")
+    for key in keys:
+        try:
+            df = pd.read_parquet(  # noqa: PD901 — small per-day file
+                __import__("io").BytesIO(
+                    s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)["Body"].read()
+                )
+            )
+        except Exception:
+            continue
+        for col in ("option_symbol", "symbol", "chain", "ticker_symbol"):
+            if col in df.columns:
+                symbols.update(str(x) for x in df[col].dropna().unique())
+                break
+    return sorted(symbols)
+
+
 def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
     """Chain rebuild: every option symbol seen in the banked option_chains
     listings gets each per-contract sub-endpoint (historic/flow/volume-profile),
@@ -418,26 +440,7 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
     for t in tickers:
         st = contracts.setdefault(t, {"done": [], "empty": []})
         seen = set(st["done"])
-        # gather the symbol universe from BOTH the per-date chain listings and
-        # the current option-contracts snapshot (so this works even before the
-        # daily sweep reaches option_chains)
-        symbols: set[str] = set()
-        keys = r2_list_keys(s3, f"uw/option_chains/ticker={t}/")
-        keys.append(f"reference/uw/option_contracts/ticker={t}.parquet")
-        for key in keys:
-            try:
-                df = pd.read_parquet(  # noqa: PD901 — small per-day file
-                    __import__("io").BytesIO(
-                        s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)["Body"].read()
-                    )
-                )
-            except Exception:
-                continue
-            for col in ("option_symbol", "symbol", "chain", "ticker_symbol"):
-                if col in df.columns:
-                    symbols.update(str(x) for x in df[col].dropna().unique())
-                    break
-        todo = sorted(s for s in symbols if s not in seen)
+        todo = [s for s in _contract_symbols(s3, t) if s not in seen]
         log.info("%s: %d option contracts × %d sub-endpoints", t, len(todo), len(CONTRACT_SUBS))
         for sym in todo:
             blocked = False
@@ -459,11 +462,60 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
         _flush(s3, state)
 
 
+# consecutive empty (pre-listing) days after which a contract's intraday walk stops
+INTRADAY_EMPTY_STOP = 5
+
+
+def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end: str,
+                           dry: bool) -> None:
+    """Per-contract INTRADAY minute bars (OHLC + IV + premium-by-aggressor-side).
+    One call per (contract, session): walk sessions newest-first, stop a contract
+    at its history-depth floor (403) or once past its listing (N empty days).
+    → uw/option_intraday/ticker={T}/symbol={SYM}/date={D}/bars.parquet."""
+    intraday = state.setdefault("intraday", {})
+    for t in tickers:
+        symbols = _contract_symbols(s3, t)
+        sessions = sessions_desc(start, end)
+        pending = [s for s in symbols if not intraday.get(f"{t}|{s}", {}).get("complete")]
+        log.info("%s: %d contracts to walk for intraday (%d sessions each, newest-first)",
+                 t, len(pending), len(sessions))
+        for sym in pending:
+            skey = f"{t}|{sym}"
+            st = intraday.setdefault(skey, {"done": [], "empty": [], "complete": False})
+            seen = set(st["done"]) | set(st["empty"])
+            consecutive_empty = 0
+            for d in [x for x in sessions if x not in seen]:
+                code, body = _get(f"/api/option-contract/{sym}/intraday", {"date": d})
+                if code == 403:
+                    st["complete"] = True  # depth floor — older is unavailable
+                    break
+                rows = rows_of(body)
+                if rows:
+                    consecutive_empty = 0
+                    key = f"uw/option_intraday/ticker={t}/symbol={sym}/date={d}/bars.parquet"
+                    if not dry:
+                        _write(s3, key, rows, ticker=t, occ_symbol=sym, date=d,
+                               endpoint="option_intraday")
+                    st["done"].append(d)
+                else:
+                    consecutive_empty += 1
+                    st["empty"].append(d)
+                    if consecutive_empty >= INTRADAY_EMPTY_STOP:
+                        st["complete"] = True  # walked past the contract's listing
+                        break
+                if _LIM.count % 100 == 0:
+                    _flush(s3, state)
+            else:
+                st["complete"] = True  # exhausted the session range
+            _flush(s3, state)
+
+
 # ------------------------------------------------------------ main
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--mode", choices=("probe", "series", "daily", "expiry", "contracts", "all"),
+    ap.add_argument("--mode",
+                    choices=("probe", "series", "daily", "expiry", "contracts", "intraday", "all"),
                     default="probe")
     ap.add_argument("--tickers", default=",".join(TICKERS))
     ap.add_argument("--from", dest="start", default=OPTIONS_FLOOR)
@@ -500,6 +552,8 @@ def main() -> int:
             run_expiry(s3, state, tickers, args.dry_run)
         if args.mode in ("contracts", "all"):
             run_contracts(s3, state, tickers, args.dry_run)
+        if args.mode == "intraday":  # heavy; explicit opt-in, not part of "all"
+            run_contracts_intraday(s3, state, tickers, args.start, end, args.dry_run)
     except BudgetExhausted as exc:
         _flush(s3, state)
         log.warning("STOPPED: %s — rerun tomorrow to resume", exc)
