@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 
 from app.data import r2
+from app.data.bars import per_bar_volume
 from app.engine.market import SessionSlice
 from app.engine.types import ContractKey, Quote
 
@@ -170,14 +171,13 @@ def _ivol_frames(
             # NaN (volume unknown → the bar sits out of session VWAP)
             # rather than injecting the whole session cumulative as one
             # bar's volume.
-            bar_vol = cum_vol.diff()
-            # per-bar ≡ cumulative ONLY at the session open: a
-            # head-truncated payload's first cumulative is hours of
-            # volume, not a bar's — leave it unknown like any
-            # unparseable cell
-            if und_rows["bar_ts"].iloc[0].time() == SESSION_OPEN:
-                bar_vol.iloc[0] = cum_vol.iloc[0]
-            bar_vol = bar_vol.clip(lower=0)
+            bar_vol = per_bar_volume(
+                cum_vol,
+                # per-bar ≡ cumulative ONLY at the session open: a
+                # head-truncated payload's first cumulative is hours of
+                # volume, not a bar's — unknown, like an unparseable cell
+                seed_first=und_rows["bar_ts"].iloc[0].time() == SESSION_OPEN,
+            )
         else:
             bar_vol = pd.Series(0.0, index=und_rows.index)  # VWAP unevaluable
         und_out = pd.DataFrame({

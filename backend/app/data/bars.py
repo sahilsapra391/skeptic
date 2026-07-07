@@ -177,6 +177,24 @@ def _recorder_snapshot_ts(key: str) -> pd.Timestamp | None:
         return None
 
 
+def per_bar_volume(cum: pd.Series, *, seed_first: bool = True,
+                   nan_fill: float | None = None) -> pd.Series:
+    """Cumulative session volume → per-bar volume (the diff). ONE shared
+    implementation for the live recorder and the ivol intraday reader — the
+    reader's old fillna(cum) injection bug was born from these two sites
+    diverging, and a future fork means the same session yields different
+    VWAPs live vs backtested. seed_first: bar 0 takes its cumulative as its
+    own volume (callers gate this on the first stamp actually being the
+    session open). nan_fill: what an unknown diff becomes — 0.0 for the
+    recorder ("honestly zero, never invented"), None to keep NaN for the
+    reader (unknown bars sit out of session-anchored VWAP)."""
+    vol = cum.diff()
+    if seed_first and len(vol):
+        vol.iloc[0] = cum.iloc[0]
+    vol = vol.clip(lower=0)
+    return vol if nan_fill is None else vol.fillna(nan_fill)
+
+
 def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFrame | None:
     """Today's intraday underlying from the CBOE recorder snapshots — one
     `spot` per ~2-minute snapshot, ~15 minutes delayed. Built into minute rows
@@ -232,9 +250,7 @@ def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFra
     full = pd.DataFrame(cache["rows"])  # rows are kept sorted by minute_ts
     cum = full["cum_vol"] if "cum_vol" in full.columns else pd.Series([None] * len(full))
     if cum.notna().any():
-        vol = cum.diff()
-        vol.iloc[0] = cum.iloc[0] if pd.notna(cum.iloc[0]) else 0.0
-        vol = vol.clip(lower=0).fillna(0.0)
+        vol = per_bar_volume(cum, nan_fill=0.0)
     else:
         vol = pd.Series(0.0, index=full.index)
     full = full.assign(volume=vol)
