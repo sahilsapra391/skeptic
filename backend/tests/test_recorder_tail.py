@@ -17,6 +17,11 @@ import pytest
 from app.data import bars
 
 _D = pd.Timestamp.now(tz=bars.ET).date().isoformat()  # today's ET session date
+# in the first hour after ET midnight, a synthetic "~60 min ago" recorder bar
+# legitimately lands on the prior ET calendar day — so the "session present"
+# assertions accept today OR yesterday, else CI flakes for runs 00:00–01:00 ET
+_DPREV = (pd.Timestamp.now(tz=bars.ET) - pd.Timedelta(days=1)).date().isoformat()
+_RECENT_ET = {_D, _DPREV}
 _DYMD = _D.replace("-", "")
 
 
@@ -146,7 +151,7 @@ def test_get_bars_live_while_session_open(monkeypatch: pytest.MonkeyPatch) -> No
     assert out["live"] is True
     assert out["live_label"] == "delayed ~15m · CBOE recorder"
     last_date = pd.Timestamp(out["bars"][-1]["t"]).tz_convert(bars.ET).date()
-    assert last_date.isoformat() == _D
+    assert last_date.isoformat() in _RECENT_ET
 
 
 def test_get_bars_completed_and_not_live_once_closed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -158,4 +163,5 @@ def test_get_bars_completed_and_not_live_once_closed(monkeypatch: pytest.MonkeyP
     assert out["live"] is False
     assert out["live_label"] == "CBOE recorder (delayed) · completes overnight"
     last_date = pd.Timestamp(out["bars"][-1]["t"]).tz_convert(bars.ET).date()
-    assert last_date.isoformat() == _D  # today's session is present, just completed
+    # session present (today, or prior ET day just after midnight)
+    assert last_date.isoformat() in _RECENT_ET
