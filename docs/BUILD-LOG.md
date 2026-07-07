@@ -1291,3 +1291,18 @@ sampled value, print-less bars fall back):
   stamp (no expiry); the SAME touch invisible at 5-min (blind spot
   pinned); FX.2+FX.3 end-to-end (minute dip arms entry, fills at next
   quote, "armed 09:41"); live-price VWAP/SMA units. 360 tests.
+REVIEW (independent agent, same session): 1 MAJOR + 2 MINOR + 2 NIT, ALL
+FIXED — (1) MAJOR: crosses operators at off-stamp bars paired (pct@S-1,
+live), dropping the latest stamp → genuine inter-stamp crosses MISSED (the
+exact forgotten-exit class) + resolved crosses re-fired on minute jitter;
+fixed via is_indicator_stamp plumbed through BarView/protocol and
+_live_price_tail building (latest sampled, live) pairs only at off-stamp
+printed bars — bit-identity now trivial (stamp bars take the untouched
+pre-FX.3 path); crosses pinned both directions; (2) latch completion at
+gap-session EOD documented + trigger note DATED on later-session fills
+(latched_day); (3) a latch first fillable at the flatten bar closes under
+its own reason, not session_flat (pinned); (4) settlement supersession of
+a pending latch disclosed on the settle event (pinned); (5) _FakeBar
+gained stamp-awareness + crosses coverage. 363 tests green; reviewer
+verified bit-identity off finest incl. 20k randomized IEEE trials of the
+scalar recompute, guardrails #1/#2, latch lifecycle, FX.2 interplay.

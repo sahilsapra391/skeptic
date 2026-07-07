@@ -76,8 +76,16 @@ def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
     closes = view.intraday_closes_upto()[-INTRADAY_LOOKBACK_BARS:]
     if not closes:
         return False
+    # the live print drives evaluation ONLY at off-stamp bars; at a stamp
+    # (or a print-less bar) the sampled last is the price — exactly the
+    # pre-FX.3 semantics, bit-identical off minute grids
     live = view.close()
-    px = live if live is not None else closes[-1]
+    if not view.is_indicator_stamp and live is not None:
+        off_stamp_live = True
+        px = live
+    else:
+        off_stamp_live = False
+        px = closes[-1]
     if cond.indicator is Indicator.PRICE_VS_VWAP_PCT:
         vwap = view.intraday_vwap()
         if vwap is None or vwap <= 0:
@@ -98,12 +106,14 @@ def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
         sma = ind.sma(s, cond.period or 50)
         pct_series = (s / sma - 1.0) * 100.0
         return _series_pair(
-            _live_price_tail(pct_series, px, sma), cond.operator, cond.value)
+            _live_price_tail(pct_series, px, sma, off_stamp_live),
+            cond.operator, cond.value)
     if ind_name is Indicator.PRICE_VS_EMA_PCT:
         ema = ind.ema(s, cond.period or 20)
         pct_series = (s / ema - 1.0) * 100.0
         return _series_pair(
-            _live_price_tail(pct_series, px, ema), cond.operator, cond.value)
+            _live_price_tail(pct_series, px, ema, off_stamp_live),
+            cond.operator, cond.value)
     if ind_name is Indicator.EMA_CROSS_STATE:
         params = cond.params or {}
         fast = int(params.get("fast", 9))
@@ -113,21 +123,24 @@ def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
     return False  # validation keeps daily-only indicators off this path
 
 
-def _live_price_tail(pct_series: pd.Series, px: float, ma: pd.Series) -> list[float]:
+def _live_price_tail(
+    pct_series: pd.Series, px: float, ma: pd.Series, off_stamp_live: bool
+) -> list[float]:
     """The evaluation pair for price-vs-MA conditions with the FX.3 live
-    price side: prev stays the last fully-sampled pct (stamp cadence);
-    cur becomes the CURRENT print against the latest sampled MA. At a
-    stamp bar the print equals the sampled last, so cur is numerically
-    unchanged — the 5-min grid is bit-identical. An unevaluable tail
-    (warmup NaN) keeps the old NaN-dropping behavior untouched."""
-    values = _tail_values(pct_series)
-    if not values:
-        return values
+    price side. At a STAMP bar (or a print-less bar) the pair is exactly
+    the pre-FX.3 sampled tail — bit-identical everywhere off minute grids.
+    At an off-stamp bar with a real print the pair is (latest SAMPLED pct,
+    live pct): prev stays the last fully-sampled value so crosses are
+    stamp-anchored — a genuine inter-stamp cross fires, a cross already
+    resolved AT the stamp does not re-fire (review finding). An
+    unevaluable tail (warmup NaN) keeps the old NaN-dropping behavior."""
+    if not off_stamp_live:
+        return _tail_values(pct_series)
+    last_pct = float(pct_series.iloc[-1])
     ma_last = float(ma.iloc[-1])
-    if math.isnan(ma_last) or ma_last == 0.0 or math.isnan(float(pct_series.iloc[-1])):
-        return values
-    values[-1] = (px / ma_last - 1.0) * 100.0
-    return values
+    if math.isnan(last_pct) or math.isnan(ma_last) or ma_last == 0.0:
+        return _tail_values(pct_series)
+    return [last_pct, (px / ma_last - 1.0) * 100.0]
 
 
 def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:

@@ -75,6 +75,8 @@ class Position:
     # trigger bar is disclosed on the CLOSE event. finest-mode only.
     exit_latched: str | None = None  # the exit reason to complete
     latched_bar: str | None = None  # HH:MM of the observed trigger
+    latched_day: date | None = None  # trigger session (dated disclosure
+    # when the fill lands on a LATER session — overnight/gap carry)
 
     @property
     def is_credit(self) -> bool:

@@ -165,6 +165,7 @@ class BarView:
         intraday_lasts: list[float] | None = None,
         lasts_len: int = 0,
         vwap: float | None = None,
+        is_indicator_stamp: bool = True,
     ) -> None:
         self._iview = iview
         self._prev = prev
@@ -173,10 +174,19 @@ class BarView:
         self._lasts = intraday_lasts if intraday_lasts is not None else []
         self._lasts_len = lasts_len
         self._vwap = vwap
+        # FX.3: whether THIS bar is a 5-min indicator stamp (always True on
+        # 5-min grids; on minute grids only the und5 stamps are). Off-stamp
+        # bars evaluate price-vs conditions against the live print with the
+        # latest SAMPLED value as prev — crosses stay stamp-anchored.
+        self._is_stamp = is_indicator_stamp
 
     @property
     def as_of(self) -> date:
         return self._iview.session
+
+    @property
+    def is_indicator_stamp(self) -> bool:
+        return self._is_stamp
 
     @property
     def has_chain(self) -> bool:
@@ -883,6 +893,26 @@ def _delta_stop_hit(pos: Position, view: MarketViewLike, threshold: float) -> bo
     return False
 
 
+def _latch_note(pos: Position, day: date) -> str:
+    """The trigger disclosure: dated when the fill lands on a later
+    session (overnight/gap carry — review finding)."""
+    if pos.latched_day is not None and pos.latched_day != day:
+        return f"{pos.latched_day} {pos.latched_bar}"
+    return pos.latched_bar or "?"
+
+
+def _try_complete_latch(
+    pos: Position, view: MarketViewLike, state: _State, spec: StrategySpec
+) -> bool:
+    """Complete a pending latched exit at THIS view's real quotes; on
+    success the CLOSE event discloses the trigger. False = still no
+    fillable quote (the latch persists — no expiry)."""
+    if _close_position(pos, view, state, spec, pos.exit_latched or "condition_exit"):
+        state.trades[-1].detail += f" · triggered {_latch_note(pos, view.as_of)}"
+        return True
+    return False
+
+
 def _check_exits(
     spec: StrategySpec, state: _State, view: MarketViewLike, dte_fn: DteFn | None = None,
     latch: bool = False, bar_hhmm: str | None = None,
@@ -903,9 +933,7 @@ def _check_exits(
         if pos.exit_latched is not None:
             # complete the latched exit before any re-evaluation; if this
             # bar still can't fill it, the latch persists (no expiry)
-            if _close_position(pos, view, state, spec, pos.exit_latched):
-                if pos.latched_bar is not None:
-                    state.trades[-1].detail += f" · triggered {pos.latched_bar}"
+            _try_complete_latch(pos, view, state, spec)
             continue
         liq = _liq_value_per_share(pos, view, spec.costs)
         base = abs(pos.premium)
@@ -955,6 +983,7 @@ def _check_exits(
                 # close — latch it (completed at the next fillable quote)
                 pos.exit_latched = "condition_exit"
                 pos.latched_bar = bar_hhmm
+                pos.latched_day = view.as_of
 
 
 def _settle_expirations(spec: StrategySpec, state: _State, view: MarketViewLike) -> None:
@@ -965,6 +994,7 @@ def _settle_expirations(spec: StrategySpec, state: _State, view: MarketViewLike)
     for pos in state.live:
         if pos.closed:
             continue
+        had_latch = pos.exit_latched
         for leg in pos.legs:
             if leg.settled or leg.key.expiration != day:
                 continue
@@ -1043,6 +1073,14 @@ def _settle_expirations(spec: StrategySpec, state: _State, view: MarketViewLike)
             leg.settled = True
             leg.last_mark = 0.0
 
+        if had_latch is not None and all(leg.settled for leg in pos.legs):
+            # settlement won the race with a pending latched exit — never
+            # silently swallow the trigger (review finding): disclose it on
+            # the final settlement event and clear the latch
+            state.trades[-1].detail += (
+                f" · pending {had_latch} (triggered "
+                f"{_latch_note(pos, day)}) superseded by settlement")
+            pos.exit_latched = None
         _finalize_if_done(pos, state, day)
 
 
@@ -1256,6 +1294,7 @@ def run_engine(
                 bstate.armed = True
             for bar_idx, bar in enumerate(slc.bars):
                 last = slc.underlying.get(bar)
+                at_stamp = slc.indicator_stamps is None or bar in slc.indicator_stamps
                 if last is not None:
                     # timeframe-"5min" indicators mean ONE thing at every
                     # session of a run: on a minute grid the rolling series
@@ -1265,14 +1304,15 @@ def run_engine(
                     # silently change signal meaning). Minute bars carry no
                     # volume, so session VWAP is stamp-identical too; they
                     # only refine the PRICE between stamps.
-                    if slc.indicator_stamps is None or bar in slc.indicator_stamps:
+                    if at_stamp:
                         intraday_lasts.append(last)
                     vol = slc.underlying_volume.get(bar, 0.0)
                     session_pv += last * vol
                     session_vol += vol
                 vwap_now = session_pv / session_vol if session_vol > 0 else None
                 bview = BarView(IntradayView(slc, bar), prev_view,
-                                intraday_lasts, len(intraday_lasts), vwap_now)
+                                intraday_lasts, len(intraday_lasts), vwap_now,
+                                is_indicator_stamp=at_stamp)
                 events_before = len(state.trades)
                 bar_minutes = bar.hour * 60 + bar.minute
                 bar_hhmm = bar.strftime("%H:%M")
@@ -1284,6 +1324,15 @@ def run_engine(
                     if scanning and scan_armed:
                         _count_skip(state, session_skips, day, "no_quote_this_bar")
                     scan_armed = False
+                    if finest:
+                        # a pending latched exit first fillable here closes
+                        # under its OWN reason, not session_flat — the
+                        # trade log must not misattribute a triggered exit
+                        # (review finding)
+                        for pos in state.live:
+                            if (pos.exit_latched is not None and not pos.closed
+                                    and not all(leg.settled for leg in pos.legs)):
+                                _try_complete_latch(pos, bview, state, spec)
                     _force_flat(spec, state, bview)
                     if scale_in is not None and (
                         bstate.basket is not None and bstate.basket.closed

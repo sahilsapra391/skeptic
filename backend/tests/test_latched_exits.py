@@ -149,6 +149,42 @@ class TestLatchedExit:
         assert result.resolution_mix == {"five_min": 1}
 
 
+class TestLatchDisclosure:
+    def test_flatten_bar_completes_latch_under_its_own_reason(self) -> None:
+        # review finding: a pending latch first fillable at the close_at_time
+        # bar closes as condition_exit (trigger disclosed), NEVER
+        # misattributed to session_flat
+        spec_raw = _spec(exit_conditions=CRASH_COND).model_dump(mode="json",
+                                                                exclude_none=True)
+        spec_raw["exit"]["close_at_time"] = "09:45"
+        spec = StrategySpec.model_validate(spec_raw)
+        result = _run(spec, _minute_slice(QUOTES_ALL_STAMPS),
+                      _five_slice(QUOTES_ALL_STAMPS))
+        closes = [t for t in result.trades if t.action == "CLOSE"]
+        assert len(closes) == 1
+        assert closes[0].reason == "condition_exit"  # not session_flat
+        assert "triggered 09:41" in closes[0].detail
+
+    def test_settlement_supersession_is_disclosed(self) -> None:
+        # review finding: a pending latch swallowed by same-session expiry
+        # leaves a trace — the settlement event names the trigger
+        und = dict(MINUTE_UND)
+        quotes = {"09:30": [dict(_put(2.00, 2.10), expiration=SESSION)],
+                  "09:35": [dict(_put(2.00, 2.10), expiration=SESSION)],
+                  "09:40": [dict(_put(2.00, 2.10), expiration=SESSION)]}
+        slc = build_fixture_slice(SESSION, quotes=quotes, underlying=und,
+                                  bar_resolution="1min")
+        spec = _spec(exit_conditions=CRASH_COND)
+        result = _run(spec, slc, _five_slice(QUOTES_ALL_STAMPS))
+        closes = [t for t in result.trades if t.action == "CLOSE"]
+        assert closes == []  # no quoted bar after the trigger — settle wins
+        settles = [t for t in result.trades
+                   if t.action in ("EXPIRE", "SETTLE", "ASSIGN")]
+        assert settles, "same-session expiry must settle"
+        assert any("pending condition_exit (triggered 09:41) superseded"
+                   in t.detail for t in settles)
+
+
 class TestLivePriceEntryIntegration:
     def test_minute_dip_arms_entry_fills_at_next_quote(self) -> None:
         # FX.2 + FX.3 end-to-end: the dip at 09:41 (quote-less) trips the
@@ -175,11 +211,12 @@ class TestLivePriceUnits:
         cond = Condition(indicator=Indicator.PRICE_VS_VWAP_PCT,
                          operator=Operator.LT, value=-1,
                          timeframe=Timeframe.FIVE_MIN)
-        # sampled last 98 vs vwap 99 = −1.01% fires; a live print of 99.5
-        # (recovered) does NOT — the live side drives the evaluation
+        # sampled last 98 vs vwap 99 = −1.01% fires; at an OFF-STAMP bar a
+        # live print of 99.5 (recovered) does NOT — the live side drives it
         assert evaluate_condition(_FakeBar([100.0, 99.0, 98.0], 99.0), cond)
         assert not evaluate_condition(
-            _FakeBar([100.0, 99.0, 98.0], 99.0, live=99.5), cond)
+            _FakeBar([100.0, 99.0, 98.0], 99.0, live=99.5,
+                     is_indicator_stamp=False), cond)
 
     def test_price_vs_sma_live_price_side(self) -> None:
         from app.engine.conditions import evaluate_condition
@@ -190,7 +227,34 @@ class TestLivePriceUnits:
                          operator=Operator.LT, value=-5, period=2,
                          timeframe=Timeframe.FIVE_MIN)
         # sampled [100, 100.1, 100.2]: sma(2) 100.15, sampled pct +0.05 →
-        # False; a live print of 88 → −12.13% → True (hand-computed)
+        # False; an off-stamp live print of 88 → −12.13% → True
         assert not evaluate_condition(_FakeBar([100.0, 100.1, 100.2], None), cond)
         assert evaluate_condition(
-            _FakeBar([100.0, 100.1, 100.2], None, live=88.0), cond)
+            _FakeBar([100.0, 100.1, 100.2], None, live=88.0,
+                     is_indicator_stamp=False), cond)
+
+    def test_crosses_are_stamp_anchored(self) -> None:
+        # review finding 1, both directions pinned. Sampled stamps
+        # 100/100/90 vs SMA(2): pcts [nan, 0.00, −5.263].
+        from app.engine.conditions import evaluate_condition
+        from app.models.spec import Condition, Indicator, Operator, Timeframe
+        from tests.test_conditions_intraday import _FakeBar
+
+        cross_up = Condition(indicator=Indicator.PRICE_VS_SMA_PCT,
+                             operator=Operator.CROSSES_ABOVE, value=-5,
+                             period=2, timeframe=Timeframe.FIVE_MIN)
+        # GENUINE inter-stamp cross: latest sampled pct −5.263, live 96 →
+        # (96/95 − 1) = +1.05: pair (−5.263, +1.05) crosses −5 → True
+        # (the pre-fix pair (0.00, +1.05) missed it — a forgotten exit)
+        assert evaluate_condition(
+            _FakeBar([100.0, 100.0, 90.0], None, live=96.0,
+                     is_indicator_stamp=False), cross_up)
+        # NO spurious re-fire: stamps 100/90/100 → the cross resolved AT
+        # the last stamp (pair [−5.263, +5.263]); at following minute bars
+        # the pair is (+5.263, live) — prev is above the threshold → False
+        assert not evaluate_condition(
+            _FakeBar([100.0, 90.0, 100.0], None, live=100.0,
+                     is_indicator_stamp=False), cross_up)
+        # ...and AT the stamp itself the cross fires exactly once
+        assert evaluate_condition(
+            _FakeBar([100.0, 90.0, 100.0], None), cross_up)

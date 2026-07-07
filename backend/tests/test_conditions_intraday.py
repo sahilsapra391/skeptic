@@ -28,12 +28,14 @@ class _FakeBar:
     """Minimal MarketViewLike for unit-testing the intraday branch."""
 
     def __init__(self, lasts: list[float], vwap: float | None,
-                 live: float | None = None) -> None:
+                 live: float | None = None,
+                 is_indicator_stamp: bool = True) -> None:
         self._lasts = lasts
         self._vwap = vwap
-        # FX.3: the live-price side; None mimics a print-less bar (falls
-        # back to the sampled last — the pre-FX.3 semantics)
+        # FX.3: the live-price side; only consulted at OFF-STAMP bars
+        # (is_indicator_stamp=False); None mimics a print-less bar
         self._live = live
+        self._stamp = is_indicator_stamp
 
     def intraday_closes_upto(self) -> list[float]:
         return self._lasts
@@ -44,6 +46,10 @@ class _FakeBar:
     def close(self, d=None):  # type: ignore[no-untyped-def]
         return self._live if self._live is not None else (
             self._lasts[-1] if self._lasts else None)
+
+    @property
+    def is_indicator_stamp(self) -> bool:
+        return self._stamp
 
 
 class TestVwapUnit:

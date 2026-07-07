@@ -420,6 +420,20 @@ now formalized (owner decisions 2026-07-07):
   ("· triggered 09:41 · 09:45"), so the gap and any worse fill are
   visible. Gated to finest mode: fixed-5min runs keep their pre-FX.3
   retry-and-re-evaluate behavior bit-identically.
+  Completion edge cases (review-hardened, all disclosed): a latch carried
+  OVERNIGHT or into a GAP session (no intraday slice) completes at the
+  first real quotes available there — including the daily EOD-chain
+  fallback D2 already allows for gap-session exits — and the trigger note
+  is DATED when the fill lands on a later session ("triggered 2026-07-01
+  09:41"). A latch first fillable at the close_at_time bar closes under
+  its OWN reason, never misattributed to session_flat. A latch swallowed
+  by same-session expiry is named on the settlement event ("pending
+  condition_exit (triggered 09:41) superseded by settlement") — never
+  silently dropped.
+- **Crosses are stamp-anchored (review-hardened).** At an off-stamp
+  minute bar, crosses_above/below evaluate (latest SAMPLED value → live
+  print): a genuine inter-stamp cross fires exactly once, and a cross
+  already resolved AT a stamp never re-fires on minute jitter.
 - **Why entries and exits latch DIFFERENTLY (the governing principle).**
   Entries have one-quoted-bar validity and can be liquidity-skipped;
   exits persist until fillable. Not a contradiction: entries and exits
