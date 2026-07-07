@@ -39,8 +39,10 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
+import zipfile
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -53,7 +55,13 @@ from collect import (
     r2_put_json,
     r2_put_parquet,
 )
-from uw_manifest import MANIFEST, OHLC_CANDLES, OPTIONS_FLOOR
+from uw_manifest import (
+    CONTRACT_SUBS,
+    EXPIRY_ENDPOINTS,
+    MANIFEST,
+    OHLC_CANDLES,
+    OPTIONS_FLOOR,
+)
 
 log = logging.getLogger("uw")
 
@@ -327,17 +335,24 @@ def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
         scopes = tickers if mode == "ticker_date" else ["market"]
         for scope in scopes:
             skey = f"{name}|{scope}"
-            st = dates.setdefault(skey, {"done": [], "empty": []})
-            seen = set(st["done"]) | set(st["empty"])
+            st = dates.setdefault(skey, {"done": [], "empty": [], "blocked": []})
+            st.setdefault("blocked", [])
+            seen = set(st["done"]) | set(st["empty"]) | set(st["blocked"])
             todo = [d for d in sessions_desc(floor, end) if d not in seen]
             if todo:
                 log.info("%s %s: %d sessions", name, scope, len(todo))
-            for d in todo:
+            for i, d in enumerate(todo):
                 url = path.format(ticker=scope) if mode == "ticker_date" else path
                 code, body = _get(url, {"date": d})
                 if code == 403:
-                    log.info("%s: tariff-blocked", name)
-                    st["empty"].extend(x for x in todo if x not in st["empty"])
+                    # newest-first: a 403 IS this endpoint's history-depth floor
+                    # on the current tariff — every OLDER date is unavailable too.
+                    # Mark the remaining un-fetched dates blocked (never touching
+                    # already-done ones) and stop this scope.
+                    remaining = todo[i:]
+                    st["blocked"].extend(x for x in remaining if x not in seen)
+                    log.info("%s %s: history floor at %s — %d newer captured, %d older blocked",
+                             name, scope, d, len(st["done"]), len(remaining))
                     break
                 rows = rows_of(body)
                 if mode == "ticker_date":
@@ -352,42 +367,220 @@ def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
             _flush(s3, state)
 
 
+def _active_expiries(s3, ticker: str) -> list[str]:
+    """Enumerate a ticker's option expiries from expiry-breakdown (falls back to
+    the option-contracts listing). Used to fan the expiry-sliced endpoints out."""
+    exps: set[str] = set()
+    for path in (f"/api/stock/{ticker}/expiry-breakdown",
+                 f"/api/stock/{ticker}/option-contracts"):
+        _, body = _get(path)
+        for r in rows_of(body):
+            for k in ("expiry", "expiration", "expires", "expiration_date"):
+                v = r.get(k)
+                if v:
+                    exps.add(str(v)[:10])
+                    break
+        if exps:
+            break
+    return sorted(exps)
+
+
+def run_expiry(s3, state: dict, tickers: list[str], dry: bool) -> None:
+    """Expiry-sliced endpoints: a current snapshot per (ticker, active expiry)."""
+    exp_state = state.setdefault("expiry", {})
+    for t in tickers:
+        expiries = _active_expiries(s3, t)
+        log.info("%s: %d active expiries", t, len(expiries))
+        for ep in EXPIRY_ENDPOINTS:
+            name, param = ep["name"], ep["param"]
+            st = exp_state.setdefault(f"{name}|{t}", {"done": [], "empty": []})
+            seen = set(st["done"]) | set(st["empty"])
+            for e in [x for x in expiries if x not in seen]:
+                if param == "path":
+                    url, params = ep["path"].format(ticker=t, expiry=e), None
+                else:
+                    url, params = ep["path"].format(ticker=t), {param: e}
+                code, body = _get(url, params)
+                if code == 403:
+                    log.info("%s %s: tariff-blocked", name, t)
+                    st["empty"].extend(x for x in expiries if x not in st["empty"])
+                    break
+                rows = rows_of(body)
+                key = f"uw/{name}/ticker={t}/expiry={e}/rows.parquet"
+                ok = not dry and _write(s3, key, rows, ticker=t, expiry=e, endpoint=name)
+                (st["done"] if ok else st["empty"]).append(e)
+            _flush(s3, state)
+
+
+def _contract_symbols(s3, ticker: str) -> list[str]:
+    """The option-symbol universe for a ticker: the per-date chain listings we
+    banked plus the current option-contracts snapshot."""
+    symbols: set[str] = set()
+    keys = r2_list_keys(s3, f"uw/option_chains/ticker={ticker}/")
+    keys.append(f"reference/uw/option_contracts/ticker={ticker}.parquet")
+    for key in keys:
+        try:
+            df = pd.read_parquet(  # noqa: PD901 — small per-day file
+                __import__("io").BytesIO(
+                    s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)["Body"].read()
+                )
+            )
+        except Exception:
+            continue
+        for col in ("option_symbol", "symbol", "chain", "ticker_symbol"):
+            if col in df.columns:
+                symbols.update(str(x) for x in df[col].dropna().unique())
+                break
+    return sorted(symbols)
+
+
 def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
     """Chain rebuild: every option symbol seen in the banked option_chains
-    listings gets its full daily history (one call each) → uw/option_hist/."""
+    listings gets each per-contract sub-endpoint (historic/flow/volume-profile),
+    one call each → uw/option_{sub}/ticker={T}/symbol={SYM}.parquet."""
     contracts = state["contracts"]
     for t in tickers:
         st = contracts.setdefault(t, {"done": [], "empty": []})
-        seen = set(st["done"]) | set(st["empty"])
-        # gather the symbol universe from the daily chain listings we banked
-        symbols: set[str] = set()
-        for key in r2_list_keys(s3, f"uw/option_chains/ticker={t}/"):
-            df = None
-            try:
-                df = pd.read_parquet(  # noqa: PD901 — small per-day file
-                    __import__("io").BytesIO(
-                        s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)["Body"].read()
-                    )
-                )
-            except Exception:
-                continue
-            for col in ("option_symbol", "symbol", "chain", "ticker_symbol"):
-                if col in df.columns:
-                    symbols.update(str(x) for x in df[col].dropna().unique())
-                    break
-        todo = sorted(s for s in symbols if s not in seen)
-        log.info("%s: %d option contracts to pull (%d already done)", t, len(todo), len(seen))
+        seen = set(st["done"])
+        todo = [s for s in _contract_symbols(s3, t) if s not in seen]
+        log.info("%s: %d option contracts × %d sub-endpoints", t, len(todo), len(CONTRACT_SUBS))
         for sym in todo:
-            code, body = _get(f"/api/option-contract/{sym}/historic")
-            if code == 403:
-                log.info("contracts: tariff-blocked")
+            blocked = False
+            for sub, path in CONTRACT_SUBS:
+                code, body = _get(path.format(id=sym))
+                if code == 403:
+                    log.info("contracts %s: tariff-blocked", sub)
+                    blocked = True
+                    break
+                rows = rows_of(body)
+                key = f"uw/option_{sub}/ticker={t}/symbol={sym}.parquet"
+                if not dry:
+                    _write(s3, key, rows, ticker=t, occ_symbol=sym, endpoint=f"option_{sub}")
+            if blocked:
                 return
-            rows = rows_of(body)
-            key = f"uw/option_hist/ticker={t}/symbol={sym}.parquet"
-            ok = not dry and _write(s3, key, rows, ticker=t, occ_symbol=sym, endpoint="option_hist")
-            (st["done"] if ok else st["empty"]).append(sym)
+            st["done"].append(sym)
             if _LIM.count % 100 == 0:
                 _flush(s3, state)
+        _flush(s3, state)
+
+
+# consecutive empty (pre-listing) days after which a contract's intraday walk stops
+INTRADAY_EMPTY_STOP = 5
+
+
+def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end: str,
+                           dry: bool) -> None:
+    """Per-contract INTRADAY minute bars (OHLC + IV + premium-by-aggressor-side).
+    One call per (contract, session): walk sessions newest-first, stop a contract
+    at its history-depth floor (403) or once past its listing (N empty days).
+    → uw/option_intraday/ticker={T}/symbol={SYM}/date={D}/bars.parquet."""
+    intraday = state.setdefault("intraday", {})
+    for t in tickers:
+        symbols = _contract_symbols(s3, t)
+        sessions = sessions_desc(start, end)
+        pending = [s for s in symbols if not intraday.get(f"{t}|{s}", {}).get("complete")]
+        log.info("%s: %d contracts to walk for intraday (%d sessions each, newest-first)",
+                 t, len(pending), len(sessions))
+        for sym in pending:
+            skey = f"{t}|{sym}"
+            st = intraday.setdefault(skey, {"done": [], "empty": [], "complete": False})
+            seen = set(st["done"]) | set(st["empty"])
+            consecutive_empty = 0
+            for d in [x for x in sessions if x not in seen]:
+                code, body = _get(f"/api/option-contract/{sym}/intraday", {"date": d})
+                if code == 403:
+                    st["complete"] = True  # depth floor — older is unavailable
+                    break
+                rows = rows_of(body)
+                if rows:
+                    consecutive_empty = 0
+                    key = f"uw/option_intraday/ticker={t}/symbol={sym}/date={d}/bars.parquet"
+                    if not dry:
+                        _write(s3, key, rows, ticker=t, occ_symbol=sym, date=d,
+                               endpoint="option_intraday")
+                    st["done"].append(d)
+                else:
+                    consecutive_empty += 1
+                    st["empty"].append(d)
+                    if consecutive_empty >= INTRADAY_EMPTY_STOP:
+                        st["complete"] = True  # walked past the contract's listing
+                        break
+                if _LIM.count % 100 == 0:
+                    _flush(s3, state)
+            else:
+                st["complete"] = True  # exhausted the session range
+            _flush(s3, state)
+
+
+def _underlying_col(df: pd.DataFrame) -> str | None:
+    for c in ("underlying_symbol", "underlying", "root_symbol", "root", "ticker"):
+        if c in df.columns:
+            return c
+    return None
+
+
+def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: bool) -> None:
+    """FINEST granularity: the full options tape — EVERY trade market-wide per day
+    (~1.8 GB zipped CSV each) — streamed, unzipped and filtered to our tickers.
+    One request per session, newest-first, depth-floor aware, resumable.
+    → uw/option_tape/ticker={T}/date={D}/trades.parquet."""
+    ts = state.setdefault("tape", {"done": [], "empty": [], "blocked": []})
+    want = {t.upper() for t in tickers}
+    seen = set(ts["done"]) | set(ts["empty"]) | set(ts["blocked"])
+    sessions = sessions_desc(start, end)
+    todo = [x for x in sessions if x not in seen]
+    log.info("tape: %d sessions to pull (~1.8 GB download each)", len(todo))
+    hdr = {"Authorization": f"Bearer {_TOKEN}"}
+    for d in todo:
+        _LIM.wait()
+        try:
+            r = requests.get(f"{BASE}/api/option-trades/full-tape/{d}",
+                             headers=hdr, stream=True, timeout=900)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("tape %s: %s", d, exc)
+            continue
+        _LIM.observe(r.headers)
+        if r.status_code == 403:
+            ts["blocked"].extend(x for x in todo if x <= d and x not in ts["blocked"])
+            log.info("tape: history floor at %s", d)
+            break
+        if r.status_code != 200:
+            ts["empty"].append(d)
+            _flush(s3, state)
+            continue
+        with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+            for chunk in r.iter_content(chunk_size=1 << 20):  # stream to disk, 1 MB
+                tmp.write(chunk)
+            tmp.flush()
+            parts: dict[str, list[pd.DataFrame]] = {t: [] for t in want}
+            try:
+                with zipfile.ZipFile(tmp.name) as z:
+                    name = next((n for n in z.namelist() if n.endswith(".csv")), None)
+                    if name:
+                        with z.open(name) as f:
+                            for ch in pd.read_csv(f, chunksize=500_000, dtype=str,
+                                                  low_memory=False):
+                                col = _underlying_col(ch)
+                                if col is None:
+                                    break
+                                hit = ch[ch[col].str.upper().isin(want)]
+                                for t in want:
+                                    tt = hit[hit[col].str.upper() == t]
+                                    if len(tt):
+                                        parts[t].append(tt)
+            except Exception as exc:  # noqa: BLE001 — bad zip/csv → retry next run
+                log.warning("tape %s parse error: %s", d, exc)
+                continue
+        wrote = 0
+        for t in want:
+            if parts[t]:
+                df = pd.concat(parts[t], ignore_index=True)
+                df["captured_at"] = datetime.now(timezone.utc).isoformat()
+                if not dry:
+                    r2_put_parquet(s3, f"uw/option_tape/ticker={t}/date={d}/trades.parquet", df)
+                wrote += len(df)
+        ts["done"].append(d)
+        log.info("tape %s: %d trades kept for %s", d, wrote, "/".join(sorted(want)))
         _flush(s3, state)
 
 
@@ -395,7 +588,9 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--mode", choices=("probe", "series", "daily", "contracts", "all"),
+    ap.add_argument("--mode",
+                    choices=("probe", "series", "daily", "expiry", "contracts",
+                             "intraday", "tape", "all"),
                     default="probe")
     ap.add_argument("--tickers", default=",".join(TICKERS))
     ap.add_argument("--from", dest="start", default=OPTIONS_FLOOR)
@@ -428,8 +623,14 @@ def main() -> int:
             run_series(s3, state, tickers, prios, args.dry_run)
         if args.mode in ("daily", "all"):
             run_daily(s3, state, tickers, prios, args.start, end, args.dry_run)
+        if args.mode in ("expiry", "all"):
+            run_expiry(s3, state, tickers, args.dry_run)
         if args.mode in ("contracts", "all"):
             run_contracts(s3, state, tickers, args.dry_run)
+        if args.mode == "intraday":  # heavy; explicit opt-in, not part of "all"
+            run_contracts_intraday(s3, state, tickers, args.start, end, args.dry_run)
+        if args.mode == "tape":  # finest + heaviest (~1.8 GB/day); explicit opt-in
+            run_tape(s3, state, tickers, args.start, end, args.dry_run)
     except BudgetExhausted as exc:
         _flush(s3, state)
         log.warning("STOPPED: %s — rerun tomorrow to resume", exc)
