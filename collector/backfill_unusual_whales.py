@@ -327,17 +327,24 @@ def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
         scopes = tickers if mode == "ticker_date" else ["market"]
         for scope in scopes:
             skey = f"{name}|{scope}"
-            st = dates.setdefault(skey, {"done": [], "empty": []})
-            seen = set(st["done"]) | set(st["empty"])
+            st = dates.setdefault(skey, {"done": [], "empty": [], "blocked": []})
+            st.setdefault("blocked", [])
+            seen = set(st["done"]) | set(st["empty"]) | set(st["blocked"])
             todo = [d for d in sessions_desc(floor, end) if d not in seen]
             if todo:
                 log.info("%s %s: %d sessions", name, scope, len(todo))
-            for d in todo:
+            for i, d in enumerate(todo):
                 url = path.format(ticker=scope) if mode == "ticker_date" else path
                 code, body = _get(url, {"date": d})
                 if code == 403:
-                    log.info("%s: tariff-blocked", name)
-                    st["empty"].extend(x for x in todo if x not in st["empty"])
+                    # newest-first: a 403 IS this endpoint's history-depth floor
+                    # on the current tariff — every OLDER date is unavailable too.
+                    # Mark the remaining un-fetched dates blocked (never touching
+                    # already-done ones) and stop this scope.
+                    remaining = todo[i:]
+                    st["blocked"].extend(x for x in remaining if x not in seen)
+                    log.info("%s %s: history floor at %s — %d newer captured, %d older blocked",
+                             name, scope, d, len(st["done"]), len(remaining))
                     break
                 rows = rows_of(body)
                 if mode == "ticker_date":
