@@ -341,7 +341,8 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
                 # FX.4: a minute-flavored fold says so on its tooltip — the
                 # disclosure lives in the run, not only the docs
                 + (f" · {round(f.minute_share * 100)}% minute grid"
-                   if f.minute_share else "")
+                   if f.minute_share and round(f.minute_share * 100) >= 1
+                   else "")
             ),
         }
         for f in folds

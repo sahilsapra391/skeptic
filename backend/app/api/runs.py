@@ -203,6 +203,10 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
             "initial_capital": spec.backtest.initial_capital,
             "final_equity": result.equity[-1] if result.equity else None,
             "honesty_report": report.model_dump(),
+            # FX.4: the per-run resolution mix rides the stats bundle so a
+            # future receipt comparing two resolution-carrying runs can name
+            # an upgrade (empty on daily runs — they have no mix)
+            "resolutionMix": result.resolution_mix or None,
         }
         # measured run cost — the pre-run time estimates are medians over
         # these rows (per clock, on THIS box), never invented numbers

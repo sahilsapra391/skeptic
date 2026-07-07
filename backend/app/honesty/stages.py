@@ -498,14 +498,22 @@ def resolution_split(result: RunResult) -> ResolutionSplit:
             rets[label].append(result.equity[i] / prev_eq - 1.0)
             windows[label].append(d)
     # the first equity date has no return; count its session for the window
+    # (or as a fallback day when it carries no label — review finding)
     if result.dates:
         d0 = result.dates[0]
         label0 = by_session.get(d0)
         if label0 in windows and d0 not in windows[label0]:
             windows[label0].insert(0, d0)
+        elif label0 not in windows:
+            eod_fallback += 1
 
-    # closed trades attributed to their REALIZATION day (matches how the
-    # equity returns above carry the P&L)
+    # closed trades attributed to their REALIZATION day. NOTE: a position
+    # straddling the resolution boundary accrues its P&L across BOTH
+    # subsets' marks while its closed-trade count (and `pl`) lands on one
+    # day — a bucket's `pl` and its mark-based `sharpe` can diverge for
+    # boundary-straddlers. The flip test is mark-to-market and internally
+    # consistent; `trades` is an evidence floor, not a P&L attribution
+    # (docs/HONESTY.md).
     trades: dict[str, int] = {"minute": 0, "five_min": 0}
     pl: dict[str, float] = {"minute": 0.0, "five_min": 0.0}
     for t in result.trades:

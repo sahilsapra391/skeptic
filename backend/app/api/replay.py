@@ -67,10 +67,14 @@ def build_receipt(replay_run_id: str, daily_stats: dict[str, Any],
     # resolution records that DIFFER, the receipt names the change as a
     # RESOLUTION UPGRADE — a re-run that improved because minute data newly
     # arrived is explained, never a silent shift.
+    # Annotate ONLY when BOTH runs carry a resolution mix and they differ
+    # (review finding: a daily parent has no mix — comparing {} against the
+    # replay's would fire a FALSE "upgrade" note on every receipt; the
+    # honest condition is two resolution-carrying runs whose mixes moved).
     daily_mix = daily_stats.get("resolutionMix") or {}
     replay_mix = replay_payload.get("resolutionMix") or {}
     resolution_upgrade = None
-    if replay_mix and daily_mix != replay_mix:
+    if daily_mix and replay_mix and daily_mix != replay_mix:
         resolution_upgrade = (
             f"resolution changed between runs: minute sessions "
             f"{daily_mix.get('minute', 0)} → {replay_mix.get('minute', 0)}, "

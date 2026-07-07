@@ -494,10 +494,18 @@ A finest-mode run can mix bar resolutions session by session. The rules
   unchanged: it resamples recorded per-session returns, and attribution
   belongs to the split stage.
 - **Resolution upgrades are named, never silent.** When a receipt compares
-  two runs whose per-session resolution mixes differ, the comparison
-  carries "resolution changed between runs: minute sessions A → B … —
-  differences may be a resolution upgrade, not a market change" (the
-  FX.1 record powering the D3 receipts loop).
+  two runs that BOTH carry per-session resolution mixes and the mixes
+  differ, the comparison carries "resolution changed between runs: minute
+  sessions A → B … — differences may be a resolution upgrade, not a
+  market change" (the FX.1 record powering the D3 receipts loop). A
+  daily parent carries no mix — ordinary daily-vs-5min receipts stay
+  silent (review-hardened: the note must never fire a false explanation).
+- **Bucket `pl` vs `sharpe` can diverge for boundary-straddlers.** A
+  position opened on a 5-min session and closed on a minute session
+  accrues its P&L across BOTH subsets' marks, while its closed-trade
+  count and realized `pl` land on the close day. The flip test is
+  mark-to-market and internally consistent; the `trades` floor is an
+  evidence count, not a P&L attribution.
 - **High trade counts are never trust.** 0DTE scanning runs produce many
   trades; the regime/DSR/coverage machinery judges them unchanged — count
   clears floors, it never substitutes for regimes or robustness.

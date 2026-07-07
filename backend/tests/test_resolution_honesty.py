@@ -172,6 +172,37 @@ class TestTrustCap:
         assert trust.label != "insufficient_evidence"
 
 
+class TestRefusalHeadline:
+    def test_resolution_cap_names_the_artifact_not_the_sample(self) -> None:
+        # review MAJOR pinned: a resolution-cap-only refusal must never
+        # print "too few trades" on a thick sample — both voices name the
+        # granularity artifact
+        from app.honesty.report import Trust
+        from app.honesty.verdict import retail_template_verdict
+
+        r = _minimal_report()
+        r.resolution_split = ResolutionSplit(
+            meaningful=True, judged=True, full_sharpe=0.9,
+            five_min=ResolutionBucket(sessions=2888, trades=900, pl=-500.0,
+                                      sharpe=-0.4),
+            minute=ResolutionBucket(sessions=91, trades=200, pl=2_000.0,
+                                    sharpe=1.5),
+            sign_flip=True,
+        )
+        survived = {"oos": True, "walk_forward": False, "monte_carlo": True,
+                    "sensitivity": True, "sample": True}
+        r.trust = Trust(level=None, label="insufficient_evidence",
+                        survived=survived, survived_count=4,
+                        reasons=["the edge lives in the minute-resolution "
+                                 "slice"])
+        quant = template_verdict(r)
+        assert "minute-resolution" in quant.headline
+        assert "too few" not in quant.headline.lower()
+        retail = retail_template_verdict(r)
+        assert "lens" in retail.headline or "measure" in retail.headline
+        assert "too few" not in retail.headline.lower()
+
+
 class TestWalkForwardShares:
     def test_folds_disclose_minute_share(self) -> None:
         # 126 sessions → 3 folds of 42; the last 42 sessions ran the minute
@@ -211,7 +242,7 @@ class TestVerdictDisclosure:
         text = template_verdict(r)
         line = next((c for c in text.caveats if "Mixed resolution" in c), None)
         assert line is not None
-        assert "91 sessions" in line and "2,888" in line or "2888" in line
+        assert "91 sessions" in line and ("2,888" in line or "2888" in line)
         # every number in the caveat exists in the report (guardrail #4)
         allowed = allowed_numbers(r)
         assert 91.0 in allowed and 2888.0 in allowed
@@ -255,5 +286,20 @@ class TestReceiptUpgrade:
             "rid", {"metrics": {}, "resolutionMix": {"minute": 43}},
             {"metrics": {}},
             {"fillSources": {}, "resolutionMix": {"minute": 43}},
+            "2026-07-07T00:00:00Z")
+        assert receipt["resolution_upgrade"] is None
+
+    def test_production_shape_daily_parent_never_fires(self) -> None:
+        # review BLOCKER pinned: a DAILY parent's stats carry no
+        # resolutionMix; the replay always carries a five_min mix — the
+        # note must stay silent (no false "upgrade" on ordinary receipts)
+        from app.api.replay import build_receipt
+
+        receipt = build_receipt(
+            "rid",
+            {"metrics": {"sharpe": 1.0}},  # real daily stats: no mix key
+            {"metrics": {"sharpe": 0.9}},
+            {"fillSources": {"ivol_5min": 86},
+             "resolutionMix": {"five_min": 43}},
             "2026-07-07T00:00:00Z")
         assert receipt["resolution_upgrade"] is None

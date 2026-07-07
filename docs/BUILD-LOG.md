@@ -1326,3 +1326,21 @@ payload additive resolutionSplit; ReceiptBanner upgrade line. 381 tests
 (+13 hand-computed: bucket math to the cent, flip cap, floors disarm,
 optimistic-direction-only, inert paths, fold shares, caveat grounding,
 receipt annotation).
+REVIEW (independent agent, same session): 1 BLOCKER + 1 MAJOR + 4 MINOR +
+3 NIT, ALL FIXED — (1) BLOCKER: the receipt "resolution upgrade" note
+would have fired FALSELY on every production receipt (daily parents carry
+no mix; replays always carry five_min → {} != mix always true) while the
+genuine case was unreachable; now requires BOTH runs to carry mixes
+(silent on ordinary receipts, pinned with production-shape test) +
+resolutionMix rides the stats bundle so future finest-parent comparisons
+can fire; (2) MAJOR: a resolution-cap-only refusal fell to the sample
+headline ("too few trades" on a 900-trade run — a false statement from
+the honesty floor); both template voices gained a headline arm naming the
+granularity artifact (pinned); (3) None-sharpe format guard in the cap
+reason; (4) first-session gap day counted in eod_fallback; (5) trade-
+attribution comment rewritten honestly (boundary-straddler pl-vs-sharpe
+divergence + HONESTY.md note); (6) retail caveat no longer asserts
+temporal ordering the data doesn't guarantee; (7) dead-assertion
+precedence fixed; (8) sub-half-percent fold shares no longer render "0%
+minute"; (9) retail voice gained the fold caveat. Stats-bundle contract
+test updated (+resolutionMix, quotable by grounded Q&A). 383 tests.

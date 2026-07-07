@@ -73,10 +73,14 @@ def compute_trust(
     if resolution is not None and resolution.caps_trust:
         full = resolution.full_sharpe
         sub = resolution.five_min.sharpe
+        # sign_flip guarantees both non-None today; guard anyway — the
+        # model permits the invalid state and this function takes the model
+        full_s = f"{full:.2f}" if full is not None else "n/a"
+        sub_s = f"{sub:.2f}" if sub is not None else "n/a"
         cap_reasons.append(
             "the edge lives in the minute-resolution slice — it flips sign "
-            f"on the 5-min-only sub-window (Sharpe {full:.2f} full vs "
-            f"{sub:.2f} on {resolution.five_min.sessions} 5-min sessions): "
+            f"on the 5-min-only sub-window (Sharpe {full_s} full vs "
+            f"{sub_s} on {resolution.five_min.sessions} 5-min sessions): "
             "a data artifact until proven otherwise"
         )
     if coverage is not None and coverage.materially_short:
