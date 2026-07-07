@@ -8,8 +8,11 @@ prove (guardrail #6).
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,8 +38,18 @@ CHAIN_QUALITY_FIELDS = [
     "volume", "open_interest",
 ]
 
-_CACHE: dict[str, Any] = {"at": 0.0, "payload": None}
+# (built_at, payload) written as ONE tuple — readers can never pair a fresh
+# timestamp with an older payload the way two separate keys could
+_CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {"snap": (0.0, None)}
 CACHE_SECONDS = 300
+# past TTL but under this ceiling, answer from cache while ONE background
+# thread rebuilds — the numbers are real computed coverage with their age
+# disclosed by generated_at, and the rebuild lands within seconds. Past the
+# ceiling (long idle) build in the foreground: a very old recorder heartbeat
+# must never be presented as current.
+STALE_SERVE_SECONDS = 900
+_BUILD_WORKERS = 16
+_build_lock = threading.Lock()
 
 
 def _range(dates: list[str]) -> dict[str, Any] | None:
@@ -161,37 +174,95 @@ def _chain_quality(ticker: str) -> dict[str, Any] | None:
     return out
 
 
-def _ivol_analytics_ranges(s3: Any) -> dict[str, Any]:
-    """IVX / HV year-file coverage per ticker (cheap listings)."""
-    out: dict[str, Any] = {}
-    for ticker in TICKERS:
-        entry: dict[str, Any] = {}
-        for name in ("ivx", "hv"):
-            years = sorted(
-                {
-                    m.group(1)
-                    for k in r2.list_keys(s3, f"reference/ivol/{name}/ticker={ticker}/")
-                    if (m := re.search(r"year=(\d{4})", k))
-                }
-            )
-            entry[name] = (
-                {"years": len(years), "first": years[0], "last": years[-1]} if years else None
-            )
-        out[ticker] = entry
-    return out
-
+def _ivol_year_range(keys: list[str]) -> dict[str, Any] | None:
+    """IVX / HV year-file coverage from an already-fetched listing."""
+    years = sorted({m.group(1) for k in keys if (m := re.search(r"year=(\d{4})", k))})
+    return {"years": len(years), "first": years[0], "last": years[-1]} if years else None
 
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
 
-    eod: dict[str, dict[str, Any]] = {}
-    for source in EOD_SOURCES:
-        eod[source] = {}
-        for ticker in TICKERS:
-            eod[source][ticker] = _range(r2.list_chain_dates(s3, source, ticker))
+    # Every independent lake read goes through one pool — the identical
+    # reads producing the identical numbers, just concurrent. ~40 sequential
+    # R2 round-trips was the whole reason the Observatory's first paint took
+    # seconds. boto3 clients are thread-safe; all tasks are read-only.
+    with ThreadPoolExecutor(max_workers=_BUILD_WORKERS) as pool:
+        eod_f = {
+            (src, t): pool.submit(r2.list_chain_dates, s3, src, t)
+            for src in EOD_SOURCES
+            for t in TICKERS
+        }
+        dolthub_f = pool.submit(r2.get_json, s3, "state/dolthub_backfill.json", {})
+        minute_f = {
+            t: pool.submit(
+                r2.list_date_prefixes, s3, f"options_minute/source=alpaca/ticker={t}/"
+            )
+            for t in TICKERS
+        }
+        intraday_f = {
+            (src, t): pool.submit(
+                r2.list_date_prefixes, s3, f"options_intraday/source={src}/ticker={t}/"
+            )
+            for src in INTRADAY_SOURCES
+            for t in TICKERS
+        }
+        targets = [(t, f"underlying/ticker={t}/daily.parquet") for t in TICKERS]
+        targets.append(("VIX", "reference/vix_daily.parquet"))
+        underlying_f = {sym: pool.submit(r2.get_parquet, s3, key) for sym, key in targets}
+        ivol_f = {
+            (t, name): pool.submit(r2.list_keys, s3, f"reference/ivol/{name}/ticker={t}/")
+            for t in TICKERS
+            for name in ("ivx", "hv")
+        }
+        quality_f = pool.submit(r2.get_json, s3, "state/quality_flags.json", {})
+        priorities_f = pool.submit(r2.get_json, s3, "state/collection_priorities.json", None)
+        new_sources_f = pool.submit(r2.get_json, s3, "state/source_coverage.json", None)
+        resolution_f = {t: pool.submit(resolution.summary, s3, t) for t in TICKERS}
+        chain_quality_f = {t: pool.submit(_chain_quality, t) for t in TICKERS}
 
-    dolthub_state = r2.get_json(s3, "state/dolthub_backfill.json", {})
+        intraday: dict[str, dict[str, Any]] = {
+            src: {t: _range(intraday_f[(src, t)].result()) for t in TICKERS}
+            for src in INTRADAY_SOURCES
+        }
+        # dependent read: the newest snapshot under the latest cboe date prefix
+        snap_f = {
+            t: pool.submit(
+                _latest_snapshot_ts, s3, "cboe_delayed", t,
+                intraday_f[("cboe_delayed", t)].result(),
+            )
+            for t in TICKERS
+            if intraday["cboe_delayed"][t]
+        }
+        for t, fut in snap_f.items():
+            intraday["cboe_delayed"][t]["last_snapshot_ts"] = fut.result()
+
+        eod: dict[str, dict[str, Any]] = {
+            src: {t: _range(eod_f[(src, t)].result()) for t in TICKERS} for src in EOD_SOURCES
+        }
+        minute = {t: _range(minute_f[t].result()) for t in TICKERS}
+        underlying: dict[str, Any] = {}
+        for symbol, _key in targets:
+            df = underlying_f[symbol].result()
+            if df is None or df.empty:
+                underlying[symbol] = None
+            else:
+                underlying[symbol] = {
+                    "rows": int(len(df)),
+                    "first": str(df["date"].min().date()),
+                    "last": str(df["date"].max().date()),
+                }
+        ivol_analytics = {
+            t: {name: _ivol_year_range(ivol_f[(t, name)].result()) for name in ("ivx", "hv")}
+            for t in TICKERS
+        }
+        chain_quality = {t: chain_quality_f[t].result() for t in TICKERS}
+        resolution_mix = {t: resolution_f[t].result() for t in TICKERS}
+        dolthub_state = dolthub_f.result()
+        quality = quality_f.result()
+        collection_priorities = priorities_f.result()
+        new_sources = new_sources_f.result()
+
     verified = sorted(dolthub_state.get("done", []))
     if eod["dolthub"].get("SPY") and verified:
         # the lake's logical view excludes quarantined sessions
@@ -201,38 +272,6 @@ def build_coverage() -> dict[str, Any]:
             "last": verified[-1],
             "quarantined": _quarantined_count(dolthub_state),
         }
-
-    minute: dict[str, Any] = {}
-    for ticker in TICKERS:
-        minute[ticker] = _range(
-            r2.list_date_prefixes(s3, f"options_minute/source=alpaca/ticker={ticker}/")
-        )
-
-    intraday: dict[str, dict[str, Any]] = {}
-    for source in INTRADAY_SOURCES:
-        intraday[source] = {}
-        for ticker in TICKERS:
-            dates = r2.list_date_prefixes(
-                s3, f"options_intraday/source={source}/ticker={ticker}/"
-            )
-            entry = _range(dates)
-            if entry and source == "cboe_delayed":
-                entry["last_snapshot_ts"] = _latest_snapshot_ts(s3, source, ticker, dates)
-            intraday[source][ticker] = entry
-
-    underlying: dict[str, Any] = {}
-    targets = [(t, f"underlying/ticker={t}/daily.parquet") for t in TICKERS]
-    targets.append(("VIX", "reference/vix_daily.parquet"))
-    for symbol, key in targets:
-        df = r2.get_parquet(s3, key)
-        if df is None or df.empty:
-            underlying[symbol] = None
-        else:
-            underlying[symbol] = {
-                "rows": int(len(df)),
-                "first": str(df["date"].min().date()),
-                "last": str(df["date"].max().date()),
-            }
 
     # the EOD record: nightly Yahoo snapshots (source of record per the
     # DECIDED block in DATA-PIPELINE.md)
@@ -257,13 +296,13 @@ def build_coverage() -> dict[str, Any]:
         "minute_bars": minute,
         "intraday": intraday,
         "underlying": underlying,
-        "chain_quality": {t: _chain_quality(t) for t in TICKERS},
-        "ivol_analytics": _ivol_analytics_ranges(s3),
+        "chain_quality": chain_quality,
+        "ivol_analytics": ivol_analytics,
         "intraday_slice": INTRADAY_SLICE_NOTE,
-        "quality": r2.get_json(s3, "state/quality_flags.json", {}),
+        "quality": quality,
         # D3d: the weekly demand ranking (build_priorities.py) — what the
         # collectors should want next, shown as the "collection wants" line
-        "collection_priorities": r2.get_json(s3, "state/collection_priorities.json", None),
+        "collection_priorities": collection_priorities,
         "dolthub": {
             "verified_sessions": len(verified),
             "quarantined": _quarantined_count(dolthub_state),
@@ -274,8 +313,8 @@ def build_coverage() -> dict[str, Any]:
         # Both are collector-built artifacts (state/resolution_map/*,
         # state/source_coverage.json) — cheap reads, honest None until the
         # ledger has run. Additive keys only; nothing above changes shape.
-        "resolution_mix": {t: resolution.summary(s3, t) for t in TICKERS},
-        "new_sources": r2.get_json(s3, "state/source_coverage.json", None),
+        "resolution_mix": resolution_mix,
+        "new_sources": new_sources,
         "blind_spots": _blind_spots(dolthub_state, minute),
         "sources_status": {
             "yahoo_eod": bool(eod["yahoo"].get("SPY")),
@@ -287,12 +326,50 @@ def build_coverage() -> dict[str, Any]:
     }
 
 
+def _refresh_in_background() -> None:
+    """Rebuild the cache off the request path; the lock keeps it to ONE
+    rebuild at a time (a stampede of refresh threads is exactly the memory-
+    concurrency class of bug this codebase has been burned by)."""
+    if not _build_lock.acquire(blocking=False):
+        return  # a rebuild is already in flight
+
+    def _run() -> None:
+        try:
+            payload = build_coverage()
+            _CACHE["snap"] = (time.time(), payload)
+        except Exception:  # noqa: BLE001 — stale-but-real keeps serving
+            logging.getLogger("coverage").exception("background coverage rebuild failed")
+        finally:
+            _build_lock.release()
+
+    threading.Thread(target=_run, name="coverage-refresh", daemon=True).start()
+
+
 def coverage_cached() -> dict[str, Any]:
-    if _CACHE["payload"] is not None and time.time() - _CACHE["at"] < CACHE_SECONDS:
-        return _CACHE["payload"]  # type: ignore[no-any-return]
-    payload = build_coverage()
-    _CACHE.update(at=time.time(), payload=payload)
-    return payload
+    built_at, payload = _CACHE["snap"]
+    age = time.time() - built_at
+    if payload is not None and age < CACHE_SECONDS:
+        return payload
+    if payload is not None and age < CACHE_SECONDS + STALE_SERVE_SECONDS:
+        _refresh_in_background()
+        return payload
+    # nothing servable — build in the foreground, single-flight
+    with _build_lock:
+        built_at, payload = _CACHE["snap"]
+        if payload is not None and time.time() - built_at < CACHE_SECONDS:
+            return payload
+        payload = build_coverage()
+        _CACHE["snap"] = (time.time(), payload)
+        return payload
+
+
+def warm_coverage() -> None:
+    """Boot prewarm (main.py runs this in a daemon thread) so the first
+    Observatory visit after a deploy answers from memory."""
+    try:
+        coverage_cached()
+    except Exception:  # noqa: BLE001 — no creds / empty lake: routes report it
+        pass
 
 
 def underlying_series(ticker: str, days: int) -> list[dict[str, Any]]:

@@ -16,10 +16,10 @@
  * screen, and nothing runs on an unconfirmed spec.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 
-import { getBars } from "@/lib/api";
+import { getBars, prefetchBars } from "@/lib/api";
 import type { Bar, SpecDraft, Structure, Ticker } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
@@ -169,6 +169,46 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
 
   const inference = useMemo(() => inferStructure(pins, bars), [pins, bars]);
 
+  // keep all three tickers' default views warm the moment chart mode opens,
+  // so a SPY→QQQ→IWM switch swaps data instead of waiting on the lake
+  useEffect(() => {
+    prefetchBars();
+  }, []);
+
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  // directional slide, armed on the ticker click and fired when the DESTINATION
+  // ticker's bars land — tagging the target keeps a rapid multi-switch or an
+  // unrelated buffer change (paging, live poll) from consuming the slide
+  const pendingSlideRef = useRef<{ dir: "left" | "right"; target: Ticker } | null>(null);
+
+  function switchTicker(next: Ticker) {
+    if (next === ticker) return;
+    // stepping right along SPY→QQQ→IWM enters from the right; stepping
+    // back enters from the left (mirrors the tab order)
+    pendingSlideRef.current = {
+      dir: TICKERS.indexOf(next) > TICKERS.indexOf(ticker) ? "right" : "left",
+      target: next,
+    };
+    setTicker(next);
+    clearPins();
+  }
+
+  function handleDataChange(newBars: Bar[]) {
+    setBars(newBars);
+    const pending = pendingSlideRef.current;
+    if (!pending || pending.target !== ticker) return;
+    pendingSlideRef.current = null;
+    const el = stageRef.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate(
+      [
+        { transform: `translateX(${pending.dir === "right" ? 44 : -44}px)`, opacity: 0.25 },
+        { transform: "translateX(0)", opacity: 1 },
+      ],
+      { duration: 280, easing: "cubic-bezier(.22,.61,.36,1)" },
+    );
+  }
+
   function handleBarClick(t: string, close: number) {
     if (pending) {
       if (pending.a.t === t) return;
@@ -233,10 +273,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
           {TICKERS.map((t) => (
             <button
               key={t}
-              onClick={() => {
-                setTicker(t);
-                clearPins();
-              }}
+              onClick={() => switchTicker(t)}
               className={clsx(
                 "rounded-[8px] px-3.5 py-1.5 font-mono text-[14px] font-semibold",
                 ticker === t ? "bg-raised-3 text-ink" : "text-ink-4 hover:text-ink-3",
@@ -273,14 +310,18 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
         </button>
       </div>
 
-      <MarketChart
-        ticker={ticker}
-        pinMode
-        pins={pins}
-        onBarClick={handleBarClick}
-        onViewChange={clearPins}
-        onDataChange={setBars}
-      />
+      <div className="overflow-hidden">
+        <div ref={stageRef}>
+          <MarketChart
+            ticker={ticker}
+            pinMode
+            pins={pins}
+            onBarClick={handleBarClick}
+            onViewChange={clearPins}
+            onDataChange={handleDataChange}
+          />
+        </div>
+      </div>
 
       <div className="mx-0.5 mb-1 mt-2.5 font-mono text-[13px] text-trust">{pendingNote}</div>
 

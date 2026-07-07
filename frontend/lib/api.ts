@@ -38,8 +38,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+// ONE client-side promise cache for GET payloads, keyed by URL with a TTL
+// per call site. `fresh` bypasses the read but still stores the new promise
+// so concurrent followers share it. Failures are never cached. Bounded:
+// paging URLs are unique and would otherwise pile up for the session.
+const promiseCache = new Map<string, { t: number; p: Promise<unknown> }>();
+const PROMISE_CACHE_MAX = 64;
+
+function cachedRequest<T>(url: string, ttlMs: number, fresh = false): Promise<T> {
+  const hit = promiseCache.get(url);
+  if (!fresh && hit && Date.now() - hit.t < ttlMs) return hit.p as Promise<T>;
+  if (promiseCache.size >= PROMISE_CACHE_MAX) {
+    let oldest: string | null = null;
+    let oldestT = Infinity;
+    promiseCache.forEach((v, k) => {
+      if (v.t < oldestT) {
+        oldestT = v.t;
+        oldest = k;
+      }
+    });
+    if (oldest) promiseCache.delete(oldest);
+  }
+  const p = request<T>(url);
+  promiseCache.set(url, { t: Date.now(), p });
+  p.catch(() => promiseCache.delete(url));
+  return p;
+}
+
+// the composer fetches coverage on mount; a short client cache lets the
+// Data Observatory reuse that same payload and paint instantly on
+// navigation instead of re-reading the lake (the backend caches 300s
+// anyway — this adds no staleness a fresh request wouldn't also have)
+const COVERAGE_CACHE_TTL_MS = 60_000;
+
 export function getCoverage(): Promise<CoveragePayload> {
-  return request<CoveragePayload>("/api/data/coverage");
+  return cachedRequest<CoveragePayload>("/api/data/coverage", COVERAGE_CACHE_TTL_MS);
 }
 
 /** Pre-run window options: real session counts + measured time estimates. */
@@ -55,7 +88,6 @@ export function getUnderlying(ticker: string, days = 240): Promise<{ series: Und
 
 // short-TTL in-flight cache so the hero can warm the chart's first fetch
 // before the user opens chart mode — the switch then renders instantly
-const barsCache = new Map<string, { t: number; p: Promise<BarsPayload> }>();
 const BARS_CACHE_TTL_MS = 60_000;
 
 export function getBars(
@@ -68,18 +100,16 @@ export function getBars(
   const params = new URLSearchParams({ interval, window, indicators: indicators.join(",") });
   if (opts?.before) params.set("before", opts.before);
   if (opts?.limit) params.set("limit", String(opts.limit));
-  const url = `/api/data/bars/${ticker}?${params}`;
-  const hit = barsCache.get(url);
-  if (hit && Date.now() - hit.t < BARS_CACHE_TTL_MS) return hit.p;
-  const p = request<BarsPayload>(url);
-  barsCache.set(url, { t: Date.now(), p });
-  p.catch(() => barsCache.delete(url)); // never cache a failure
-  return p;
+  return cachedRequest<BarsPayload>(`/api/data/bars/${ticker}?${params}`, BARS_CACHE_TTL_MS);
 }
 
-/** Warm the exact request MarketChart issues on first mount (SPY · 5m · 1w). */
+/** Warm the exact request MarketChart issues on first mount (5m · 1w) for
+ * ALL three tickers — chart mode then opens instantly and SPY→QQQ→IWM
+ * switches land on a warm cache instead of a cold lake read. */
 export function prefetchBars(): void {
-  getBars("SPY", "5m", "1w", []).catch(() => undefined);
+  for (const t of ["SPY", "QQQ", "IWM"]) {
+    getBars(t, "5m", "1w", []).catch(() => undefined);
+  }
 }
 
 export function parseText(
@@ -163,19 +193,16 @@ export function getRun(id: string): Promise<RunPayload> {
 
 // the sidebar requests the library on every navigation — cache briefly so
 // a click-around doesn't hammer the runs database
-let runsCache: { t: number; p: Promise<{ runs: RunSummary[]; demo: boolean }> } | null = null;
 const RUNS_CACHE_TTL_MS = 30_000;
 
 export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boolean }> {
   // `fresh` bypasses the cache — the library polls with it while a run
   // is in progress so the card flips to its verdict without a reload
-  if (!fresh && runsCache && Date.now() - runsCache.t < RUNS_CACHE_TTL_MS) return runsCache.p;
-  const p = request<{ runs: RunSummary[]; demo: boolean }>("/api/runs");
-  runsCache = { t: Date.now(), p };
-  p.catch(() => {
-    runsCache = null;
-  });
-  return p;
+  return cachedRequest<{ runs: RunSummary[]; demo: boolean }>(
+    "/api/runs",
+    RUNS_CACHE_TTL_MS,
+    fresh,
+  );
 }
 
 export function askRun(id: string, question: string): Promise<{ answer: string; demo: boolean }> {
