@@ -456,6 +456,11 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
       {conc?.flagged && conc.note && (
         <div className="mt-2 font-mono text-[11px] text-warn">⚠ concentration: {conc.note}</div>
       )}
+      {run.fillAudit?.error ? (
+        <div className="mt-2 font-mono text-[11px] text-warn">
+          ⚠ fill audit: {run.fillAudit.error}
+        </div>
+      ) : null}
       {run.fillAudit && !run.fillAudit.error ? (
         <div
           className="mt-2 font-mono text-[11px] text-ink-3"
@@ -471,7 +476,7 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
         </div>
       ) : null}
       <AuditButton run={run} />
-      {run.dataConfidence?.pairs?.length ? (
+      {run.dataConfidence?.pairs?.some((p) => p.agreement_rate != null) ? (
         <div
           className="mt-2 font-mono text-[11px] text-ink-3"
           title="cross-source validation over this run's window — per-pair agreement rates with their audited-share denominators; reported, never scored"
@@ -577,7 +582,12 @@ function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: bo
 function AuditButton({ run }: { run: RunPayload }) {
   const [busy, setBusy] = useState(false);
   const [kicked, setKicked] = useState(false);
-  if (run.fillAudit) return null; // audited — the line above shows it
+  // audited or refused — the lines above show it; a RUNNING marker
+  // keeps the button hidden while the engine re-run is in flight, and an
+  // error leaves the button available for retry (review #8)
+  if (run.fillAudit && !run.fillAudit.error) return null;
+  if ((run.fillAudit as { status?: string } | null)?.status === "__running__")
+    return null;
   const audit = async () => {
     setBusy(true);
     try {

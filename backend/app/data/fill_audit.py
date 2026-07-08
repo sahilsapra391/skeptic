@@ -49,27 +49,39 @@ def _fill_moment(day: str, bar_time: str | None) -> datetime | None:
 
 def audit_fills(
     fill_log: list[dict[str, Any]],
-    bar_times: dict[int, str],
     load_day: Callable[[str], pd.DataFrame | None],
 ) -> dict[str, Any]:
     """Audit structured fills against per-session Alpaca frames.
 
-    `bar_times` maps position id → the OPEN event's bar time (exits use
-    their own event times only via the same map when present — a missing
-    time degrades to a whole-session range check, disclosed by kind).
-    `load_day` returns the session's Alpaca bars (columns: expiration,
-    right, strike, minute_ts, low, high) or None."""
+    Each fill carries its OWN bar_time (stamped by the engine at the bar
+    that produced it — a CLOSE audits around the CLOSE bar, review #4);
+    a missing time degrades to a whole-session range check, disclosed by
+    kind. Fills whose SOURCE is alpaca_modeled are NEVER audited — their
+    prices were built FROM these very prints, and self-confirmation is
+    not independent verification (review #2); they count in a separate
+    self_source bucket. `load_day` returns the session's Alpaca bars
+    (columns: expiration, right, strike, minute_ts, low, high) or None."""
     counts = {"audited": 0, "within": 0, "outside": 0,
-              "no_trades": 0, "no_coverage": 0}
+              "no_trades": 0, "no_coverage": 0, "self_source": 0}
     examples: list[dict[str, Any]] = []
     day_cache: dict[str, pd.DataFrame | None] = {}
     for fill in fill_log:
+        if fill.get("source") == "alpaca_modeled":
+            counts["self_source"] += 1
+            continue
         day = str(fill["day"])
         if day not in day_cache:
-            if len(day_cache) > 30:  # bound (OOM guard)
+            # fills are chronological — lookback never hits, so a deep
+            # cache is pure resident memory (review #7): keep 2 frames,
+            # projected to the audit's columns only
+            if len(day_cache) >= 2:
                 day_cache.pop(next(iter(day_cache)))
             df = load_day(day)
             if df is not None and not df.empty:
+                keep = [c for c in ("expiration", "right", "strike",
+                                    "minute_ts", "low", "high")
+                        if c in df.columns]
+                df = df[keep]
                 df = df.assign(
                     _et=pd.to_datetime(df["minute_ts"]).dt.tz_convert(
                         "America/New_York").dt.tz_localize(None),
@@ -85,7 +97,7 @@ def audit_fills(
         rows = df[(df["_exp"] == str(fill["expiration"]))
                   & (df["right"] == fill["right"])
                   & (df["_strike"] == float(fill["strike"]))]
-        moment = _fill_moment(day, bar_times.get(int(fill["pid"])))
+        moment = _fill_moment(day, fill.get("bar_time"))
         if moment is not None and not rows.empty:
             lo_t = moment - timedelta(minutes=AUDIT_WINDOW_MIN)
             hi_t = moment + timedelta(minutes=AUDIT_WINDOW_MIN)

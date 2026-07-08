@@ -7,6 +7,7 @@ fabricated number.
 from __future__ import annotations
 
 import copy
+import logging
 import math
 from collections.abc import Callable
 from datetime import date
@@ -45,6 +46,8 @@ from app.honesty.report import (
     WalkForwardFold,
 )
 from app.models.spec import Clock, StrategySpec, StrikeMethod
+
+log = logging.getLogger("skeptic.honesty")
 
 _N = NormalDist()
 ANNUAL = math.sqrt(252)
@@ -1035,6 +1038,8 @@ def data_confidence(
                 if loaded:
                     summaries[pair] = loaded
         except Exception:
+            log.warning("data_confidence: pair artifacts unavailable "
+                        "(reported as absence)", exc_info=True)
             return None
     start = result.effective_start.isoformat()
     end = result.effective_end.isoformat()
@@ -1047,8 +1052,13 @@ def data_confidence(
         joined = sum(int(r.get("joined") or 0) for _, r in rows)
         checked = sum(int(r.get("checked") or 0) for _, r in rows)
         within = sum(int(r.get("within_band") or 0) for _, r in rows)
+        # parquet round-trips None as NaN — a NaN rate must not survive
+        # into min() or the JSON payload (review #3: allow_nan=False in
+        # the response encoder would 500 the whole run page)
         session_rates = [(d, float(r["agreement_rate"])) for d, r in rows
-                         if r.get("agreement_rate") is not None]
+                         if r.get("agreement_rate") is not None
+                         and not (isinstance(r["agreement_rate"], float)
+                                  and math.isnan(r["agreement_rate"]))]
         worst = min(session_rates, key=lambda x: x[1]) if session_rates else None
         pairs.append(PairConfidence(
             pair=pair,

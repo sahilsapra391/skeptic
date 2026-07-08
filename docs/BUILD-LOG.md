@@ -1722,3 +1722,29 @@ excluded-not-flagged; band edges both sides; expiry-total bands 5%/10%;
 day-range checks), confidence window-scoping + honest-absence, fill_log
 recording (sell entry + PT buyback), audit within/outside/no_trades/
 no_coverage/session-range degradation.
+REVIEW (independent agent, clean worktree): 2 BLOCKER + 4 MAJOR +
+6 MINOR + 3 NIT — ALL must-fixes FIXED: (1) BLOCKER: the audit re-run
+with end=None extended to TODAY'S lake — a June run audited in July
+would attribute independent verification to fills it never made → the
+re-run pins to the stored honesty report's effective window AND refuses
+on fill-count mismatch ("the lake has changed since this run");
+(2) BLOCKER: alpaca_modeled fills were audited against the prints they
+were PRICED from — self-confirmation counted as independent
+verification → excluded, disclosed self_source bucket, pinned;
+(3) MAJOR: NaN agreement_rate from checked=0 sessions would 500 the
+entire run page (allow_nan=False) → NaN-guarded; (4) MAJOR: CLOSE/ADD
+fills were audited in a window around the OPEN's bar — fabricated
+disagreement on the flagship 0DTE path → the engine stamps each
+fill_log row with ITS OWN bar time (pinned: a 14:10 close audits near
+14:10); (5) MAJOR: compare_dolthub_alpaca had no column guards — one
+malformed session would brick the nightly derive forever, and NaN
+deltas fabricated violations → guarded + excluded; (6) MAJOR: the
+audit loaded stores OUTSIDE the engine lock with no memory release —
+the exact OOM concurrency class the incident fix serialized → loads
+inside the lock + finally _release_memory. Also: in-flight guard
+(repeated POSTs 409 while running, 30-min stale takeover); audit
+day-cache bounded at 2 projected frames; failed audits DISPLAYED with
+a retry path; empty cross-source lines hidden; joined = inner-join
+count per the module contract; artifact-load failures logged;
+session-range kind pinned observable; massive double-count crash
+window documented.

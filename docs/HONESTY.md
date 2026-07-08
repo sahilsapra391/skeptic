@@ -764,9 +764,14 @@ Rules the numbers depend on (owner decisions 2026-07-08):
   own window; pairs with no overlap are omitted — a run with nothing
   audited says nothing, never a fabricated 100%.
 - **The fill audit is on-demand** (the replay-receipt mechanics): it
-  re-runs the spec deterministically (same spec + data + seed ⇒
-  identical fills) and checks every regenerated option-leg fill against
-  Alpaca minute trades — a vendor no fill price ever came from. Per
+  re-runs the spec deterministically over the ORIGINAL effective window
+  (an open-ended window would extend to today's lake and describe fills
+  the run never made — review blocker, refused with a fill-count check
+  when in-window lake drift changes the regeneration) and checks every
+  regenerated option-leg fill against Alpaca minute trades. Independence
+  has ONE exception, handled: `alpaca_modeled` fills were PRICED from
+  those very prints — they are never audited (self-confirmation is not
+  verification) and count in a disclosed `self_source` bucket. Per
   fill: within the traded range band (max($0.05, 2%)) in a ±15-minute
   window of the fill bar, degrading to the session range when no bar
   time exists (disclosed by kind). `no_trades` is honest absence, never

@@ -226,6 +226,9 @@ class TestFillLog:
         sell, buy = result.fill_log
         assert sell["action"] == "sell" and sell["price"] > buy["price"]
         assert sell["strike"] == 100.0 and sell["qty"] == 2
+        # review #4: each fill carries ITS OWN bar time
+        assert sell["bar_time"] == "09:30"
+        assert buy["bar_time"] == "09:35"
 
 
 class TestAuditFills:
@@ -236,19 +239,23 @@ class TestAuditFills:
             "low": [low], "high": [high],
         })
 
-    def _fill(self, price: float) -> dict:
-        return {"pid": 1, "day": "2025-01-06", "action": "sell",
-                "expiration": "2025-01-06", "right": "put", "strike": 100.0,
-                "qty": 2, "price": price, "source": "ivol_5min"}
+    def _fill(self, price: float, bar_time: str | None = "09:30",
+              source: str = "ivol_5min") -> dict:
+        out = {"pid": 1, "day": "2025-01-06", "action": "sell",
+               "expiration": "2025-01-06", "right": "put", "strike": 100.0,
+               "qty": 2, "price": price, "source": source}
+        if bar_time:
+            out["bar_time"] = bar_time
+        return out
 
     def test_within_traded_range(self) -> None:
-        audit = audit_fills([self._fill(2.00)], {1: "09:30"},
+        audit = audit_fills([self._fill(2.00)],
                             lambda d: self._bars(1.95, 2.05))
         assert audit["audited"] == 1 and audit["within"] == 1
         assert audit["agreement_rate"] == 1.0
 
     def test_outside_range_is_an_example(self) -> None:
-        audit = audit_fills([self._fill(3.00)], {1: "09:30"},
+        audit = audit_fills([self._fill(3.00)],
                             lambda d: self._bars(1.95, 2.05))
         assert audit["outside"] == 1
         assert audit["examples"][0]["fill_price"] == 3.0
@@ -257,15 +264,40 @@ class TestAuditFills:
     def test_no_trades_is_honest_absence(self) -> None:
         bars = self._bars(1.95, 2.05)
         bars["strike"] = 95.0  # different contract only
-        audit = audit_fills([self._fill(2.00)], {1: "09:30"}, lambda d: bars)
+        audit = audit_fills([self._fill(2.00)], lambda d: bars)
         assert audit["no_trades"] == 1 and audit["audited"] == 0
         assert audit["agreement_rate"] is None
 
     def test_no_coverage_counted_separately(self) -> None:
-        audit = audit_fills([self._fill(2.00)], {}, lambda d: None)
+        audit = audit_fills([self._fill(2.00)], lambda d: None)
         assert audit["no_coverage"] == 1
 
     def test_missing_bar_time_degrades_to_session_range(self) -> None:
-        audit = audit_fills([self._fill(2.00)], {},
+        # review #15: the kind is observable on OUTSIDE examples — a
+        # time-less fill outside the day range must say session_range
+        audit = audit_fills([self._fill(3.00, bar_time=None)],
                             lambda d: self._bars(1.95, 2.05))
-        assert audit["within"] == 1  # still audited, session-range kind
+        assert audit["outside"] == 1
+        assert audit["examples"][0]["kind"] == "session_range"
+
+    def test_modeled_fills_are_never_self_audited(self) -> None:
+        # review BLOCKER #2: alpaca_modeled prices were built FROM these
+        # prints — self-confirmation is not independent verification
+        audit = audit_fills([self._fill(2.00, source="alpaca_modeled")],
+                            lambda d: self._bars(1.95, 2.05))
+        assert audit["self_source"] == 1 and audit["audited"] == 0
+
+    def test_close_audits_around_its_own_bar(self) -> None:
+        # review MAJOR #4: a 14:10 close must be checked near 14:10 —
+        # trades exist near the open at very different prices
+        bars = pd.DataFrame({
+            "expiration": ["2025-01-06"] * 2, "right": ["put"] * 2,
+            "strike": [100.0] * 2,
+            "minute_ts": ["2025-01-06T09:33:00-05:00",
+                          "2025-01-06T14:08:00-05:00"],
+            "low": [1.95, 0.28], "high": [2.05, 0.32],
+        })
+        close_fill = self._fill(0.30, bar_time="14:10")
+        close_fill["action"] = "buy"
+        audit = audit_fills([close_fill], lambda d: bars)
+        assert audit["within"] == 1  # honest against ITS bar, not the open

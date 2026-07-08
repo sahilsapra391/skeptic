@@ -1529,6 +1529,7 @@ def run_engine(
                                 intraday_lasts, len(intraday_lasts), vwap_now,
                                 is_indicator_stamp=at_stamp)
                 events_before = len(state.trades)
+                fills_before = len(state.fill_log)
                 bar_minutes = bar.hour * 60 + bar.minute
                 bar_hhmm = bar.strftime("%H:%M")
                 past_flat = flat_minutes is not None and bar_minutes >= flat_minutes
@@ -1650,6 +1651,11 @@ def run_engine(
                     if ev.action in ("OPEN", "CLOSE", "ADD"):
                         ev.bar_time = bar_hhmm
                         ev.detail += f" · {ev.bar_time}"
+                # F7 review #4: the structured fill log gets ITS OWN bar
+                # time the same way — a CLOSE fill must be audited in a
+                # window around the CLOSE bar, never the OPEN's
+                for row in state.fill_log[fills_before:]:
+                    row["bar_time"] = bar_hhmm
                 # retire closed positions from the live book — O(open) per
                 # bar keeps every hot path bounded however many positions a
                 # scanning run mints (OOM-guard directive)

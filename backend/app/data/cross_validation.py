@@ -73,6 +73,14 @@ def compare_dolthub_alpaca(
         return None
     if spots is None or spots.empty:
         return None
+    # one malformed session must not poison the nightly derive forever
+    # (review #5) — unrecognized shape is honest absence, like every pair
+    if not {"expiration", "right", "strike", "bid", "ask", "delta",
+            "spot"}.issubset(eod.columns):
+        return None
+    if not {"expiration", "right", "strike", "minute_ts",
+            "close"}.issubset(bars.columns):
+        return None
     bars = bars.assign(
         _et=pd.to_datetime(bars["minute_ts"]).dt.tz_convert("America/New_York"))
     last = (bars.sort_values("minute_ts")
@@ -86,11 +94,17 @@ def compare_dolthub_alpaca(
     eod["expiration"] = eod["expiration"].astype(str)
     j = eod.merge(last, on=["expiration", "right", "strike"], how="left")
     two_sided = j[j["bid"].notna() & j["ask"].notna() & (j["bid"] > 0)]
-    traded = two_sided[two_sided["last_trade"].notna()].copy()
+    # joined = present in BOTH sources (the module contract, review #12);
+    # a NaN vendor delta cannot be adjusted — excluded from checked,
+    # never fabricated into a violation (review #5)
+    joined = int(two_sided["last_trade"].notna().sum())
+    traded = two_sided[two_sided["last_trade"].notna()
+                       & pd.to_numeric(two_sided["delta"],
+                                       errors="coerce").notna()].copy()
     if len(two_sided) == 0:
         return None
     if len(traded) == 0:
-        return _record(len(two_sided), 0, 0, capture_offset=0.0)
+        return _record(joined, 0, 0, capture_offset=0.0)
     spot_close = float(eod["spot"].iloc[0])
     def _spot_at(ts: Any) -> float:
         v = spots.asof(ts)
@@ -111,7 +125,7 @@ def compare_dolthub_alpaca(
                     axis=1).max(axis=1)
     inside = ((traded["cmp_price"] >= traded["bid"] - tol)
               & (traded["cmp_price"] <= traded["ask"] + tol))
-    return _record(len(two_sided), len(traded), int(inside.sum()),
+    return _record(joined, len(traded), int(inside.sum()),
                    capture_offset=round(offset, 3))
 
 

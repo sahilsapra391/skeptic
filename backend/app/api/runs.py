@@ -497,17 +497,43 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
     return {"run_id": new_id, "demo": False, "status": "queued", "parent": run_id}
 
 
+_AUDIT_RUNNING = "__running__"
+_AUDIT_STALE_MINUTES = 30
+
+
 @router.post("/runs/{run_id}/audit")
 def audit_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
     """On-demand fill audit (F7, owner decision 2026-07-08): re-run THIS
-    spec deterministically (same spec + data + seed ⇒ identical fills)
-    and check every regenerated option-leg fill against Alpaca minute
-    TRADES — a vendor no fill price ever came from. Stored like a
-    receipt; the run's verdict is never rewritten."""
+    spec deterministically over the ORIGINAL effective window and check
+    every regenerated option-leg fill against Alpaca minute TRADES — a
+    vendor no fill price came from. Stored like a receipt; the run's
+    verdict is never rewritten. Repeated POSTs while one is in flight
+    are refused (each audit is a full engine re-run behind the lock)."""
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
     with db.session() as s:
         run = s.get(db.Run, run_id)
         if run is None or run.status != "done" or not run.spec_json:
             raise HTTPException(status_code=404, detail="no completed run to audit")
+        if run.audit_json:
+            try:
+                marker = json.loads(run.audit_json)
+            except Exception:
+                marker = {}
+            if marker.get("status") == _AUDIT_RUNNING:
+                started = marker.get("started_at", "")
+                try:
+                    age_min = (_dt.now(_UTC)
+                               - _dt.fromisoformat(started)).total_seconds() / 60
+                except ValueError:
+                    age_min = _AUDIT_STALE_MINUTES + 1
+                if age_min < _AUDIT_STALE_MINUTES:
+                    raise HTTPException(status_code=409,
+                                        detail="audit already running")
+        run.audit_json = json.dumps({"status": _AUDIT_RUNNING,
+                                     "started_at": _dt.now(_UTC).isoformat()})
+        s.commit()
     tasks.add_task(_execute_audit, run_id)
     return {"run_id": run_id, "demo": False, "status": "auditing"}
 
@@ -521,25 +547,59 @@ def _execute_audit(run_id: str) -> None:
             run = s.get(db.Run, run_id)
             if run is None or not run.spec_json:
                 return
-            spec = StrategySpec.model_validate(json.loads(run.spec_json))
+            spec_doc = json.loads(run.spec_json)
+            stats = json.loads(run.stats_json) if run.stats_json else {}
+        # review BLOCKER #1: pin the re-run to the ORIGINAL effective
+        # window — with end=None the lake's newest sessions would extend
+        # the window and the audit would describe fills the run never
+        # made. The original window lives in the stored honesty report.
+        report = stats.get("honesty_report") or {}
+        eff_start = report.get("effective_start")
+        eff_end = report.get("effective_end")
+        if eff_start:
+            spec_doc.setdefault("backtest", {})["start"] = eff_start
+        if eff_end:
+            spec_doc.setdefault("backtest", {})["end"] = eff_end
+        spec = StrategySpec.model_validate(spec_doc)
         from app.data import r2 as _r2
         from app.data.chains import load_market_store
         from app.data.fill_audit import audit_fills
         from app.engine.runner import run_backtest
 
-        store = load_market_store(spec.underlying.ticker.value)
-        intraday = None
-        if spec.backtest.clock.value != "daily":
-            from app.data.intraday import load_intraday_store
+        with _ENGINE_LOCK:  # loads AND the re-run are engine work —
+            # serialized like _execute_run (review #6: two overlapping
+            # store loads/peaks are the OOM concurrency class)
+            try:
+                store = load_market_store(spec.underlying.ticker.value)
+                intraday = None
+                if spec.backtest.clock.value != "daily":
+                    from app.data.intraday import load_intraday_store
 
-            intraday = load_intraday_store(spec.underlying.ticker.value)
-        with _ENGINE_LOCK:  # the audit re-run is engine work — serialized
-            result = run_backtest(spec, store, intraday)
-        bar_times: dict[int, str] = {
-            t.position_id: t.bar_time for t in result.trades
-            if t.action == "OPEN" and t.position_id is not None
-            and t.bar_time is not None
-        }
+                    intraday = load_intraday_store(spec.underlying.ticker.value)
+                result = run_backtest(spec, store, intraday)
+            finally:
+                _release_memory()
+        # in-window lake drift is still possible (self-healing artifacts,
+        # growing resolution maps): the regenerated run must reproduce the
+        # ORIGINAL fill count or the audit refuses — attributing
+        # independent verification to fills the run never made is the
+        # worst class of bug on this product
+        original_filled = stats.get("filled")
+        if original_filled is not None and result.filled != original_filled:
+            with db.session() as s:
+                run = s.get(db.Run, run_id)
+                if run is not None:
+                    run.audit_json = json.dumps({
+                        "error": (
+                            f"audit refused: the lake has changed since this "
+                            f"run — the deterministic re-run produced "
+                            f"{result.filled} fills vs the original "
+                            f"{original_filled}; the regenerated fills are "
+                            f"not this run's fills"),
+                        "generated_at": _dt.now(_UTC).isoformat(),
+                    })
+                    s.commit()
+            return
         ticker = spec.underlying.ticker.value
         s3 = _r2.r2_client()
 
@@ -548,7 +608,7 @@ def _execute_audit(run_id: str) -> None:
                 s3, f"options_minute/source=alpaca/ticker={ticker}"
                     f"/date={d}/bars.parquet")
 
-        audit = audit_fills(result.fill_log, bar_times, _load_day)
+        audit = audit_fills(result.fill_log, _load_day)
         audit["generated_at"] = _dt.now(_UTC).isoformat()
         audit["fills_total"] = len(result.fill_log)
         with db.session() as s:

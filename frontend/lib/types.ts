@@ -276,8 +276,6 @@ export interface RunPayload {
   /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
-  /** F7: per-pair cross-source agreement over the run's window —
-   * reported, never scored; rates travel with their denominators. */
   /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
    * time like receipts; the stored verdict is never rewritten. */
   fillAudit?: {
@@ -301,6 +299,8 @@ export interface RunPayload {
     }[];
     error?: string;
   } | null;
+  /** F7: per-pair cross-source agreement over the run's window —
+   * reported, never scored; rates travel with their denominators. */
   dataConfidence?: {
     pairs: {
       pair: string;
