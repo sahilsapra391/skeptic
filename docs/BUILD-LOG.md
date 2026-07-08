@@ -1677,3 +1677,11 @@ in HONESTY.md; (11) test counts corrected. Real-lake acceptance:
 91/91 sessions all five signals (bullish-flow 40/91, risk-on tide
 51/91); 2024-window refusal fires naming market-wide tide; tide-gated
 short put makes 18 gated fills over the covered window.
+LIVE EVAL (45 cases, post-grader-fix): 29/29 clear + 16/16 ambiguous —
+ACCEPTED, perfect score. Run 1 confirmed the review's grader prediction
+exactly (case 43 failed on the pair-matching bug while the PARSE was
+correct); run 2 passed 43 but hit an upstream OpenRouter network flake
+(case 27) + pre-existing D5d ladder nondeterminism (case 20); run 3
+clean. Cases 44/45 refuse raw NOPE and dollar thresholds offering
+sign/rank; case 42 pairs the market-wide tide with a raw put/call
+ratio; case 43's "within 1% of max pain" compiles to the ANDed pair.
