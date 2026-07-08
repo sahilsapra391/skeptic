@@ -1543,3 +1543,83 @@ DELIBERATELY partial (trigger-dial only; run-time refusal always
 guards) + shows the rank-unlock date; (8,9,10) NITs: Observatory
 session counts mirror the ivs pattern (noted), BarView test pins
 delegation (named), refusal params renamed win_start/win_end.
+
+## F5 (ENGINE-V4) — fill realism: displayed-depth disclosure (2026-07-07)
+
+WHAT: every option-leg fill now compares its quantity against the
+traded side's displayed NBBO size from the iVol 5-min record
+(bid_size/ask_size, in the lake since 2013, unused until now). OWNER
+DECISIONS: disclose first, model later (prices untouched — a price-
+impact model must be EARNED via D3d calibration; a hard gate fails the
+FX.2 pessimism test); intraday slip unchanged (no volume-proxy scaling
+without calibration evidence); Massive cross-check DEFERRED to F7
+(CORRECTED same day: the first survey probed the wrong prefix — the
+free-tier collector HAS banked QQQ/IWM contract universes + ~5.7K QQQ
+aggs under reference/massive/, stalled at ~3.6% by the 5 req/min rate:
+~34 days for the full 244K-contract universe; ramp is an ops decision).
+HOW: Quote gains bid_size/ask_size (None on EOD rows — +2 slots/quote,
+~+70MB on a full store, within the 8GB budget); intraday slice
+plumbing + CACHE_SCHEMA_VERSION 4→5 (spread stats
+untouched — the #62 lesson; lazy per-session rebuild; NOTE the version
+is shared with the FX.1 1-minute underlying frame cache, so those
+frames also rebuild once — wasteful but safe, disclosed); _record_leg_fill
+gains (action, qty) → counts fills_depth_known/fills_beyond_depth and
+returns the trade-log note; all three fill sites (entry legs by side,
+ladder adds, quote-priced closes by close-side) thread notes into
+OPEN/ADD/CLOSE details; settlements honestly carry nothing;
+LiquidityProfile + payload gain depth_known_share/beyond_depth_share
+with a caveat note on ANY exceedance; results-view liquidity line shows
+the beyond-depth share. NO parser change — no eval gate this chunk.
+TESTS: 10 new (465 total green) — within/exact-boundary/beyond
+counting, traded-side correctness (thin ask doesn't flag a short
+entry; the PT buyback against ask_size 3 does), missing sizes stay
+unknown, prices identical thin-vs-deep (the disclosure-only pin),
+daily clock carries zero depth (digest guarantee), profile shares +
+note, unknown→None not zero.
+REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
+2 MINOR + 4 NIT — (1) MAJOR FIXED: the disclosure note's raw counts
+("15 of 228") existed only inside a STRING — the grounding harvester
+would falsely reject any verdict/Q&A echoing the disclosure's own
+numbers past the counting allowance (the WF-fold latent class) →
+fills_depth_known/fills_beyond_depth are now numeric LiquidityProfile
+fields, pinned (harvest-set test); (2) FIXED: opening-bar rung fills
+fold into the basket OPEN event, so their depth notes now travel back
+from _fire_rungs — a beyond-depth FIRST rung is named, not just
+counted; (3) FIXED: disclosed that CACHE_SCHEMA_VERSION is shared with
+the FX.1 1-minute und-frame cache (those rebuild once too — wasteful
+but safe); (4) frontend never renders a confusing "0%" (shows "<1%"),
+names the denominator, tooltip explains the semantics; (5) action/qty
+are now REQUIRED params (no silent depth-unknown default) and the
+entry site reuses fills.open_action; (6) negative vendor sizes clamp
+to None (garbage would count as depth-known with an automatic
+exceedance); (7) denominator named on the surface. Real-lake
+acceptance: June→July 0DTE cycling seller, 10 contracts — 249 leg
+fills, 228 depth-known (92%), 15 beyond displayed depth (6.6%), trade
+log naming e.g. "qty 10 > ask size 1" on a buyback vs displayed 1.
+MASSIVE CORRECTION + DECISION (same session): the survey's "zero data"
+was a wrong-prefix probe — reference/massive/ holds QQQ/IWM contract
+universes (157,310/86,696) + 5,702 QQQ aggs, stalled at 3.6% by the
+free tier's 5 req/min (~33 days for the census). Owner chose the FREE
+pruned crawl ($0): prioritize ATM-at-expiry contracts overlapping the
+iVol short-DTE slice, resumable, census continues behind it. (Paid
+alternative was one Options Starter month, verified $29/mo unlimited
+calls — declined.)
+DELTA REVIEW (independent agent, clean worktree of the PR head — the
+two commits added AFTER the first review: 59ea097 review-fixes +
+1a0d0e1 pruned crawl; run because the every-PR-reviewed rule covers
+commits pushed post-review): MERGE-READY, 0 BLOCKER + 0 MAJOR +
+2 MINOR + 4 NIT. Verified: the grounding fix is real (harvest traced),
+_fire_rungs' new return breaks no caller, the crawl permutation drops
+NOTHING (exact partition), resumability + periodic flush intact, zero
+new API calls, deterministic ordering, ±$8 band == the iVol slice
+constant, docs math checks. Fixed on the spot: (1) MINOR — one
+malformed date row in the underlying parquet crashed the prioritizer
+(NaT is not None) instead of falling back to census order →
+pd.notna(day); (2) MINOR — "aggregates complete" logged after every
+phase SEGMENT (a 4%-done band read as done on a ~34-day crawl) → the
+segment log now states banked/total; (3) NIT — the band ETA quoted the
+default rate even when --rate overrode it; (4,5) race-artifact dedup:
+the duplicated grounding test and the duplicated review paragraph
+removed. Deferred with a note: exhausted-retry contracts are appended
+to aggs_done and never retried (pre-existing; costlier now that the
+ATM band goes first — F7 follow-up).

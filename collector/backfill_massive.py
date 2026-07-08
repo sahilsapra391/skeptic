@@ -163,19 +163,104 @@ def enumerate_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
         log.info("%s: %d contracts enumerated", t, len(symbols))
 
 
+# ------------------------------------------------------------ priority
+_OCC_RE = None
+_atm_flag: dict[str, bool] = {}  # symbol → in the ATM-at-expiry band
+
+
+def _parse_occ(sym: str):
+    """O:QQQ240708C00408000 → (expiry date, strike). None when unparseable."""
+    global _OCC_RE
+    import re
+    from datetime import date as _date
+    if _OCC_RE is None:
+        _OCC_RE = re.compile(r"^O:[A-Z]+(\d{2})(\d{2})(\d{2})[CP](\d{8})$")
+    m = _OCC_RE.match(sym)
+    if not m:
+        return None
+    yy, mm, dd, k = m.groups()
+    try:
+        return _date(2000 + int(yy), int(mm), int(dd)), int(k) / 1000.0
+    except ValueError:
+        return None
+
+
+def _prioritize(s3, ticker: str, todo: list[str],
+                atm_window: float) -> list[str]:
+    """Owner decision 2026-07-07 (F5, $0 ramp): crawl ATM-at-expiry
+    contracts FIRST — the ones whose final trading days overlap the iVol
+    short-DTE ATM slice, i.e. the rows F7's cross-source validation will
+    actually join on — newest expiries first within each class. The rest
+    of the census follows behind at the same 5/min; nothing is dropped,
+    only reordered (the state file keeps every symbol resumable)."""
+    from collect import r2_get_parquet
+
+    closes: dict = {}
+    und = r2_get_parquet(s3, f"underlying/ticker={ticker}/daily.parquet")
+    if und is not None and not und.empty and {"date", "close"} <= set(und.columns):
+        d = pd.to_datetime(und["date"], errors="coerce").dt.date
+        c = pd.to_numeric(und["close"], errors="coerce")
+        closes = {day: float(v) for day, v in zip(d, c)
+                  if pd.notna(day) and pd.notna(v)}
+    if not closes:
+        log.warning("%s: no underlying closes — crawling unordered", ticker)
+        return todo
+    close_days = sorted(closes)
+
+    import bisect
+
+    def _key(sym: str):
+        parsed = _parse_occ(sym)
+        if parsed is None:
+            return (2, 0)
+        expiry, strike = parsed
+        i = bisect.bisect_right(close_days, expiry)
+        if i == 0:
+            return (2, 0)
+        ref = closes[close_days[i - 1]]  # close at/nearest before expiry
+        atm = abs(strike - ref) <= atm_window
+        return (0 if atm else 1, -expiry.toordinal())
+
+    ordered = sorted(todo, key=_key)
+    for sym in ordered:
+        _atm_flag[sym] = _key(sym)[0] == 0
+    n_atm = sum(1 for sym in ordered if _atm_flag[sym])
+    log.info("%s: prioritized %d ATM-at-expiry (±$%g) of %d contracts",
+             ticker, n_atm, atm_window, len(ordered))
+    return ordered
+
+
 # ------------------------------------------------------------ aggregates
-def pull_aggs(s3, state: dict, tickers: list[str], dry: bool) -> None:
+def pull_aggs(s3, state: dict, tickers: list[str], dry: bool,
+              atm_window: float = 8.0) -> None:
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=HISTORY_DAYS)
+    # two phases ACROSS tickers: every ticker's ATM-at-expiry band first,
+    # then every census remainder — otherwise ticker #1's full census
+    # (~weeks at 5/min) would starve ticker #2's high-value band
+    phases: list[tuple[str, list[str]]] = []
+    remainders: list[tuple[str, list[str]]] = []
     for t in tickers:
         universe = state["contracts"].get(t, [])
         if not universe:
             log.warning("%s: no enumerated universe — run enumerate first", t)
             continue
         done = set(state["aggs_done"].get(t, []))
-        todo = [s for s in universe if s not in done]
-        log.info("%s: %d contracts to pull (%d done) — ~%.1f h at %d/min",
-                 t, len(todo), len(done), len(todo) / max(DEFAULT_RATE, 1) / 60, DEFAULT_RATE)
+        todo = _prioritize(s3, t, [s for s in universe if s not in done],
+                           atm_window)
+        # _prioritize sorted ATM first — split at the boundary
+        split = next((i for i, sym in enumerate(todo)
+                      if not _atm_flag.get(sym, False)), len(todo))
+        phases.append((t, todo[:split]))
+        remainders.append((t, todo[split:]))
+        rate = 60.0 / _GATE.interval  # the CONFIGURED rate, not the default
+        log.info("%s: %d ATM-band + %d census contracts (%d done) — band "
+                 "~%.1f h at %.0f/min", t, split, len(todo) - split, len(done),
+                 split / max(rate, 1) / 60, rate)
+    for t, todo in phases + remainders:
+        if not todo:
+            continue
+        log.info("%s: crawling %d contracts", t, len(todo))
         for sym in todo:
             code, body = _get(f"/v2/aggs/ticker/{sym}/range/1/day/{start}/{end}",
                               {"adjusted": "true", "sort": "asc", "limit": 50000})
@@ -193,7 +278,10 @@ def pull_aggs(s3, state: dict, tickers: list[str], dry: bool) -> None:
             if _GATE.count % 25 == 0:
                 _flush(s3, state)
         _flush(s3, state)
-        log.info("%s: aggregates complete", t)
+        done_n = len(state["aggs_done"].get(t, []))
+        total_n = len(state["contracts"].get(t, []))
+        log.info("%s: segment complete — %d/%d contracts banked overall",
+                 t, done_n, total_n)
 
 
 # ------------------------------------------------------------ probe
@@ -224,6 +312,8 @@ def main() -> int:
     ap.add_argument("--tickers", default=",".join(TICKERS))
     ap.add_argument("--rate", type=int, default=DEFAULT_RATE, help="req/min (free tier ~5)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--atm-window", type=float, default=8.0,
+                    help="ATM-at-expiry priority band in dollars (F5 owner decision)")
     args = ap.parse_args()
 
     _load_dotenv()
@@ -242,7 +332,7 @@ def main() -> int:
     if args.mode in ("enumerate", "all"):
         enumerate_contracts(s3, state, tickers, args.dry_run)
     if args.mode in ("aggs", "all"):
-        pull_aggs(s3, state, tickers, args.dry_run)
+        pull_aggs(s3, state, tickers, args.dry_run, atm_window=args.atm_window)
     _flush(s3, state)
     log.info("done (mode=%s, requests=%d)", args.mode, _GATE.count)
     return 0

@@ -36,6 +36,12 @@ class Quote:
     open_interest: int | None = None
     last: float | None = None
     greeks_source: str | None = None  # "vendor" | "computed" | None
+    # F5: displayed NBBO depth in CONTRACTS (iVol 5-min record only; EOD
+    # rows carry None). Read for fill-vs-depth DISCLOSURE — never pricing
+    # (owner decision 2026-07-07: disclose first, a price-impact model must
+    # be EARNED by the D3d calibration loop later)
+    bid_size: int | None = None
+    ask_size: int | None = None
 
 
 @dataclass
@@ -135,6 +141,11 @@ class RunResult:
     fills_penalized: int = 0  # filled at OI-scaled slip above base
     fills_stressed: int = 0  # gated contracts filled at slip 1.0 (stress mode)
     fills_unknown_liquidity: int = 0  # open interest unknown at fill time
+    # F5: fill quantity vs displayed NBBO depth on the traded side —
+    # disclosure only, prices unchanged (beyond-L1 liquidity exists; a
+    # hard gate would be pessimistic in a way reality isn't — FX.2 doctrine)
+    fills_depth_known: int = 0  # fills where the traded side's size was known
+    fills_beyond_depth: int = 0  # fill qty exceeded the displayed size
     # declared clock (D2b) + per-fill provenance: how many option-leg fills
     # came from each quote record (eod_chain / ivol_5min / cboe_minute)
     clock: str = "daily"
