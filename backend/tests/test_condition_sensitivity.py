@@ -91,6 +91,48 @@ class TestConditionMutations:
         cond_names = [n for n in names if n.startswith("cond_")]
         assert len(cond_names) == 2 and len(set(cond_names)) == 2
 
+    def test_sign_test_past_the_cap_is_still_disclosed(self) -> None:
+        # review finding F8 #1: a sign gate positioned AFTER the 3-cap was
+        # silently undisclosed — the exact "absence misread as a free
+        # pass" failure. A realistic 0DTE spec: 3 real filters + a trailing
+        # gex_level sign gate.
+        spec = _spec_with([
+            {"indicator": "rsi", "operator": "<", "value": 30, "period": 14},
+            {"indicator": "vix_level", "operator": ">", "value": 20},
+            {"indicator": "realized_vol_20d", "operator": "<", "value": 25},
+            {"indicator": "gex_level", "operator": ">", "value": 0},
+        ], version=7)
+        names, note = _names(spec)
+        assert len([n for n in names if n.startswith("cond_")]) == 3
+        assert note is not None and "gex_level" in note and "sign test" in note
+
+    def test_cap_count_excludes_interleaved_sign_tests(self) -> None:
+        # [real,real,real,sign,real] → 3 swept, 1 capped (the 5th real),
+        # 1 sign disclosed — the cap count must not miscount the sign test
+        spec = _spec_with([
+            {"indicator": "rsi", "operator": "<", "value": 30, "period": 14},
+            {"indicator": "vix_level", "operator": ">", "value": 20},
+            {"indicator": "realized_vol_20d", "operator": "<", "value": 25},
+            {"indicator": "market_tide_level", "operator": ">", "value": 0},
+            {"indicator": "nope_rank_1y", "operator": ">", "value": 60},
+        ], version=7)
+        _, note = _names(spec)
+        assert note is not None
+        assert "1 further condition not swept" in note
+        assert "market_tide_level" in note and "sign test" in note
+
+    def test_three_same_indicator_names_stay_unique(self) -> None:
+        # review #2: 3 conditions sharing an indicator AND an operator must
+        # not collide into duplicate sweep names
+        spec = _spec_with([
+            {"indicator": "max_pain_distance_pct", "operator": ">", "value": 1},
+            {"indicator": "max_pain_distance_pct", "operator": ">", "value": 2},
+            {"indicator": "max_pain_distance_pct", "operator": ">", "value": 3},
+        ], version=7)
+        names, _ = _names(spec)
+        cond_names = [n for n in names if n.startswith("cond_")]
+        assert len(cond_names) == 3 and len(set(cond_names)) == 3
+
     def test_sign_and_real_threshold_mixed(self) -> None:
         spec = _spec_with([
             {"indicator": "gex_level", "operator": ">", "value": 0},   # sign
@@ -205,8 +247,9 @@ class TestSweepIntegration:
         report = run_gauntlet(_rsi_spec(48), store, run_backtest_result(store),
                               trials=1)
         recs = _recommendations(report)
+        # no sweep-name plumbing leaks into user-facing text
         for r in recs:
-            assert "%" not in r or "cond" not in r  # no "rsi 24%" mislabel
+            assert "cond_" not in r
 
 
 def run_backtest_result(store):

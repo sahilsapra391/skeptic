@@ -1784,3 +1784,18 @@ skip+disclose, rank clamp to 100, 3-condition cap disclosure, repeated-
 indicator disambiguation, mixed sign+real, unit-free labels, display-
 name strip, grid-store integration (real swept row, classified),
 recommendation never mislabels a threshold as a percent.
+REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
+2 MINOR + 1 NIT — MAJOR FIXED: a sign-test condition positioned AFTER
+the 3-cap was silently undisclosed (the loop broke before examining it,
+and the cap count excluded sign tests) — the exact "absence misread as
+a free pass" failure this feature exists to prevent, on realistic 0DTE
+specs (RSI+VIX+rvol+gex_level>0) → the loop now examines EVERY condition
+(sign tests always disclosed regardless of cap; capped-count tracks
+eligible-beyond-3 honestly), pinned with two regression fixtures.
+MINOR fixed: 3+ same-indicator+operator conditions could collide into
+duplicate sweep names → unique-name fallback (indicator → +operator →
++index), pinned; a trivially-true integration assertion replaced with a
+real cond_-leak check. NIT (rank-clamp duplicate cell at base 95)
+accepted — no correctness impact, base_index stays correct. 568 tests.
+Bit-identity confirmed by the reviewer: no engine/model files touched,
+setters mutate only deepcopies, daily-clock digests pass.

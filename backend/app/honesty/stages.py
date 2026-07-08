@@ -344,14 +344,20 @@ def _append_condition_sweeps(
     disclosure note for the conditions that were skipped or capped."""
     conds = spec.entry.conditions
     swept = 0
+    capped = 0  # eligible conditions left unswept by the 3-cap
     skipped_sign: list[str] = []
-    seen: dict[str, int] = {}
+    used_names: set[str] = set()
+    # examine EVERY condition — a sign test past the cap must still be
+    # disclosed (review finding F8 #1: silently omitting an untested gate
+    # is the "absence misread as a free pass" failure this exists to
+    # prevent), and the cost-cap count must include everything left out
     for i, cond in enumerate(conds):
-        if swept >= 3:
-            break
         if cond.value == 0:
             # a sign test (e.g. gex_level > 0) has no threshold to perturb
             skipped_sign.append(cond.indicator.value)
+            continue
+        if swept >= 3:
+            capped += 1
             continue
         is_rank = cond.indicator.value.endswith("_rank_1y") or \
             cond.indicator.value == "iv_percentile_1y"
@@ -360,10 +366,16 @@ def _append_condition_sweeps(
         if is_rank:
             vals = [round(min(100.0, max(0.0, x)), 4) for x in vals]
 
+        # unique sweep name: indicator, else +operator, else +index — two
+        # conditions can share an indicator (the max-pain band pair) and a
+        # degenerate spec can share both (review #2)
         name = cond.indicator.value
-        seen[name] = seen.get(name, 0) + 1
-        sweep_name = f"cond_{name}" if seen[name] == 1 else \
-            f"cond_{name}_{cond.operator.value}"
+        sweep_name = f"cond_{name}"
+        if sweep_name in used_names:
+            sweep_name = f"cond_{name}_{cond.operator.value}"
+        if sweep_name in used_names:
+            sweep_name = f"cond_{name}_{i}"
+        used_names.add(sweep_name)
 
         def _make_setter(idx: int) -> Setter:
             def _set(s: StrategySpec, v: float) -> None:
@@ -381,10 +393,9 @@ def _append_condition_sweeps(
             f"test{'' if len(uniq) == 1 else 's'} (threshold 0 — nothing to "
             "perturb), not swept"
         )
-    n_eligible = sum(1 for c in conds if c.value != 0)
-    if n_eligible > 3:
-        parts.append(f"{n_eligible - 3} further condition"
-                     f"{'' if n_eligible - 3 == 1 else 's'} not swept (cost cap)")
+    if capped:
+        parts.append(f"{capped} further condition"
+                     f"{'' if capped == 1 else 's'} not swept (cost cap)")
     return "; ".join(parts) or None
 
 
