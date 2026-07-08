@@ -59,8 +59,11 @@ class TestDeriveFlowRow:
         })
 
     def _max_pain(self) -> pd.DataFrame:
-        # session 2026-07-02: expired 06-30 row must be ignored; front =
-        # 07-02 (max pain 745 vs close 744.78 → +0.0295%); 07-06 not front
+        # session 2026-07-02: expired 06-30 ignored; the SAME-DAY 07-02
+        # expiry is SETTLING (not front — owner decision 2026-07-08: the
+        # value must reference the pin the trade actually faces, and the
+        # forward reference is by CALENDAR, not by data — PIT-clean);
+        # front = 07-06 (max pain 743 vs close 744.78 → −0.2390%)
         return pd.DataFrame({
             "expiry": ["2026-06-30", "2026-07-06", "2026-07-02"],
             "max_pain": [700, 743, 745],
@@ -74,7 +77,7 @@ class TestDeriveFlowRow:
         assert row["put_call_ratio"] == 0.6
         assert row["nope_eod"] == 0.6777  # the later stamp, not the larger row
         assert row["max_pain_dist_pct"] == pytest.approx(
-            (745 - 744.78) / 744.78 * 100, abs=1e-4)
+            (743 - 744.78) / 744.78 * 100, abs=1e-4)
 
     def test_missing_families_yield_none_per_signal(self) -> None:
         row = derive_flow_row(self._net_prem(), None, None, "2026-07-02")
@@ -91,11 +94,26 @@ class TestDeriveFlowRow:
         assert row["put_call_ratio"] is None
         assert row["net_premium"] == 80.0  # premium unaffected
 
-    def test_no_unexpired_expiry_is_none(self) -> None:
-        mp = pd.DataFrame({"expiry": ["2026-06-30"], "max_pain": [700],
-                           "close": [744.78]})
+    def test_no_expiry_strictly_after_is_none(self) -> None:
+        # expired AND same-day rows both fail the strictly-after rule
+        mp = pd.DataFrame({"expiry": ["2026-06-30", "2026-07-02"],
+                           "max_pain": [700, 745],
+                           "close": [744.78, 744.78]})
         row = derive_flow_row(None, None, mp, "2026-07-02")
         assert row["max_pain_dist_pct"] is None
+
+    def test_all_nan_columns_fabricate_nothing(self) -> None:
+        # review finding F2/F3 #1: an all-NaN column must yield None —
+        # "put/call ratio below 0.8" must never be True on missing data
+        df = pd.DataFrame({
+            "net_call_premium": [None, None],
+            "net_put_premium": [None, None],
+            "call_volume": [400.0, 100.0],
+            "put_volume": [None, None],
+        })
+        row = derive_flow_row(df, None, None, "2026-07-02")
+        assert row["net_premium"] is None
+        assert row["put_call_ratio"] is None
 
 
 class TestDeriveTideRow:

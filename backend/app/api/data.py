@@ -166,7 +166,12 @@ def get_estimate(
             }
         from app.data.flow_signals import load_flow_signals
 
-        net_prem, _pcr, _nope, _mpd = load_flow_signals(_r2.r2_client(), ticker)
+        # nested guard: a flow-artifact failure must not hide the dealer
+        # window computed above (review finding F2/F3 #9)
+        try:
+            net_prem, _pcr, _nope, _mpd = load_flow_signals(_r2.r2_client(), ticker)
+        except Exception:
+            net_prem = {}
         flow_dates = sorted(net_prem)
         if flow_dates:
             signal_windows["options_flow"] = {
@@ -174,10 +179,25 @@ def get_estimate(
                 "last": str(flow_dates[-1]),
                 "rank_first": (str(flow_dates[125])
                                if len(flow_dates) > 125 else None),
+                # per-ticker artifact indicators ONLY — market tide gets
+                # its own exact window below (review finding F2/F3 #6)
                 "indicators": ["net_premium_level", "net_premium_rank_1y",
-                               "market_tide_level", "market_tide_rank_1y",
                                "nope_level", "nope_rank_1y",
                                "put_call_flow_ratio", "max_pain_distance_pct"],
+            }
+        try:
+            from app.data.flow_signals import load_market_tide
+
+            tide_dates = sorted(load_market_tide(_r2.r2_client()))
+        except Exception:
+            tide_dates = []
+        if tide_dates:
+            signal_windows["market_tide"] = {
+                "first": str(tide_dates[0]),
+                "last": str(tide_dates[-1]),
+                "rank_first": (str(tide_dates[125])
+                               if len(tide_dates) > 125 else None),
+                "indicators": ["market_tide_level", "market_tide_rank_1y"],
             }
     except Exception:  # honest absence — the run-time refusal still guards
         signal_windows = {}

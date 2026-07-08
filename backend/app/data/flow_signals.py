@@ -22,9 +22,11 @@ Reduction conventions (probed 2026-07-07, pinned in fixtures):
                      2026-07-08: invariant to monotone rescaling; ~91
                      sessions can't even verify scale stability).
   max_pain_dist_pct  (front max_pain − close)/close × 100, where front =
-                     the nearest expiry ≥ the session (owner decision:
-                     pin dynamics ARE a front-expiry phenomenon — the
-                     convention is the concept). Unit-free % → raw
+                     the nearest expiry STRICTLY AFTER the session (owner
+                     decisions 2026-07-08: pin dynamics are a front-expiry
+                     phenomenon, and with daily expirations the same-day
+                     expiry is already SETTLING — the value must reference
+                     the pin the trade actually faces). Unit-free % → raw
                      thresholds legal.
   market_tide        the LAST row's net_call_premium − net_put_premium of
                      the market-wide cumulative tide series (probe:
@@ -72,12 +74,15 @@ def derive_flow_row(
     if net_prem is not None and not net_prem.empty and {
         "net_call_premium", "net_put_premium", "call_volume", "put_volume",
     }.issubset(net_prem.columns):
-        ncp = _num(net_prem, "net_call_premium").sum()
-        npp = _num(net_prem, "net_put_premium").sum()
+        # min_count=1: an all-NaN column must yield NaN, not a fabricated
+        # 0.0 — "put/call ratio below 0.8" must never be True on missing
+        # data (review finding F2/F3 #1)
+        ncp = _num(net_prem, "net_call_premium").sum(min_count=1)
+        npp = _num(net_prem, "net_put_premium").sum(min_count=1)
         if pd.notna(ncp) and pd.notna(npp):
             out["net_premium"] = round(float(ncp - npp), 2)
-        cv = _num(net_prem, "call_volume").sum()
-        pv = _num(net_prem, "put_volume").sum()
+        cv = _num(net_prem, "call_volume").sum(min_count=1)
+        pv = _num(net_prem, "put_volume").sum(min_count=1)
         if pd.notna(cv) and pd.notna(pv) and cv > 0:
             out["put_call_ratio"] = round(float(pv / cv), 4)
     if nope is not None and not nope.empty and {
@@ -87,7 +92,9 @@ def derive_flow_row(
         vals = _num(nope, "nope")
         ok = stamps.notna() & vals.notna()
         if ok.any():
-            last_idx = stamps[ok].idxmax()
+            # stable sort → the LAST row at the max stamp wins (a vendor
+            # correction appended at the same stamp beats the stale row)
+            last_idx = stamps[ok].sort_values(kind="stable").index[-1]
             out["nope_eod"] = round(float(vals[last_idx]), 4)
     if max_pain is not None and not max_pain.empty and {
         "expiry", "max_pain", "close",
@@ -97,7 +104,14 @@ def derive_flow_row(
         mp["_mp"] = _num(mp, "max_pain")
         mp["_close"] = _num(mp, "close")
         day = date.fromisoformat(session)
-        front = mp.loc[mp["_exp"].notna() & (mp["_exp"] >= day)
+        # FRONT = nearest expiry STRICTLY AFTER the session (owner decision
+        # 2026-07-08): with daily expirations, ">=" would reference the
+        # expiry settling TODAY — retrospective at the EOD stamp and a
+        # ghost by the time next session's bars consume it. Forward-
+        # referencing by CALENDAR (tomorrow's expiry DATE, known today;
+        # computed from today's OI at today's close) is PIT-clean — it is
+        # not forward-looking into DATA, which stays forbidden.
+        front = mp.loc[mp["_exp"].notna() & (mp["_exp"] > day)
                        & mp["_mp"].notna() & mp["_close"].notna()]
         if not front.empty:
             i = front["_exp"].idxmin()
@@ -123,7 +137,7 @@ def derive_tide_row(tide: pd.DataFrame | None) -> dict[str, float | None]:
     ok = stamps.notna() & ncp.notna() & npp.notna()
     if not ok.any():
         return out
-    last_idx = stamps[ok].idxmax()
+    last_idx = stamps[ok].sort_values(kind="stable").index[-1]
     out["market_tide"] = round(float(ncp[last_idx] - npp[last_idx]), 2)
     return out
 

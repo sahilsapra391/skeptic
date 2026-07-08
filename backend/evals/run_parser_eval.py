@@ -45,30 +45,51 @@ def _match_leg(expected: dict[str, Any], actual: dict[str, Any]) -> str | None:
     return None
 
 
-def _match_condition(expected: dict[str, Any], actual: list[dict[str, Any]]) -> str | None:
-    for cond in actual:
+def _match_condition(expected: dict[str, Any], actual: list[dict[str, Any]],
+                     used: set[int] | None = None) -> str | None:
+    """Match one expected condition against the UNCONSUMED actual
+    conditions. Two expected conditions may share an indicator (the F2/F3
+    "within 1% of max pain" pair) — a same-indicator candidate whose
+    operator/value mismatch would previously return an error even when
+    ANOTHER candidate matches (review finding F2/F3 #2); now the first
+    fully-matching candidate is consumed, and the closest mismatch is
+    reported only when none fits."""
+    first_err: str | None = None
+    for i, cond in enumerate(actual):
+        if used is not None and i in used:
+            continue
         if cond.get("indicator") != expected["indicator"]:
             continue
-        if "period" in expected and cond.get("period") != expected["period"]:
-            return f"{expected['indicator']} period {cond.get('period')} != {expected['period']}"
-        if "timeframe" in expected:
-            got_tf = cond.get("timeframe") or "daily"
-            if got_tf != expected["timeframe"]:
-                return f"{expected['indicator']} timeframe {got_tf} != {expected['timeframe']}"
-        if cond.get("operator") not in expected["operator"]:
-            return (
-                f"{expected['indicator']} operator {cond.get('operator')} "
-                f"not in {expected['operator']}"
-            )
-        if "value" in expected and not _approx(cond.get("value", 0), expected["value"], 1e-3):
-            return f"{expected['indicator']} value {cond.get('value')} != {expected['value']}"
-        if "params" in expected:
-            params = cond.get("params") or {}
-            for k, v in expected["params"].items():
-                if params.get(k) != v:
-                    return f"{expected['indicator']} params.{k} {params.get(k)} != {v}"
-        return None
-    return f"no condition with indicator {expected['indicator']}"
+        err = _condition_mismatch(expected, cond)
+        if err is None:
+            if used is not None:
+                used.add(i)
+            return None
+        if first_err is None:
+            first_err = err
+    return first_err or f"no condition with indicator {expected['indicator']}"
+
+
+def _condition_mismatch(expected: dict[str, Any], cond: dict[str, Any]) -> str | None:
+    if "period" in expected and cond.get("period") != expected["period"]:
+        return f"{expected['indicator']} period {cond.get('period')} != {expected['period']}"
+    if "timeframe" in expected:
+        got_tf = cond.get("timeframe") or "daily"
+        if got_tf != expected["timeframe"]:
+            return f"{expected['indicator']} timeframe {got_tf} != {expected['timeframe']}"
+    if cond.get("operator") not in expected["operator"]:
+        return (
+            f"{expected['indicator']} operator {cond.get('operator')} "
+            f"not in {expected['operator']}"
+        )
+    if "value" in expected and not _approx(cond.get("value", 0), expected["value"], 1e-3):
+        return f"{expected['indicator']} value {cond.get('value')} != {expected['value']}"
+    if "params" in expected:
+        params = cond.get("params") or {}
+        for k, v in expected["params"].items():
+            if params.get(k) != v:
+                return f"{expected['indicator']} params.{k} {params.get(k)} != {v}"
+    return None
 
 
 def _match_scale_in(expected: dict[str, Any], actual: dict[str, Any] | None) -> str | None:
@@ -132,8 +153,9 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
     conds = spec["entry"].get("conditions") or []
     if not expect.get("conditions") and conds:
         errs.append(f"fabricated conditions: {conds}")
+    used: set[int] = set()
     for exp_cond in expect.get("conditions", []):
-        err = _match_condition(exp_cond, conds)
+        err = _match_condition(exp_cond, conds, used)
         if err:
             errs.append(err)
 

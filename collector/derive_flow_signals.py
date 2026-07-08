@@ -78,16 +78,18 @@ def _sessions(s3, prefix: str) -> list[str]:
     return sorted(dates)
 
 
-def _have(s3, key: str) -> set[str]:
+def _load_artifact(s3, key: str) -> tuple[pd.DataFrame | None, set[str]]:
     df = r2_get_parquet(s3, key)
     if df is None or df.empty or "date" not in df.columns:
-        return set()
-    return set(df["date"].astype(str))
+        return None, set()
+    return df, set(df["date"].astype(str))
 
 
-def _append(s3, key: str, existing_have: set[str], rows: list[dict]) -> None:
+def _append(s3, key: str, existing: pd.DataFrame | None, rows: list[dict]) -> None:
+    # ONE read, threaded from _load_artifact — a transient failure on a
+    # second read would silently truncate the artifact for a day
+    # (review finding F2/F3 #3)
     fresh = pd.DataFrame(rows)
-    existing = r2_get_parquet(s3, key) if existing_have else None
     combined = (pd.concat([existing, fresh], ignore_index=True)
                 if existing is not None and not existing.empty else fresh)
     combined = (combined.drop_duplicates(subset=["date"], keep="last")
@@ -100,7 +102,7 @@ def derive_ticker(s3, ticker: str) -> int:
     net_prem_ticks is the DRIVING family (densest of the three); nope /
     max_pain gaps derive None for their columns that day."""
     key = FLOW_KEY.format(ticker=ticker)
-    have = _have(s3, key)
+    existing, have = _load_artifact(s3, key)
     todo = [d for d in _sessions(s3, f"uw/net_prem_ticks/ticker={ticker}/")
             if d not in have]
     if not todo:
@@ -122,7 +124,7 @@ def derive_ticker(s3, ticker: str) -> int:
         row["date"] = d
         rows.append(row)
     if rows:
-        _append(s3, key, have, rows)
+        _append(s3, key, existing, rows)
         log.info("%s: derived %d sessions → r2://%s", ticker, len(rows), key)
     if skipped:
         log.warning("%s: %d sessions unreadable, retry next run: %s%s",
@@ -132,7 +134,7 @@ def derive_ticker(s3, ticker: str) -> int:
 
 
 def derive_market(s3) -> int:
-    have = _have(s3, TIDE_KEY)
+    existing, have = _load_artifact(s3, TIDE_KEY)
     todo = [d for d in _sessions(s3, "uw/market_tide/") if d not in have]
     if not todo:
         log.info("market_tide: up to date (%d sessions)", len(have))
@@ -148,7 +150,7 @@ def derive_market(s3) -> int:
         row["date"] = d
         rows.append(row)
     if rows:
-        _append(s3, TIDE_KEY, have, rows)
+        _append(s3, TIDE_KEY, existing, rows)
         log.info("market_tide: derived %d sessions → r2://%s", len(rows), TIDE_KEY)
     if skipped:
         log.warning("market_tide: %d sessions unreadable, retry next run", len(skipped))

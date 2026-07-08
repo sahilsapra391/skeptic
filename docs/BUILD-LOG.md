@@ -1646,9 +1646,34 @@ incl. market-wide), _trailing_rank(126) reused, refusal registry +
 rank-unlock naming reused, spec v7 gating incl. ladders, schema + TS
 mirror (v7 before v6), estimate options_flow bound + window-tile note,
 coverage + Observatory lane (per-signal counts + market-wide tide).
-TESTS: 25 new (510 total green) — hand-computed reductions (80.0 /
-0.6 / last-stamp NOPE / +0.0295% front max pain; expired rows ignored),
+TESTS: 26 new (497 total in the clean worktree; local counts include
+another session's files) — hand-computed reductions (80.0 / 0.6 /
+last-stamp NOPE / −0.2390% FORWARD front max pain; expired AND
+same-day rows excluded),
 cumulative-last-row-wins, per-signal absence, zero-volume never
 divides, sign+raw semantics, rank floor 125/126, BarView prev-day,
 unavailable×8, v7 gating + schema parity, refusal + covered-window
 gating e2e (entries on exactly the tide-positive sessions).
+REVIEW (independent agent, clean worktree): 0 BLOCKER + 2 MAJOR +
+5 MINOR + 4 NIT — (1) MAJOR FIXED: all-NaN premium/volume columns
+fabricated 0.0 through pandas' default sum (min_count=0) — "put/call
+ratio below 0.8" would evaluate TRUE on missing data and the zeros
+would enter rank histories permanently → .sum(min_count=1) ×4, pinned;
+(2) MAJOR FIXED: the eval grader could not match TWO expected
+conditions on the same indicator (first-indicator-match returned a
+false operator error) — case 43's "within 1% of max pain" pair was
+unpassable by a PERFECT parse → _match_condition now consumes matched
+candidates, verified in both emission orders; (3) FIXED: collector
+TOCTOU double-read could truncate the artifact for a day → single
+read threaded through; (5→OWNER DECISION 2026-07-08): front expiry is
+now STRICTLY AFTER the session — with daily expirations "≥" referenced
+the expiry settling that day (retrospective at the stamp, a ghost at
+consumption; forward-by-CALENDAR is PIT-clean, forward-into-DATA stays
+forbidden); artifacts re-derived, fixture updated; (8) duplicate-stamp
+ties now last-wins (vendor corrections beat stale rows); (9) flow/tide
+guards split (chains + estimate); (10) market-wide refusal phrasing
+drops the ticker; (7) driving-family + partial-NaN caveats disclosed
+in HONESTY.md; (11) test counts corrected. Real-lake acceptance:
+91/91 sessions all five signals (bullish-flow 40/91, risk-on tide
+51/91); 2024-window refusal fires naming market-wide tide; tide-gated
+short put makes 18 gated fills over the covered window.

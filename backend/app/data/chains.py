@@ -262,9 +262,14 @@ def _build_market_store(ticker: str) -> MarketStore:
     try:
         net_premium, pcr, nope_eod, mpd = flow_signals.load_flow_signals(
             r2.r2_client(), ticker)
+    except Exception:
+        net_premium, pcr, nope_eod, mpd = {}, {}, {}, {}
+    # tide is an independent artifact — its failure must not zero the
+    # per-ticker flow series (review finding F2/F3 #9)
+    try:
         tide = flow_signals.load_market_tide(r2.r2_client())
     except Exception:
-        net_premium, pcr, nope_eod, mpd, tide = {}, {}, {}, {}, {}
+        tide = {}
 
     return MarketStore(
         ticker=ticker,
