@@ -67,6 +67,10 @@ const SPEC_HINTS: Record<string, [string, string]> = {
     "How fills are priced: buys toward the ask, sells toward the bid, plus slippage — never at mid.",
     "Trades are priced like real life: buy a bit above fair value, sell a bit below, plus costs.",
   ],
+  LADDER: [
+    "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic — dials can't edit them; re-compile to change the ladder.",
+    "The plan for buying in steps as the signal deepens, with a hard cap. To change the steps, edit your strategy text and re-compile.",
+  ],
 };
 
 const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
@@ -324,10 +328,21 @@ export function SpecScreen({
             value={draft.structure}
             onChange={(e) => set({ structure: e.target.value as Structure })}
             className={TILE_SELECT_CLS}
-            title="Position type"
+            title={
+              draft.ladder
+                ? "The scale-in ladder runs on single-leg long calls / long puts only — other structures can't carry it"
+                : "Position type"
+            }
           >
             {STRUCTURES.map((s) => (
-              <option key={s} value={s}>
+              // same trap class as scan+ladder: the ladder survives the
+              // rebuild whole, and the spec model refuses it on anything
+              // but a single-leg long — don't offer what can't run
+              <option
+                key={s}
+                value={s}
+                disabled={!!draft.ladder && s !== "long_call" && s !== "long_put"}
+              >
                 {STRUCTURE_LABEL[s]}
               </option>
             ))}
@@ -380,10 +395,18 @@ export function SpecScreen({
                   })
                 }
                 className={TILE_SELECT_CLS}
-                title="How often the intraday clock may open positions — every_setup takes one entry per signal episode and re-enters after intraday exits"
+                title={
+                  draft.ladder
+                    ? "The ladder is its own multi-entry semantic — rungs already add on each signal, so continuous scanning can't combine with it"
+                    : "How often the intraday clock may open positions — every_setup takes one entry per signal episode and re-enters after intraday exits"
+                }
               >
                 <option value="">once / session</option>
-                <option value="every_setup">every setup</option>
+                {/* scan + ladder is refused by the spec model — offering it
+                    here just manufactures a refusal (incident 2026-07-07) */}
+                <option value="every_setup" disabled={!!draft.ladder}>
+                  {draft.ladder ? "every setup (n/a with ladder)" : "every setup"}
+                </option>
               </select>
             </div>
 
@@ -578,6 +601,28 @@ export function SpecScreen({
         </div>
       </div>
 
+      {draft.ladder && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3">
+          <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
+            LADDER — ADDS ON SIGNAL
+            <Hint
+              text={settings.verbiage === "retail" ? SPEC_HINTS.LADDER[1] : SPEC_HINTS.LADDER[0]}
+            />
+          </span>
+          {draft.ladder.rungs.map((r, i) => (
+            <span
+              key={i}
+              className="rounded-[8px] border border-line bg-panel-deep px-2.5 py-1.5 font-mono text-[13px] text-ink"
+            >
+              {triggerLabel(r)} → +{r.add}
+            </span>
+          ))}
+          <span className="font-mono text-[11px] text-ink-4">
+            cap {draft.ladder.cap} · re-arm {triggerLabel(draft.ladder.rearm)}
+          </span>
+        </div>
+      )}
+
       {(draft.fromChart || draft.triggerSpec) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3">
           <span className="font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
@@ -630,9 +675,21 @@ export function SpecScreen({
             className={clsx(SELECT_CLS, "w-[84px]")}
             title="threshold"
           />
-          <span className="font-mono text-[11px] text-ink-4">
-            e.g. RSI below 30 · pullback ≥ 2% · VIX above 25
-          </span>
+          {(draft.conditionList ?? []).length > 1 ? (
+            // conditions beyond the first survive the rebuild whole (FX.5)
+            // but the dial can't edit them — show them so the screen never
+            // hides part of the entry logic
+            <span className="font-mono text-[13px] text-ink-3">
+              {(draft.conditionList ?? [])
+                .slice(1)
+                .map((c) => `& ${triggerLabel(c)}`)
+                .join("  ")}
+            </span>
+          ) : (
+            <span className="font-mono text-[11px] text-ink-4">
+              e.g. RSI below 30 · pullback ≥ 2% · VIX above 25
+            </span>
+          )}
         </div>
       )}
 

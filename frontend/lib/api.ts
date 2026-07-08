@@ -27,13 +27,34 @@ export class ApiError extends Error {
   }
 }
 
+/** Pydantic validation refusals arrive as [{loc, msg, type}, …] — render the
+ * explanation as a sentence, not raw JSON. The refusal text IS the product's
+ * answer (e.g. "intraday_scan cannot combine with scale_in"); showing it
+ * beats making the user decode an error array. Unknown shapes still
+ * stringify so nothing is ever swallowed. */
+function formatDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const parts = detail.map((e) => {
+      if (e && typeof e === "object" && "msg" in e) {
+        const err = e as { msg: unknown; loc?: unknown };
+        // pydantic prefixes model_validator messages with "Value error, "
+        const msg = String(err.msg).replace(/^Value error, /, "");
+        const loc = Array.isArray(err.loc) ? err.loc.filter((p) => p !== "body").join(".") : "";
+        return loc ? `${loc}: ${msg}` : msg;
+      }
+      return JSON.stringify(e);
+    });
+    return parts.join(" · ");
+  }
+  return JSON.stringify(detail);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { cache: "no-store", ...init });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const detail =
-      typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, formatDetail(body.detail ?? body));
   }
   return body as T;
 }

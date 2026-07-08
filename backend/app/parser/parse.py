@@ -533,16 +533,35 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     if not parts and exit_rules.get("conditions"):
         parts.append("on exit signal")
 
-    conditions = spec["entry"].get("conditions") or []
-    trigger_spec = None
-    if conditions:
-        c = conditions[0]
-        trigger_spec = {
+    def _cond_view(c: dict[str, Any]) -> dict[str, Any]:
+        return {
             "indicator": c["indicator"],
             "operator": c["operator"],
             "value": c["value"],
             **({"period": c["period"]} if c.get("period") is not None else {}),
         }
+
+    conditions = spec["entry"].get("conditions") or []
+    trigger_spec = _cond_view(conditions[0]) if conditions else None
+
+    # Read-only projections (2026-07-07): a scale-in ladder and any condition
+    # beyond the first were INVISIBLE on the pre-run screen — the dials showed
+    # a strategy with no entry logic, and the SCANNING dial happily built the
+    # scan+ladder combination the spec model refuses. Dials cannot edit these;
+    # the rebuild passes them through whole (FX.5).
+    condition_list = [_cond_view(c) for c in conditions]
+    scale_in = spec["entry"].get("scale_in")
+    ladder = (
+        {
+            "rungs": [
+                {**_cond_view(r), "add": r["add_contracts"]} for r in scale_in["rungs"]
+            ],
+            "cap": scale_in["max_total_contracts"],
+            "rearm": _cond_view(scale_in["rearm"]),
+        }
+        if scale_in
+        else None
+    )
 
     sizing = spec["sizing"]
     size = (
@@ -583,6 +602,9 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         # FX.5 (v4 dials): surfaced so the pre-run screen shows and edits them
         "intradayScan": spec["entry"].get("intraday_scan"),
         "resolution": backtest.get("resolution"),
+        # read-only entry logic (see above) — shown, never dial-edited
+        "ladder": ladder,
+        "conditionList": condition_list,
         "window": window,
         "exit": " · ".join(parts) if parts else None,
         "fromChart": False,

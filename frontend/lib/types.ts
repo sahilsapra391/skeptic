@@ -67,6 +67,15 @@ export interface SpecDraft {
    * Unset = the defaults (once per session · 5-min grid). */
   intradayScan?: "once_per_session" | "every_setup" | null;
   resolution?: "5min" | "finest" | null;
+  /** Read-only entry logic (2026-07-07): the scale-in ladder and the full
+   * condition list, previously invisible on the pre-run screen. Dials
+   * cannot edit these; the rebuild passes them through whole (FX.5). */
+  ladder?: {
+    rungs: (TriggerSpec & { add: number })[];
+    cap: number;
+    rearm: TriggerSpec;
+  } | null;
+  conditionList?: TriggerSpec[];
 }
 
 /** /api/data/estimate — window options with real session counts and time
