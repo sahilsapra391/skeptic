@@ -727,3 +727,57 @@ driving family and best-effort for the riders; and partial-NaN sessions
 enter the sums as the non-NaN subset (all-NaN columns yield None — the
 fabricated-zero path is pinned closed — but a half-null session is
 presented as its readable half).
+
+## F7 (ENGINE-V4): cross-source validation — rates with denominators
+
+Independent vendors are compared nightly wherever they overlap
+(collector/derive_cross_validation.py, set-difference incremental; the
+comparator math is single-sourced in app/data/cross_validation.py):
+
+- **dolthub_vs_alpaca** (SPY, ~527 sessions) — EOD closing quotes vs
+  minute TRADES, the proven 2026-07-01 methodology: only near-close
+  prints are checked (a stale deep-ITM print legitimately disagrees by
+  delta × the move), each print delta-adjusted to the close, the
+  session's capture spot self-calibrated from its own high-|delta|
+  contracts.
+- **dolthub_vs_uw** (SPY) — chain volume/OI per expiry vs UW's
+  aggregates (OI band 5%, volume 10% — capture cutoffs differ). NOTE
+  (real-lake 2026-07-08): the DoltHub archive carries the volume/OI
+  columns but never POPULATES them (all-NaN across every session), so
+  this pair currently derives checked=0 — honest absence, not a bug; it
+  lights up automatically if a volume-bearing EOD source ever overlaps
+  the UW window.
+- **yahoo_vs_ivol5m** — EOD quote mids vs the last 5-min NBBO (grows
+  nightly with the Yahoo capture).
+- **massive_vs_ivol5m** (QQQ/IWM) — the daily vendor close must sit
+  inside the day's quoted NBBO range (the F5-deferred cross-check;
+  activates as the ATM-band crawl lands; Massive is never a fill source).
+
+Rules the numbers depend on (owner decisions 2026-07-08):
+
+- **Per-pair agreement rates travel with their audited-share
+  denominators — there is NO blended score.** Weights across
+  incommensurable pairs would be an invented convention wearing a
+  number, and this number's whole job is to be trusted. If a headline
+  ever ships, it will be the MINIMUM pair rate with its pair named — a
+  fact, not a blend.
+- **Reported, never scored (v1).** No trust consequence until the
+  accumulated distribution EARNS thresholds (the D3d staging; the one
+  approved hard cap — FX.4's sign flip — had a binary falsification
+  trigger and a borrowable floor; nothing like that exists here yet).
+- **The per-run block** aggregates only the sessions inside the run's
+  own window; pairs with no overlap are omitted — a run with nothing
+  audited says nothing, never a fabricated 100%.
+- **The fill audit is on-demand** (the replay-receipt mechanics): it
+  re-runs the spec deterministically over the ORIGINAL effective window
+  (an open-ended window would extend to today's lake and describe fills
+  the run never made — review blocker, refused with a fill-count check
+  when in-window lake drift changes the regeneration) and checks every
+  regenerated option-leg fill against Alpaca minute trades. Independence
+  has ONE exception, handled: `alpaca_modeled` fills were PRICED from
+  those very prints — they are never audited (self-confirmation is not
+  verification) and count in a disclosed `self_source` bucket. Per
+  fill: within the traded range band (max($0.05, 2%)) in a ±15-minute
+  window of the fill bar, degrading to the session range when no bar
+  time exists (disclosed by kind). `no_trades` is honest absence, never
+  counted against the run. The stored audit never rewrites the verdict.

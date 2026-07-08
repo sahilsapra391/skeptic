@@ -234,6 +234,13 @@ export function askRun(id: string, question: string): Promise<{ answer: string; 
   });
 }
 
+/** F7: audit a run's fills against an independent vendor (on demand). */
+export function auditRun(id: string): Promise<{ run_id: string; status: string }> {
+  return request<{ run_id: string; status: string }>(`/api/runs/${id}/audit`, {
+    method: "POST",
+  });
+}
+
 /** D3c: replay a daily run at the 5-minute clock (verdict receipt). */
 export function replayRun(id: string): Promise<{ run_id: string; parent: string }> {
   return request<{ run_id: string; parent: string }>(`/api/runs/${id}/replay`, {

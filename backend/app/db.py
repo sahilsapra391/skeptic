@@ -67,6 +67,9 @@ class Run(Base):
     # measured run cost {clock, sessions, engine_s, gauntlet_s, conditions}
     # — the pre-run time estimates are medians over THESE, never guesses
     perf_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # F7: on-demand fill audit vs an independent vendor — stored like
+    # receipts; the run's verdict is never rewritten
+    audit_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RunEvent(Base):
@@ -149,7 +152,7 @@ def _ensure_columns() -> None:
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
         for column in ("stats_json", "previews_json", "summary_json", "unlock_json",
-                       "receipts_json", "perf_json"):
+                       "receipts_json", "perf_json", "audit_json"):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
         for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)")):

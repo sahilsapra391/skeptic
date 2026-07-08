@@ -357,6 +357,10 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         )
     if report.sensitivity.window_note:
         caveats.append(report.sensitivity.window_note + ".")
+    # F7: cross-source agreement over THIS run's window — reported, never
+    # scored; every number quoted exists as a numeric report field
+    if report.data_confidence is not None and report.data_confidence.note:
+        caveats.append(f"Cross-source check: {report.data_confidence.note}.")
     ladder = _ladder_caveat(report)
     if ladder:
         caveats.append(ladder)

@@ -456,6 +456,41 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
       {conc?.flagged && conc.note && (
         <div className="mt-2 font-mono text-[11px] text-warn">⚠ concentration: {conc.note}</div>
       )}
+      {run.fillAudit?.error ? (
+        <div className="mt-2 font-mono text-[11px] text-warn">
+          ⚠ fill audit: {run.fillAudit.error}
+        </div>
+      ) : null}
+      {run.fillAudit && !run.fillAudit.error ? (
+        <div
+          className="mt-2 font-mono text-[11px] text-ink-3"
+          title="on-demand fill audit — every regenerated fill checked against Alpaca minute TRADES (a vendor no fill price came from); no_trades = the contract printed nothing near the fill (honest absence, never counted against the run)"
+        >
+          fill audit ({run.fillAudit.vendor ?? "independent"}):{" "}
+          {run.fillAudit.within}/{run.fillAudit.audited} within traded range
+          {run.fillAudit.outside > 0 ? (
+            <span className="text-warn"> · {run.fillAudit.outside} outside</span>
+          ) : null}{" "}
+          · {run.fillAudit.no_trades} no-trades · {run.fillAudit.no_coverage}{" "}
+          no-coverage
+        </div>
+      ) : null}
+      <AuditButton run={run} />
+      {run.dataConfidence?.pairs?.some((p) => p.agreement_rate != null) ? (
+        <div
+          className="mt-2 font-mono text-[11px] text-ink-3"
+          title="cross-source validation over this run's window — per-pair agreement rates with their audited-share denominators; reported, never scored"
+        >
+          cross-source:{" "}
+          {run.dataConfidence.pairs
+            .filter((p) => p.agreement_rate != null)
+            .map(
+              (p) =>
+                `${p.pair.replace(/_/g, " ")} ${(p.agreement_rate! * 100).toFixed(1)}% (${p.audited_sessions}/${p.window_sessions} sessions)`,
+            )
+            .join(" · ")}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -540,6 +575,46 @@ function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: bo
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AuditButton({ run }: { run: RunPayload }) {
+  const [busy, setBusy] = useState(false);
+  const [kicked, setKicked] = useState(false);
+  // audited or refused — the lines above show it; a RUNNING marker
+  // keeps the button hidden while the engine re-run is in flight, and an
+  // error leaves the button available for retry (review #8)
+  if (run.fillAudit && !run.fillAudit.error) return null;
+  if ((run.fillAudit as { status?: string } | null)?.status === "__running__")
+    return null;
+  const audit = async () => {
+    setBusy(true);
+    try {
+      const { auditRun } = await import("@/lib/api");
+      await auditRun(run.id);
+      setKicked(true);
+    } catch {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-2">
+      {kicked ? (
+        <span className="font-mono text-[11px] text-ink-4">
+          audit running — re-runs the spec deterministically, then checks
+          every fill against Alpaca minute trades; reload in a minute
+        </span>
+      ) : (
+        <button
+          onClick={audit}
+          disabled={busy}
+          className="rounded-[8px] border border-line px-3 py-1.5 font-mono text-[11px] text-ink-3 hover:border-line-hover"
+          title="check this run's fills against an independent vendor (Alpaca minute trades) — on demand; the verdict is never rewritten"
+        >
+          {busy ? "starting…" : "audit fills vs independent vendor"}
+        </button>
+      )}
     </div>
   );
 }

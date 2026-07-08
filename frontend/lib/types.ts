@@ -276,6 +276,45 @@ export interface RunPayload {
   /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
+  /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
+   * time like receipts; the stored verdict is never rewritten. */
+  fillAudit?: {
+    generated_at?: string;
+    fills_total?: number;
+    audited: number;
+    within: number;
+    outside: number;
+    no_trades: number;
+    no_coverage: number;
+    agreement_rate: number | null;
+    vendor?: string;
+    examples?: {
+      day: string;
+      action: string;
+      contract: string;
+      fill_price: number;
+      traded_low: number;
+      traded_high: number;
+      kind: string;
+    }[];
+    error?: string;
+  } | null;
+  /** F7: per-pair cross-source agreement over the run's window —
+   * reported, never scored; rates travel with their denominators. */
+  dataConfidence?: {
+    pairs: {
+      pair: string;
+      audited_sessions: number;
+      window_sessions: number;
+      joined: number;
+      checked: number;
+      within_band: number;
+      agreement_rate: number | null;
+      worst_session_rate: number | null;
+      worst_session: string | null;
+    }[];
+    note: string | null;
+  } | null;
   concentration?: ConcentrationBlock | null;
   /** D5b: scale-in depth attribution (null on non-ladder runs) */
   ladderDepth?: LadderDepthBlock | null;
@@ -458,6 +497,22 @@ export interface CoveragePayload {
     last: string;
     tide_sessions: number;
   } | null;
+  /** F7: cross-source validation pair windows + aggregate agreement —
+   * reported, never scored. Keyed pair → ticker. */
+  cross_validation?: Record<
+    string,
+    Record<
+      string,
+      {
+        sessions: number;
+        first: string;
+        last: string;
+        checked: number;
+        within_band: number;
+        agreement_rate: number | null;
+      }
+    >
+  >;
   /** D3d: weekly demand ranking (build_priorities.py) — the Observatory's
    * "collection wants" line; null until the first weekly pass writes it */
   collection_priorities?: {

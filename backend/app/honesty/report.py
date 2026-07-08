@@ -159,6 +159,37 @@ class LiquidityProfile(BaseModel):
     note: str | None
 
 
+class PairConfidence(BaseModel):
+    """One source-pair's agreement over THIS run's window — REPORTED,
+    never scored (owner decision 2026-07-08: rates travel with their
+    audited-share denominators; no blended score — weights across
+    incommensurable pairs would be an invented convention wearing a
+    number; trust consequences wait until accumulated history earns
+    thresholds, the D3d staging). All counts are numeric fields so the
+    grounding harvester admits every number the caveat quotes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pair: str  # e.g. "dolthub_vs_alpaca"
+    audited_sessions: int  # sessions of this run's window with a record
+    window_sessions: int  # the run's total sessions (the denominator)
+    joined: int  # contracts/rows present in both sources
+    checked: int  # rows where a comparison was honest
+    within_band: int  # rows agreeing within the documented tolerance
+    agreement_rate: float | None  # within_band / checked (None if unchecked)
+    worst_session_rate: float | None  # min per-session rate in the window
+    worst_session: str | None  # the session that produced it
+
+
+class DataConfidence(BaseModel):
+    """Cross-source validation over the run's own window (F7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pairs: list[PairConfidence]
+    note: str | None
+
+
 class Concentration(BaseModel):
     """Is the P&L a distribution or a handful of days? (D1d). Reported flag
     + verdict reason only — promoting it to a trust cap is a future reviewed
@@ -380,6 +411,7 @@ class HonestyReport(BaseModel):
     concentration: Concentration | None = None  # None only on pre-D1d reports
     session_split: SessionSplit | None = None  # 5-min clock only (D2d)
     resolution_split: ResolutionSplit | None = None  # mixed-resolution runs (FX.4)
+    data_confidence: DataConfidence | None = None  # cross-source validation (F7)
     ladder_depth: LadderDepth | None = None  # scale-in runs only (D5b)
     scale_in: ScaleInHonesty | None = None  # scale-in martingale defenses (D5c)
     fill_sources: dict[str, int] = {}  # per-leg fill provenance (D2b/D2d)
