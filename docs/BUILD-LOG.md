@@ -1604,25 +1604,22 @@ pruned crawl ($0): prioritize ATM-at-expiry contracts overlapping the
 iVol short-DTE slice, resumable, census continues behind it. (Paid
 alternative was one Options Starter month, verified $29/mo unlimited
 calls — declined.)
-REVIEW (independent agent, clean worktree of 1d67b43): 0 BLOCKER +
-1 MAJOR + 2 MINOR + 4 NIT — all addressed (fixes landed from two
-parallel sessions in the shared checkout, reconciled + pinned):
-(1) MAJOR: the depth note quotes its own counts ("45 of 120") but the
-counts existed nowhere as numeric fields — once past the 0-30
-counting-number allowance, any verdict/Q&A echoing the disclosure was
-falsely flagged ungrounded (the WF fold-count latent class) →
-fills_depth_known/fills_beyond_depth are LiquidityProfile fields,
-harvest pinned; (2) opening-bar rung fills now thread their depth note
-into the basket OPEN detail (a beyond-depth first rung is named, not
-just counted — pinned with a 5-min RSI ladder fixture); (3) the
-cache-version bump also rebuilds FX.1 1-minute underlying frames
-(shared version) — wasteful but safe, disclosed above; (4) frontend
-shows "<1%" instead of a rounded-to-0% share + names the denominator
-(of depth-known fills) + tooltip; (5) _record_leg_fill action/qty are
-REQUIRED (no silent depth-unknown default) + entry reuses
-fills.open_action; (6) negative vendor sizes clamp to None (_size_i —
-garbage would count as depth-known with an automatic exceedance),
-pinned; (7) denominator named on the surface. Real-lake acceptance
-(June→July 0DTE cycling seller, 10 contracts): 249 option-leg fills,
-228 depth-known (92%), 15 beyond displayed depth (6.6%) — e.g.
-"qty 10 > ask size 1" on a buyback.
+DELTA REVIEW (independent agent, clean worktree of the PR head — the
+two commits added AFTER the first review: 59ea097 review-fixes +
+1a0d0e1 pruned crawl; run because the every-PR-reviewed rule covers
+commits pushed post-review): MERGE-READY, 0 BLOCKER + 0 MAJOR +
+2 MINOR + 4 NIT. Verified: the grounding fix is real (harvest traced),
+_fire_rungs' new return breaks no caller, the crawl permutation drops
+NOTHING (exact partition), resumability + periodic flush intact, zero
+new API calls, deterministic ordering, ±$8 band == the iVol slice
+constant, docs math checks. Fixed on the spot: (1) MINOR — one
+malformed date row in the underlying parquet crashed the prioritizer
+(NaT is not None) instead of falling back to census order →
+pd.notna(day); (2) MINOR — "aggregates complete" logged after every
+phase SEGMENT (a 4%-done band read as done on a ~34-day crawl) → the
+segment log now states banked/total; (3) NIT — the band ETA quoted the
+default rate even when --rate overrode it; (4,5) race-artifact dedup:
+the duplicated grounding test and the duplicated review paragraph
+removed. Deferred with a note: exhausted-retry contracts are appended
+to aggs_done and never retried (pre-existing; costlier now that the
+ATM band goes first — F7 follow-up).

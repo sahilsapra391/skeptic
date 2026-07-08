@@ -268,18 +268,3 @@ class TestReviewFixes:
         assert _size_i(7) == 7
         assert _size_i(None) is None
 
-
-class TestGroundingHarvest:
-    def test_note_counts_are_quotable_numbers(self) -> None:
-        # review fix F5 #1 (the WF-fold class): the profile note says
-        # "15 of 228" — a verdict/Q&A echoing those numbers must find them
-        # in the harvested grounding set, or the validator falsely rejects
-        # the disclosure's own numbers once they exceed the counting range
-        from app.honesty.verdict import _harvest_numbers
-
-        result = _run(20, bid_size=3, ask_size=90)
-        prof = liquidity_profile(result, _spec(20))
-        harvested: set[float] = set()
-        _harvest_numbers(prof.model_dump(), harvested)
-        assert float(prof.fills_beyond_depth) in harvested
-        assert float(prof.fills_depth_known) in harvested

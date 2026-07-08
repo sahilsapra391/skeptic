@@ -201,7 +201,7 @@ def _prioritize(s3, ticker: str, todo: list[str],
         d = pd.to_datetime(und["date"], errors="coerce").dt.date
         c = pd.to_numeric(und["close"], errors="coerce")
         closes = {day: float(v) for day, v in zip(d, c)
-                  if day is not None and pd.notna(v)}
+                  if pd.notna(day) and pd.notna(v)}
     if not closes:
         log.warning("%s: no underlying closes — crawling unordered", ticker)
         return todo
@@ -253,9 +253,10 @@ def pull_aggs(s3, state: dict, tickers: list[str], dry: bool,
                       if not _atm_flag.get(sym, False)), len(todo))
         phases.append((t, todo[:split]))
         remainders.append((t, todo[split:]))
+        rate = 60.0 / _GATE.interval  # the CONFIGURED rate, not the default
         log.info("%s: %d ATM-band + %d census contracts (%d done) — band "
-                 "~%.1f h at %d/min", t, split, len(todo) - split, len(done),
-                 split / max(DEFAULT_RATE, 1) / 60, DEFAULT_RATE)
+                 "~%.1f h at %.0f/min", t, split, len(todo) - split, len(done),
+                 split / max(rate, 1) / 60, rate)
     for t, todo in phases + remainders:
         if not todo:
             continue
@@ -277,7 +278,10 @@ def pull_aggs(s3, state: dict, tickers: list[str], dry: bool,
             if _GATE.count % 25 == 0:
                 _flush(s3, state)
         _flush(s3, state)
-        log.info("%s: aggregates complete", t)
+        done_n = len(state["aggs_done"].get(t, []))
+        total_n = len(state["contracts"].get(t, []))
+        log.info("%s: segment complete — %d/%d contracts banked overall",
+                 t, done_n, total_n)
 
 
 # ------------------------------------------------------------ probe
