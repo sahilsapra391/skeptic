@@ -398,10 +398,12 @@ class TestCboeDownsampling:
 
     def test_cumulative_und_volume_becomes_per_bar(self, env: dict[str, Any],
                                                    monkeypatch: pytest.MonkeyPatch) -> None:
-        """Post-2026-07-08 recorder snapshots bank the underlying's cumulative
-        session share volume; the reader diffs it per bar (hand-computed:
-        1,000 → 1,600 cumulative = 1,000 then 600), and a snapshot without
-        the column leaves ITS bar out of VWAP — never a fabricated zero."""
+        """Recorder snapshots bank the underlying's cumulative session share
+        volume; the reader diffs it per bar. The FIRST bar's baseline is
+        UNKNOWN — the feed's open-minutes value can be the prior session's
+        rollover total (incident 2026-07-08), so it is never seeded. Diffs
+        after (1,000 → 1,600 = 600) are real; a snapshot without the column
+        leaves ITS bar out of VWAP — never a fabricated zero."""
         keys = [
             f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1430Z.parquet",
             f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1435Z.parquet",
@@ -420,12 +422,71 @@ class TestCboeDownsampling:
         store = intraday.IntradayStore("SPY")
         slc = store.slice_for(date(2025, 1, 6))
         assert slc is not None
-        # 09:30 is the session open → seeded with its own cumulative
-        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        # 09:30's baseline is unknown (rollover hazard) — sits out of VWAP
+        assert datetime(2025, 1, 6, 9, 30) not in slc.underlying_volume
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
         # the column-less snap's bar sits OUT of the volume record
         assert datetime(2025, 1, 6, 9, 40) not in slc.underlying_volume
         assert slc.underlying[datetime(2025, 1, 6, 9, 40)] == 100.0  # price kept
+
+    def test_rollover_plateau_never_reaches_vwap(self, env: dict[str, Any],
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+        """The 2026-07-08 incident shape: the feed holds YESTERDAY's total
+        (42.48M) through the open, resets to 0, then climbs. Every bar at or
+        before the reset is unknown; post-reset diffs are real."""
+        stamps = ["1430", "1435", "1440", "1445"]
+        keys = [
+            f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T{s}Z.parquet"
+            for s in stamps
+        ]
+        cums = [42_483_079.0, 42_483_079.0, 0.0, 255_039.0]
+        snaps = {k: _cboe_snap_frame(D, bid=2.00).assign(und_volume=c)
+                 for k, c in zip(keys, cums, strict=True)}
+
+        monkeypatch.setattr(r2, "list_date_prefixes",
+                            lambda _s3, prefix: [D] if "cboe_delayed" in prefix else [])
+        monkeypatch.setattr(r2, "list_keys", lambda _s3, _p: keys)
+        monkeypatch.setattr(r2, "get_parquet", lambda _s3, k: snaps.get(k))
+
+        store = intraday.IntradayStore("SPY")
+        slc = store.slice_for(date(2025, 1, 6))
+        assert slc is not None
+        # plateau (09:30, 09:35) and the reset bar (09:40) are all unknown
+        assert datetime(2025, 1, 6, 9, 30) not in slc.underlying_volume
+        assert datetime(2025, 1, 6, 9, 35) not in slc.underlying_volume
+        assert datetime(2025, 1, 6, 9, 40) not in slc.underlying_volume
+        # first post-reset diff is real: 255,039 − 0
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 45)] == 255_039
+
+
+class TestRecorderPerBarVolume:
+    """Hand-computed rules for the rollover-hazard cumulative (bars.py)."""
+
+    def test_incident_series_hand_computed(self) -> None:
+        from app.data.bars import recorder_per_bar_volume
+
+        cum = pd.Series([42_483_079.0, 42_483_079.0, 0.0, 255_039.0, 571_006.0])
+        out = recorder_per_bar_volume(cum)
+        assert out.iloc[:3].isna().all()  # plateau + reset unknown
+        assert out.iloc[3] == 255_039.0
+        assert out.iloc[4] == 315_967.0  # 571,006 − 255,039
+
+    def test_mid_session_restart_has_unknown_baseline(self) -> None:
+        # recorder restarted at 13:00: first cumulative is half a day of
+        # volume — a baseline, never one bar's volume
+        from app.data.bars import recorder_per_bar_volume
+
+        cum = pd.Series([25_000_000.0, 25_075_120.0])
+        out = recorder_per_bar_volume(cum)
+        assert pd.isna(out.iloc[0])
+        assert out.iloc[1] == 75_120.0
+
+    def test_chart_tail_convention_fills_zero(self) -> None:
+        from app.data.bars import recorder_per_bar_volume
+
+        cum = pd.Series([42_000_000.0, 0.0, 100.0])
+        out = recorder_per_bar_volume(cum, nan_fill=0.0)
+        assert list(out) == [0.0, 0.0, 100.0]
 
 
 @pytest.mark.lake

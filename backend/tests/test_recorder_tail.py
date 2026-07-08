@@ -64,8 +64,11 @@ def test_builds_ohlc_and_volume_from_cumulative(monkeypatch: pytest.MonkeyPatch)
     assert list(out["close"]) == [745.0, 745.5, 744.8]
     for col in ("open", "high", "low"):
         assert list(out[col]) == list(out["close"])
-    # per-bar volume = diff of the cumulative (first bar carries its cumulative)
-    assert list(out["volume"]) == [100.0, 50.0, 60.0]
+    # per-bar volume = diff of the cumulative. The FIRST bar's baseline is
+    # unknown — the feed's open-minutes value is the PRIOR session's total
+    # until ~9:42 ET (incident 2026-07-08: yesterday's 42.48M spiked the
+    # open bar on every chart), so it renders 0, never the cumulative.
+    assert list(out["volume"]) == [0.0, 50.0, 60.0]
 
 
 def test_volume_zero_when_recorder_lacks_cumulative(monkeypatch: pytest.MonkeyPatch) -> None:

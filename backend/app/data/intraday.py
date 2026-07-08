@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 
 from app.data import r2
-from app.data.bars import per_bar_volume
+from app.data.bars import per_bar_volume, recorder_per_bar_volume
 from app.engine.market import SessionSlice
 from app.engine.types import ContractKey, Quote
 
@@ -56,7 +56,10 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 # (covers a weekend); documented approximation for the tiny forward corpus.
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
-CACHE_SCHEMA_VERSION = 6  # v6: CBOE per-bar underlying volume (recorder
+CACHE_SCHEMA_VERSION = 7  # v7: recorder volume is ROLLOVER-AWARE (the CBOE
+#     day-volume field carries the prior session's total until ~9:42 ET —
+#     pre-reset bars are unknown, never seeded; incident 2026-07-08)
+# v6: CBOE per-bar underlying volume (recorder
 #     und_volume cumulative → per-bar diff; session VWAP becomes evaluable
 #     on cboe_minute sessions whose snapshots bank it)
 # v5 (F5): + displayed NBBO sizes (bid_size/ask_size)
@@ -346,12 +349,11 @@ def _cboe_frames(
         und = pd.DataFrame(und_rows).sort_values("bar_ts").reset_index(drop=True)
         cum = pd.to_numeric(und["cum_volume"], errors="coerce")
         if cum.notna().any():
-            und["volume"] = per_bar_volume(
-                cum,
-                # per-bar ≡ cumulative ONLY at the session open (the ivol
-                # reader's head-truncation rule applies here identically)
-                seed_first=pd.Timestamp(und["bar_ts"].iloc[0]).time() == SESSION_OPEN,
-            )
+            # rollover-aware, NEVER seeded: the feed's open-minutes value is
+            # the PRIOR session's total (incident 2026-07-08 — seeding put
+            # yesterday's 42M into the 09:30 bar's VWAP weight); plateau and
+            # pre-reset bars stay NaN and sit out of session VWAP
+            und["volume"] = recorder_per_bar_volume(cum)
         und = und.drop(columns=["cum_volume"])
     return pd.concat(frames, ignore_index=True), und
 
