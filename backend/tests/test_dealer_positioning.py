@@ -356,6 +356,31 @@ class TestSignalCoverageRefusal:
         # the offered window is the real covered one, never inverted
         assert f"Run {days[4].isoformat()} → {days[-1].isoformat()}" in msg
 
+    def test_stale_tail_past_grace_is_refused(self) -> None:
+        # the feed died on day 5 of a 12-session window: 7 uncovered tail
+        # sessions (> STALE_TAIL_GRACE_SESSIONS) would silently re-read one
+        # stale observation — refused, covered window offered
+        days = _weekdays(date(2024, 1, 1), 12)
+        gex = {days[i].isoformat(): 5.0 for i in range(5)}
+        store = _chained_store(days, gex)
+        spec = _run_spec(days, start=days[0], conditions=_GEX_COND)
+        with pytest.raises(SliceCoverageError) as exc:
+            run_backtest(spec, store)
+        msg = str(exc.value)
+        assert "last observed" in msg
+        assert f"Run {days[0].isoformat()} → {days[4].isoformat()}" in msg
+
+    def test_stale_tail_within_grace_runs(self) -> None:
+        # exactly STALE_TAIL_GRACE_SESSIONS uncovered tail sessions =
+        # vendor publishing lag, not a dead feed — the run proceeds
+        days = _weekdays(date(2024, 1, 1), 10)
+        gex = {days[i].isoformat(): 5.0 for i in range(5)}
+        store = _chained_store(days, gex)
+        spec = _run_spec(days, start=days[0], conditions=_GEX_COND)
+        result = run_backtest(spec, store)
+        opens = [t for t in result.trades if t.action == "OPEN"]
+        assert opens  # positive gex on the covered head → entries fired
+
     def test_rank_condition_refusal_names_the_unlock_date(self) -> None:
         # review finding F1 #2: the offered window must not hide six
         # structurally unevaluable months — the rank floor date is named

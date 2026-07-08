@@ -68,6 +68,12 @@ class MarketStore:
     max_pain_dist: dict[date, float] = field(default_factory=dict)
     tide_dates: list[date] = field(default_factory=list)
     market_tide: dict[date, float] = field(default_factory=dict)
+    # Forward-record splices (2026-07-08): series name → first session served
+    # by the in-house derivation instead of the frozen vendor feed. Values
+    # never mix WITHIN a session; this records WHERE the convention changes
+    # so runs crossing a seam disclose it (chains.py writes it; the engine's
+    # data_provenance reads it). Empty = single-convention series only.
+    splices: dict[str, date] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.sessions = sorted(self.sessions)
@@ -345,7 +351,8 @@ class SessionSlice:
     underlying: dict[datetime, float]  # per-bar underlying last
     quote_source: str  # "ivol_5min" | "cboe_minute"
     # per-bar underlying volume (D2c, session-anchored VWAP input); empty
-    # when the source carries none (CBOE) — VWAP is honestly unevaluable then.
+    # when the source carries none (pre-2026-07-08 CBOE snapshots) — VWAP
+    # is honestly unevaluable then.
     # A bar ABSENT from a populated dict means its volume is UNKNOWN (e.g. an
     # unparseable vendor cell): the bar sits out of session VWAP — consumers
     # read it as 0 weight, never as a fabricated value.

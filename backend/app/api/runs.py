@@ -203,7 +203,13 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
         verdict_t0 = time.monotonic()
         verdict, retail_verdict = write_verdicts(report)
         verdict_seconds = time.monotonic() - verdict_t0
-        payload = build_run_payload(run_id, spec, result, report, verdict, retail_verdict)
+        # forward-record disclosure: convention seams the window crossed
+        from app.engine.engine import data_provenance
+
+        provenance = data_provenance(
+            spec, store, result.effective_start, result.effective_end)
+        payload = build_run_payload(run_id, spec, result, report, verdict,
+                                    retail_verdict, data_provenance=provenance)
         # the stats bundle is the ONLY material grounded Q&A may quote from
         stats = {
             "metrics": result.metrics,

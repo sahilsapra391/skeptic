@@ -418,6 +418,7 @@ export interface CoverageRange {
 export interface CoveragePayload {
   generated_at: string;
   record_days: number;
+  record_first?: string | null;
   record_latest: string | null;
   chains: Record<Ticker, CoverageRange | null>;
   eod: Record<string, Record<Ticker, CoverageRange | null>>;
@@ -497,6 +498,30 @@ export interface CoveragePayload {
     last: string;
     tide_sessions: number;
   } | null;
+  /** Forward record (2026-07-08): in-house continuation artifact windows
+   * (CBOE close chain + own dailies) — null per ticker until the nightly
+   * derivation has built them. GEX/DEX here are banked + cross-validated
+   * only, never spliced into the UW series. */
+  inhouse_signals?: Record<
+    Ticker,
+    {
+      sessions?: number;
+      first?: string;
+      last?: string;
+      skew_sessions?: number;
+      atm_sessions?: number;
+      gex_sessions?: number;
+      pcr_sessions?: number;
+      max_pain_sessions?: number;
+      hv?: CoverageRange | null;
+    } | null
+  >;
+  /** Where each frozen vendor family last observed (SPY) — the seam view */
+  vendor_lasts?: {
+    ivs?: string | null;
+    uw?: string | null;
+    uw_positioning?: string | null;
+  };
   /** F7: cross-source validation pair windows + aggregate agreement —
    * reported, never scored. Keyed pair → ticker. */
   cross_validation?: Record<

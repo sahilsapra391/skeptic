@@ -77,7 +77,7 @@ from collect import (  # noqa: E402  (env loads first, like intraday.py)
 log = logging.getLogger("ledger")
 
 LEDGER_KEY = "state/coverage_ledger.parquet"
-EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
+EOD_SOURCES = ["ivolatility", "alphavantage", "cboe_eod", "yahoo", "dolthub"]
 INTRADAY_PREFIXES = [
     "options_intraday/source=ivolatility",
     "options_intraday/source=cboe_delayed",

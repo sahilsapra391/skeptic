@@ -35,6 +35,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time
 from pathlib import Path
+from time import time as _now  # datetime.time already owns the name `time`
 from typing import Any
 
 import numpy as np
@@ -55,7 +56,10 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 # (covers a weekend); documented approximation for the tiny forward corpus.
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
-CACHE_SCHEMA_VERSION = 5  # v5 (F5): + displayed NBBO sizes (bid_size/ask_size)
+CACHE_SCHEMA_VERSION = 6  # v6: CBOE per-bar underlying volume (recorder
+#     und_volume cumulative → per-bar diff; session VWAP becomes evaluable
+#     on cboe_minute sessions whose snapshots bank it)
+# v5 (F5): + displayed NBBO sizes (bid_size/ask_size)
 # v4: vendor-shape hardening — duplicate stamps keep
 #     the last-written row, head-truncated payloads no longer seed bar 0 with
 #     the cumulative-so-far (v3: NaN cum-volume no longer injects the session
@@ -68,6 +72,10 @@ SPREAD_STATS_VERSION = 2
 CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "intraday"
 LRU_SESSIONS = 32
 CBOE_FETCH_WORKERS = 16
+# session-listing freshness: sessions() relists past this age so a warm
+# container's NEXT run sees last night's recorder sessions (listing only —
+# three Delimiter calls; slices stay behind their own caches)
+SESSION_LIST_TTL_SECONDS = 1800
 
 IVOL_OPT = "options_intraday/source=ivolatility"
 IVOL_UND = "underlying_intraday/source=ivolatility"
@@ -293,12 +301,20 @@ def _cboe_frames(
     und_rows: list[dict[str, Any]] = []
     for bar, df in fetched:
         spot = _num(df["spot"].dropna().iloc[0]) if df["spot"].notna().any() else None
+        # the recorder banks the underlying's CUMULATIVE session share volume
+        # per snapshot; per-bar volume is the diff (identical convention to
+        # the ivol reader — per_bar_volume is the ONE shared implementation).
+        # Snapshots predating the recorder's und_volume capture leave the
+        # cell NaN: that bar sits out of session VWAP, never a fabricated 0.
+        cum_vol = None
+        if "und_volume" in df.columns and df["und_volume"].notna().any():
+            cum_vol = _num(df["und_volume"].dropna().iloc[0])
         dte = pd.to_numeric(df["dte"], errors="coerce")
         strike = pd.to_numeric(df["strike"], errors="coerce")
         mask = dte <= CBOE_SLICE_MAX_CALENDAR_DTE
         if spot is not None:
             mask &= (strike - spot).abs() <= SLICE_ATM_BAND
-            und_rows.append({"bar_ts": bar, "last": spot})
+            und_rows.append({"bar_ts": bar, "last": spot, "cum_volume": cum_vol})
         sub = df[mask]
         if sub.empty:
             continue
@@ -325,7 +341,18 @@ def _cboe_frames(
         })[SLICE_COLUMNS])
     if not frames:
         return None
-    und = pd.DataFrame(und_rows) if und_rows else None
+    und: pd.DataFrame | None = None
+    if und_rows:
+        und = pd.DataFrame(und_rows).sort_values("bar_ts").reset_index(drop=True)
+        cum = pd.to_numeric(und["cum_volume"], errors="coerce")
+        if cum.notna().any():
+            und["volume"] = per_bar_volume(
+                cum,
+                # per-bar ≡ cumulative ONLY at the session open (the ivol
+                # reader's head-truncation rule applies here identically)
+                seed_first=pd.Timestamp(und["bar_ts"].iloc[0]).time() == SESSION_OPEN,
+            )
+        und = und.drop(columns=["cum_volume"])
     return pd.concat(frames, ignore_index=True), und
 
 
@@ -617,6 +644,7 @@ class IntradayStore:
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
         self._sessions: dict[date, str] | None = None  # session -> source
+        self._listed_at: float = 0.0  # when the source map was last listed
         self._lru: OrderedDict[date, SessionSlice | None] = OrderedDict()
         # FX.1: minute-grid slice LRU, fully separate from the 5-min path so
         # the default clock's cache behavior is untouched. Built slices only
@@ -628,8 +656,9 @@ class IntradayStore:
     def slice_max_trading_dte(self) -> int:
         return SLICE_MAX_TRADING_DTE
 
-    def _session_sources(self) -> dict[date, str]:
-        if self._sessions is None:
+    def _session_sources(self, refresh: bool = False) -> dict[date, str]:
+        stale = (_now() - self._listed_at) > SESSION_LIST_TTL_SECONDS
+        if self._sessions is None or (refresh and stale):
             s3 = r2.r2_client()
             cboe = r2.list_date_prefixes(s3, f"{CBOE_OPT}/ticker={self.ticker}/")
             ivol = r2.list_date_prefixes(s3, f"{IVOL_OPT}/ticker={self.ticker}/")
@@ -643,10 +672,15 @@ class IntradayStore:
             # ivol overwrites: real NBBO outranks delayed data (amendment 1)
             src.update({date.fromisoformat(d): "ivol_5min" for d in ivol})
             self._sessions = src
+            self._listed_at = _now()
         return self._sessions
 
     def sessions(self) -> list[date]:
-        return sorted(self._session_sources())
+        # sessions() is the RUN-START call, so it alone refreshes a stale
+        # listing (self-improvement thesis: last night's recorder sessions
+        # reach a warm container's next run). Per-session source_for reads
+        # keep the run's snapshot — provenance can never shift mid-run.
+        return sorted(self._session_sources(refresh=True))
 
     def source_for(self, session: date) -> str | None:
         return self._session_sources().get(session)

@@ -23,13 +23,14 @@ from app.data import (
     cross_validation,
     flow_signals,
     gex_signals,
+    inhouse_signals,
     ivs_signals,
     r2,
     resolution,
 )
 
 TICKERS = ["SPY", "QQQ", "IWM"]
-EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
+EOD_SOURCES = ["ivolatility", "alphavantage", "cboe_eod", "yahoo", "dolthub"]
 INTRADAY_SOURCES = ["ivolatility", "cboe_delayed", "yahoo"]
 
 # What the 5-minute record actually covers (mirrors app/data/intraday.py) —
@@ -91,9 +92,23 @@ def _quarantined_count(dolthub_state: dict[str, Any]) -> int:
     return len(set(stale) | set(shape))
 
 
-def _blind_spots(dolthub_state: dict[str, Any], minute: dict[str, Any]) -> list[dict[str, str]]:
+def _days_since(iso: str | None, today: str) -> int | None:
+    if not iso:
+        return None
+    return (datetime.fromisoformat(today) - datetime.fromisoformat(iso)).days
+
+
+def _blind_spots(
+    dolthub_state: dict[str, Any],
+    minute: dict[str, Any],
+    today: str,
+    chain_windows: dict[str, Any],
+    vendor_lasts: dict[str, str | None],
+    inhouse_first: str | None,
+) -> list[dict[str, str]]:
     """Named blind spots for the Observatory. Static facts come from the data
-    evals (docs/DOLTHUB-EVAL.md, docs/DATA-PIPELINE.md §7); counts are live."""
+    evals (docs/DOLTHUB-EVAL.md, docs/DATA-PIPELINE.md §7); everything
+    dated is computed live so this panel can never assert a stale fact."""
     spots: list[dict[str, str]] = [
         {
             "id": "dolthub-mwf-era",
@@ -104,15 +119,6 @@ def _blind_spots(dolthub_state: dict[str, Any], minute: dict[str, Any]) -> list[
             "id": "dolthub-2024-08-outage",
             "text": "Archive outage 2024-07-31 → 2024-08-09 spans the 2024-08-05 "
             "volatility spike",
-        },
-        {
-            "id": "qqq-iwm-eod-depth",
-            "text": "QQQ/IWM EOD chains begin 2026-07-01 — no free source reaches earlier",
-        },
-        {
-            "id": "minute-lake-frozen",
-            "text": "Alpaca minute bars are a frozen window: 2024-02 → 2026-06 "
-            "(OPRA entitlement unavailable)",
         },
         {
             "id": "2026-07-01-eod-only",
@@ -130,6 +136,58 @@ def _blind_spots(dolthub_state: dict[str, Any], minute: dict[str, Any]) -> list[
             + " — wider strikes and longer tenors have EOD coverage only",
         },
     ]
+    # QQQ/IWM chain depth — computed, not asserted (the iVol EOD regroup
+    # and the cboe_eod record both move this date)
+    qqq = chain_windows.get("QQQ")
+    if qqq:
+        spots.insert(2, {
+            "id": "qqq-iwm-eod-depth",
+            "text": f"QQQ/IWM EOD chains begin {qqq['first']} — "
+            "no free source reaches earlier",
+        })
+    # Alpaca minute lake — frozen vs accruing decided by the lake itself
+    m = minute.get("SPY")
+    if m:
+        stale_days = _days_since(m.get("last"), today)
+        if stale_days is not None and stale_days > 7:
+            spots.append({
+                "id": "minute-lake-frozen",
+                "text": f"Alpaca minute bars stopped accruing {m['last']} "
+                "(OPRA entitlement) — a frozen window since",
+            })
+        else:
+            spots.append({
+                "id": "minute-lake-accruing",
+                "text": f"Alpaca minute bars accruing nightly (latest {m['last']}) "
+                "— trade-derived, never a fill source",
+            })
+    # vendor feed freezes + the in-house continuation (2026-07-08 decision)
+    uw_last = vendor_lasts.get("uw")
+    if uw_last and (_days_since(uw_last, today) or 0) > 7:
+        spots.append({
+            "id": "uw-frozen",
+            "text": f"Unusual Whales families frozen at {uw_last} (no "
+            "subscription) — net premium, NOPE and market tide have no free "
+            "substitute; runs conditioned on them refuse windows running "
+            "past coverage. PCR and max-pain continue in-house.",
+        })
+    ivs_last = vendor_lasts.get("ivs")
+    if ivs_last and (_days_since(ivs_last, today) or 0) > 7:
+        spots.append({
+            "id": "ivol-frozen",
+            "text": f"iVolatility feeds frozen at {ivs_last} (no subscription) "
+            "— IVX/HV/skew/term continue in-house from the CBOE close "
+            "record; 5-min NBBO history ends there and forward intraday "
+            "sessions come from the recorder (~15-min delayed)",
+        })
+    if inhouse_first:
+        spots.append({
+            "id": "inhouse-continuation",
+            "text": f"In-house signal continuations begin {inhouse_first} — a "
+            "disclosed convention change, measured against the vendor overlap "
+            "by the cross-validation pairs below; runs crossing the seam "
+            "carry the disclosure in their payload",
+        })
     quarantined = _quarantined_count(dolthub_state)
     if quarantined:
         spots.insert(
@@ -253,6 +311,36 @@ def _flow_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
     }
 
 
+def _inhouse_range(
+    chain_df: pd.DataFrame | None, hv_df: pd.DataFrame | None
+) -> dict[str, Any] | None:
+    """Window of the in-house forward-record artifacts (2026-07-08) —
+    per-signal counts like every signal family, plus the HV window."""
+    out: dict[str, Any] = {}
+    if chain_df is not None and not chain_df.empty and "date" in chain_df.columns:
+        dates = chain_df["date"].astype(str)
+
+        def _n(col: str) -> int:
+            return (int(pd.to_numeric(chain_df[col], errors="coerce").notna().sum())
+                    if col in chain_df.columns else 0)
+
+        out.update({
+            "sessions": int(len(chain_df)),
+            "first": str(dates.min()),
+            "last": str(dates.max()),
+            "skew_sessions": _n("skew_25d"),
+            "atm_sessions": _n("atm_iv_30d"),
+            "gex_sessions": _n("net_gex"),
+            "pcr_sessions": _n("put_call_ratio"),
+            "max_pain_sessions": _n("max_pain_dist_pct"),
+        })
+    if hv_df is not None and not hv_df.empty and "date" in hv_df.columns:
+        hd = hv_df["date"].astype(str)
+        out["hv"] = {"sessions": int(len(hv_df)),
+                     "first": str(hd.min()), "last": str(hd.max())}
+    return out or None
+
+
 def _pair_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
     """Window + aggregate agreement of one cross-validation pair (F7)."""
     if df is None or df.empty or "date" not in df.columns:
@@ -328,6 +416,19 @@ def build_coverage() -> dict[str, Any]:
             for t in TICKERS
         }
         tide_f = pool.submit(r2.get_parquet, s3, flow_signals.TIDE_KEY)
+        inhouse_f = {
+            t: pool.submit(
+                r2.get_parquet, s3,
+                inhouse_signals.CHAIN_SIGNALS_KEY.format(ticker=t),
+            )
+            for t in TICKERS
+        }
+        hv_inhouse_f = {
+            t: pool.submit(
+                r2.get_parquet, s3, inhouse_signals.HV_KEY.format(ticker=t)
+            )
+            for t in TICKERS
+        }
         xval_f = {
             (pair, t): pool.submit(
                 r2.get_parquet, s3,
@@ -387,6 +488,10 @@ def build_coverage() -> dict[str, Any]:
             t: _flow_signals_range(flow_f[t].result()) for t in TICKERS
         }
         tide_cov = _flow_signals_range(tide_f.result())
+        inhouse_cov = {
+            t: _inhouse_range(inhouse_f[t].result(), hv_inhouse_f[t].result())
+            for t in TICKERS
+        }
         xval_cov: dict[str, dict[str, Any]] = {}
         for (pair, t), xfut in xval_f.items():
             rng = _pair_range(xfut.result())
@@ -409,9 +514,13 @@ def build_coverage() -> dict[str, Any]:
             "quarantined": _quarantined_count(dolthub_state),
         }
 
-    # the EOD record: nightly Yahoo snapshots (source of record per the
-    # DECIDED block in DATA-PIPELINE.md)
-    record = eod["yahoo"].get("SPY") or {"sessions": 0, "first": None, "last": None}
+    # the nightly EOD record: cboe_eod close chains + Yahoo snapshots (the
+    # 2026-07-08 forward-record decision) — a session captured by either leg
+    # counts, so one leg's bad night doesn't misreport the streak
+    record_dates = sorted(
+        set(eod_f[("cboe_eod", "SPY")].result()) | set(eod_f[("yahoo", "SPY")].result())
+    )
+    record = _range(record_dates) or {"sessions": 0, "first": None, "last": None}
 
     # per-ticker chain window across sources (what a backtest can actually use)
     chain_windows: dict[str, Any] = {}
@@ -426,6 +535,7 @@ def build_coverage() -> dict[str, Any]:
     return {
         "generated_at": now.isoformat(),
         "record_days": record["sessions"],
+        "record_first": record["first"],
         "record_latest": record["last"],
         "chains": chain_windows,
         "eod": eod,
@@ -438,6 +548,14 @@ def build_coverage() -> dict[str, Any]:
         "dealer_positioning": dealer_cov,
         "flow_signals": flow_cov,
         "market_tide": tide_cov,
+        # in-house forward-record continuations (2026-07-08) + where each
+        # family's vendor series last observed — the Observatory's seam view
+        "inhouse_signals": inhouse_cov,
+        "vendor_lasts": {
+            "ivs": (ivs_signal_cov.get("SPY") or {}).get("last"),
+            "uw": (flow_cov.get("SPY") or {}).get("last"),
+            "uw_positioning": (dealer_cov.get("SPY") or {}).get("last"),
+        },
         "cross_validation": xval_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
@@ -456,9 +574,15 @@ def build_coverage() -> dict[str, Any]:
         # ledger has run. Additive keys only; nothing above changes shape.
         "resolution_mix": resolution_mix,
         "new_sources": new_sources,
-        "blind_spots": _blind_spots(dolthub_state, minute),
+        "blind_spots": _blind_spots(
+            dolthub_state, minute, now.date().isoformat(), chain_windows,
+            {"ivs": (ivs_signal_cov.get("SPY") or {}).get("last"),
+             "uw": (flow_cov.get("SPY") or {}).get("last")},
+            (inhouse_cov.get("SPY") or {}).get("first"),
+        ),
         "sources_status": {
             "yahoo_eod": bool(eod["yahoo"].get("SPY")),
+            "cboe_eod": bool(eod["cboe_eod"].get("SPY")),
             "dolthub_backfill": bool(eod["dolthub"].get("SPY")),
             "alpaca_minute": bool(minute.get("SPY")),
             "alphavantage": "dormant",  # premium-gated; resumes automatically if entitled

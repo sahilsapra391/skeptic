@@ -393,6 +393,39 @@ class TestCboeDownsampling:
         # OI/last from the canonical snapshot survive normalization
         assert bar930[KEY].open_interest == 100
         assert slc.underlying[datetime(2025, 1, 6, 9, 30)] == 100.0
+        # pre-und_volume snapshots carry no volume: VWAP honestly unevaluable
+        assert slc.underlying_volume == {}
+
+    def test_cumulative_und_volume_becomes_per_bar(self, env: dict[str, Any],
+                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+        """Post-2026-07-08 recorder snapshots bank the underlying's cumulative
+        session share volume; the reader diffs it per bar (hand-computed:
+        1,000 → 1,600 cumulative = 1,000 then 600), and a snapshot without
+        the column leaves ITS bar out of VWAP — never a fabricated zero."""
+        keys = [
+            f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1430Z.parquet",
+            f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1435Z.parquet",
+            f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1440Z.parquet",
+        ]
+        first = _cboe_snap_frame(D, bid=2.00).assign(und_volume=1_000.0)
+        second = _cboe_snap_frame(D, bid=2.10).assign(und_volume=1_600.0)
+        third = _cboe_snap_frame(D, bid=2.20)  # old-recorder snap: no column
+        snaps = {keys[0]: first, keys[1]: second, keys[2]: third}
+
+        monkeypatch.setattr(r2, "list_date_prefixes",
+                            lambda _s3, prefix: [D] if "cboe_delayed" in prefix else [])
+        monkeypatch.setattr(r2, "list_keys", lambda _s3, _p: keys)
+        monkeypatch.setattr(r2, "get_parquet", lambda _s3, k: snaps.get(k))
+
+        store = intraday.IntradayStore("SPY")
+        slc = store.slice_for(date(2025, 1, 6))
+        assert slc is not None
+        # 09:30 is the session open → seeded with its own cumulative
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 30)] == 1_000
+        assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
+        # the column-less snap's bar sits OUT of the volume record
+        assert datetime(2025, 1, 6, 9, 40) not in slc.underlying_volume
+        assert slc.underlying[datetime(2025, 1, 6, 9, 40)] == 100.0  # price kept
 
 
 @pytest.mark.lake

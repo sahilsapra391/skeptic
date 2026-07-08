@@ -92,8 +92,10 @@ function cachedRequest<T>(url: string, ttlMs: number, fresh = false): Promise<T>
 // anyway — this adds no staleness a fresh request wouldn't also have)
 const COVERAGE_CACHE_TTL_MS = 60_000;
 
-export function getCoverage(): Promise<CoveragePayload> {
-  return cachedRequest<CoveragePayload>("/api/data/coverage", COVERAGE_CACHE_TTL_MS);
+export function getCoverage(fresh = false): Promise<CoveragePayload> {
+  // fresh=true is the Observatory's live poll — it bypasses the client
+  // cache read (otherwise every tick re-serves the same snapshot)
+  return cachedRequest<CoveragePayload>("/api/data/coverage", COVERAGE_CACHE_TTL_MS, fresh);
 }
 
 /** Pre-run window options: real session counts + measured time estimates. */

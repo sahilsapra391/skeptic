@@ -15,10 +15,15 @@ from datetime import date
 import pandas as pd
 
 from app.data.cross_validation import (
+    HV_ABS_TOL,
+    HV_REL_TOL,
+    MPD_ABS_TOL,
+    PCR_REL_TOL,
     compare_dolthub_alpaca,
     compare_dolthub_uw,
     compare_massive_ivol5m,
     compare_quote_close,
+    compare_signal_values,
 )
 from app.data.fill_audit import audit_fills
 from app.engine.market import build_fixture_slice, build_fixture_store
@@ -132,6 +137,51 @@ class TestMassiveVsIvol5m:
                              "bid": [2.00], "ask": [2.10]})
         rec = compare_massive_ivol5m(massive, ivol)
         assert rec is not None and rec["within_band"] == 0
+
+
+class TestSignalValues:
+    """The forward-record continuation comparator (hand-computed)."""
+
+    def test_band_mode_uses_the_larger_tolerance(self) -> None:
+        # HV: |0.155 − 0.150| = 0.005 ≤ max(0.01, 0.05·0.150 = 0.0075) → in
+        rec = compare_signal_values(
+            [(0.155, 0.150, "band", HV_ABS_TOL, HV_REL_TOL)])
+        assert rec == {"joined": 1, "checked": 1, "within_band": 1,
+                       "agreement_rate": 1.0}
+
+    def test_band_violation_counts_against(self) -> None:
+        # PCR: |1.50 − 1.00| = 0.5 > 0.25·1.00 → out
+        rec = compare_signal_values([(1.50, 1.00, "band", 0.0, PCR_REL_TOL)])
+        assert rec is not None
+        assert rec["within_band"] == 0 and rec["checked"] == 1
+
+    def test_sign_mode_agrees_on_sign_only(self) -> None:
+        # GEX −4.7e9 vs +8.9e5 disagree; DEX 4.8e10 vs 8.6e7 agree —
+        # the real 2026-07-02 overlap shape
+        rec = compare_signal_values([
+            (-4.7e9, 8.9e5, "sign", 0.0, 0.0),
+            (4.8e10, 8.6e7, "sign", 0.0, 0.0),
+        ])
+        assert rec == {"joined": 2, "checked": 2, "within_band": 1,
+                       "agreement_rate": 0.5}
+
+    def test_sign_of_zero_is_joined_but_unchecked(self) -> None:
+        rec = compare_signal_values([(0.0, 5.0, "sign", 0.0, 0.0)])
+        assert rec == {"joined": 1, "checked": 0, "within_band": 0,
+                       "agreement_rate": None}
+
+    def test_missing_sides_never_fabricate_a_violation(self) -> None:
+        # one None side and one NaN side → nothing joined → None
+        assert compare_signal_values([
+            (None, 1.0, "band", 0.1, 0.0),
+            (float("nan"), 1.0, "band", 0.1, 0.0),
+        ]) is None
+
+    def test_max_pain_band_is_absolute(self) -> None:
+        # the identical-formula field: |−0.239 − (−0.239)| = 0 ≤ 0.5 → in
+        rec = compare_signal_values(
+            [(-0.239, -0.239, "band", MPD_ABS_TOL, 0.0)])
+        assert rec is not None and rec["within_band"] == 1
 
 
 class TestDataConfidenceStage:

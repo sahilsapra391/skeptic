@@ -579,6 +579,7 @@ def build_run_payload(
     report: HonestyReport,
     verdict: VerdictText,
     retail_verdict: VerdictText | None = None,
+    data_provenance: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     m = result.metrics
     window = f"{_short(result.effective_start)} → {_short(result.effective_end)}"
@@ -626,6 +627,10 @@ def build_run_payload(
         "liquidity": report.liquidity.model_dump() if report.liquidity else None,
         "dataConfidence": (report.data_confidence.model_dump()
                            if report.data_confidence else None),
+        # forward-record convention seams the window crossed (2026-07-08):
+        # which frozen vendor series continued in-house, and from when —
+        # additive key, None on single-convention windows and stored runs
+        "dataProvenance": data_provenance or None,
         "concentration": report.concentration.model_dump() if report.concentration else None,
         # per-fill provenance (D2b): which quote record priced each leg fill
         "fillSources": result.fill_sources,
