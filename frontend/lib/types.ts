@@ -438,6 +438,26 @@ export interface CoveragePayload {
       dex_sessions: number;
     } | null
   >;
+  /** F2/F3 (ENGINE-V4): derived flow/pin artifact windows — per-signal
+   * counts; market_tide is market-wide (one block, not per ticker). */
+  flow_signals?: Record<
+    Ticker,
+    {
+      sessions: number;
+      first: string;
+      last: string;
+      net_premium_sessions: number;
+      pcr_sessions: number;
+      nope_sessions: number;
+      max_pain_sessions: number;
+    } | null
+  >;
+  market_tide?: {
+    sessions: number;
+    first: string;
+    last: string;
+    tide_sessions: number;
+  } | null;
   /** D3d: weekly demand ranking (build_priorities.py) — the Observatory's
    * "collection wants" line; null until the first weekly pass writes it */
   collection_priorities?: {

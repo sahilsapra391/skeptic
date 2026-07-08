@@ -1623,3 +1623,65 @@ the duplicated grounding test and the duplicated review paragraph
 removed. Deferred with a note: exhausted-retry contracts are appended
 to aggs_done and never retried (pre-existing; costlier now that the
 ATM band goes first — F7 follow-up).
+
+## F2/F3 (ENGINE-V4) — flow, sentiment & pin structure (2026-07-08)
+
+WHAT: spec v7 — five UW flow/pin indicators (net_premium_level+rank,
+market_tide_level+rank [MARKET-WIDE — the first market-scope series],
+nope_level+rank, put_call_flow_ratio, max_pain_distance_pct); THREE
+masterplan indicators REFUSED on input quality (owner decision:
+oi_change_signal = top-50 vendor curation; oi_concentration/pin_risk =
+invented conventions; max_pain_distance carries the pin thesis).
+NOPE = sign/rank only (vendor implementation ≠ published concept;
+monotone-rescale invariance). Max pain = FRONT expiry fixed ("the
+convention is the concept"). Reduction semantics PROBED and pinned:
+net_prem_ticks rows are per-minute BUCKETS (sum), market_tide is
+CUMULATIVE (last row — median row-diff 6.9M << median |row| 361M).
+HOW: derive-once nightly artifacts (F4 set-difference pattern):
+reference/derived/flow_signals/ticker={T}.parquet + market-wide
+market_tide_signals.parquet; math single-sourced in
+app/data/flow_signals.py; collector/derive_flow_signals.py +
+collect-eod step + CI smoke + Makefile. Store/views/BarView (5 series
+incl. market-wide), _trailing_rank(126) reused, refusal registry +
+rank-unlock naming reused, spec v7 gating incl. ladders, schema + TS
+mirror (v7 before v6), estimate options_flow bound + window-tile note,
+coverage + Observatory lane (per-signal counts + market-wide tide).
+TESTS: 26 new (497 total in the clean worktree; local counts include
+another session's files) — hand-computed reductions (80.0 / 0.6 /
+last-stamp NOPE / −0.2390% FORWARD front max pain; expired AND
+same-day rows excluded),
+cumulative-last-row-wins, per-signal absence, zero-volume never
+divides, sign+raw semantics, rank floor 125/126, BarView prev-day,
+unavailable×8, v7 gating + schema parity, refusal + covered-window
+gating e2e (entries on exactly the tide-positive sessions).
+REVIEW (independent agent, clean worktree): 0 BLOCKER + 2 MAJOR +
+5 MINOR + 4 NIT — (1) MAJOR FIXED: all-NaN premium/volume columns
+fabricated 0.0 through pandas' default sum (min_count=0) — "put/call
+ratio below 0.8" would evaluate TRUE on missing data and the zeros
+would enter rank histories permanently → .sum(min_count=1) ×4, pinned;
+(2) MAJOR FIXED: the eval grader could not match TWO expected
+conditions on the same indicator (first-indicator-match returned a
+false operator error) — case 43's "within 1% of max pain" pair was
+unpassable by a PERFECT parse → _match_condition now consumes matched
+candidates, verified in both emission orders; (3) FIXED: collector
+TOCTOU double-read could truncate the artifact for a day → single
+read threaded through; (5→OWNER DECISION 2026-07-08): front expiry is
+now STRICTLY AFTER the session — with daily expirations "≥" referenced
+the expiry settling that day (retrospective at the stamp, a ghost at
+consumption; forward-by-CALENDAR is PIT-clean, forward-into-DATA stays
+forbidden); artifacts re-derived, fixture updated; (8) duplicate-stamp
+ties now last-wins (vendor corrections beat stale rows); (9) flow/tide
+guards split (chains + estimate); (10) market-wide refusal phrasing
+drops the ticker; (7) driving-family + partial-NaN caveats disclosed
+in HONESTY.md; (11) test counts corrected. Real-lake acceptance:
+91/91 sessions all five signals (bullish-flow 40/91, risk-on tide
+51/91); 2024-window refusal fires naming market-wide tide; tide-gated
+short put makes 18 gated fills over the covered window.
+LIVE EVAL (45 cases, post-grader-fix): 29/29 clear + 16/16 ambiguous —
+ACCEPTED, perfect score. Run 1 confirmed the review's grader prediction
+exactly (case 43 failed on the pair-matching bug while the PARSE was
+correct); run 2 passed 43 but hit an upstream OpenRouter network flake
+(case 27) + pre-existing D5d ladder nondeterminism (case 20); run 3
+clean. Cases 44/45 refuse raw NOPE and dollar thresholds offering
+sign/rank; case 42 pairs the market-wide tide with a raw put/call
+ratio; case 43's "within 1% of max pain" compiles to the ANDed pair.

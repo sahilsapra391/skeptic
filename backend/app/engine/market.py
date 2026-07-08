@@ -56,6 +56,18 @@ class MarketStore:
     net_gex: dict[date, float] = field(default_factory=dict)
     dex_dates: list[date] = field(default_factory=list)
     net_dex: dict[date, float] = field(default_factory=dict)
+    # UW flow/sentiment/pin EOD reductions, 2026-02-24+ — spec-v7 (F2/F3).
+    # market_tide is MARKET-WIDE: one series regardless of ticker.
+    flow_dates: list[date] = field(default_factory=list)
+    net_premium: dict[date, float] = field(default_factory=dict)
+    pcr_dates: list[date] = field(default_factory=list)
+    put_call_ratio: dict[date, float] = field(default_factory=dict)
+    nope_dates: list[date] = field(default_factory=list)
+    nope_eod: dict[date, float] = field(default_factory=dict)
+    mpd_dates: list[date] = field(default_factory=list)
+    max_pain_dist: dict[date, float] = field(default_factory=dict)
+    tide_dates: list[date] = field(default_factory=list)
+    market_tide: dict[date, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.sessions = sorted(self.sessions)
@@ -66,6 +78,11 @@ class MarketStore:
         self.term_dates = sorted(self.term_dates)
         self.gex_dates = sorted(self.gex_dates)
         self.dex_dates = sorted(self.dex_dates)
+        self.flow_dates = sorted(self.flow_dates)
+        self.pcr_dates = sorted(self.pcr_dates)
+        self.nope_dates = sorted(self.nope_dates)
+        self.mpd_dates = sorted(self.mpd_dates)
+        self.tide_dates = sorted(self.tide_dates)
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
 
 
@@ -97,6 +114,14 @@ class MarketViewLike(Protocol):
     def gex_history(self) -> list[float]: ...
     def dex_level(self) -> float | None: ...
     def dex_history(self) -> list[float]: ...
+    def net_premium_level(self) -> float | None: ...
+    def net_premium_history(self) -> list[float]: ...
+    def market_tide_level(self) -> float | None: ...
+    def market_tide_history(self) -> list[float]: ...
+    def nope_level(self) -> float | None: ...
+    def nope_history(self) -> list[float]: ...
+    def put_call_ratio(self) -> float | None: ...
+    def max_pain_distance_pct(self) -> float | None: ...
     # D2c: the run's rolling 5-minute underlying lasts (≤ current bar,
     # across sessions) and the session-anchored VWAP at the current bar.
     # The daily view has no bars: empty / None. Implementations return AT
@@ -258,6 +283,50 @@ class MarketView:
         """All net-DEX observations ≤ as_of, oldest → newest (rank input)."""
         idx = bisect_right(self._store.dex_dates, self._as_of)
         return [self._store.net_dex[d] for d in self._store.dex_dates[:idx]]
+
+    # F2/F3: flow/sentiment/pin EOD reductions — same PIT shape as every
+    # daily analytic series (most recent ≤ as_of; bounded histories)
+    def net_premium_level(self) -> float | None:
+        idx = bisect_right(self._store.flow_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.net_premium[self._store.flow_dates[idx - 1]]
+
+    def net_premium_history(self) -> list[float]:
+        idx = bisect_right(self._store.flow_dates, self._as_of)
+        return [self._store.net_premium[d] for d in self._store.flow_dates[:idx]]
+
+    def market_tide_level(self) -> float | None:
+        idx = bisect_right(self._store.tide_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.market_tide[self._store.tide_dates[idx - 1]]
+
+    def market_tide_history(self) -> list[float]:
+        idx = bisect_right(self._store.tide_dates, self._as_of)
+        return [self._store.market_tide[d] for d in self._store.tide_dates[:idx]]
+
+    def nope_level(self) -> float | None:
+        idx = bisect_right(self._store.nope_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.nope_eod[self._store.nope_dates[idx - 1]]
+
+    def nope_history(self) -> list[float]:
+        idx = bisect_right(self._store.nope_dates, self._as_of)
+        return [self._store.nope_eod[d] for d in self._store.nope_dates[:idx]]
+
+    def put_call_ratio(self) -> float | None:
+        idx = bisect_right(self._store.pcr_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.put_call_ratio[self._store.pcr_dates[idx - 1]]
+
+    def max_pain_distance_pct(self) -> float | None:
+        idx = bisect_right(self._store.mpd_dates, self._as_of)
+        if idx == 0:
+            return None
+        return self._store.max_pain_dist[self._store.mpd_dates[idx - 1]]
 
 
 @dataclass
@@ -437,6 +506,11 @@ def build_fixture_store(
     term_slope: dict[str, float] | None = None,
     net_gex: dict[str, float] | None = None,
     net_dex: dict[str, float] | None = None,
+    net_premium: dict[str, float] | None = None,
+    put_call_ratio: dict[str, float] | None = None,
+    nope_eod: dict[str, float] | None = None,
+    max_pain_dist: dict[str, float] | None = None,
+    market_tide: dict[str, float] | None = None,
 ) -> MarketStore:
     """Fixture loader: plain dicts → MarketStore (same shape the real
     loader produces, so fixtures exercise the identical engine path)."""
@@ -484,6 +558,11 @@ def build_fixture_store(
     term_map = {date.fromisoformat(k): v for k, v in (term_slope or {}).items()}
     gex_map = {date.fromisoformat(k): v for k, v in (net_gex or {}).items()}
     dex_map = {date.fromisoformat(k): v for k, v in (net_dex or {}).items()}
+    flow_map = {date.fromisoformat(k): v for k, v in (net_premium or {}).items()}
+    pcr_map = {date.fromisoformat(k): v for k, v in (put_call_ratio or {}).items()}
+    nope_map = {date.fromisoformat(k): v for k, v in (nope_eod or {}).items()}
+    mpd_map = {date.fromisoformat(k): v for k, v in (max_pain_dist or {}).items()}
+    tide_map = {date.fromisoformat(k): v for k, v in (market_tide or {}).items()}
     return MarketStore(
         ticker=ticker,
         sessions=sessions,
@@ -505,4 +584,14 @@ def build_fixture_store(
         net_gex=gex_map,
         dex_dates=sorted(dex_map),
         net_dex=dex_map,
+        flow_dates=sorted(flow_map),
+        net_premium=flow_map,
+        pcr_dates=sorted(pcr_map),
+        put_call_ratio=pcr_map,
+        nope_dates=sorted(nope_map),
+        nope_eod=nope_map,
+        mpd_dates=sorted(mpd_map),
+        max_pain_dist=mpd_map,
+        tide_dates=sorted(tide_map),
+        market_tide=tide_map,
     )

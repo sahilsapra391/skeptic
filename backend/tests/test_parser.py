@@ -179,6 +179,20 @@ def test_required_spec_version_detects_v6() -> None:
     assert rsv({"entry": {"scale_in": {"rungs": [gex]}}}) == 6
 
 
+def test_required_spec_version_detects_v7() -> None:
+    """F2/F3: flow/pin vocabulary lifts to 7 — MAX wins over v6/v5,
+    and ladder conditions count."""
+    rsv = parser_module._required_spec_version
+    flow = {"indicator": "net_premium_level", "operator": ">", "value": 0}
+    tide = {"indicator": "market_tide_rank_1y", "operator": ">", "value": 75}
+    mpd = {"indicator": "max_pain_distance_pct", "operator": "<", "value": 1}
+    gex = {"indicator": "gex_level", "operator": ">", "value": 0}
+    assert rsv({"entry": {"conditions": [flow]}}) == 7
+    assert rsv({"exit": {"conditions": [tide]}}) == 7
+    assert rsv({"entry": {"conditions": [mpd, gex]}}) == 7
+    assert rsv({"entry": {"scale_in": {"rungs": [flow]}}}) == 7
+
+
 def _ladder_spec_raw() -> dict:
     # what the LLM emits (spec_version 1, ATM on the leg) — the server
     # normalizes and recomputes the version

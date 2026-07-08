@@ -239,10 +239,20 @@ export function SpecScreen({
   // a v6 condition arriving via exit conditions or ladder rungs shows no
   // note here, and the run-time refusal is the guard that always holds.
   const V6_INDICATORS = ["gex_level", "gex_rank_1y", "dex_level", "dex_rank_1y"];
-  const dealerBound =
-    draft.triggerSpec && V6_INDICATORS.includes(draft.triggerSpec.indicator)
+  const V7_FLOW = [
+    "net_premium_level", "net_premium_rank_1y", "nope_level", "nope_rank_1y",
+    "put_call_flow_ratio", "max_pain_distance_pct",
+  ];
+  const V7_TIDE = ["market_tide_level", "market_tide_rank_1y"];
+  const dealerBound = draft.triggerSpec
+    ? V6_INDICATORS.includes(draft.triggerSpec.indicator)
       ? estimate?.signal_windows?.dealer_positioning
-      : undefined;
+      : V7_FLOW.includes(draft.triggerSpec.indicator)
+        ? estimate?.signal_windows?.options_flow
+        : V7_TIDE.includes(draft.triggerSpec.indicator)
+          ? estimate?.signal_windows?.market_tide
+          : undefined
+    : undefined;
   const dealerRankBound =
     draft.triggerSpec?.indicator.endsWith("_rank_1y") && dealerBound?.rank_first
       ? dealerBound.rank_first

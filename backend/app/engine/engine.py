@@ -270,6 +270,32 @@ class BarView:
     def dex_history(self) -> list[float]:
         return self._prev.dex_history()
 
+    # F2/F3: flow/pin reductions are EOD series — previous session at
+    # intraday bars, like every daily analytic
+    def net_premium_level(self) -> float | None:
+        return self._prev.net_premium_level()
+
+    def net_premium_history(self) -> list[float]:
+        return self._prev.net_premium_history()
+
+    def market_tide_level(self) -> float | None:
+        return self._prev.market_tide_level()
+
+    def market_tide_history(self) -> list[float]:
+        return self._prev.market_tide_history()
+
+    def nope_level(self) -> float | None:
+        return self._prev.nope_level()
+
+    def nope_history(self) -> list[float]:
+        return self._prev.nope_history()
+
+    def put_call_ratio(self) -> float | None:
+        return self._prev.put_call_ratio()
+
+    def max_pain_distance_pct(self) -> float | None:
+        return self._prev.max_pain_distance_pct()
+
     def intraday_closes_upto(self) -> list[float]:
         # AT MOST the trailing lookback window. Copying the WHOLE prefix
         # here was O(bars²) across a run — a full-history 5-min backtest
@@ -1219,6 +1245,16 @@ _SIGNAL_SERIES: dict[Indicator, tuple[str, str]] = {
     Indicator.GEX_RANK_1Y: ("dealer positioning (UW)", "gex_dates"),
     Indicator.DEX_LEVEL: ("dealer positioning (UW)", "dex_dates"),
     Indicator.DEX_RANK_1Y: ("dealer positioning (UW)", "dex_dates"),
+    # F2/F3: flow/sentiment/pin reductions (UW, 2026-02-24+) — thinner
+    # still than dealer positioning; the same cap machinery
+    Indicator.NET_PREMIUM_LEVEL: ("options flow (UW)", "flow_dates"),
+    Indicator.NET_PREMIUM_RANK_1Y: ("options flow (UW)", "flow_dates"),
+    Indicator.MARKET_TIDE_LEVEL: ("market-wide tide (UW)", "tide_dates"),
+    Indicator.MARKET_TIDE_RANK_1Y: ("market-wide tide (UW)", "tide_dates"),
+    Indicator.NOPE_LEVEL: ("NOPE (UW)", "nope_dates"),
+    Indicator.NOPE_RANK_1Y: ("NOPE (UW)", "nope_dates"),
+    Indicator.PUT_CALL_FLOW_RATIO: ("options flow (UW)", "pcr_dates"),
+    Indicator.MAX_PAIN_DISTANCE_PCT: ("max pain (UW)", "mpd_dates"),
 }
 
 
@@ -1236,7 +1272,9 @@ def _spec_conditions(spec: StrategySpec) -> list[Condition]:
 # them unevaluable until 126 trailing observations exist, so the refusal
 # names THAT date too — the offered window must not hide six structurally
 # flat months inside itself (review finding F1 #2)
-_RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y}
+_RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y,
+                    Indicator.NET_PREMIUM_RANK_1Y, Indicator.MARKET_TIDE_RANK_1Y,
+                    Indicator.NOPE_RANK_1Y}
 
 
 def check_signal_coverage(spec: StrategySpec, store: MarketStore,
@@ -1260,25 +1298,28 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
         first = dates[0]
         if win_start >= first:
             continue
+        # a market-wide series isn't "for SPY" — drop the ticker from the
+        # phrasing (review finding F2/F3 #10)
+        scope = ("" if label.startswith("market-wide")
+                 else f" for {spec.underlying.ticker.value}")
         rank_note = ""
         if cond.indicator in _RANK_INDICATORS:
             unlock = (dates[125].isoformat() if len(dates) > 125
                       else "once 126 sessions accrue")
             rank_note = (" Rank filters additionally need 126 trailing "
                          f"observations — evaluable from {unlock}.")
-        ticker = spec.underlying.ticker.value
         if win_end < first:
             # the requested window lies ENTIRELY before coverage — offering
             # "first → win_end" would be an inverted, impossible window
             # (review finding F1 #1); offer the real covered window instead
             raise SliceCoverageError(
-                f"{label} data for {ticker} starts {first.isoformat()}; the "
+                f"{label} data{scope} starts {first.isoformat()}; the "
                 f"requested window ends {win_end.isoformat()} — entirely "
                 f"before coverage begins. Run {first.isoformat()} → "
                 f"{store.sessions[-1].isoformat()} instead.{rank_note}"
             )
         raise SliceCoverageError(
-            f"{label} data for {ticker} starts {first.isoformat()}; the "
+            f"{label} data{scope} starts {first.isoformat()}; the "
             f"requested window starts {win_start.isoformat()} — the uncovered "
             f"stretch would sit in flat cash and corrupt the stats. Run "
             f"{first.isoformat()} → {win_end.isoformat()} instead.{rank_note}"

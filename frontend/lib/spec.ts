@@ -162,12 +162,18 @@ function computeSpecVersion(spec: Json): number {
   const V6_INDICATORS = new Set([
     "gex_level", "gex_rank_1y", "dex_level", "dex_rank_1y",
   ]);
+  const V7_INDICATORS = new Set([
+    "net_premium_level", "net_premium_rank_1y", "market_tide_level",
+    "market_tide_rank_1y", "nope_level", "nope_rank_1y",
+    "put_call_flow_ratio", "max_pain_distance_pct",
+  ]);
   const scaleIn = (entry.scale_in ?? {}) as Json;
   const ladderConds = [
     ...((scaleIn.rungs as Json[] | undefined) ?? []),
     ...(scaleIn.rearm ? [scaleIn.rearm as Json] : []),
   ];
   const allConds = [...conds, ...ladderConds];
+  if (allConds.some((c) => V7_INDICATORS.has(String(c.indicator)))) return 7;
   if (allConds.some((c) => V6_INDICATORS.has(String(c.indicator)))) return 6;
   if (allConds.some((c) => V5_INDICATORS.has(String(c.indicator)))) return 5;
   if (backtest.resolution != null || entry.intraday_scan != null) return 4;
