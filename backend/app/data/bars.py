@@ -214,18 +214,43 @@ def _recorder_snapshot_ts(key: str) -> pd.Timestamp | None:
 
 def per_bar_volume(cum: pd.Series, *, seed_first: bool = True,
                    nan_fill: float | None = None) -> pd.Series:
-    """Cumulative session volume → per-bar volume (the diff). ONE shared
-    implementation for the live recorder and the ivol intraday reader — the
-    reader's old fillna(cum) injection bug was born from these two sites
-    diverging, and a future fork means the same session yields different
-    VWAPs live vs backtested. seed_first: bar 0 takes its cumulative as its
-    own volume (callers gate this on the first stamp actually being the
-    session open). nan_fill: what an unknown diff becomes — 0.0 for the
-    recorder ("honestly zero, never invented"), None to keep NaN for the
-    reader (unknown bars sit out of session-anchored VWAP)."""
+    """Cumulative session volume → per-bar volume (the diff), for the ivol
+    intraday reader (vendor cumulative probed monotonic from 0 — seeding
+    the true session-open bar is valid THERE). seed_first: bar 0 takes its
+    cumulative as its own volume (callers gate this on the first stamp
+    actually being the session open). nan_fill: what an unknown diff
+    becomes — None keeps NaN (unknown bars sit out of session-anchored
+    VWAP). CBOE RECORDER cumulative must go through
+    recorder_per_bar_volume instead: that feed's day-volume field is a
+    rollover hazard the seed rule turns into a 42M open-bar spike."""
     vol = cum.diff()
     if seed_first and len(vol):
         vol.iloc[0] = cum.iloc[0]
+    vol = vol.clip(lower=0)
+    return vol if nan_fill is None else vol.fillna(nan_fill)
+
+
+def recorder_per_bar_volume(cum: pd.Series,
+                            nan_fill: float | None = None) -> pd.Series:
+    """CBOE recorder day-volume → per-bar volume. The feed's `volume`
+    field is a ROLLOVER hazard (probed 2026-07-08 on QQQ: frozen at the
+    PRIOR session's 42.48M total from 9:30–9:41 ET, reset to 0 at 9:42,
+    then a clean climbing cumulative; the field is ~15-min delayed like
+    every value from this source). Rules, honest in both directions:
+      * everything at or BEFORE the last cumulative DROP is the stale
+        prior-session plateau — volume UNKNOWN (NaN), never yesterday's
+        total seeded onto today's open bar (the incident);
+      * a series with no drop began after the reset (or the recorder
+        restarted mid-session): the first bar's baseline is unknown — no
+        seeding; diffs from the second bar are real.
+    nan_fill as in per_bar_volume: 0.0 for the chart tail's numeric
+    convention, None so VWAP readers leave unknown bars out."""
+    vol = cum.diff()
+    drops = np.where(vol.to_numpy() < 0)[0]
+    if len(drops):
+        vol.iloc[: int(drops[-1]) + 1] = float("nan")
+    elif len(vol):
+        vol.iloc[0] = float("nan")
     vol = vol.clip(lower=0)
     return vol if nan_fill is None else vol.fillna(nan_fill)
 
@@ -285,7 +310,9 @@ def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFra
     full = pd.DataFrame(cache["rows"])  # rows are kept sorted by minute_ts
     cum = full["cum_vol"] if "cum_vol" in full.columns else pd.Series([None] * len(full))
     if cum.notna().any():
-        vol = per_bar_volume(cum, nan_fill=0.0)
+        # rollover-aware: the feed's first minutes carry YESTERDAY's total
+        # (a 42M spike on every chart's open bar — incident 2026-07-08)
+        vol = recorder_per_bar_volume(cum, nan_fill=0.0)
     else:
         vol = pd.Series(0.0, index=full.index)
     full = full.assign(volume=vol)
