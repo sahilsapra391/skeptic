@@ -637,3 +637,33 @@ Honesty rules the numbers depend on:
 - **Coverage is disclosed per signal** — the Observatory shows the
   banked window with per-signal session counts, and the pre-run refusal
   quotes the same first session it displays.
+
+## F5 (ENGINE-V4): displayed depth — disclosed, never modeled (yet)
+
+The iVol 5-min record carries the displayed NBBO size (contracts, both
+sides) on every quoted bar. As of F5 every option-leg fill compares its
+quantity against the traded side's displayed size (buy → ask, sell →
+bid):
+
+- **Prices are untouched.** Fills keep FX.2 semantics — real NBBO plus
+  the configured slippage fraction. A fill larger than displayed depth
+  is COUNTED (`fills_beyond_depth` / `fills_depth_known`), named in the
+  trade log ("qty 20 > ask size 3"), and reported by the liquidity
+  profile with a verdict caveat when nonzero. REPORTED, never scored —
+  the session-regime-split rule.
+- **Why not a model or a gate (owner decision 2026-07-07):** we hold L1
+  depth only. A book-walk model on one level is invented structure; a
+  hard gate refuses fills reality would likely give (hidden size,
+  sweeps — the FX.2 "pessimistic in a way reality wouldn't be" test).
+  A price-impact model must be EARNED the way the fill model itself
+  was: through the D3d weekly calibration loop, with the asymmetric
+  evidence bar for optimism-increasing changes.
+- **Unknown stays unknown.** EOD chains and modeled/recorder quotes
+  without sizes carry None — depth-unknown fills are excluded from the
+  denominators, never guessed. Daily-clock output is bit-identical
+  (pinned digests).
+- **Settlements carry no depth** — cash settlement has no NBBO, so a
+  settlement close honestly records nothing.
+- **Massive cross-check DEFERRED to F7** — zero data banked (the
+  collector never ramped; ops decision flagged to the owner). The
+  masterplan's guardrail stands: Massive is never a fill source.

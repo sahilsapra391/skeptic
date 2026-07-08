@@ -401,6 +401,10 @@ def build_fixture_slice(
                 volume=None if row.get("volume") is None
                 else int(row["volume"]),  # type: ignore[call-overload]
                 greeks_source="vendor",
+                bid_size=None if row.get("bid_size") is None
+                else int(row["bid_size"]),  # type: ignore[call-overload]
+                ask_size=None if row.get("ask_size") is None
+                else int(row["ask_size"]),  # type: ignore[call-overload]
             )
         quote_map[_ts(hhmm)] = per
 

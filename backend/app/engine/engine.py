@@ -100,6 +100,9 @@ class _State:
     fills_penalized: int = 0
     fills_stressed: int = 0
     fills_unknown_liquidity: int = 0
+    # F5: fill qty vs displayed NBBO depth on the traded side (disclosure)
+    fills_depth_known: int = 0
+    fills_beyond_depth: int = 0
     fill_sources: dict[str, int] = field(default_factory=dict)  # provenance (D2b)
     rung_fills: list[RungFill] = field(default_factory=list)  # scale-in adds (D5a)
     # FX.2: every skip COUNTED with its reason (the trade log stays deduped;
@@ -128,7 +131,13 @@ class _BasketState:
 
 
 def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
-                     stressed: bool, source: str) -> None:
+                     stressed: bool, source: str, action: str = "",
+                     qty: int = 0) -> str | None:
+    """Per-leg fill bookkeeping. Returns an F5 depth note ("qty 20 > ask
+    size 3") when the fill quantity exceeded the traded side's displayed
+    NBBO size — DISCLOSURE only, the price is untouched (owner decision
+    2026-07-07: beyond-L1 liquidity exists; a model must be earned by
+    calibration, a hard gate would be pessimism reality doesn't show)."""
     state.option_leg_fills += 1
     state.fill_sources[source] = state.fill_sources.get(source, 0) + 1
     sp = fills.spread_pct(q)
@@ -140,6 +149,15 @@ def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
         state.fills_stressed += 1
     elif eff_slip > base_slip + 1e-12:
         state.fills_penalized += 1
+    depth = q.ask_size if action == "buy" else q.bid_size if action == "sell" else None
+    if depth is None or qty <= 0:
+        return None
+    state.fills_depth_known += 1
+    if qty > depth:
+        state.fills_beyond_depth += 1
+        side_name = "ask" if action == "buy" else "bid"
+        return f"qty {qty} > {side_name} size {depth}"
+    return None
 
 
 def _leg_desc(leg: OpenLeg) -> str:
@@ -612,8 +630,16 @@ def _try_entry(
             OpenLeg(key=key, side=leg.side.value, qty=qty, entry_price=px, last_mark=px)
         )
 
-    for q, eff, was_stressed in zip(leg_quotes, leg_slips, leg_stressed, strict=True):
-        _record_leg_fill(state, q, eff, slip, was_stressed, view.fill_source)
+    depth_notes: list[str] = []
+    for q, eff, was_stressed, leg in zip(leg_quotes, leg_slips, leg_stressed,
+                                         spec.position.legs, strict=True):
+        note = _record_leg_fill(
+            state, q, eff, slip, was_stressed, view.fill_source,
+            action="sell" if leg.side is Side.SHORT else "buy",
+            qty=leg.ratio * contracts,
+        )
+        if note:
+            depth_notes.append(note)
 
     state.positions.append(pos)
     state.live.append(pos)
@@ -631,7 +657,8 @@ def _try_entry(
         TradeEvent(
             day=day,
             action="OPEN",
-            detail=f"{_position_desc(pos)} · exp {expiration} · {kind} {abs(premium):.3f}",
+            detail=f"{_position_desc(pos)} · exp {expiration} · {kind} {abs(premium):.3f}"
+                   + (" · " + "; ".join(depth_notes) if depth_notes else ""),
             position_id=pos.pid,
         )
     )
@@ -734,7 +761,8 @@ def _fire_rungs(
         leg.entry_price = blended
         leg.last_mark = px
         basket.fired_rungs.add(idx)
-        _record_leg_fill(state, q, eff, slip, stressed, view.fill_source)
+        depth_note = _record_leg_fill(state, q, eff, slip, stressed,
+                                      view.fill_source, action="buy", qty=qty)
         state.rung_fills.append(
             RungFill(
                 basket_pid=basket.pid, day=view.as_of, bar_time=bar_time,
@@ -744,6 +772,8 @@ def _fire_rungs(
         )
         if not opening:
             tag = " cap_clamped" if clamped else ""
+            if depth_note:
+                tag += f" · {depth_note}"
             state.trades.append(
                 TradeEvent(
                     day=view.as_of, action="ADD",
@@ -874,6 +904,7 @@ def _close_position(
     if liq is None:
         return False
     stressed = view.fill_source in STRESSED_SOURCES
+    depth_notes: list[str] = []
     for leg in pos.legs:
         if leg.settled:
             continue
@@ -887,13 +918,19 @@ def _close_position(
         state.cash += cash_delta
         pos.cash_flow += cash_delta
         leg.settled = True
-        _record_leg_fill(state, q, eff, slip, stressed=False, source=view.fill_source)
+        note = _record_leg_fill(
+            state, q, eff, slip, stressed=False, source=view.fill_source,
+            action=fills.close_action(leg.side), qty=leg.qty,
+        )
+        if note:
+            depth_notes.append(note)
     pos.closed = pos.stock_shares == 0
     state.trades.append(
         TradeEvent(
             day=view.as_of,
             action="CLOSE",
-            detail=_position_desc(pos),
+            detail=_position_desc(pos)
+                   + (" · " + "; ".join(depth_notes) if depth_notes else ""),
             pl=round(pos.cash_flow, 2) if pos.closed else None,
             reason=reason,
             position_id=pos.pid,
@@ -1621,6 +1658,8 @@ def run_engine(
     result.fills_penalized = state.fills_penalized
     result.fills_stressed = state.fills_stressed
     result.fills_unknown_liquidity = state.fills_unknown_liquidity
+    result.fills_depth_known = state.fills_depth_known
+    result.fills_beyond_depth = state.fills_beyond_depth
     result.fill_sources = state.fill_sources
     result.rung_fills = state.rung_fills
     result.skip_reasons = state.skip_counts

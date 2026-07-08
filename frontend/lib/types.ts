@@ -193,6 +193,11 @@ export interface LiquidityProfile {
   penalized_share: number | null;
   stressed_share: number | null;
   unknown_liquidity_share: number | null;
+  /** F5: fill qty vs displayed NBBO depth — reported, never scored.
+   * depth_known_share is of all option-leg fills; beyond_depth_share is
+   * of the depth-known ones (null when no fill had known depth). */
+  depth_known_share?: number | null;
+  beyond_depth_share?: number | null;
   skipped_illiquid: number;
   material: boolean;
   note: string | null;

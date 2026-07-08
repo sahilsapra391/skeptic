@@ -55,7 +55,8 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 # (covers a weekend); documented approximation for the tiny forward corpus.
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
-CACHE_SCHEMA_VERSION = 4  # v4: vendor-shape hardening — duplicate stamps keep
+CACHE_SCHEMA_VERSION = 5  # v5 (F5): + displayed NBBO sizes (bid_size/ask_size)
+# v4: vendor-shape hardening — duplicate stamps keep
 #     the last-written row, head-truncated payloads no longer seed bar 0 with
 #     the cumulative-so-far (v3: NaN cum-volume no longer injects the session
 #     cumulative as one bar's volume; v2: per-bar volume, D2c)
@@ -87,6 +88,7 @@ MIN_HALF_SPREAD = 0.01
 SLICE_COLUMNS = [
     "bar_ts", "expiration", "right", "strike", "bid", "ask", "last",
     "volume", "open_interest", "iv", "delta", "gamma", "theta", "vega", "rho",
+    "bid_size", "ask_size",
 ]
 
 
@@ -148,6 +150,12 @@ def _ivol_frames(
         "last": None,
         "volume": pd.to_numeric(opt["volume"], errors="coerce"),
         "open_interest": None,
+        # F5: displayed NBBO depth (contracts) — disclosure input, never
+        # pricing; absent columns stay honestly None
+        "bid_size": pd.to_numeric(opt["bid_size"], errors="coerce")
+        if "bid_size" in opt.columns else None,
+        "ask_size": pd.to_numeric(opt["ask_size"], errors="coerce")
+        if "ask_size" in opt.columns else None,
         "iv": pd.to_numeric(opt["iv"], errors="coerce"),
         "delta": pd.to_numeric(opt["delta"], errors="coerce"),
         "gamma": pd.to_numeric(opt["gamma"], errors="coerce"),
@@ -296,6 +304,10 @@ def _cboe_frames(
             "last": pd.to_numeric(sub["last"], errors="coerce"),
             "volume": pd.to_numeric(sub["volume"], errors="coerce"),
             "open_interest": pd.to_numeric(sub["open_interest"], errors="coerce"),
+            "bid_size": pd.to_numeric(sub["bid_size"], errors="coerce")
+            if "bid_size" in sub.columns else None,
+            "ask_size": pd.to_numeric(sub["ask_size"], errors="coerce")
+            if "ask_size" in sub.columns else None,
             "iv": pd.to_numeric(sub["iv"], errors="coerce"),
             "delta": pd.to_numeric(sub["delta"], errors="coerce"),
             "gamma": pd.to_numeric(sub["gamma"], errors="coerce"),
@@ -363,6 +375,8 @@ def _build_slice(
                 open_interest=_num_i(rec.get("open_interest")),
                 last=_num(rec.get("last")),
                 greeks_source="vendor",
+                bid_size=_num_i(rec.get("bid_size")),
+                ask_size=_num_i(rec.get("ask_size")),
             )
         quotes[bar.to_pydatetime()] = per
 
@@ -539,6 +553,7 @@ def _alpaca_frames(
             "volume": vol,
             "open_interest": None, "iv": None, "delta": None, "gamma": None,
             "theta": None, "vega": None, "rho": None,
+            "bid_size": None, "ask_size": None,  # modeled quotes have no book
         })[SLICE_COLUMNS])
     if not frames:
         return None

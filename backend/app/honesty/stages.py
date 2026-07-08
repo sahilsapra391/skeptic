@@ -975,6 +975,20 @@ def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile
             "liquidity gates — the strategy wants markets this data says are thin"
         )
 
+    # F5: fills vs displayed NBBO depth — disclosure only, never scoring.
+    # ANY beyond-depth fill is named (no materiality floor: the count is
+    # small by construction and the reader decides what it means)
+    depth_known = share(result.fills_depth_known)
+    beyond = (result.fills_beyond_depth / result.fills_depth_known
+              if result.fills_depth_known > 0 else None)
+    if result.fills_beyond_depth > 0:
+        notes.append(
+            f"{result.fills_beyond_depth} of {result.fills_depth_known} "
+            "depth-known fills exceeded the displayed NBBO size — the model "
+            "filled the whole order at the quote; real execution may have "
+            "walked the book (prices unchanged, disclosed not modeled)"
+        )
+
     return LiquidityProfile(
         mode=spec.costs.liquidity_mode.value,
         max_spread_pct=spec.costs.max_spread_pct,
@@ -986,6 +1000,8 @@ def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile
         stressed_share=stressed,
         unknown_liquidity_share=share(result.fills_unknown_liquidity),
         skipped_illiquid=skipped,
+        depth_known_share=depth_known,
+        beyond_depth_share=beyond,
         material=bool(notes),
         note="; ".join(notes) if notes else None,
     )

@@ -1543,3 +1543,31 @@ DELIBERATELY partial (trigger-dial only; run-time refusal always
 guards) + shows the rank-unlock date; (8,9,10) NITs: Observatory
 session counts mirror the ivs pattern (noted), BarView test pins
 delegation (named), refusal params renamed win_start/win_end.
+
+## F5 (ENGINE-V4) — fill realism: displayed-depth disclosure (2026-07-07)
+
+WHAT: every option-leg fill now compares its quantity against the
+traded side's displayed NBBO size from the iVol 5-min record
+(bid_size/ask_size, in the lake since 2013, unused until now). OWNER
+DECISIONS: disclose first, model later (prices untouched — a price-
+impact model must be EARNED via D3d calibration; a hard gate fails the
+FX.2 pessimism test); intraday slip unchanged (no volume-proxy scaling
+without calibration evidence); Massive cross-check DEFERRED to F7
+(zero data banked — collector ramp is an ops decision, flagged).
+HOW: Quote gains bid_size/ask_size (None on EOD rows — +2 slots/quote,
+~+70MB on a full store, within the 8GB budget); intraday slice
+plumbing + CACHE_SCHEMA_VERSION 4→5 (slice cache only, spread stats
+untouched — the #62 lesson; lazy per-session rebuild); _record_leg_fill
+gains (action, qty) → counts fills_depth_known/fills_beyond_depth and
+returns the trade-log note; all three fill sites (entry legs by side,
+ladder adds, quote-priced closes by close-side) thread notes into
+OPEN/ADD/CLOSE details; settlements honestly carry nothing;
+LiquidityProfile + payload gain depth_known_share/beyond_depth_share
+with a caveat note on ANY exceedance; results-view liquidity line shows
+the beyond-depth share. NO parser change — no eval gate this chunk.
+TESTS: 10 new (465 total green) — within/exact-boundary/beyond
+counting, traded-side correctness (thin ask doesn't flag a short
+entry; the PT buyback against ask_size 3 does), missing sizes stay
+unknown, prices identical thin-vs-deep (the disclosure-only pin),
+daily clock carries zero depth (digest guarantee), profile shares +
+note, unknown→None not zero.

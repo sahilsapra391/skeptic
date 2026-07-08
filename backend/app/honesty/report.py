@@ -144,6 +144,12 @@ class LiquidityProfile(BaseModel):
     stressed_share: float | None  # gated but filled at full adverse (stress mode)
     unknown_liquidity_share: float | None  # OI unknown at fill time
     skipped_illiquid: int  # entry candidates refused by the gates
+    # F5: fill quantity vs displayed NBBO depth on the traded side —
+    # REPORTED, never scored (disclosure-first; a price-impact model must
+    # be earned by the D3d calibration loop). depth_known_share is of ALL
+    # option-leg fills; beyond_depth_share is of the DEPTH-KNOWN ones.
+    depth_known_share: float | None
+    beyond_depth_share: float | None
     material: bool
     note: str | None
 
