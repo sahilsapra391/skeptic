@@ -672,3 +672,46 @@ bid):
   rate. Ramp strategy (prune/sample/paid month) is an owner ops
   decision. The masterplan's guardrail stands either way: Massive is
   OHLCV only, never a fill source.
+
+## F2/F3 (ENGINE-V4): flow, sentiment & pin — five shipped, three refused
+
+Five spec-v7 indicators from UW's per-session families (2026-02-24+,
+nightly), reduced once per session by collector/derive_flow_signals.py
+(set-difference incremental, self-healing):
+
+- **`net_premium_level`** — session Σ net call premium − Σ net put
+  premium (the tick rows are per-minute buckets — probe-pinned). Vendor
+  DOLLARS → sign/rank vocabulary only.
+- **`market_tide_level`** — the market-wide cumulative tide's session
+  total (probe-pinned cumulative: last row, never the sum). The first
+  MARKET-WIDE indicator: one series for all tickers. Sign/rank only.
+- **`nope_level`** — the vendor's NOPE at the last session stamp.
+  Dimensionless and published, but what we ingest is the VENDOR'S
+  IMPLEMENTATION — sign/rank only (owner decision: sign and rank are
+  invariant to monotone rescaling; raw thresholds are not, and ~91
+  sessions cannot even verify scale stability — "precision theater").
+- **`put_call_flow_ratio`** — session Σput/Σcall volume. Unit-free
+  classic; raw thresholds legal ("above 1" → 1).
+- **`max_pain_distance_pct`** — (front-expiry max pain − close)/close ×
+  100, signed. FRONT expiry is the convention because pin dynamics ARE
+  a front-expiry phenomenon — "the convention is the concept" (owner
+  decision); other tenors ask. Unit-free %; raw thresholds legal.
+
+Refused, with reasons (owner decision — input quality per indicator,
+never thematic family):
+
+- **`oi_change_signal`** — the banked family is a vendor TOP-50 movers
+  list, not a census: any aggregate measures vendor curation, not
+  market-wide OI dynamics (the gex_flip class: looks like the concept,
+  is the artifact). Waits for census-shaped data.
+- **`oi_concentration` / `pin_risk`** — no market-standard formula
+  exists; shipping one means WE author a definition and present it
+  under a name traders think they understand — the invented-convention
+  sin at formula scale. max_pain_distance_pct carries the pin thesis
+  with vendor-defined input; these earn a design pass only when a real
+  strategy needs them AND a definition can be defended from evidence.
+
+Same coverage honesty as F1: pre-run refusal before the signal's first
+covered session; *_rank_1y floors at 126 trailing observations (unlock
+as UW data accrues); EOD series read the previous session at intraday
+bars; unavailable ⇒ False, never a guess.

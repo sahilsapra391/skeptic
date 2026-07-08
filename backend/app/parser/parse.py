@@ -21,11 +21,12 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.honesty.verdict import OPENROUTER_URL, PARSER_MODEL, _extract_json
-from app.models.spec import V2_INDICATORS, V5_INDICATORS, V6_INDICATORS, StrategySpec
+from app.models.spec import V2_INDICATORS, V5_INDICATORS, V6_INDICATORS, V7_INDICATORS, StrategySpec
 
 _V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
 _V5_INDICATOR_NAMES = {i.value for i in V5_INDICATORS}
 _V6_INDICATOR_NAMES = {i.value for i in V6_INDICATORS}
+_V7_INDICATOR_NAMES = {i.value for i in V7_INDICATORS}
 
 
 def _required_spec_version(raw_spec: dict[str, Any]) -> int:
@@ -46,7 +47,11 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     if isinstance(scale_in.get("rearm"), dict):
         ladder_conds.append(scale_in["rearm"])
     all_conds = conds + ladder_conds
-    # v6 (F1): dealer positioning — checked before v5, max wins
+    # v7 (F2/F3): flow/sentiment/pin — checked first, max wins
+    if any(isinstance(c, dict) and c.get("indicator") in _V7_INDICATOR_NAMES
+           for c in all_conds):
+        return 7
+    # v6 (F1): dealer positioning
     if any(isinstance(c, dict) and c.get("indicator") in _V6_INDICATOR_NAMES
            for c in all_conds):
         return 6
@@ -131,7 +136,11 @@ THE SPEC (all fields required unless noted):
                           |"realized_vol_20d"|"drawdown_from_high_pct"
                           |"ivx_rank_1y"|"ivx_level_30d"|"hv_iv_spread_30d"
                           |"price_vs_vwap_pct"|"skew_25d"|"term_structure_slope"
-                          |"gex_level"|"gex_rank_1y"|"dex_level"|"dex_rank_1y",
+                          |"gex_level"|"gex_rank_1y"|"dex_level"|"dex_rank_1y"
+                          |"net_premium_level"|"net_premium_rank_1y"
+                          |"market_tide_level"|"market_tide_rank_1y"
+                          |"nope_level"|"nope_rank_1y"|"put_call_flow_ratio"
+                          |"max_pain_distance_pct",
                            "period": <int, optional>, "params": {..optional..},
                            "timeframe": "daily" (default) | "5min" (intraday bars;
                                         price-series indicators only),
@@ -259,6 +268,29 @@ CONVENTIONS:
     RAW-UNIT thresholds ("GEX above 5 billion", "gamma exposure over 2M")
     are NEVER emitted — the vendor's units are opaque and unstable → ask,
     offering the sign form ("long/short gamma") or a percentile rank.
+- FLOW / SENTIMENT / PIN (UW daily EOD reductions, timeframe "daily" ONLY;
+  usable at any clock):
+    "net premium positive" / "bullish options flow" / "flow skewed to calls"
+    → {"indicator": "net_premium_level", "operator": ">", "value": 0};
+    bearish flow → "<" 0. DOLLAR sums are vendor magnitudes → raw thresholds
+    ("net premium above $50M") are NEVER emitted — ask, offering the sign
+    form or a percentile rank (net_premium_rank_1y, like ivx_rank).
+    "market tide risk-on" / "market-wide flow bullish" → {"indicator":
+    "market_tide_level", "operator": ">", "value": 0} — MARKET-WIDE (the
+    whole tape, not the ticker); percentile phrasing → market_tide_rank_1y.
+    "NOPE positive/negative" → nope_level >/< 0; "NOPE unusually high/top
+    decile" → nope_rank_1y. RAW NOPE thresholds ("NOPE above 20") are NEVER
+    emitted even though the metric is dimensionless — we ingest the
+    VENDOR'S implementation and raw values can silently rescale → ask,
+    offering sign or rank.
+    "put/call ratio above 1" / "more puts than calls trading" →
+    {"indicator": "put_call_flow_ratio", "operator": ">", "value": 1} —
+    unit-free ratio, raw thresholds LEGAL.
+    "within 1% of max pain" → TWO conditions: max_pain_distance_pct < 1 AND
+    > -1 (signed % distance, front expiry — the expiry where pin dynamics
+    operate). "spot below max pain" → max_pain_distance_pct > 0 (max pain
+    ABOVE spot). Another expiry's max pain ("next month's max pain") is NOT
+    in the vocabulary → ask.
 - "keep position vega under $30 per contract" → max_vega_per_contract 30.
 - INTRADAY (clock "5min"): "0DTE"/"same-day expiry" → target_dte 0, min_dte 0,
   max_dte 0-1, clock "5min". "1DTE" → target_dte 1 (TRADING days at this clock:
@@ -322,7 +354,8 @@ CONVENTIONS:
   "5min"). This is a DATA POLICY, never inferred from strategy shape: a plain 0DTE
   request WITHOUT this phrasing gets NO resolution field — never guess it.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
-  spec_version: always emit 1 — the server recomputes it (gex/dex vocabulary
+  spec_version: always emit 1 — the server recomputes it (flow/tide/NOPE/
+  put-call/max-pain vocabulary lifts it to 7; gex/dex vocabulary
   lifts it to 6; skew_25d or term_structure_slope lifts it to 5; intraday_scan
   or backtest.resolution lifts it to 4; a scale_in ladder or a close_at_time
   lifts it to 3; v2 vocabulary lifts it to 2).

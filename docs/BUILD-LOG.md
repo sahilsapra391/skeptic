@@ -1623,3 +1623,32 @@ the duplicated grounding test and the duplicated review paragraph
 removed. Deferred with a note: exhausted-retry contracts are appended
 to aggs_done and never retried (pre-existing; costlier now that the
 ATM band goes first — F7 follow-up).
+
+## F2/F3 (ENGINE-V4) — flow, sentiment & pin structure (2026-07-08)
+
+WHAT: spec v7 — five UW flow/pin indicators (net_premium_level+rank,
+market_tide_level+rank [MARKET-WIDE — the first market-scope series],
+nope_level+rank, put_call_flow_ratio, max_pain_distance_pct); THREE
+masterplan indicators REFUSED on input quality (owner decision:
+oi_change_signal = top-50 vendor curation; oi_concentration/pin_risk =
+invented conventions; max_pain_distance carries the pin thesis).
+NOPE = sign/rank only (vendor implementation ≠ published concept;
+monotone-rescale invariance). Max pain = FRONT expiry fixed ("the
+convention is the concept"). Reduction semantics PROBED and pinned:
+net_prem_ticks rows are per-minute BUCKETS (sum), market_tide is
+CUMULATIVE (last row — median row-diff 6.9M << median |row| 361M).
+HOW: derive-once nightly artifacts (F4 set-difference pattern):
+reference/derived/flow_signals/ticker={T}.parquet + market-wide
+market_tide_signals.parquet; math single-sourced in
+app/data/flow_signals.py; collector/derive_flow_signals.py +
+collect-eod step + CI smoke + Makefile. Store/views/BarView (5 series
+incl. market-wide), _trailing_rank(126) reused, refusal registry +
+rank-unlock naming reused, spec v7 gating incl. ladders, schema + TS
+mirror (v7 before v6), estimate options_flow bound + window-tile note,
+coverage + Observatory lane (per-signal counts + market-wide tide).
+TESTS: 25 new (510 total green) — hand-computed reductions (80.0 /
+0.6 / last-stamp NOPE / +0.0295% front max pain; expired rows ignored),
+cumulative-last-row-wins, per-signal absence, zero-volume never
+divides, sign+raw semantics, rank floor 125/126, BarView prev-day,
+unavailable×8, v7 gating + schema parity, refusal + covered-window
+gating e2e (entries on exactly the tide-positive sessions).

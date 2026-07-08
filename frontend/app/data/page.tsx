@@ -471,6 +471,49 @@ export default function DataPage() {
         </div>
       )}
 
+      {(coverage.flow_signals?.SPY ||
+        coverage.flow_signals?.QQQ ||
+        coverage.flow_signals?.IWM) && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-1")}>
+            FLOW / SENTIMENT / PIN (UW) — EOD REDUCTIONS, SPEC v7
+          </div>
+          <div className="mb-3 text-[11.5px] leading-[1.5] text-ink-4">
+            net premium & NOPE read as sign/rank only; put/call ratio and
+            max-pain distance are unit-free; market tide is market-wide.
+            runs conditioned on this family refuse windows starting before
+            the first derived session
+          </div>
+          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const fs = coverage.flow_signals?.[t];
+              if (!fs) return null;
+              return (
+                <Lane
+                  key={t}
+                  label={`${t} flow`}
+                  first={fs.first}
+                  last={fs.last}
+                  t0="2026-01-01"
+                  t1={today}
+                  note={`flow ${fs.net_premium_sessions.toLocaleString()} · nope ${fs.nope_sessions.toLocaleString()} · max-pain ${fs.max_pain_sessions.toLocaleString()} of ${fs.sessions.toLocaleString()}`}
+                />
+              );
+            })}
+            {coverage.market_tide && (
+              <Lane
+                label="MARKET tide"
+                first={coverage.market_tide.first}
+                last={coverage.market_tide.last}
+                t0="2026-01-01"
+                t1={today}
+                note={`market-wide · ${coverage.market_tide.tide_sessions.toLocaleString()} sessions`}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {(coverage.resolution_mix?.SPY ||
         coverage.resolution_mix?.QQQ ||
         coverage.resolution_mix?.IWM) && (

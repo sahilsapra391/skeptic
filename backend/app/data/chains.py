@@ -26,7 +26,7 @@ from typing import Any, cast
 
 import pandas as pd
 
-from app.data import gex_signals, greeks, ivol_analytics, ivs_signals, r2
+from app.data import flow_signals, gex_signals, greeks, ivol_analytics, ivs_signals, r2
 from app.engine.market import MarketStore
 from app.engine.types import ContractKey, Quote
 
@@ -259,6 +259,12 @@ def _build_market_store(ticker: str) -> MarketStore:
         net_gex, net_dex = gex_signals.load_dealer_exposure(r2.r2_client(), ticker)
     except Exception:
         net_gex, net_dex = {}, {}
+    try:
+        net_premium, pcr, nope_eod, mpd = flow_signals.load_flow_signals(
+            r2.r2_client(), ticker)
+        tide = flow_signals.load_market_tide(r2.r2_client())
+    except Exception:
+        net_premium, pcr, nope_eod, mpd, tide = {}, {}, {}, {}, {}
 
     return MarketStore(
         ticker=ticker,
@@ -282,4 +288,14 @@ def _build_market_store(ticker: str) -> MarketStore:
         net_gex=net_gex,
         dex_dates=sorted(net_dex),
         net_dex=net_dex,
+        flow_dates=sorted(net_premium),
+        net_premium=net_premium,
+        pcr_dates=sorted(pcr),
+        put_call_ratio=pcr,
+        nope_dates=sorted(nope_eod),
+        nope_eod=nope_eod,
+        mpd_dates=sorted(mpd),
+        max_pain_dist=mpd,
+        tide_dates=sorted(tide),
+        market_tide=tide,
     )

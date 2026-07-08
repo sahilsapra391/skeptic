@@ -87,6 +87,16 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: uv run python derive_ivs_signals.py
 
+      - name: Flow signal derivation (ENGINE-V4 F2/F3 — incremental)
+        if: always()
+        working-directory: collector
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: uv run python derive_flow_signals.py
+
       - name: Coverage ledger (ENGINE-V3 D3, data-arrival hook)
         if: always()
         working-directory: collector

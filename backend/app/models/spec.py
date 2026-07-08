@@ -92,6 +92,17 @@ class Indicator(StrEnum):
     GEX_RANK_1Y = "gex_rank_1y"
     DEX_LEVEL = "dex_level"
     DEX_RANK_1Y = "dex_rank_1y"
+    # spec v7 (F2/F3): UW flow/sentiment/pin EOD reductions, 2026-02-24+.
+    # Dollar-valued signals are sign/rank only; put_call_flow_ratio and
+    # max_pain_distance_pct are unit-free (raw thresholds legal).
+    NET_PREMIUM_LEVEL = "net_premium_level"
+    NET_PREMIUM_RANK_1Y = "net_premium_rank_1y"
+    MARKET_TIDE_LEVEL = "market_tide_level"
+    MARKET_TIDE_RANK_1Y = "market_tide_rank_1y"
+    NOPE_LEVEL = "nope_level"
+    NOPE_RANK_1Y = "nope_rank_1y"
+    PUT_CALL_FLOW_RATIO = "put_call_flow_ratio"
+    MAX_PAIN_DISTANCE_PCT = "max_pain_distance_pct"
 
 
 class Timeframe(StrEnum):
@@ -126,6 +137,19 @@ V6_INDICATORS = {
     Indicator.GEX_RANK_1Y,
     Indicator.DEX_LEVEL,
     Indicator.DEX_RANK_1Y,
+}
+
+# F2/F3: flow/sentiment/pin indicators require spec_version 7 — a
+# versioned migration like every vocabulary addition, never silent.
+V7_INDICATORS = {
+    Indicator.NET_PREMIUM_LEVEL,
+    Indicator.NET_PREMIUM_RANK_1Y,
+    Indicator.MARKET_TIDE_LEVEL,
+    Indicator.MARKET_TIDE_RANK_1Y,
+    Indicator.NOPE_LEVEL,
+    Indicator.NOPE_RANK_1Y,
+    Indicator.PUT_CALL_FLOW_RATIO,
+    Indicator.MAX_PAIN_DISTANCE_PCT,
 }
 
 # Price-series indicators that can read the 5-minute timeframe; everything
@@ -532,8 +556,28 @@ class StrategySpec(BaseModel):
 
     @model_validator(mode="after")
     def _version_supported(self) -> StrategySpec:
-        if self.spec_version not in (1, 2, 3, 4, 5, 6):
-            raise ValueError("spec_version must be 1, 2, 3, 4, 5, or 6")
+        if self.spec_version not in (1, 2, 3, 4, 5, 6, 7):
+            raise ValueError("spec_version must be 1, 2, 3, 4, 5, 6, or 7")
+        return self
+
+    @model_validator(mode="after")
+    def _v7_vocabulary_needs_v7(self) -> StrategySpec:
+        """v7 vocabulary on an older spec is a loud error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.spec_version >= 7:
+            return self
+        all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        if self.entry.scale_in is not None:
+            all_conditions += list(self.entry.scale_in.rungs)
+            if self.entry.scale_in.rearm is not None:
+                all_conditions.append(self.entry.scale_in.rearm)
+        used = sorted({c.indicator.value for c in all_conditions
+                       if c.indicator in V7_INDICATORS})
+        if used:
+            raise ValueError(
+                f"spec_version {self.spec_version} cannot use v7 vocabulary: "
+                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 7"
+            )
         return self
 
     @model_validator(mode="after")

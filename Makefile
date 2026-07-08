@@ -16,6 +16,9 @@ ledger:
 ivs-signals:
 	cd collector && uv run python derive_ivs_signals.py
 
+flow-signals:
+	cd collector && uv run python derive_flow_signals.py
+
 unlock-scan:
 	cd backend && PYTHONPATH=. uv run python scripts/nightly_improve.py
 

@@ -1,5 +1,5 @@
 {
- "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype). F4 adds cases 31-35 (vol-surface vocabulary: skew_25d / term_structure_slope in vol points, the VRP alias onto hv_iv_spread_30d, and the vague-threshold / unsupported-tenor asks). Owner gate fulfilled 2026-07-07: cases 27/28/36 are the owner's VERBATIM prompts (typos preserved — that is the point: the golden set protects the owner's real phrasing, not tidy archetypes); 28 is kind spec_or_questions (owner-blessed dual outcome). F1 adds cases 37-40 (dealer-positioning vocabulary: gex/dex sign + rank, the raw-vendor-unit refusal).",
+ "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype). F4 adds cases 31-35 (vol-surface vocabulary: skew_25d / term_structure_slope in vol points, the VRP alias onto hv_iv_spread_30d, and the vague-threshold / unsupported-tenor asks). Owner gate fulfilled 2026-07-07: cases 27/28/36 are the owner's VERBATIM prompts (typos preserved — that is the point: the golden set protects the owner's real phrasing, not tidy archetypes); 28 is kind spec_or_questions (owner-blessed dual outcome). F1 adds cases 37-40 (dealer-positioning vocabulary: gex/dex sign + rank, the raw-vendor-unit refusal). F2/F3 adds cases 41-45 (flow/tide/NOPE/put-call/max-pain vocabulary; dollar and NOPE raw thresholds refused).",
  "cases": [
   {
    "case": 1,
@@ -1164,6 +1164,179 @@
      "time_exit_dte": 21
     }
    }
+  },
+  {
+   "case": 41,
+   "text": "Sell a 30-delta put on SPY every Monday, but only when options flow is bullish. Close at 50% profit or 21 DTE.",
+   "kind": "spec",
+   "comment": "F2: 'flow is bullish' → net_premium_level > 0 (sign vocabulary; dollar sums are vendor magnitudes).",
+   "expect": {
+    "spec_version": 7,
+    "clock": "daily",
+    "ticker": "SPY",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ],
+     "day_of_week": "monday"
+    },
+    "conditions": [
+     {
+      "indicator": "net_premium_level",
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 0
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 42,
+   "text": "Buy a 45 DTE ATM call on QQQ whenever the market-wide tide is risk-on and the put/call ratio is below 0.8. Sell at 40% profit or 21 DTE.",
+   "kind": "spec",
+   "comment": "F2: market_tide_level is MARKET-WIDE (one series for all tickers) + put_call_flow_ratio raw threshold (unit-free ratio — legal).",
+   "expect": {
+    "spec_version": 7,
+    "clock": "daily",
+    "ticker": "QQQ",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "signal_only",
+      "daily"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "market_tide_level",
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 0
+     },
+     {
+      "indicator": "put_call_flow_ratio",
+      "operator": [
+       "<",
+       "<=",
+       "below"
+      ],
+      "value": 0.8
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 40,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 43,
+   "text": "Sell an iron condor on SPY, 20 delta shorts, $3 wings, 30 DTE, monthly, but only when spot is within 1% of max pain. Take profit 40%, time exit 10 DTE.",
+   "kind": "spec",
+   "comment": "F3: 'within 1% of max pain' → TWO ANDed max_pain_distance_pct conditions (< 1 and > −1; front expiry — the convention is the concept).",
+   "expect": {
+    "spec_version": 7,
+    "clock": "daily",
+    "ticker": "SPY",
+    "structure": "iron_condor",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.2
+     },
+     {
+      "right": "put",
+      "side": "long",
+      "method": "width_from_leg",
+      "value": 3,
+      "reference_leg": 0
+     },
+     {
+      "right": "call",
+      "side": "short",
+      "method": "delta",
+      "value": 0.2
+     },
+     {
+      "right": "call",
+      "side": "long",
+      "method": "width_from_leg",
+      "value": 3,
+      "reference_leg": 2
+     }
+    ],
+    "target_dte": 30,
+    "schedule": {
+     "frequency": [
+      "monthly"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "max_pain_distance_pct",
+      "operator": [
+       "<",
+       "<="
+      ],
+      "value": 1
+     },
+     {
+      "indicator": "max_pain_distance_pct",
+      "operator": [
+       ">",
+       ">="
+      ],
+      "value": -1
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 40,
+     "time_exit_dte": 10
+    }
+   }
+  },
+  {
+   "case": 44,
+   "text": "Buy a 45 DTE ATM put on SPY when NOPE is above 20. Sell at 30% profit or 21 DTE.",
+   "kind": "questions",
+   "comment": "F2 owner decision: RAW NOPE thresholds are refused even though the metric is dimensionless — we ingest the VENDOR'S implementation; must ask offering sign or rank, never emit nope_level with value 20."
+  },
+  {
+   "case": 45,
+   "text": "Sell a put credit spread on SPY weekly when net options premium is above 50 million dollars, short leg 25 delta, $5 wide, 45 DTE. Take profit at 50%.",
+   "kind": "questions",
+   "comment": "F2: raw DOLLAR flow thresholds refused (vendor magnitudes) — ask offering the sign form or a percentile rank."
   }
  ]
 }

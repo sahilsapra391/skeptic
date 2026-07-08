@@ -271,6 +271,58 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         if rank is None:
             return False
         return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.NET_PREMIUM_LEVEL:
+        # F2: session net options premium (call − put), VENDOR DOLLARS —
+        # sign vocabulary ("bullish flow" → > 0); parser refuses raw sums
+        v = view.net_premium_level()
+        if v is None:
+            return False
+        return _compare(v, cond.operator, cond.value)
+    if ind_name is Indicator.NET_PREMIUM_RANK_1Y:
+        rank = _trailing_rank(view.net_premium_history(), min_obs=126)
+        if rank is None:
+            return False
+        return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.MARKET_TIDE_LEVEL:
+        # F2: MARKET-WIDE cumulative tide's session total — one series for
+        # all tickers; sign vocabulary ("market risk-on" → > 0)
+        v = view.market_tide_level()
+        if v is None:
+            return False
+        return _compare(v, cond.operator, cond.value)
+    if ind_name is Indicator.MARKET_TIDE_RANK_1Y:
+        rank = _trailing_rank(view.market_tide_history(), min_obs=126)
+        if rank is None:
+            return False
+        return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.NOPE_LEVEL:
+        # F2: vendor-computed NOPE at the last session stamp — sign/rank
+        # only (owner decision: the vendor's IMPLEMENTATION, not the
+        # published concept; sign+rank survive monotone rescaling)
+        v = view.nope_level()
+        if v is None:
+            return False
+        return _compare(v, cond.operator, cond.value)
+    if ind_name is Indicator.NOPE_RANK_1Y:
+        rank = _trailing_rank(view.nope_history(), min_obs=126)
+        if rank is None:
+            return False
+        return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.PUT_CALL_FLOW_RATIO:
+        # F2: Σput/Σcall session volume — dimensionless classic, raw
+        # thresholds legal ("ratio above 1" → value 1)
+        v = view.put_call_ratio()
+        if v is None:
+            return False
+        return _compare(v, cond.operator, cond.value)
+    if ind_name is Indicator.MAX_PAIN_DISTANCE_PCT:
+        # F3: (front-expiry max pain − close)/close × 100 — unit-free %,
+        # raw thresholds legal; signed (positive = max pain above spot).
+        # "within 1% of max pain" = two ANDed conditions (< 1 and > −1)
+        v = view.max_pain_distance_pct()
+        if v is None:
+            return False
+        return _compare(v, cond.operator, cond.value)
     if ind_name is Indicator.TERM_STRUCTURE_SLOPE:
         # F4: ATM IV(90d) − ATM IV(30d), VOL POINTS; "< 0" = inverted
         slope = view.term_structure_slope()

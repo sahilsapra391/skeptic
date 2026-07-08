@@ -18,7 +18,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.data import chains, gex_signals, ivs_signals, r2, resolution
+from app.data import chains, flow_signals, gex_signals, ivs_signals, r2, resolution
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
@@ -222,6 +222,29 @@ def _dealer_positioning_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
     }
 
 
+def _flow_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
+    """Window of the derived flow/pin artifact (F2/F3) — guardrail #6,
+    per-signal counts (a session can carry flow and honestly lack NOPE)."""
+    if df is None or df.empty or "date" not in df.columns:
+        return None
+    dates = df["date"].astype(str)
+
+    def _n(col: str) -> int:
+        return (int(pd.to_numeric(df[col], errors="coerce").notna().sum())
+                if col in df.columns else 0)
+
+    return {
+        "sessions": int(len(df)),
+        "first": str(dates.min()),
+        "last": str(dates.max()),
+        "net_premium_sessions": _n("net_premium"),
+        "pcr_sessions": _n("put_call_ratio"),
+        "nope_sessions": _n("nope_eod"),
+        "max_pain_sessions": _n("max_pain_dist_pct"),
+        "tide_sessions": _n("market_tide"),
+    }
+
+
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
@@ -270,6 +293,13 @@ def build_coverage() -> dict[str, Any]:
             )
             for t in TICKERS
         }
+        flow_f = {
+            t: pool.submit(
+                r2.get_parquet, s3, flow_signals.FLOW_KEY.format(ticker=t)
+            )
+            for t in TICKERS
+        }
+        tide_f = pool.submit(r2.get_parquet, s3, flow_signals.TIDE_KEY)
         quality_f = pool.submit(r2.get_json, s3, "state/quality_flags.json", {})
         priorities_f = pool.submit(r2.get_json, s3, "state/collection_priorities.json", None)
         new_sources_f = pool.submit(r2.get_json, s3, "state/source_coverage.json", None)
@@ -317,6 +347,10 @@ def build_coverage() -> dict[str, Any]:
         dealer_cov = {
             t: _dealer_positioning_range(dealer_f[t].result()) for t in TICKERS
         }
+        flow_cov = {
+            t: _flow_signals_range(flow_f[t].result()) for t in TICKERS
+        }
+        tide_cov = _flow_signals_range(tide_f.result())
         chain_quality = {t: chain_quality_f[t].result() for t in TICKERS}
         resolution_mix = {t: resolution_f[t].result() for t in TICKERS}
         dolthub_state = dolthub_f.result()
@@ -361,6 +395,8 @@ def build_coverage() -> dict[str, Any]:
         "ivol_analytics": ivol_analytics,
         "ivs_signals": ivs_signal_cov,
         "dealer_positioning": dealer_cov,
+        "flow_signals": flow_cov,
+        "market_tide": tide_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
         # D3d: the weekly demand ranking (build_priorities.py) — what the

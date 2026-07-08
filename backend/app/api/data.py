@@ -164,6 +164,21 @@ def get_estimate(
                 "indicators": ["gex_level", "gex_rank_1y",
                                "dex_level", "dex_rank_1y"],
             }
+        from app.data.flow_signals import load_flow_signals
+
+        net_prem, _pcr, _nope, _mpd = load_flow_signals(_r2.r2_client(), ticker)
+        flow_dates = sorted(net_prem)
+        if flow_dates:
+            signal_windows["options_flow"] = {
+                "first": str(flow_dates[0]),
+                "last": str(flow_dates[-1]),
+                "rank_first": (str(flow_dates[125])
+                               if len(flow_dates) > 125 else None),
+                "indicators": ["net_premium_level", "net_premium_rank_1y",
+                               "market_tide_level", "market_tide_rank_1y",
+                               "nope_level", "nope_rank_1y",
+                               "put_call_flow_ratio", "max_pain_distance_pct"],
+            }
     except Exception:  # honest absence — the run-time refusal still guards
         signal_windows = {}
 
