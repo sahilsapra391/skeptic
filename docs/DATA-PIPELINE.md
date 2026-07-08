@@ -35,6 +35,46 @@ started BEFORE the app, because history only accrues forward.*
 > minute quotes with bid/ask/IV/greeks/OI, Yahoo every 15 min as
 > redundancy).** Underlying minute bars are stock data (not OPRA-gated)
 > and continue.**
+> *(Correction, observed 2026-07-08: the top-up is landing bars again —
+> the lake shows sessions through 2026-07-06, so the entitlement is
+> effectively active. The resume-automatically design worked; the
+> Observatory decides frozen-vs-accruing from the lake's own recency,
+> never from this document.)*
+
+> **DECIDED (owner, 2026-07-08): NO vendor subscriptions — the forward
+> record is self-collected + in-house derived.** iVolatility (trial ends
+> ~2026-07-10; series frozen at 2026-07-02) and Unusual Whales (trial
+> banked 2025-07-08 → 2026-07-06) are not renewed. Consequences, all
+> implemented on this date:
+>   1. **cboe_eod close chains** (`collector/derive_cboe_eod.py`): the
+>      recorder's LAST snapshot per session becomes a canonical EOD chain
+>      at `options/source=cboe_eod/` — full chain, vendor greeks/IV/OI,
+>      displayed NBBO sizes, ~15-min-delayed quotes disclosed as a
+>      property of the source. Engine precedence: ivolatility >
+>      alphavantage > **cboe_eod** > yahoo > dolthub. This fixes the
+>      forward record's 60-DTE Yahoo cap and greeks gap.
+>   2. **In-house signal continuations** (`derive_inhouse_signals.py`,
+>      math in `backend/app/data/inhouse_signals.py`): HV-30d from our own
+>      dailies (probe-pinned to the vendor convention — 30 log returns,
+>      ddof=1, √252; overlap MAE 0.0002 across 5,408 sessions); ATM-IV
+>      30/90d, 25Δ skew and term slope interpolated from the cboe_eod
+>      chain; chain-volume put/call ratio; OI max-pain distance. These
+>      SPLICE strictly forward of each frozen vendor series (vendor
+>      history is never rewritten); every splice date is recorded on the
+>      store and disclosed in run payloads, and every continuation is
+>      measured on the vendor overlap by F7 cross-validation pairs
+>      (hv_inhouse_vs_ivol · ivs_cboe_vs_ivol · positioning_cboe_vs_uw).
+>   3. **NOT spliced:** in-house net GEX/DEX (gamma·OI / delta·OI
+>      conventions) disagreed with UW's sign on the overlap — banked and
+>      sign-checked only, never a continuation. net_premium, NOPE and
+>      market_tide have **no free substitute** and freeze at 2026-07-06;
+>      their rank forms (91 obs < 126 floor) stay locked.
+>   4. **Tail-staleness guard** (engine): a coverage-capped signal whose
+>      window runs > 5 sessions past the series' last observation refuses
+>      the run with the covered window named — a dead feed can never
+>      silently forward-fill.
+> Granularity ceiling, owner-confirmed: minute-by-minute is the maximum —
+> no free source serves seconds and the engine has no second grid.**
 
 ## 1. Strategy: sources and jobs
 
@@ -116,6 +156,7 @@ started BEFORE the app, because history only accrues forward.*
 s3://skeptic-data/
   options/
     source=alphavantage/ticker=SPY/date=2026-07-01/chain.parquet
+    source=cboe_eod/ticker=SPY/date=2026-07-02/chain.parquet  (recorder close chain, nightly)
     source=yahoo/ticker=SPY/date=2026-07-01/snap_20260701T2031Z.parquet
     source=dolthub/ticker=SPY/date=2020-01-06/chain.parquet   (static backfill)
   underlying/ticker=SPY/daily.parquet          (full history, rewritten append)
@@ -127,6 +168,8 @@ s3://skeptic-data/
     source=cboe_delayed/ticker=SPY/date=2026-07-02/snap_20260702T1330Z.parquet
     source=yahoo/ticker=SPY/date=2026-07-02/snap_20260702T1330Z.parquet
   underlying_minute/ticker=SPY/month=2026-07/bars.parquet
+  reference/derived/inhouse_signals/ticker=SPY.parquet   (2026-07-08 forward record)
+  reference/derived/hv_inhouse/ticker=SPY.parquet        (full-history HV, own dailies)
   state/backfill_frontier.json                 {ticker: earliest_date_done}
   state/alpaca_backfill.json                   {ticker: {month: done}}
   state/trial_notes.json                       (optional pipeline metadata)

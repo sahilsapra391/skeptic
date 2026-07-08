@@ -21,7 +21,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(
         chains_module,
         "load_market_store",
-        lambda ticker: build_fixture_store("SPY", fx.CHAINS, fx.UNDERLYING),
+        lambda ticker, **kw: build_fixture_store("SPY", fx.CHAINS, fx.UNDERLYING),
     )
     # TestClient executes BackgroundTasks synchronously after the response
     return TestClient(app)
@@ -61,7 +61,7 @@ def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
 def test_run_error_is_surfaced(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     import app.data.chains as chains_module
 
-    def boom(ticker: str):
+    def boom(ticker: str, **kw):
         raise RuntimeError("lake unreachable")
 
     monkeypatch.setattr(chains_module, "load_market_store", boom)

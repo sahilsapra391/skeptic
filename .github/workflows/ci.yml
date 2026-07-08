@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync
-      - run: uv run python -c "import ledger, derive_ivs_signals, derive_flow_signals, derive_cross_validation"
+      - run: uv run python -c "import ledger, derive_ivs_signals, derive_flow_signals, derive_cross_validation, derive_cboe_eod, derive_inhouse_signals"
 
   frontend:
     runs-on: ubuntu-latest

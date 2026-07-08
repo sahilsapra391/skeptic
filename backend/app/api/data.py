@@ -89,7 +89,11 @@ def get_estimate(
 
             sessions = load_intraday_store(ticker).sessions()
         else:
-            sessions = load_market_store(ticker).chain_dates
+            # refresh=False: a GET must never trigger a store rebuild — that
+            # work belongs to the engine path behind _ENGINE_LOCK (the
+            # 2026-07-06 OOM class); a ≤30-min-stale session list is fine
+            # for a time estimate
+            sessions = load_market_store(ticker, refresh=False).chain_dates
     except R2NotConfigured as exc:
         raise HTTPException(status_code=503, detail=f"{_R2_HINT} ({exc})") from exc
 

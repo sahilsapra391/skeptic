@@ -6,11 +6,14 @@ free minutes cannot host a 6.75h/day loop — see docs/INTRADAY-OPTIONS-DATA-EVA
 
 Every minute of the options session (NYSE open → close + 15 min, XNYS
 calendar-aware including early closes):
-  - CBOE delayed-quote JSON per ticker: full chain with bid/ask, IV, greeks,
-    OI, volume in ONE request per underlying (~3 req/min total). Quotes are
-    ~15-min delayed; snapshot_ts records capture time, source_ts the feed's
-    own stamp. These snapshots are the forward fill-quote record the Alpaca
-    bar history lacks (M1.5 step-0 finding C).
+  - CBOE delayed-quote JSON per ticker: full chain with bid/ask, displayed
+    NBBO sizes, IV, greeks, OI, volume in ONE request per underlying
+    (~3 req/min total), plus the underlying's cumulative session volume and
+    the feed's 30d IV index (iv30) per snapshot. Quotes are ~15-min delayed;
+    snapshot_ts records capture time, source_ts the feed's own stamp. These
+    snapshots are the forward fill-quote record the Alpaca bar history lacks
+    (M1.5 step-0 finding C) AND the raw material for the nightly cboe_eod
+    close chain (collector/derive_cboe_eod.py).
   - Every --yahoo-every minutes (default 15): the yfinance chain snapshot
     (reusing collect.yahoo_snapshot) as cross-source redundancy. Yahoo at
     1-min cadence would need ~120 req/min and risks throttling the same
@@ -88,6 +91,10 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
     # it alongside spot); banked per snapshot so the chart's intraday tail can
     # show real volume (diffed to per-bar at read time). None if the feed omits it.
     und_volume = data.get("volume")
+    # the feed's own 30d IV index for the underlying, banked per snapshot —
+    # a free forward cross-check for the in-house ATM-IV derivation now that
+    # the iVolatility analytics series is frozen (no subscription)
+    iv30 = data.get("iv30")
     rows, dropped = [], 0
     for o in options:
         m = CBOE_OCC_RE.match((o.get("option") or "").strip())
@@ -120,10 +127,16 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
             "source": "cboe_delayed",
             "source_ts": payload.get("timestamp") or data.get("last_trade_time"),
             "und_volume": und_volume,
+            # displayed NBBO depth in contracts — the F5 disclosure input the
+            # feed always carried and the recorder used to drop
+            "bid_size": o.get("bid_size"),
+            "ask_size": o.get("ask_size"),
+            "iv30": iv30,
         })
     if dropped:
         log.debug("%s: dropped %d non-standard symbols", ticker, dropped)
-    return pd.DataFrame(rows, columns=CANONICAL_COLUMNS + ["source_ts", "und_volume"])
+    return pd.DataFrame(rows, columns=CANONICAL_COLUMNS
+                        + ["source_ts", "und_volume", "bid_size", "ask_size", "iv30"])
 
 
 def snap_key(source: str, ticker: str, ts: datetime) -> str:

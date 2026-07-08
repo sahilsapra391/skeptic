@@ -100,7 +100,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(
         chains_module,
         "load_market_store",
-        lambda ticker: build_fixture_store("SPY", R_CHAINS, R_UNDERLYING),
+        lambda ticker, **kw: build_fixture_store("SPY", R_CHAINS, R_UNDERLYING),
     )
     slc = build_fixture_slice(
         R_ENTRY,

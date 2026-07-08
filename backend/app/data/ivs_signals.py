@@ -40,13 +40,18 @@ TERM_LONG_DAYS = 90
 SKEW_DELTA = 0.25  # |delta| of the risk-reversal wings
 
 
-def _interp_iv_at_delta(rows: pd.DataFrame, target_abs_delta: float) -> float | None:
+def _interp_iv_at_delta(rows: pd.DataFrame, target_abs_delta: float,
+                        iv_col: str = "IV") -> float | None:
     """IV at |delta| == target, linearly interpolated between the two
     bracketing grid rows. None when the grid doesn't bracket the target
-    (fail closed — never extrapolate beyond the fitted grid)."""
+    (fail closed — never extrapolate beyond the fitted grid). ONE kernel
+    for the vendor-surface derivation and the in-house chain continuation
+    (review finding: a numerical fix must never fork the seam); `iv_col`
+    names the caller's IV column."""
     if rows.empty:
         return None
-    pts = rows[["delta", "IV"]].copy()
+    pts = rows[["delta", iv_col]].copy()
+    pts.columns = ["delta", "IV"]
     pts["abs_delta"] = pts["delta"].abs()
     # stable sort: if a grid ever carried duplicate |delta| rows, the pick
     # is deterministic (last-listed below, first-listed above)

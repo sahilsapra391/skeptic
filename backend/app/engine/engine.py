@@ -26,7 +26,7 @@ settlement path still works because it uses underlying closes.
 
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -1300,14 +1300,78 @@ _RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y,
                     Indicator.NET_PREMIUM_RANK_1Y, Indicator.MARKET_TIDE_RANK_1Y,
                     Indicator.NOPE_RANK_1Y}
 
+# Tail-staleness bound (owner decision 2026-07-08): the PIT reads serve the
+# most recent observation ≤ as_of, so a signal whose feed DIED keeps
+# forward-filling its last value into every later session — silently. A few
+# sessions of vendor publishing lag is normal; past this many sessions the
+# tail is a dead feed wearing a live filter, and the run refuses with the
+# covered window named. 5 sessions ≈ one trading week.
+STALE_TAIL_GRACE_SESSIONS = 5
+
+# The spliced vol-family series get the SAME tail protection (review
+# finding: the in-house continuation can die exactly like a vendor feed —
+# recorder down, derive failing) but keep their historical START semantics:
+# sessions before the series begins evaluate False (D1c warmup behavior),
+# they are not start-refused like the UW coverage-capped families.
+_STALENESS_ONLY_SERIES: dict[Indicator, tuple[tuple[str, str], ...]] = {
+    Indicator.IVX_LEVEL_30D: (("30d IVX", "ivx_dates"),),
+    Indicator.IVX_RANK_1Y: (("30d IVX", "ivx_dates"),),
+    Indicator.HV_IV_SPREAD_30D: (("30d IVX", "ivx_dates"), ("30d HV", "hv_dates")),
+    Indicator.SKEW_25D: (("25Δ skew", "skew_dates"),),
+    Indicator.TERM_STRUCTURE_SLOPE: (("term-structure slope", "term_dates"),),
+}
+
+
+def _check_stale_tail(label: str, scope: str, indicator_name: str,
+                      dates: list[date], sessions: list[date],
+                      win_start: date, win_end: date) -> None:
+    """Refuse when the window runs more than the grace past the series'
+    last observation. Counts only sessions the run actually simulates
+    (≥ win_start), and the offered window can never invert: a window lying
+    entirely after coverage is offered the series' own covered window."""
+    if not dates:
+        return  # honest absence — warmup/evaluate-False semantics apply
+    last = dates[-1]
+    lo = max(bisect_right(sessions, last), bisect_left(sessions, win_start))
+    hi = bisect_right(sessions, win_end)
+    stale = hi - lo
+    if stale <= STALE_TAIL_GRACE_SESSIONS:
+        return
+    first = dates[0]
+    covered_start = max(win_start, first)
+    if covered_start > last:
+        # the whole window sits after the last observation — offering
+        # "covered_start → last" would be inverted (the F1 #1 class)
+        raise SliceCoverageError(
+            f"{label} data{scope} was last observed {last.isoformat()}; the "
+            f"requested window lies entirely after it — all {stale} sessions "
+            f"would re-read that one stale observation. Run "
+            f"{first.isoformat()} → {last.isoformat()} instead, or wait for "
+            "the signal feed to catch up."
+        )
+    raise SliceCoverageError(
+        f"{label} data{scope} was last observed {last.isoformat()}; "
+        f"the requested window runs {stale} sessions past it — the "
+        f"{indicator_name} filter would silently re-read that "
+        f"one stale observation across the whole tail. Run "
+        f"{covered_start.isoformat()} → {last.isoformat()} instead, "
+        "or wait for the signal feed to catch up."
+    )
+
 
 def check_signal_coverage(spec: StrategySpec, store: MarketStore,
                           win_start: date, win_end: date) -> None:
     """Refuse BEFORE running when a condition's signal series starts after
-    the (session-aligned) window does — plain reason, covered window
-    offered. `win_start`/`win_end` are the run's first/last simulated
-    sessions."""
+    the (session-aligned) window does, or last observed more than
+    STALE_TAIL_GRACE_SESSIONS before the window ends — plain reason,
+    covered window offered. `win_start`/`win_end` are the run's first/last
+    simulated sessions."""
     for cond in _spec_conditions(spec):
+        for vol_label, vol_attr in _STALENESS_ONLY_SERIES.get(cond.indicator, ()):
+            _check_stale_tail(
+                vol_label, f" for {spec.underlying.ticker.value}",
+                cond.indicator.value, getattr(store, vol_attr),
+                store.sessions, win_start, win_end)
         entry = _SIGNAL_SERIES.get(cond.indicator)
         if entry is None:
             continue
@@ -1320,12 +1384,15 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
                 "on any session"
             )
         first = dates[0]
-        if win_start >= first:
-            continue
+        last = dates[-1]
         # a market-wide series isn't "for SPY" — drop the ticker from the
         # phrasing (review finding F2/F3 #10)
         scope = ("" if label.startswith("market-wide")
                  else f" for {spec.underlying.ticker.value}")
+        if win_start >= first:
+            _check_stale_tail(label, scope, cond.indicator.value, dates,
+                              store.sessions, win_start, win_end)
+            continue
         rank_note = ""
         if cond.indicator in _RANK_INDICATORS:
             unlock = (dates[125].isoformat() if len(dates) > 125
@@ -1340,14 +1407,79 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
                 f"{label} data{scope} starts {first.isoformat()}; the "
                 f"requested window ends {win_end.isoformat()} — entirely "
                 f"before coverage begins. Run {first.isoformat()} → "
-                f"{store.sessions[-1].isoformat()} instead.{rank_note}"
+                f"{last.isoformat()} instead.{rank_note}"
             )
+        # the offered end is bounded by the series' own last observation so
+        # the offer can never itself trip the tail-staleness refusal
         raise SliceCoverageError(
             f"{label} data{scope} starts {first.isoformat()}; the "
             f"requested window starts {win_start.isoformat()} — the uncovered "
             f"stretch would sit in flat cash and corrupt the stats. Run "
-            f"{first.isoformat()} → {win_end.isoformat()} instead.{rank_note}"
+            f"{first.isoformat()} → {min(win_end, last).isoformat()} "
+            f"instead.{rank_note}"
         )
+
+
+# Forward-record provenance (2026-07-08): which store splice seams each
+# indicator can cross. A spliced series serves vendor values through the
+# seam and the in-house continuation after it — runs whose window reaches
+# the seam disclose the convention change in their payload (guardrail #6:
+# a surface showing results shows what they were computed on).
+_PROVENANCE_SERIES: dict[Indicator, tuple[str, ...]] = {
+    Indicator.IVX_RANK_1Y: ("ivx_30d",),
+    Indicator.IVX_LEVEL_30D: ("ivx_30d",),
+    Indicator.HV_IV_SPREAD_30D: ("ivx_30d", "hv_30d"),
+    Indicator.SKEW_25D: ("skew_25d",),
+    Indicator.TERM_STRUCTURE_SLOPE: ("term_structure_slope",),
+    Indicator.PUT_CALL_FLOW_RATIO: ("put_call_ratio",),
+    Indicator.MAX_PAIN_DISTANCE_PCT: ("max_pain_distance_pct",),
+}
+
+_SPLICE_LABELS: dict[str, tuple[str, str]] = {
+    "ivx_30d": ("iVolatility IVX 30d",
+                "in-house 30d ATM IV from the CBOE close chain"),
+    "hv_30d": ("iVolatility 30d HV",
+               "in-house 30-return HV from our own dailies"),
+    "skew_25d": ("iVolatility fitted-surface 25Δ skew",
+                 "in-house chain-interpolated 25Δ skew (CBOE close)"),
+    "term_structure_slope": ("iVolatility fitted-surface term slope",
+                             "in-house chain-interpolated term slope (CBOE close)"),
+    "put_call_ratio": ("Unusual Whales flow-volume put/call ratio",
+                       "chain session-volume put/call ratio (CBOE close)"),
+    "max_pain_distance_pct": ("Unusual Whales max-pain table",
+                              "in-house OI max pain (CBOE close)"),
+}
+
+
+def data_provenance(spec: StrategySpec, store: MarketStore,
+                    win_start: date, win_end: date) -> list[dict[str, str]]:
+    """Convention-seam disclosures for the run payload: one entry per
+    spliced series the spec's conditions read, when the window reaches the
+    seam. Windows ending before every seam return [] — pre-splice runs are
+    bit-identical AND undecorated."""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for cond in _spec_conditions(spec):
+        for key in _PROVENANCE_SERIES.get(cond.indicator, ()):
+            seam = store.splices.get(key)
+            if seam is None or key in seen or win_end < seam:
+                continue
+            seen.add(key)
+            # a series spliced in chains.py before its label lands here
+            # must degrade to a generic disclosure, never a KeyError at
+            # payload-build time (review finding; the sync test pins the
+            # maps together)
+            vendor, inhouse = _SPLICE_LABELS.get(
+                key, (f"the {key} vendor series", "in-house continuation"))
+            out.append({
+                "series": key,
+                "inhouse_from": seam.isoformat(),
+                "note": (f"{vendor} froze before this window ended; sessions "
+                         f"from {seam.isoformat()} read the {inhouse} — a "
+                         "disclosed convention change, measured on the vendor "
+                         "overlap by cross-validation"),
+            })
+    return sorted(out, key=lambda r: r["series"])
 
 
 def _prev_session_view(store: MarketStore, day: date) -> MarketView:

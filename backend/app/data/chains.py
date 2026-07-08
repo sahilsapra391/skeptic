@@ -1,9 +1,14 @@
 """EOD chain loader: R2 lake → MarketStore for the engine.
 
 Source precedence per (ticker, trading_date): ivolatility > alphavantage >
-yahoo > dolthub (DATA-PIPELINE §4). iVolatility outranks everything: it is
-the only source carrying vendor-computed greeks on every row, backfilled
-20 years deep. Dolthub sessions honor the quarantine — only dates in
+cboe_eod > yahoo > dolthub (DATA-PIPELINE §4). iVolatility outranks
+everything: it is the only source carrying vendor-computed greeks on every
+row, backfilled 20 years deep. cboe_eod is the FORWARD record (owner
+decision 2026-07-08): the recorder's last close snapshot per session —
+full chain, vendor greeks/IV/OI, quotes ~15 min delayed, a property of the
+source disclosed exactly like cboe_minute intraday. It outranks Yahoo
+(60-DTE cap, no vendor greeks) and loses to the vendor EOD records.
+Dolthub sessions honor the quarantine — only dates in
 state/dolthub_backfill.json's `done` list are loaded (the lake's logical
 view; flag-and-exclude, DOLTHUB-EVAL addendum).
 
@@ -17,8 +22,11 @@ BUILD-LOG.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
@@ -26,7 +34,15 @@ from typing import Any, cast
 
 import pandas as pd
 
-from app.data import flow_signals, gex_signals, greeks, ivol_analytics, ivs_signals, r2
+from app.data import (
+    flow_signals,
+    gex_signals,
+    greeks,
+    inhouse_signals,
+    ivol_analytics,
+    ivs_signals,
+    r2,
+)
 from app.engine.market import MarketStore
 from app.engine.types import ContractKey, Quote
 
@@ -48,7 +64,8 @@ NUMERIC_COLUMNS = [
 ]
 # Bump when COLUMNS or the computed-greeks pass changes shape/semantics:
 # a mismatched manifest rebuilds the on-disk cache automatically.
-CACHE_SCHEMA_VERSION = 2
+# v3: cboe_eod joined the precedence chain — cached winners change.
+CACHE_SCHEMA_VERSION = 3
 
 
 def _latest_yahoo_keys(s3: Any, ticker: str) -> dict[str, str]:
@@ -74,6 +91,10 @@ def _chain_keys(s3: Any, ticker: str) -> dict[str, str]:
         d: f"options/source=alphavantage/ticker={ticker}/date={d}/chain.parquet"
         for d in r2.list_chain_dates(s3, "alphavantage", ticker)
     }
+    cboe = {
+        d: f"options/source=cboe_eod/ticker={ticker}/date={d}/chain.parquet"
+        for d in r2.list_chain_dates(s3, "cboe_eod", ticker)
+    }
     yahoo = _latest_yahoo_keys(s3, ticker)
     dolthub_dates = set(r2.list_chain_dates(s3, "dolthub", ticker))
     verified = set(r2.get_json(s3, "state/dolthub_backfill.json", {}).get("done", []))
@@ -85,7 +106,8 @@ def _chain_keys(s3: Any, ticker: str) -> dict[str, str]:
     winners: dict[str, str] = {}
     winners.update(dolthub)
     winners.update(yahoo)  # yahoo beats dolthub
-    winners.update(av)  # av beats yahoo
+    winners.update(cboe)  # cboe_eod beats yahoo: full chain + vendor greeks
+    winners.update(av)  # av beats cboe_eod (true close marks, no feed delay)
     winners.update(ivol)  # ivolatility beats all — vendor greeks on every row
     return winners
 
@@ -107,18 +129,30 @@ def _fetch_frames(s3: Any, keys: list[str]) -> list[pd.DataFrame]:
     return [f for f in frames if f is not None]
 
 
+def _manifest_of(winners: dict[str, str]) -> dict[str, Any]:
+    """Identity of the winner SET, not just its size: the digest covers the
+    full key paths (which embed the source), so a same-date winner
+    replacement (e.g. the iVol regroup outranking cboe_eod on existing
+    dates) changes the manifest even though {n, last} would not."""
+    digest = hashlib.sha1("\n".join(sorted(winners.values())).encode()).hexdigest()
+    return {
+        "v": CACHE_SCHEMA_VERSION,
+        "n": len(winners),
+        "last": max(winners) if winners else None,
+        "digest": digest[:16],
+    }
+
+
 def _load_combined(
     ticker: str,
     spot_by_date: dict[object, float],
     rates: pd.DataFrame | None,
+    winners: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     s3 = r2.r2_client()
-    winners = _chain_keys(s3, ticker)
-    manifest = {
-        "v": CACHE_SCHEMA_VERSION,
-        "n": len(winners),
-        "last": max(winners) if winners else None,
-    }
+    if winners is None:
+        winners = _chain_keys(s3, ticker)
+    manifest = _manifest_of(winners)
 
     CACHE_DIR.mkdir(exist_ok=True)
     cache_file = CACHE_DIR / f"chains_{ticker}.parquet"
@@ -155,30 +189,70 @@ def _underlying_frames(
     return daily, vix, rates
 
 
-# in-process store cache: the parquet parse is seconds of work a warm
-# container never needs to repeat (thread-safe enough for one writer)
-_STORE_CACHE: dict[str, MarketStore] = {}
+# In-process store cache with a freshness check (self-improvement thesis:
+# nightly collections must reach a long-lived container's NEXT run without
+# a redeploy). Freshness rules, all review-hardened:
+#   * refresh=True is for the ENGINE path only (serialized behind
+#     _ENGINE_LOCK by its callers) — a rebuild can never overlap a run
+#     holding the old store. Request-path callers (estimate, fill audit,
+#     warm_store) pass refresh=False: they serve the cached store as-is
+#     and only ever pay the ONE cold build (pre-TTL behavior, unchanged).
+#   * the check path never binds the old store to a local — on a manifest
+#     mismatch the cache entry is dropped and the old store is collectable
+#     BEFORE the rebuild allocates (the 2026-07-06 OOM class).
+#   * the stored manifest is computed from the PRE-build listing: an
+#     object landing mid-build makes the next check mismatch and rebuild
+#     again — the cache converges fresh, never pins an incomplete store.
+#   * a failed rebuild leaves the cache empty (the old store was freed by
+#     design); the failure surfaces to the caller and the next engine call
+#     rebuilds cold — loud, never a silent stale serve.
+_STORE_CACHE: dict[str, tuple[float, dict[str, Any], MarketStore]] = {}
+STORE_TTL_SECONDS = 1800
+_REBUILD_LOCK = threading.Lock()
 
 
-def load_market_store(ticker: str) -> MarketStore:
-    cached = _STORE_CACHE.get(ticker)
-    if cached is not None:
-        return cached
-    store = _build_market_store(ticker)
-    _STORE_CACHE[ticker] = store
-    return store
+def load_market_store(ticker: str, *, refresh: bool = True) -> MarketStore:
+    now = time.time()
+    entry = _STORE_CACHE.get(ticker)
+    winners: dict[str, str] | None = None
+    if entry is not None:
+        if not refresh or now - entry[0] <= STORE_TTL_SECONDS:
+            return entry[2]
+        try:
+            winners = _chain_keys(r2.r2_client(), ticker)
+        except Exception:
+            # can't check (transient R2) — keep serving, retry next TTL
+            _STORE_CACHE[ticker] = (now, entry[1], entry[2])
+            return entry[2]
+        if _manifest_of(winners) == entry[1]:
+            _STORE_CACHE[ticker] = (now, entry[1], entry[2])
+            return entry[2]
+        entry = None  # unpin the old store before the rebuild allocates
+    with _REBUILD_LOCK:  # single-flight; re-check under the lock
+        entry = _STORE_CACHE.get(ticker)
+        if entry is not None and time.time() - entry[0] <= STORE_TTL_SECONDS:
+            return entry[2]
+        entry = None
+        _STORE_CACHE.pop(ticker, None)  # free the old store BEFORE building
+        if winners is None:
+            winners = _chain_keys(r2.r2_client(), ticker)
+        manifest = _manifest_of(winners)  # PRE-build: mid-build writes are
+        # absent from it, so the next TTL check mismatches and re-converges
+        store = _build_market_store(ticker, winners)
+        _STORE_CACHE[ticker] = (time.time(), manifest, store)
+        return store
 
 
 def warm_store(ticker: str = "SPY") -> None:
     """Fire-and-forget prewarm so the FIRST user run doesn't pay the cold
     R2 pull (minutes on a fresh deploy)."""
     try:
-        load_market_store(ticker)
+        load_market_store(ticker, refresh=False)
     except Exception:  # no creds / empty lake — the run path reports it
         pass
 
 
-def _build_market_store(ticker: str) -> MarketStore:
+def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> MarketStore:
     daily, vix, rates = _underlying_frames(ticker)
     if daily is None or daily.empty:
         raise RuntimeError(f"no underlying dailies in the lake for {ticker}")
@@ -195,7 +269,7 @@ def _build_market_store(ticker: str) -> MarketStore:
         vix_dates = [pd.Timestamp(d).date() for d in vix["date"]]
         vix_close = {d: float(c) for d, c in zip(vix_dates, vix["close"], strict=False)}
 
-    combined = _load_combined(ticker, cast(dict[object, float], u_close), rates)
+    combined = _load_combined(ticker, cast(dict[object, float], u_close), rates, winners)
     chains: dict[date, dict[ContractKey, Quote]] = {}
     atm_iv: dict[date, float] = {}
     if not combined.empty:
@@ -271,6 +345,46 @@ def _build_market_store(ticker: str) -> MarketStore:
     except Exception:
         tide = {}
 
+    # Forward-record splices (owner decision 2026-07-08, no vendor
+    # subscriptions): the frozen vendor series continue STRICTLY FORWARD
+    # via the in-house derivations — unit-compatible series only, each
+    # continuation measured on the vendor overlap before it shipped:
+    #   ivx_30d  ← in-house 30d ATM IV      (overlap gap 0.09 vol pts)
+    #   hv_30d   ← in-house HV              (overlap MAE 0.0002 — exact fit)
+    #   skew/term ← in-house chain fit      (overlap gaps 0.21 / 0.02)
+    #   pcr/max-pain ← in-house chain calc  (overlap: <1% / identical)
+    # net_gex/net_dex are NOT spliced: the in-house convention disagreed
+    # with the vendor's sign on the overlap — banked + cross-validated
+    # only, never a continuation. net_premium/NOPE/tide have no free
+    # substitute and freeze (the tail-staleness guard names that at run
+    # time). Splice dates land on the store for run-payload disclosure.
+    try:
+        inhouse = inhouse_signals.load_chain_signals(r2.r2_client(), ticker)
+    except Exception:
+        inhouse = {}
+    try:
+        hv_inhouse = inhouse_signals.load_hv_inhouse(r2.r2_client(), ticker)
+    except Exception:
+        hv_inhouse = {}
+    splices: dict[str, date] = {}
+
+    def _splice(series: dict[date, float], key: str,
+                forward: dict[date, float]) -> dict[date, float]:
+        merged, seam = inhouse_signals.splice_forward(series, forward)
+        if seam is not None:
+            splices[key] = seam
+        return merged
+
+    ivx_30d = _splice(ivx_30d, "ivx_30d", {
+        d: v / 100.0 for d, v in inhouse.get("atm_iv_30d", {}).items()})
+    hv_30d = _splice(hv_30d, "hv_30d", hv_inhouse)
+    skew_25d = _splice(skew_25d, "skew_25d", inhouse.get("skew_25d", {}))
+    term_slope = _splice(term_slope, "term_structure_slope",
+                         inhouse.get("term_slope_30_90", {}))
+    pcr = _splice(pcr, "put_call_ratio", inhouse.get("put_call_ratio", {}))
+    mpd = _splice(mpd, "max_pain_distance_pct",
+                  inhouse.get("max_pain_dist_pct", {}))
+
     return MarketStore(
         ticker=ticker,
         sessions=sessions,
@@ -303,4 +417,5 @@ def _build_market_store(ticker: str) -> MarketStore:
         max_pain_dist=mpd,
         tide_dates=sorted(tide),
         market_tide=tide,
+        splices=splices,
     )

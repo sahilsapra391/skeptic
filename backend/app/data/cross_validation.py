@@ -44,7 +44,23 @@ OI_REL_TOL = 0.05
 VOLUME_REL_TOL = 0.10
 
 PAIRS = ("dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
-         "massive_vs_ivol5m")
+         "massive_vs_ivol5m",
+         # forward-record continuations vs their frozen vendor series (the
+         # 2026-07-08 no-subscription decision): the overlap MEASURES each
+         # convention seam instead of asserting it
+         "hv_inhouse_vs_ivol", "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw")
+
+# In-house continuation bands (reporting conventions, reviewed constants):
+# vol-point quantities compare a FITTED surface against a raw-chain
+# interpolation — 1.5 vol points; HV is the same statistic on the same
+# closes (tight: 0.01 abs / 5% rel); PCR compares chain volume to flow
+# volume (loose: 25%); max-pain distance is the same formula on the same
+# OI (0.5 pp); GEX/DEX conventions share only their SIGN.
+INHOUSE_VOLPT_TOL = 1.5
+HV_ABS_TOL = 0.01
+HV_REL_TOL = 0.05
+PCR_REL_TOL = 0.25
+MPD_ABS_TOL = 0.5
 
 
 def _record(joined: int, checked: int, within: int,
@@ -249,6 +265,37 @@ def compare_massive_ivol5m(
     ok = ((checked["c"] >= checked["lo"] - tol)
           & (checked["c"] <= checked["hi"] + tol))
     return _record(len(j), len(checked), int(ok.sum()))
+
+
+def compare_signal_values(
+    fields: list[tuple[float | None, float | None, str, float, float]],
+) -> dict[str, Any] | None:
+    """One session's signal-vs-signal comparison. Each field is
+    (ours, theirs, mode, abs_tol, rel_tol); mode "band" agrees within
+    max(abs_tol, rel_tol·|theirs|), mode "sign" agrees on sign (an exact
+    zero on either side is joined but unCHECKED — sign(0) is not a
+    claim). None when nothing joined — that session has no overlap."""
+    joined = checked = within = 0
+    for ours, theirs, mode, abs_tol, rel_tol in fields:
+        if ours is None or theirs is None:
+            continue
+        if pd.isna(ours) or pd.isna(theirs):
+            continue
+        joined += 1
+        if mode == "sign":
+            if ours == 0 or theirs == 0:
+                continue
+            checked += 1
+            if (ours > 0) == (theirs > 0):
+                within += 1
+        else:
+            checked += 1
+            tol = max(abs_tol, rel_tol * abs(theirs))
+            if abs(ours - theirs) <= tol:
+                within += 1
+    if joined == 0:
+        return None
+    return _record(joined, checked, within)
 
 
 def load_pair_summary(

@@ -154,6 +154,9 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
             from app.data.intraday import load_intraday_store
 
             intraday = load_intraday_store(spec.underlying.ticker.value)
+            # run-START refresh, exactly once: the run and every gauntlet
+            # sub-run then see ONE session listing (determinism rule)
+            intraday.refresh_sessions()
 
         def _progress(done: int, total: int) -> None:
             # a full-history 5-min run takes minutes; prove life in the
@@ -203,7 +206,13 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
         verdict_t0 = time.monotonic()
         verdict, retail_verdict = write_verdicts(report)
         verdict_seconds = time.monotonic() - verdict_t0
-        payload = build_run_payload(run_id, spec, result, report, verdict, retail_verdict)
+        # forward-record disclosure: convention seams the window crossed
+        from app.engine.engine import data_provenance
+
+        provenance = data_provenance(
+            spec, store, result.effective_start, result.effective_end)
+        payload = build_run_payload(run_id, spec, result, report, verdict,
+                                    retail_verdict, data_provenance=provenance)
         # the stats bundle is the ONLY material grounded Q&A may quote from
         stats = {
             "metrics": result.metrics,
@@ -570,7 +579,15 @@ def _execute_audit(run_id: str) -> None:
             # serialized like _execute_run (review #6: two overlapping
             # store loads/peaks are the OOM concurrency class)
             try:
-                store = load_market_store(spec.underlying.ticker.value)
+                # refresh=False: the audit re-runs the ORIGINAL spec and
+                # audits its fills — a TTL rebuild here would swap the lake
+                # under the re-run, and a same-count-different-prices drift
+                # would slip past the fill-count guard (review finding).
+                # The warm store the run used is the honest input; a cold
+                # container still builds once and the count guard catches
+                # any drift that build introduces.
+                store = load_market_store(spec.underlying.ticker.value,
+                                          refresh=False)
                 intraday = None
                 if spec.backtest.clock.value != "daily":
                     from app.data.intraday import load_intraday_store

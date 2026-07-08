@@ -15,6 +15,14 @@ import { getCoverage } from "@/lib/api";
 import { minutesAgo, monthYear, shortDate, year } from "@/lib/format";
 import type { CoveragePayload } from "@/lib/types";
 
+// live telemetry: re-pull the coverage payload on this cadence so lake
+// changes appear without a manual refresh. The backend snapshot itself
+// refreshes behind a 300s TTL, so polling much faster only re-downloads
+// identical JSON; hidden tabs skip the tick entirely and re-pull on
+// becoming visible (review finding: an idle background tab must not
+// drive nightly-scale R2 reads).
+const POLL_MS = 120_000;
+
 const PANEL = "rounded-[14px] border border-line bg-panel p-4";
 const PANEL_TITLE = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
 
@@ -67,12 +75,36 @@ export default function DataPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getCoverage()
-      .then(setCoverage)
-      .catch((e) => setError(e instanceof Error ? e.message : "coverage unavailable"));
+    let alive = true;
+    const pull = (fresh: boolean) =>
+      getCoverage(fresh)
+        .then((c) => {
+          if (!alive) return;
+          setCoverage(c);
+          setError(null);
+        })
+        .catch((e) => {
+          if (alive) setError(e instanceof Error ? e.message : "coverage unavailable");
+        });
+    pull(false);
+    const tick = () => {
+      if (!document.hidden) pull(true);
+    };
+    const id = setInterval(tick, POLL_MS);
+    const onVisible = () => {
+      if (!document.hidden) pull(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
-  if (error) {
+  // a failed POLL keeps showing the last real payload (its generated_at
+  // discloses the age); only a data-less screen shows the error state
+  if (error && !coverage) {
     return (
       <div>
         <h1 className="mb-1 font-serif text-[32px] font-medium">Data, honestly</h1>
@@ -103,7 +135,16 @@ export default function DataPage() {
   const recorderTs = recorder?.last_snapshot_ts;
   const recorderMins = recorderTs ? minutesAgo(recorderTs) : null;
   const recorderFresh = recorderMins != null && recorderMins <= 10;
-  const recordFirst = coverage.eod.yahoo?.SPY?.first;
+  const closeChain = coverage.eod.cboe_eod?.SPY;
+  const recordFirst =
+    coverage.record_first ?? closeChain?.first ?? coverage.eod.yahoo?.SPY?.first;
+  // frozen vs accruing is the BACKEND's one verdict (it also writes the
+  // blind-spot text) — re-deriving it here could contradict that panel
+  const alpacaAccruing = coverage.sources_status.alpaca_minute_accruing === true;
+  const inhouse = coverage.inhouse_signals?.SPY;
+  const hvAgreement =
+    coverage.cross_validation?.hv_inhouse_vs_ivol?.SPY?.agreement_rate ?? null;
+  const telemetryMins = minutesAgo(coverage.generated_at);
   const recordStaleDays = coverage.record_latest
     ? Math.floor(
         (new Date(today).getTime() - new Date(coverage.record_latest).getTime()) / 86_400_000,
@@ -126,6 +167,12 @@ export default function DataPage() {
       <h1 className="mb-1 font-serif text-[32px] font-medium">Data, honestly</h1>
       <p className="mb-[22px] text-[15px] text-ink-3">
         Every verdict is bounded by this record. It grows nightly.
+        <span className="ml-2 font-mono text-[11px] text-ink-4">
+          telemetry {telemetryMins != null && telemetryMins > 0
+            ? `${telemetryMins} min old`
+            : "live"}{" "}
+          · auto-refreshes
+        </span>
       </p>
 
       {recordStaleDays != null && recordStaleDays > 4 && (
@@ -189,9 +236,13 @@ export default function DataPage() {
           <div className={clsx(PANEL_TITLE, "mb-2.5")}>SOURCES</div>
           <div className="flex flex-wrap gap-[7px]">
             {[
+              ["cboe close chain", coverage.sources_status.cboe_eod === true],
               ["yahoo eod", coverage.sources_status.yahoo_eod === true],
               ["dolthub archive", coverage.sources_status.dolthub_backfill === true],
-              ["alpaca minute · frozen", coverage.sources_status.alpaca_minute === true],
+              [
+                `alpaca minute · ${alpacaAccruing ? "accruing" : "frozen"}`,
+                coverage.sources_status.alpaca_minute === true,
+              ],
               ["cboe recorder", coverage.sources_status.intraday_recorder === true],
             ].map(([label, ok]) => (
               <span
@@ -237,7 +288,17 @@ export default function DataPage() {
               last={today}
               t0={t0}
               t1={today}
-              note={`source of record · since ${monthYear(coverage.eod.yahoo.SPY.first)}`}
+              note={`yahoo snapshot · since ${monthYear(coverage.eod.yahoo.SPY.first)}`}
+            />
+          )}
+          {closeChain && (
+            <Lane
+              label="close chain (cboe)"
+              first={closeChain.first}
+              last={closeChain.last}
+              t0={t0}
+              t1={today}
+              note={`${closeChain.sessions} sessions · latest ${shortDate(closeChain.last)} · full chain + greeks, ~15-min delayed feed`}
             />
           )}
           {minute && (
@@ -247,7 +308,9 @@ export default function DataPage() {
               last={minute.last}
               t0={t0}
               t1={today}
-              note={`${minute.sessions} sessions · frozen (OPRA entitlement)`}
+              note={`${minute.sessions} sessions · ${
+                alpacaAccruing ? "accruing nightly" : "frozen (OPRA entitlement)"
+              }`}
               dim
             />
           )}
@@ -304,7 +367,8 @@ export default function DataPage() {
             <div className="flex justify-between">
               <span>minute option bars (alpaca)</span>
               <span className="text-ink">
-                {monthYear(minute.first)} → {monthYear(minute.last)} · frozen
+                {monthYear(minute.first)} → {monthYear(minute.last)} ·{" "}
+                {alpacaAccruing ? "accruing" : "frozen"}
               </span>
             </div>
           )}
@@ -508,6 +572,60 @@ export default function DataPage() {
                 t0="2026-01-01"
                 t1={today}
                 note={`market-wide · ${coverage.market_tide.tide_sessions.toLocaleString()} sessions`}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {(coverage.inhouse_signals?.SPY ||
+        coverage.inhouse_signals?.QQQ ||
+        coverage.inhouse_signals?.IWM) && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-1")}>
+            IN-HOUSE CONTINUATIONS — FORWARD RECORD, NO VENDOR SUBSCRIPTIONS
+          </div>
+          <div className="mb-3 text-[11.5px] leading-[1.5] text-ink-4">
+            derived nightly from the CBOE close chain and our own dailies
+            {coverage.vendor_lasts?.ivs
+              ? ` — iVol series last observed ${coverage.vendor_lasts.ivs}`
+              : ""}
+            {coverage.vendor_lasts?.uw
+              ? `, UW families ${coverage.vendor_lasts.uw}`
+              : ""}
+            . vendor history stays untouched; runs crossing a seam disclose
+            it, and the cross-validation pairs below measure every
+            continuation on its overlap. GEX/DEX are banked + sign-checked
+            only — never spliced into the UW series.
+          </div>
+          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              const ih = coverage.inhouse_signals?.[t];
+              if (!ih?.first || !ih.last || !ih.sessions) return null;
+              return (
+                <Lane
+                  key={t}
+                  label={`${t} chain signals`}
+                  first={ih.first}
+                  last={ih.last}
+                  t0="2026-01-01"
+                  t1={today}
+                  note={`skew ${ih.skew_sessions ?? 0} · atm-iv ${ih.atm_sessions ?? 0} · gex ${ih.gex_sessions ?? 0} · pcr ${ih.pcr_sessions ?? 0} of ${ih.sessions}`}
+                />
+              );
+            })}
+            {inhouse?.hv && (
+              <Lane
+                label="SPY HV 30d"
+                first={inhouse.hv.first}
+                last={inhouse.hv.last}
+                t0="2005-01-01"
+                t1={today}
+                note={`${inhouse.hv.sessions.toLocaleString()} sessions from our own dailies${
+                  hvAgreement != null
+                    ? ` · ${(hvAgreement * 100).toFixed(1)}% vendor-overlap agreement`
+                    : ""
+                }`}
               />
             )}
           </div>
