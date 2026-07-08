@@ -131,8 +131,8 @@ class _BasketState:
 
 
 def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
-                     stressed: bool, source: str, action: str = "",
-                     qty: int = 0) -> str | None:
+                     stressed: bool, source: str, action: str,
+                     qty: int) -> str | None:
     """Per-leg fill bookkeeping. Returns an F5 depth note ("qty 20 > ask
     size 3") when the fill quantity exceeded the traded side's displayed
     NBBO size — DISCLOSURE only, the price is untouched (owner decision
@@ -635,7 +635,7 @@ def _try_entry(
                                          spec.position.legs, strict=True):
         note = _record_leg_fill(
             state, q, eff, slip, was_stressed, view.fill_source,
-            action="sell" if leg.side is Side.SHORT else "buy",
+            action=fills.open_action(leg.side.value),
             qty=leg.ratio * contracts,
         )
         if note:
@@ -696,7 +696,7 @@ def _fire_rungs(
     opening: bool,
     bar_time: str | None,
     session_skips: set[str] | None,
-) -> None:
+) -> list[str]:
     """Fire every not-yet-fired rung whose condition passes at THIS bar, at the
     current bar's ASK (guardrail #1; D1b liquidity gates apply per fill). Adds
     are clamped to max_total_contracts (flagged cap_clamped); once the cap is
@@ -711,6 +711,10 @@ def _fire_rungs(
     leg = basket.legs[0]
     key = leg.key
     action = fills.open_action(leg.side)  # "buy" for a long basket
+    # F5 review finding #2: opening-bar rung fills fold into the OPEN event,
+    # so their depth notes must travel back to _open_basket — a beyond-depth
+    # FIRST rung (often the ladder's largest) is named, not just counted
+    opening_notes: list[str] = []
     for idx, rung in enumerate(si.rungs):
         if idx in basket.fired_rungs:
             continue
@@ -770,6 +774,8 @@ def _fire_rungs(
                 fill_source=view.fill_source, cap_clamped=clamped,
             )
         )
+        if opening and depth_note:
+            opening_notes.append(depth_note)
         if not opening:
             tag = " cap_clamped" if clamped else ""
             if depth_note:
@@ -785,6 +791,7 @@ def _fire_rungs(
             )
         if clamped:
             break  # the cap was hit exactly on this rung — stop deepening
+    return opening_notes
 
 
 def _open_basket(
@@ -825,8 +832,8 @@ def _open_basket(
         legs=[OpenLeg(key=keys[0], side=leg.side.value, qty=0, entry_price=0.0, last_mark=0.0)],
         contracts=0, opened=day, premium=0.0, scale_in=True,
     )
-    _fire_rungs(spec, state, view, pos, opening=True, bar_time=bar_time,
-                session_skips=session_skips)
+    opening_notes = _fire_rungs(spec, state, view, pos, opening=True,
+                                bar_time=bar_time, session_skips=session_skips)
     if pos.contracts <= 0:
         return  # nothing filled this bar — discard, retry next bar
 
@@ -847,7 +854,8 @@ def _open_basket(
             day=day, action="OPEN",
             detail=f"{_position_desc(pos)} · exp {expiration} · basket db "
                    f"{abs(pos.premium):.3f} · {pos.contracts}ct · {rungs_hit} rung"
-                   f"{'s' if rungs_hit != 1 else ''}",
+                   f"{'s' if rungs_hit != 1 else ''}"
+                   + (" · " + "; ".join(opening_notes) if opening_notes else ""),
             position_id=pos.pid,
         )
     )

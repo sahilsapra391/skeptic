@@ -435,8 +435,15 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
           · {pct(liq.penalized_share)} thin-penalized · {pct(liq.unknown_liquidity_share)}{" "}
           liquidity unknown · {liq.skipped_illiquid} refused
           {liq.beyond_depth_share != null && liq.beyond_depth_share > 0 ? (
-            <span className="text-warn">
-              {" "}· {pct(liq.beyond_depth_share)} beyond displayed depth
+            <span
+              className="text-warn"
+              title="share of depth-known fills whose quantity exceeded the displayed NBBO size — filled at the quote in the model; real execution may have walked the book"
+            >
+              {" "}·{" "}
+              {liq.beyond_depth_share < 0.005
+                ? "<1%"
+                : pct(liq.beyond_depth_share)}{" "}
+              of depth-known fills beyond displayed size
             </span>
           ) : null}{" "}
           ·{" "}

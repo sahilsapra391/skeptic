@@ -92,6 +92,14 @@ SLICE_COLUMNS = [
 ]
 
 
+def _size_i(v: Any) -> int | None:
+    """Displayed size: a negative vendor value is garbage, not depth — it
+    would count as depth-known with an automatic exceedance (v4's
+    vendor-shape-hardening rule: clamp to unknown, never trust)."""
+    n = _num_i(v)
+    return None if n is not None and n < 0 else n
+
+
 def _num(v: Any) -> float | None:
     return None if v is None or pd.isna(v) else float(v)
 
@@ -375,8 +383,8 @@ def _build_slice(
                 open_interest=_num_i(rec.get("open_interest")),
                 last=_num(rec.get("last")),
                 greeks_source="vendor",
-                bid_size=_num_i(rec.get("bid_size")),
-                ask_size=_num_i(rec.get("ask_size")),
+                bid_size=_size_i(rec.get("bid_size")),
+                ask_size=_size_i(rec.get("ask_size")),
             )
         quotes[bar.to_pydatetime()] = per
 

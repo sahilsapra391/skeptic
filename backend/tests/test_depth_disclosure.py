@@ -191,3 +191,95 @@ class TestLiquidityProfileDisclosure:
         prof = liquidity_profile(result, _spec(5))
         assert prof.depth_known_share == 0.0
         assert prof.beyond_depth_share is None
+
+
+class TestReviewFixes:
+    def test_counts_are_grounded_numbers(self) -> None:
+        # review fix F5 #1: the note quotes its own counts ("45 of 120") —
+        # they must be harvestable or the verdict/Q&A that echoes the
+        # disclosure is falsely flagged ungrounded (the WF fold-count class)
+        from app.honesty.verdict import _harvest_numbers
+
+        result = _run(20, bid_size=3, ask_size=90)
+        prof = liquidity_profile(result, _spec(20))
+        nums: set[float] = set()
+        _harvest_numbers(prof.model_dump(), nums)
+        assert float(prof.fills_beyond_depth) in nums
+        assert float(prof.fills_depth_known) in nums
+
+    def test_opening_rung_note_reaches_the_open_event(self) -> None:
+        # review fix F5 #2: a beyond-depth FIRST rung (often the ladder's
+        # largest) is named on the basket OPEN, not just counted
+        session, expiry = "2025-01-06", "2025-01-07"
+        bars = ["09:30", "09:35", "09:40", "09:45", "09:50", "09:55"]
+        # monotonic-down lasts → 5-min RSI(3) = 0 once seeded (bar index 3)
+        lasts = [100.0, 99.5, 99.0, 98.5, 98.0, 97.5]
+        call = {"expiration": expiry, "right": "call", "strike": 100.0,
+                "bid": 2.00, "ask": 2.10, "delta": 0.50,
+                "bid_size": 90, "ask_size": 2}
+        slc = build_fixture_slice(
+            session,
+            quotes={b: [call] for b in bars},
+            underlying={b: v for b, v in zip(bars, lasts, strict=True)},
+        )
+        store = build_fixture_store(
+            "SPY", {}, {session: (100.0, 100.0), "2025-01-07": (100.0, 100.0)})
+        spec = StrategySpec.model_validate({
+            "spec_version": 3,
+            "meta": {"name": "ladder depth", "description_raw": "f5"},
+            "underlying": {"ticker": "SPY"},
+            "position": {
+                "structure": "long_call",
+                "legs": [{"right": "call", "side": "long", "ratio": 1,
+                          "strike_selection": {"method": "delta", "value": 0.50}}],
+                "expiration_selection": {"target_dte": 1, "min_dte": 0,
+                                         "max_dte": 2},
+            },
+            "entry": {"schedule": {"frequency": "signal_only"},
+                      "conditions": [], "max_concurrent_positions": 1,
+                      "scale_in": {
+                          "mode": "signal_ladder", "basket": True,
+                          "rungs": [{"indicator": "rsi", "period": 3,
+                                     "timeframe": "5min", "operator": "<",
+                                     "value": 50, "add_contracts": 5}],
+                          "rearm": {"indicator": "rsi", "period": 3,
+                                    "timeframe": "5min", "operator": ">",
+                                    "value": 99},
+                          "max_total_contracts": 5,
+                      }},
+            "exit": {"profit_target_pct": 500},
+            "sizing": {"method": "fixed_contracts", "value": 1},
+            "costs": {"commission_per_contract": 0.65,
+                      "slippage_half_spread_fraction": 0.5},
+            "backtest": {"start": None, "end": None, "initial_capital": 25000,
+                         "seed": 42, "clock": "5min"},
+        })
+        result = run_backtest(spec, store, FixtureIntraday({session: slc}))
+        opens = [t for t in result.trades if t.action == "OPEN"]
+        assert opens, "ladder never opened — fixture broken"
+        assert any("qty 5 > ask size 2" in t.detail for t in opens)
+
+    def test_negative_vendor_size_is_unknown_not_exceedance(self) -> None:
+        # review fix F5 #6: a negative displayed size is garbage, not depth
+        from app.data.intraday import _size_i
+
+        assert _size_i(-3) is None
+        assert _size_i(0) == 0
+        assert _size_i(7) == 7
+        assert _size_i(None) is None
+
+
+class TestGroundingHarvest:
+    def test_note_counts_are_quotable_numbers(self) -> None:
+        # review fix F5 #1 (the WF-fold class): the profile note says
+        # "15 of 228" — a verdict/Q&A echoing those numbers must find them
+        # in the harvested grounding set, or the validator falsely rejects
+        # the disclosure's own numbers once they exceed the counting range
+        from app.honesty.verdict import _harvest_numbers
+
+        result = _run(20, bid_size=3, ask_size=90)
+        prof = liquidity_profile(result, _spec(20))
+        harvested: set[float] = set()
+        _harvest_numbers(prof.model_dump(), harvested)
+        assert float(prof.fills_beyond_depth) in harvested
+        assert float(prof.fills_depth_known) in harvested

@@ -150,6 +150,11 @@ class LiquidityProfile(BaseModel):
     # option-leg fills; beyond_depth_share is of the DEPTH-KNOWN ones.
     depth_known_share: float | None
     beyond_depth_share: float | None
+    # raw counts as NUMERIC fields so the grounding harvester admits them —
+    # the note says "15 of 228" and a verdict/Q&A echoing those numbers must
+    # never be flagged ungrounded (review finding F5 #1; the WF-fold class)
+    fills_depth_known: int
+    fills_beyond_depth: int
     material: bool
     note: str | None
 

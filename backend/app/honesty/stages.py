@@ -1002,6 +1002,8 @@ def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile
         skipped_illiquid=skipped,
         depth_known_share=depth_known,
         beyond_depth_share=beyond,
+        fills_depth_known=result.fills_depth_known,
+        fills_beyond_depth=result.fills_beyond_depth,
         material=bool(notes),
         note="; ".join(notes) if notes else None,
     )

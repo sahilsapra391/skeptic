@@ -664,6 +664,11 @@ bid):
   (pinned digests).
 - **Settlements carry no depth** — cash settlement has no NBBO, so a
   settlement close honestly records nothing.
-- **Massive cross-check DEFERRED to F7** — zero data banked (the
-  collector never ramped; ops decision flagged to the owner). The
-  masterplan's guardrail stands: Massive is never a fill source.
+- **Massive cross-check DEFERRED to F7.** Correction (same day): the
+  collector (collector/backfill_massive.py, free tier, 5 req/min) HAS
+  banked contract universes for QQQ (157,310) and IWM (86,696) plus
+  ~5.7K QQQ per-contract daily aggregates — the backfill stalled at
+  ~3.6% because the full 2-year universe needs ~34 days at the free
+  rate. Ramp strategy (prune/sample/paid month) is an owner ops
+  decision. The masterplan's guardrail stands either way: Massive is
+  OHLCV only, never a fill source.
