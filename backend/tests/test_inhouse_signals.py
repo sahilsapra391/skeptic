@@ -267,3 +267,37 @@ class TestDataProvenance:
         spec = _spec([{"indicator": "vix_level", "operator": "<", "value": 20}])
         assert data_provenance(spec, self._store(),
                                date(2026, 6, 1), date(2026, 7, 6)) == []
+
+    def test_spliced_series_carry_the_stale_tail_guard(self) -> None:
+        # review finding: the in-house continuations can die exactly like a
+        # vendor feed (recorder down, derive failing) — skew/term/ivx/hv
+        # get the SAME tail protection as the UW families
+        from datetime import timedelta
+
+        from app.engine.engine import SliceCoverageError, check_signal_coverage
+
+        days: list[date] = []
+        d = date(2026, 6, 1)
+        while len(days) < 12:
+            if d.weekday() < 5:
+                days.append(d)
+            d += timedelta(days=1)
+        store = build_fixture_store(
+            "SPY", {}, {x.isoformat(): (100.0, 100.0) for x in days},
+            skew_25d={x.isoformat(): 4.0 for x in days[:3]})
+        spec = _spec([{"indicator": "skew_25d", "operator": ">", "value": 3}])
+        # 9 uncovered tail sessions (> grace) → refused, last obs named
+        with pytest.raises(SliceCoverageError, match="last observed"):
+            check_signal_coverage(spec, store, days[0], days[11])
+        # exactly the grace (5 sessions past days[2]) → runs
+        check_signal_coverage(spec, store, days[0], days[7])
+
+    def test_splice_label_maps_stay_in_sync(self) -> None:
+        # the three registries (chains splice keys → _PROVENANCE_SERIES →
+        # _SPLICE_LABELS) are hand-synced strings; this pins the two
+        # engine-side maps to each other so a new continuation cannot ship
+        # half-labeled (review finding)
+        from app.engine.engine import _PROVENANCE_SERIES, _SPLICE_LABELS
+
+        mapped = {k for keys in _PROVENANCE_SERIES.values() for k in keys}
+        assert mapped == set(_SPLICE_LABELS)

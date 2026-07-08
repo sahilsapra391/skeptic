@@ -370,6 +370,20 @@ class TestSignalCoverageRefusal:
         assert "last observed" in msg
         assert f"Run {days[0].isoformat()} → {days[4].isoformat()}" in msg
 
+    def test_stale_tail_entirely_after_coverage_never_offers_inverted(self) -> None:
+        # review finding: a window starting AFTER the frozen series' last
+        # observation must be offered the series' own covered window —
+        # "Run <later> → <earlier>" is the F1 #1 inverted-offer class
+        days = _weekdays(date(2024, 1, 1), 20)
+        gex = {days[i].isoformat(): 5.0 for i in range(5)}
+        store = _chained_store(days, gex)
+        spec = _run_spec(days, start=days[10], conditions=_GEX_COND)
+        with pytest.raises(SliceCoverageError) as exc:
+            run_backtest(spec, store)
+        msg = str(exc.value)
+        assert "entirely after" in msg
+        assert f"Run {days[0].isoformat()} → {days[4].isoformat()}" in msg
+
     def test_stale_tail_within_grace_runs(self) -> None:
         # exactly STALE_TAIL_GRACE_SESSIONS uncovered tail sessions =
         # vendor publishing lag, not a dead feed — the run proceeds

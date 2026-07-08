@@ -141,6 +141,21 @@ def list_chain_dates(s3, source: str, ticker: str) -> list[str]:
     return sorted(dates)
 
 
+def list_date_prefixes(s3, prefix: str) -> list[str]:
+    """Sorted ISO dates under date=YYYY-MM-DD/ sub-prefixes (cheap Delimiter
+    listing — mirrors backend app/data/r2.py; the shared home so derive
+    scripts stop growing private copies)."""
+    dates: list[str] = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=os.environ["R2_BUCKET"],
+                                   Prefix=prefix, Delimiter="/"):
+        for cp in page.get("CommonPrefixes", []):
+            m = re.search(r"date=(\d{4}-\d{2}-\d{2})", cp["Prefix"])
+            if m:
+                dates.append(m.group(1))
+    return sorted(dates)
+
+
 # ----------------------------- NYSE calendar -------------------------------
 
 _CAL = None

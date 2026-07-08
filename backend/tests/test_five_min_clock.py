@@ -46,6 +46,9 @@ class FixtureIntraday:
     def sessions(self) -> list[date]:
         return sorted(self._slices)
 
+    def refresh_sessions(self) -> None:
+        return None  # fixtures are static — nothing to relist
+
     def slice_for(self, session: date) -> SessionSlice | None:
         return self._slices.get(session)
 

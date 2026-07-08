@@ -297,56 +297,52 @@ def _col_series(df: pd.DataFrame | None, col: str) -> dict[str, float]:
             if pd.notna(v)}
 
 
-def run_hv_inhouse_vs_ivol(s3, ticker: str) -> int:
-    """In-house HV (own dailies) vs the frozen vendor 30d HV — the seam
-    with the deepest overlap (~5,400 sessions), so the continuation is
-    MEASURED session by session, not asserted."""
-    key = PAIR_KEY.format(pair="hv_inhouse_vs_ivol", ticker=ticker)
+def _run_signal_pair(
+    s3, pair: str, ticker: str,
+    ours_loader,  # () -> {column: {iso-date: value}}
+    vendor_loader,  # () -> {column: {iso-date: value}}
+    fields: list[tuple[str, str, str, float, float]],
+) -> int:
+    """ONE driver for every in-house-continuation pair (review finding:
+    three pasted skeletons WILL drift; the next pair is a table entry).
+    fields = (our_column, vendor_column, mode, abs_tol, rel_tol).
+
+    The vendor side loads LAZILY: these vendor series are FROZEN (the
+    2026-07-08 no-subscription decision), so once every new in-house
+    session lies past the banked overlap edge there is nothing left to
+    compare and the expensive vendor load (22 HV year files per ticker)
+    is skipped. Documented assumption: a frozen vendor never back-fills
+    behind the banked edge — if a feed ever RESUMES, delete the pair
+    artifact so the overlap re-derives from scratch."""
+    key = PAIR_KEY.format(pair=pair, ticker=ticker)
     existing, have = _artifact(s3, key)
-    vendor = {d.isoformat(): v for d, v in load_hv_30d(s3, ticker).items()}
-    ours = _col_series(r2_get_parquet(s3, HV_KEY.format(ticker=ticker)), "hv_30d")
-    todo = sorted((set(vendor) & set(ours)) - have)
-    if not todo:
-        log.info("hv_inhouse_vs_ivol %s: up to date (%d sessions)", ticker, len(have))
+    ours = ours_loader()
+    our_dates: set[str] = set().union(*(set(s) for s in ours.values())) \
+        if ours else set()
+    candidates = our_dates - have
+    if not candidates:
+        log.info("%s %s: up to date (%d sessions)", pair, ticker, len(have))
         return 0
-    rows: list[dict] = []
-    for d in todo:
-        rec = compare_signal_values(
-            [(ours[d], vendor[d], "band", HV_ABS_TOL, HV_REL_TOL)])
-        if rec is None:
-            continue
-        rec["date"] = d
-        rows.append(rec)
-    if rows:
-        _write(s3, key, existing, rows)
-    log.info("hv_inhouse_vs_ivol %s: derived %d sessions → r2://%s",
-             ticker, len(rows), key)
-    return len(rows)
-
-
-_IVS_FIELDS = ("skew_25d", "term_slope_30_90", "atm_iv_30d", "atm_iv_90d")
-
-
-def run_ivs_cboe_vs_ivol(s3, ticker: str) -> int:
-    """In-house chain-interpolated surface signals vs the frozen vendor
-    fitted-surface artifact, on whatever overlap exists (vol points)."""
-    key = PAIR_KEY.format(pair="ivs_cboe_vs_ivol", ticker=ticker)
-    existing, have = _artifact(s3, key)
-    vendor_df = r2_get_parquet(s3, IVS_SIGNALS_KEY.format(ticker=ticker))
-    ours_df = r2_get_parquet(s3, CHAIN_SIGNALS_KEY.format(ticker=ticker))
-    vendor = {f: _col_series(vendor_df, f) for f in _IVS_FIELDS}
-    ours = {f: _col_series(ours_df, f) for f in _IVS_FIELDS}
-    overlap = set().union(*(vendor[f].keys() for f in _IVS_FIELDS)) & \
-        set().union(*(ours[f].keys() for f in _IVS_FIELDS))
-    todo = sorted(overlap - have)
+    if have and not any(min(have) <= c <= max(have) for c in candidates):
+        # every un-banked in-house session lies OUTSIDE the banked overlap
+        # window — before the vendor's history starts or past its frozen
+        # edge — so the vendor load can prove nothing new
+        log.info("%s %s: no new sessions inside the banked vendor window "
+                 "%s → %s — nothing to compare (%d banked)",
+                 pair, ticker, min(have), max(have), len(have))
+        return 0
+    vendor = vendor_loader()
+    vendor_dates: set[str] = set().union(*(set(s) for s in vendor.values())) \
+        if vendor else set()
+    todo = sorted((our_dates & vendor_dates) - have)
     if not todo:
-        log.info("ivs_cboe_vs_ivol %s: up to date (%d sessions)", ticker, len(have))
+        log.info("%s %s: up to date (%d sessions)", pair, ticker, len(have))
         return 0
     rows: list[dict] = []
     for d in todo:
         rec = compare_signal_values([
-            (ours[f].get(d), vendor[f].get(d), "band", INHOUSE_VOLPT_TOL, 0.0)
-            for f in _IVS_FIELDS
+            (ours.get(oc, {}).get(d), vendor.get(vc, {}).get(d), mode, at, rt)
+            for oc, vc, mode, at, rt in fields
         ])
         if rec is None:
             continue
@@ -354,9 +350,54 @@ def run_ivs_cboe_vs_ivol(s3, ticker: str) -> int:
         rows.append(rec)
     if rows:
         _write(s3, key, existing, rows)
-    log.info("ivs_cboe_vs_ivol %s: derived %d sessions → r2://%s",
-             ticker, len(rows), key)
+    log.info("%s %s: derived %d sessions → r2://%s", pair, ticker, len(rows), key)
     return len(rows)
+
+
+def _artifact_cols(s3, key: str, cols: tuple[str, ...]) -> dict[str, dict[str, float]]:
+    df = r2_get_parquet(s3, key)
+    return {c: _col_series(df, c) for c in cols}
+
+
+_IVS_FIELDS = ("skew_25d", "term_slope_30_90", "atm_iv_30d", "atm_iv_90d")
+_POS_FIELDS = ("net_gex", "net_dex", "put_call_ratio", "max_pain_dist_pct")
+
+
+def run_hv_inhouse_vs_ivol(s3, ticker: str) -> int:
+    """In-house HV (own dailies) vs the frozen vendor 30d HV — the seam
+    with the deepest overlap (~5,400 sessions), measured not asserted."""
+    return _run_signal_pair(
+        s3, "hv_inhouse_vs_ivol", ticker,
+        ours_loader=lambda: _artifact_cols(
+            s3, HV_KEY.format(ticker=ticker), ("hv_30d",)),
+        vendor_loader=lambda: {"hv_30d": {
+            d.isoformat(): v for d, v in load_hv_30d(s3, ticker).items()}},
+        fields=[("hv_30d", "hv_30d", "band", HV_ABS_TOL, HV_REL_TOL)],
+    )
+
+
+def run_ivs_cboe_vs_ivol(s3, ticker: str) -> int:
+    """In-house chain-interpolated surface signals vs the frozen vendor
+    fitted-surface artifact, on whatever overlap exists (vol points)."""
+    return _run_signal_pair(
+        s3, "ivs_cboe_vs_ivol", ticker,
+        ours_loader=lambda: _artifact_cols(
+            s3, CHAIN_SIGNALS_KEY.format(ticker=ticker), _IVS_FIELDS),
+        vendor_loader=lambda: _artifact_cols(
+            s3, IVS_SIGNALS_KEY.format(ticker=ticker), _IVS_FIELDS),
+        fields=[(f, f, "band", INHOUSE_VOLPT_TOL, 0.0) for f in _IVS_FIELDS],
+    )
+
+
+def _uw_positioning_cols(s3, ticker: str) -> dict[str, dict[str, float]]:
+    gex_v, dex_v = load_dealer_exposure(s3, ticker)
+    flow = _artifact_cols(s3, FLOW_KEY.format(ticker=ticker),
+                          ("put_call_ratio", "max_pain_dist_pct"))
+    return {
+        "net_gex": {d.isoformat(): v for d, v in gex_v.items()},
+        "net_dex": {d.isoformat(): v for d, v in dex_v.items()},
+        **flow,
+    }
 
 
 def run_positioning_cboe_vs_uw(s3, ticker: str) -> int:
@@ -364,41 +405,18 @@ def run_positioning_cboe_vs_uw(s3, ticker: str) -> int:
     agree on SIGN only (the conventions share nothing else); PCR within a
     loose band (chain volume vs flow volume); max-pain distance tight
     (same formula, same OI)."""
-    key = PAIR_KEY.format(pair="positioning_cboe_vs_uw", ticker=ticker)
-    existing, have = _artifact(s3, key)
-    gex_v, dex_v = load_dealer_exposure(s3, ticker)
-    gexv = {d.isoformat(): v for d, v in gex_v.items()}
-    dexv = {d.isoformat(): v for d, v in dex_v.items()}
-    flow_df = r2_get_parquet(s3, FLOW_KEY.format(ticker=ticker))
-    pcrv = _col_series(flow_df, "put_call_ratio")
-    mpdv = _col_series(flow_df, "max_pain_dist_pct")
-    ours_df = r2_get_parquet(s3, CHAIN_SIGNALS_KEY.format(ticker=ticker))
-    ours = {f: _col_series(ours_df, f)
-            for f in ("net_gex", "net_dex", "put_call_ratio", "max_pain_dist_pct")}
-    our_dates = set().union(*(s.keys() for s in ours.values()))
-    vendor_dates = set(gexv) | set(dexv) | set(pcrv) | set(mpdv)
-    todo = sorted((our_dates & vendor_dates) - have)
-    if not todo:
-        log.info("positioning_cboe_vs_uw %s: up to date (%d sessions)",
-                 ticker, len(have))
-        return 0
-    rows: list[dict] = []
-    for d in todo:
-        rec = compare_signal_values([
-            (ours["net_gex"].get(d), gexv.get(d), "sign", 0.0, 0.0),
-            (ours["net_dex"].get(d), dexv.get(d), "sign", 0.0, 0.0),
-            (ours["put_call_ratio"].get(d), pcrv.get(d), "band", 0.0, PCR_REL_TOL),
-            (ours["max_pain_dist_pct"].get(d), mpdv.get(d), "band", MPD_ABS_TOL, 0.0),
-        ])
-        if rec is None:
-            continue
-        rec["date"] = d
-        rows.append(rec)
-    if rows:
-        _write(s3, key, existing, rows)
-    log.info("positioning_cboe_vs_uw %s: derived %d sessions → r2://%s",
-             ticker, len(rows), key)
-    return len(rows)
+    return _run_signal_pair(
+        s3, "positioning_cboe_vs_uw", ticker,
+        ours_loader=lambda: _artifact_cols(
+            s3, CHAIN_SIGNALS_KEY.format(ticker=ticker), _POS_FIELDS),
+        vendor_loader=lambda: _uw_positioning_cols(s3, ticker),
+        fields=[
+            ("net_gex", "net_gex", "sign", 0.0, 0.0),
+            ("net_dex", "net_dex", "sign", 0.0, 0.0),
+            ("put_call_ratio", "put_call_ratio", "band", 0.0, PCR_REL_TOL),
+            ("max_pain_dist_pct", "max_pain_dist_pct", "band", MPD_ABS_TOL, 0.0),
+        ],
+    )
 
 
 def main() -> int:

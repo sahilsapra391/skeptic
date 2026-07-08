@@ -69,6 +69,12 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 
+# shared kernels/loaders — ONE implementation per honest primitive (review
+# finding: forked copies of interpolation or series-reading math make the
+# continuation diverge from the vendor-era derivation it splices onto)
+from app.data.flow_signals import _series_from
+from app.data.ivs_signals import _interp_iv_at_delta
+
 CHAIN_SIGNALS_KEY = "reference/derived/inhouse_signals/ticker={ticker}.parquet"
 HV_KEY = "reference/derived/hv_inhouse/ticker={ticker}.parquet"
 
@@ -136,26 +142,14 @@ def _atm_iv_of_expiry(rows: pd.DataFrame, spot: float) -> float | None:
 
 
 def _iv_at_delta(rows: pd.DataFrame, target_abs_delta: float) -> float | None:
-    """IV at |delta| == target for ONE expiry and ONE right, linearly
-    interpolated between bracketing strikes (the ivs_signals rule: never
-    extrapolate beyond the quoted grid)."""
-    pts = rows.dropna(subset=["iv", "delta"]).copy()
+    """IV at |delta| == target for ONE expiry and ONE right: drop the
+    feed's nulls and the deep-ITM pin rows, then run the SHARED
+    ivs_signals interpolation kernel over the quoted grid."""
+    pts = rows.dropna(subset=["iv", "delta"])
+    pts = pts[pts["delta"].abs() < DEEP_ITM_DELTA]
     if pts.empty:
         return None
-    pts["abs_delta"] = pts["delta"].abs()
-    pts = pts[pts["abs_delta"] < DEEP_ITM_DELTA]
-    if pts.empty:
-        return None
-    pts = pts.sort_values("abs_delta", kind="stable")
-    below = pts[pts["abs_delta"] <= target_abs_delta]
-    above = pts[pts["abs_delta"] >= target_abs_delta]
-    if below.empty or above.empty:
-        return None
-    lo, hi = below.iloc[-1], above.iloc[0]
-    if hi["abs_delta"] == lo["abs_delta"]:
-        return float(lo["iv"])
-    w = (target_abs_delta - lo["abs_delta"]) / (hi["abs_delta"] - lo["abs_delta"])
-    return float(lo["iv"] + w * (hi["iv"] - lo["iv"]))
+    return _interp_iv_at_delta(pts, target_abs_delta, iv_col="iv")
 
 
 def _tenor_interp(points: list[tuple[int, float | None]], tau: int) -> float | None:
@@ -209,18 +203,23 @@ def derive_chain_signal_row(
         def dte(e: date) -> int:
             return (e - day).days
 
-        atm_points = [(dte(e), _atm_iv_of_expiry(g, spot)) for e, g in by_exp.items()]
+        # ONE walk per expiry builds every surface point (review finding:
+        # parallel comprehensions over the same dict drift apart — the next
+        # wing inherits this loop, not a fourth copy)
+        atm_points: list[tuple[int, float | None]] = []
+        put_pts: list[tuple[int, float | None]] = []
+        call_pts: list[tuple[int, float | None]] = []
+        for e, g in by_exp.items():
+            t = dte(e)
+            atm_points.append((t, _atm_iv_of_expiry(g, spot)))
+            put_pts.append((t, _iv_at_delta(g[g["right"] == "put"], SKEW_DELTA)))
+            call_pts.append((t, _iv_at_delta(g[g["right"] == "call"], SKEW_DELTA)))
         atm30 = _tenor_interp(atm_points, TERM_SHORT_DAYS)
         atm90 = _tenor_interp(atm_points, TERM_LONG_DAYS)
         out["atm_iv_30d"] = None if atm30 is None else round(atm30 * 100.0, 4)
         out["atm_iv_90d"] = None if atm90 is None else round(atm90 * 100.0, 4)
         if atm30 is not None and atm90 is not None:
             out["term_slope_30_90"] = round((atm90 - atm30) * 100.0, 4)
-
-        put_pts = [(dte(e), _iv_at_delta(g[g["right"] == "put"], SKEW_DELTA))
-                   for e, g in by_exp.items()]
-        call_pts = [(dte(e), _iv_at_delta(g[g["right"] == "call"], SKEW_DELTA))
-                    for e, g in by_exp.items()]
         put25 = _tenor_interp(put_pts, SKEW_TENOR_DAYS)
         call25 = _tenor_interp(call_pts, SKEW_TENOR_DAYS)
         if put25 is not None and call25 is not None:
@@ -258,17 +257,22 @@ def _max_pain(df: pd.DataFrame, day: date, close: float) -> float | None:
     """Max-pain strike of the front expiry STRICTLY AFTER `day` — the
     listed strike minimizing total intrinsic payout over that expiry's OI.
     Ties break toward the strike nearest the close, then lower."""
-    oi = df.dropna(subset=["open_interest"])
-    oi = oi[oi["open_interest"] > 0]
-    fronts = sorted(e for e in oi["_exp"].unique() if e > day)
+    # FRONT = the nearest LISTED expiry strictly after the session (the
+    # F2/F3 owner convention this series splices onto). If that expiry
+    # carries no positive OI — a freshly listed weekly before OI settles —
+    # the signal is honestly None: shifting to a LATER expiry would bank a
+    # value under the wrong pin date (review finding).
+    fronts = sorted(e for e in df["_exp"].unique() if e > day)
     if not fronts:
+        return None
+    front_rows = df[df["_exp"] == fronts[0]]
+    exp_rows = front_rows.dropna(subset=["open_interest"])
+    exp_rows = exp_rows[exp_rows["open_interest"] > 0]
+    if exp_rows.empty:
         return None
     # candidate settles are EVERY listed strike of the front expiry (a
     # zero-OI strike is a legal pin); OI only weights the payout
-    strikes = sorted(df.loc[df["_exp"] == fronts[0], "strike"].unique())
-    if not strikes:
-        return None
-    exp_rows = oi[oi["_exp"] == fronts[0]]
+    strikes = sorted(front_rows["strike"].unique())
     calls = exp_rows[exp_rows["right"] == "call"]
     puts = exp_rows[exp_rows["right"] == "put"]
 
@@ -302,18 +306,6 @@ def splice_forward(
 
 
 # -------------------------------------------------------------------- loaders
-
-def _series_from(df: pd.DataFrame | None, col: str) -> dict[date, float]:
-    if df is None or df.empty or "date" not in df.columns or col not in df.columns:
-        return {}
-    out: dict[date, float] = {}
-    stamps = pd.to_datetime(df["date"], errors="coerce")
-    vals = pd.to_numeric(df[col], errors="coerce")
-    for d, v in zip(stamps, vals, strict=True):
-        if pd.notna(d) and pd.notna(v):
-            out[d.date()] = float(v)
-    return out
-
 
 def load_chain_signals(s3: Any, ticker: str) -> dict[str, dict[date, float]]:
     """Every chain-derived series by session from the derived artifact —

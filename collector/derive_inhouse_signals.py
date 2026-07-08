@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -63,24 +62,12 @@ from collect import (  # noqa: E402  (env loads first, like the other derives)
     r2_put_parquet,
 )
 
+# the artifact read/append helpers carry a reviewed invariant (ONE read,
+# never a second that could truncate) — import the originals instead of
+# forking them (review finding)
+from derive_flow_signals import _append, _load_artifact  # noqa: E402
+
 log = logging.getLogger("inhouse_signals")
-_DATE_RE = re.compile(r"date=(\d{4}-\d{2}-\d{2})")
-
-
-def _load_artifact(s3, key: str) -> tuple[pd.DataFrame | None, set[str]]:
-    df = r2_get_parquet(s3, key)
-    if df is None or df.empty or "date" not in df.columns:
-        return None, set()
-    return df, set(df["date"].astype(str))
-
-
-def _append(s3, key: str, existing: pd.DataFrame | None, rows: list[dict]) -> None:
-    fresh = pd.DataFrame(rows)
-    combined = (pd.concat([existing, fresh], ignore_index=True)
-                if existing is not None and not existing.empty else fresh)
-    combined = (combined.drop_duplicates(subset=["date"], keep="last")
-                .sort_values("date").reset_index(drop=True))
-    r2_put_parquet(s3, key, combined)
 
 
 def _closes_by_date(daily: pd.DataFrame | None) -> dict[str, float]:
@@ -119,7 +106,15 @@ def derive_ticker(s3, ticker: str) -> int:
         if chain is None or chain.empty:
             skipped.append(d)  # unreadable driving input — retry next run
             continue
-        row = derive_chain_signal_row(chain, d, closes.get(d))
+        close = closes.get(d)
+        if close is None:
+            # the dailies refresh is nightly and full-history: a missing
+            # close is a TRANSIENT gap, and banking a row now would None
+            # max_pain_dist_pct forever (set difference never retries a
+            # written session — review finding). Leave it pending instead.
+            skipped.append(d)
+            continue
+        row = derive_chain_signal_row(chain, d, close)
         row["date"] = d
         rows.append(row)
     if rows:

@@ -26,7 +26,7 @@ settlement path still works because it uses underlying closes.
 
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -1308,13 +1308,55 @@ _RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y,
 # covered window named. 5 sessions ≈ one trading week.
 STALE_TAIL_GRACE_SESSIONS = 5
 
+# The spliced vol-family series get the SAME tail protection (review
+# finding: the in-house continuation can die exactly like a vendor feed —
+# recorder down, derive failing) but keep their historical START semantics:
+# sessions before the series begins evaluate False (D1c warmup behavior),
+# they are not start-refused like the UW coverage-capped families.
+_STALENESS_ONLY_SERIES: dict[Indicator, tuple[tuple[str, str], ...]] = {
+    Indicator.IVX_LEVEL_30D: (("30d IVX", "ivx_dates"),),
+    Indicator.IVX_RANK_1Y: (("30d IVX", "ivx_dates"),),
+    Indicator.HV_IV_SPREAD_30D: (("30d IVX", "ivx_dates"), ("30d HV", "hv_dates")),
+    Indicator.SKEW_25D: (("25Δ skew", "skew_dates"),),
+    Indicator.TERM_STRUCTURE_SLOPE: (("term-structure slope", "term_dates"),),
+}
 
-def _sessions_past(sessions: list[date], last_obs: date, win_end: date) -> int:
-    """Simulated sessions in (last_obs, win_end] the signal cannot cover —
-    the tail that would re-read one stale observation."""
-    lo = bisect_right(sessions, last_obs)
+
+def _check_stale_tail(label: str, scope: str, indicator_name: str,
+                      dates: list[date], sessions: list[date],
+                      win_start: date, win_end: date) -> None:
+    """Refuse when the window runs more than the grace past the series'
+    last observation. Counts only sessions the run actually simulates
+    (≥ win_start), and the offered window can never invert: a window lying
+    entirely after coverage is offered the series' own covered window."""
+    if not dates:
+        return  # honest absence — warmup/evaluate-False semantics apply
+    last = dates[-1]
+    lo = max(bisect_right(sessions, last), bisect_left(sessions, win_start))
     hi = bisect_right(sessions, win_end)
-    return max(hi - lo, 0)
+    stale = hi - lo
+    if stale <= STALE_TAIL_GRACE_SESSIONS:
+        return
+    first = dates[0]
+    covered_start = max(win_start, first)
+    if covered_start > last:
+        # the whole window sits after the last observation — offering
+        # "covered_start → last" would be inverted (the F1 #1 class)
+        raise SliceCoverageError(
+            f"{label} data{scope} was last observed {last.isoformat()}; the "
+            f"requested window lies entirely after it — all {stale} sessions "
+            f"would re-read that one stale observation. Run "
+            f"{first.isoformat()} → {last.isoformat()} instead, or wait for "
+            "the signal feed to catch up."
+        )
+    raise SliceCoverageError(
+        f"{label} data{scope} was last observed {last.isoformat()}; "
+        f"the requested window runs {stale} sessions past it — the "
+        f"{indicator_name} filter would silently re-read that "
+        f"one stale observation across the whole tail. Run "
+        f"{covered_start.isoformat()} → {last.isoformat()} instead, "
+        "or wait for the signal feed to catch up."
+    )
 
 
 def check_signal_coverage(spec: StrategySpec, store: MarketStore,
@@ -1325,6 +1367,11 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
     covered window offered. `win_start`/`win_end` are the run's first/last
     simulated sessions."""
     for cond in _spec_conditions(spec):
+        for vol_label, vol_attr in _STALENESS_ONLY_SERIES.get(cond.indicator, ()):
+            _check_stale_tail(
+                vol_label, f" for {spec.underlying.ticker.value}",
+                cond.indicator.value, getattr(store, vol_attr),
+                store.sessions, win_start, win_end)
         entry = _SIGNAL_SERIES.get(cond.indicator)
         if entry is None:
             continue
@@ -1343,17 +1390,8 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
         scope = ("" if label.startswith("market-wide")
                  else f" for {spec.underlying.ticker.value}")
         if win_start >= first:
-            stale = _sessions_past(store.sessions, last, win_end)
-            if stale > STALE_TAIL_GRACE_SESSIONS:
-                covered_start = max(win_start, first)
-                raise SliceCoverageError(
-                    f"{label} data{scope} was last observed {last.isoformat()}; "
-                    f"the requested window runs {stale} sessions past it — the "
-                    f"{cond.indicator.value} filter would silently re-read that "
-                    f"one stale observation across the whole tail. Run "
-                    f"{covered_start.isoformat()} → {last.isoformat()} instead, "
-                    "or wait for the signal feed to catch up."
-                )
+            _check_stale_tail(label, scope, cond.indicator.value, dates,
+                              store.sessions, win_start, win_end)
             continue
         rank_note = ""
         if cond.indicator in _RANK_INDICATORS:
@@ -1427,7 +1465,12 @@ def data_provenance(spec: StrategySpec, store: MarketStore,
             if seam is None or key in seen or win_end < seam:
                 continue
             seen.add(key)
-            vendor, inhouse = _SPLICE_LABELS[key]
+            # a series spliced in chains.py before its label lands here
+            # must degrade to a generic disclosure, never a KeyError at
+            # payload-build time (review finding; the sync test pins the
+            # maps together)
+            vendor, inhouse = _SPLICE_LABELS.get(
+                key, (f"the {key} vendor series", "in-house continuation"))
             out.append({
                 "series": key,
                 "inhouse_from": seam.isoformat(),

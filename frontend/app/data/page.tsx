@@ -8,7 +8,7 @@
  * so instead of inventing numbers.
  */
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage } from "@/lib/api";
@@ -16,9 +16,12 @@ import { minutesAgo, monthYear, shortDate, year } from "@/lib/format";
 import type { CoveragePayload } from "@/lib/types";
 
 // live telemetry: re-pull the coverage payload on this cadence so lake
-// changes appear without a manual refresh (the backend rebuilds its own
-// snapshot behind a 300s TTL — polling faster only re-reads that cache)
-const POLL_MS = 60_000;
+// changes appear without a manual refresh. The backend snapshot itself
+// refreshes behind a 300s TTL, so polling much faster only re-downloads
+// identical JSON; hidden tabs skip the tick entirely and re-pull on
+// becoming visible (review finding: an idle background tab must not
+// drive nightly-scale R2 reads).
+const POLL_MS = 120_000;
 
 const PANEL = "rounded-[14px] border border-line bg-panel p-4";
 const PANEL_TITLE = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
@@ -70,7 +73,6 @@ function Lane({
 export default function DataPage() {
   const [coverage, setCoverage] = useState<CoveragePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const hasData = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -78,26 +80,31 @@ export default function DataPage() {
       getCoverage(fresh)
         .then((c) => {
           if (!alive) return;
-          hasData.current = true;
           setCoverage(c);
           setError(null);
         })
         .catch((e) => {
-          // a failed POLL keeps showing the last real payload (its
-          // generated_at discloses the age); only a data-less screen errors
-          if (alive && !hasData.current) {
-            setError(e instanceof Error ? e.message : "coverage unavailable");
-          }
+          if (alive) setError(e instanceof Error ? e.message : "coverage unavailable");
         });
     pull(false);
-    const id = setInterval(() => pull(true), POLL_MS);
+    const tick = () => {
+      if (!document.hidden) pull(true);
+    };
+    const id = setInterval(tick, POLL_MS);
+    const onVisible = () => {
+      if (!document.hidden) pull(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
-  if (error) {
+  // a failed POLL keeps showing the last real payload (its generated_at
+  // discloses the age); only a data-less screen shows the error state
+  if (error && !coverage) {
     return (
       <div>
         <h1 className="mb-1 font-serif text-[32px] font-medium">Data, honestly</h1>
@@ -131,12 +138,12 @@ export default function DataPage() {
   const closeChain = coverage.eod.cboe_eod?.SPY;
   const recordFirst =
     coverage.record_first ?? closeChain?.first ?? coverage.eod.yahoo?.SPY?.first;
-  // frozen vs accruing is the lake's call, never hardcoded copy
-  const alpacaLast = coverage.minute_bars.SPY?.last;
-  const alpacaAccruing =
-    alpacaLast != null &&
-    (new Date(today).getTime() - new Date(alpacaLast).getTime()) / 86_400_000 <= 7;
+  // frozen vs accruing is the BACKEND's one verdict (it also writes the
+  // blind-spot text) — re-deriving it here could contradict that panel
+  const alpacaAccruing = coverage.sources_status.alpaca_minute_accruing === true;
   const inhouse = coverage.inhouse_signals?.SPY;
+  const hvAgreement =
+    coverage.cross_validation?.hv_inhouse_vs_ivol?.SPY?.agreement_rate ?? null;
   const telemetryMins = minutesAgo(coverage.generated_at);
   const recordStaleDays = coverage.record_latest
     ? Math.floor(
@@ -288,10 +295,10 @@ export default function DataPage() {
             <Lane
               label="close chain (cboe)"
               first={closeChain.first}
-              last={today}
+              last={closeChain.last}
               t0={t0}
               t1={today}
-              note={`${closeChain.sessions} sessions · full chain + greeks · ~15-min delayed feed`}
+              note={`${closeChain.sessions} sessions · latest ${shortDate(closeChain.last)} · full chain + greeks, ~15-min delayed feed`}
             />
           )}
           {minute && (
@@ -614,7 +621,11 @@ export default function DataPage() {
                 last={inhouse.hv.last}
                 t0="2005-01-01"
                 t1={today}
-                note={`${inhouse.hv.sessions.toLocaleString()} sessions from our own dailies · vendor-overlap fit MAE 0.0002`}
+                note={`${inhouse.hv.sessions.toLocaleString()} sessions from our own dailies${
+                  hvAgreement != null
+                    ? ` · ${(hvAgreement * 100).toFixed(1)}% vendor-overlap agreement`
+                    : ""
+                }`}
               />
             )}
           </div>

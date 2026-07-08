@@ -22,6 +22,7 @@ BUILD-LOG.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -128,18 +129,30 @@ def _fetch_frames(s3: Any, keys: list[str]) -> list[pd.DataFrame]:
     return [f for f in frames if f is not None]
 
 
+def _manifest_of(winners: dict[str, str]) -> dict[str, Any]:
+    """Identity of the winner SET, not just its size: the digest covers the
+    full key paths (which embed the source), so a same-date winner
+    replacement (e.g. the iVol regroup outranking cboe_eod on existing
+    dates) changes the manifest even though {n, last} would not."""
+    digest = hashlib.sha1("\n".join(sorted(winners.values())).encode()).hexdigest()
+    return {
+        "v": CACHE_SCHEMA_VERSION,
+        "n": len(winners),
+        "last": max(winners) if winners else None,
+        "digest": digest[:16],
+    }
+
+
 def _load_combined(
     ticker: str,
     spot_by_date: dict[object, float],
     rates: pd.DataFrame | None,
+    winners: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     s3 = r2.r2_client()
-    winners = _chain_keys(s3, ticker)
-    manifest = {
-        "v": CACHE_SCHEMA_VERSION,
-        "n": len(winners),
-        "last": max(winners) if winners else None,
-    }
+    if winners is None:
+        winners = _chain_keys(s3, ticker)
+    manifest = _manifest_of(winners)
 
     CACHE_DIR.mkdir(exist_ok=True)
     cache_file = CACHE_DIR / f"chains_{ticker}.parquet"
@@ -178,53 +191,54 @@ def _underlying_frames(
 
 # In-process store cache with a freshness check (self-improvement thesis:
 # nightly collections must reach a long-lived container's NEXT run without
-# a redeploy). Past the TTL the LISTING manifest is re-checked — cheap,
-# frames untouched; only a changed lake rebuilds. The rebuild is
-# synchronous and drops the old store FIRST: an overlapping build+hold is
-# the exact memory-concurrency class the 2026-07-06 OOM came from, and
-# every engine caller already sits behind _ENGINE_LOCK.
+# a redeploy). Freshness rules, all review-hardened:
+#   * refresh=True is for the ENGINE path only (serialized behind
+#     _ENGINE_LOCK by its callers) — a rebuild can never overlap a run
+#     holding the old store. Request-path callers (estimate, fill audit,
+#     warm_store) pass refresh=False: they serve the cached store as-is
+#     and only ever pay the ONE cold build (pre-TTL behavior, unchanged).
+#   * the check path never binds the old store to a local — on a manifest
+#     mismatch the cache entry is dropped and the old store is collectable
+#     BEFORE the rebuild allocates (the 2026-07-06 OOM class).
+#   * the stored manifest is computed from the PRE-build listing: an
+#     object landing mid-build makes the next check mismatch and rebuild
+#     again — the cache converges fresh, never pins an incomplete store.
+#   * a failed rebuild leaves the cache empty (the old store was freed by
+#     design); the failure surfaces to the caller and the next engine call
+#     rebuilds cold — loud, never a silent stale serve.
 _STORE_CACHE: dict[str, tuple[float, dict[str, Any], MarketStore]] = {}
 STORE_TTL_SECONDS = 1800
 _REBUILD_LOCK = threading.Lock()
 
 
-def _listing_manifest(ticker: str) -> dict[str, Any]:
-    s3 = r2.r2_client()
-    winners = _chain_keys(s3, ticker)
-    return {
-        "v": CACHE_SCHEMA_VERSION,
-        "n": len(winners),
-        "last": max(winners) if winners else None,
-    }
-
-
-def load_market_store(ticker: str) -> MarketStore:
+def load_market_store(ticker: str, *, refresh: bool = True) -> MarketStore:
     now = time.time()
     entry = _STORE_CACHE.get(ticker)
+    winners: dict[str, str] | None = None
     if entry is not None:
-        checked_at, manifest, store = entry
-        if now - checked_at <= STORE_TTL_SECONDS:
-            return store
+        if not refresh or now - entry[0] <= STORE_TTL_SECONDS:
+            return entry[2]
         try:
-            fresh = _listing_manifest(ticker)
+            winners = _chain_keys(r2.r2_client(), ticker)
         except Exception:
             # can't check (transient R2) — keep serving, retry next TTL
-            _STORE_CACHE[ticker] = (now, manifest, store)
-            return store
-        if fresh == manifest:
-            _STORE_CACHE[ticker] = (now, manifest, store)
-            return store
+            _STORE_CACHE[ticker] = (now, entry[1], entry[2])
+            return entry[2]
+        if _manifest_of(winners) == entry[1]:
+            _STORE_CACHE[ticker] = (now, entry[1], entry[2])
+            return entry[2]
+        entry = None  # unpin the old store before the rebuild allocates
     with _REBUILD_LOCK:  # single-flight; re-check under the lock
         entry = _STORE_CACHE.get(ticker)
         if entry is not None and time.time() - entry[0] <= STORE_TTL_SECONDS:
             return entry[2]
+        entry = None
         _STORE_CACHE.pop(ticker, None)  # free the old store BEFORE building
-        del entry
-        store = _build_market_store(ticker)
-        try:
-            manifest = _listing_manifest(ticker)
-        except Exception:
-            manifest = {}
+        if winners is None:
+            winners = _chain_keys(r2.r2_client(), ticker)
+        manifest = _manifest_of(winners)  # PRE-build: mid-build writes are
+        # absent from it, so the next TTL check mismatches and re-converges
+        store = _build_market_store(ticker, winners)
         _STORE_CACHE[ticker] = (time.time(), manifest, store)
         return store
 
@@ -233,12 +247,12 @@ def warm_store(ticker: str = "SPY") -> None:
     """Fire-and-forget prewarm so the FIRST user run doesn't pay the cold
     R2 pull (minutes on a fresh deploy)."""
     try:
-        load_market_store(ticker)
+        load_market_store(ticker, refresh=False)
     except Exception:  # no creds / empty lake — the run path reports it
         pass
 
 
-def _build_market_store(ticker: str) -> MarketStore:
+def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> MarketStore:
     daily, vix, rates = _underlying_frames(ticker)
     if daily is None or daily.empty:
         raise RuntimeError(f"no underlying dailies in the lake for {ticker}")
@@ -255,7 +269,7 @@ def _build_market_store(ticker: str) -> MarketStore:
         vix_dates = [pd.Timestamp(d).date() for d in vix["date"]]
         vix_close = {d: float(c) for d, c in zip(vix_dates, vix["close"], strict=False)}
 
-    combined = _load_combined(ticker, cast(dict[object, float], u_close), rates)
+    combined = _load_combined(ticker, cast(dict[object, float], u_close), rates, winners)
     chains: dict[date, dict[ContractKey, Quote]] = {}
     atm_iv: dict[date, float] = {}
     if not combined.empty:

@@ -656,9 +656,8 @@ class IntradayStore:
     def slice_max_trading_dte(self) -> int:
         return SLICE_MAX_TRADING_DTE
 
-    def _session_sources(self, refresh: bool = False) -> dict[date, str]:
-        stale = (_now() - self._listed_at) > SESSION_LIST_TTL_SECONDS
-        if self._sessions is None or (refresh and stale):
+    def _session_sources(self) -> dict[date, str]:
+        if self._sessions is None:
             s3 = r2.r2_client()
             cboe = r2.list_date_prefixes(s3, f"{CBOE_OPT}/ticker={self.ticker}/")
             ivol = r2.list_date_prefixes(s3, f"{IVOL_OPT}/ticker={self.ticker}/")
@@ -675,12 +674,35 @@ class IntradayStore:
             self._listed_at = _now()
         return self._sessions
 
+    def refresh_sessions(self) -> None:
+        """Relist the session→source map when stale — called ONCE per run,
+        BEFORE the engine starts (runs.py, under _ENGINE_LOCK). sessions()
+        itself never refreshes: a run plus its gauntlet sub-runs call it
+        several times, and a mid-gauntlet relist would compute the main
+        result and the honesty folds on different session sets (review
+        finding — the determinism rule). Sessions whose source CHANGED are
+        evicted from both slice LRUs, so a cached slice can never be served
+        under a listing that now names a different source."""
+        if self._sessions is None:
+            self._session_sources()
+            return
+        if (_now() - self._listed_at) <= SESSION_LIST_TTL_SECONDS:
+            return
+        old = self._sessions
+        self._sessions = None
+        try:
+            new = self._session_sources()
+        except Exception:
+            # transient listing failure: keep the stale-but-consistent map
+            self._sessions = old
+            return
+        for session in {s for s in set(old) | set(new)
+                        if old.get(s) != new.get(s)}:
+            self._lru.pop(session, None)
+            self._lru_1m.pop(session, None)
+
     def sessions(self) -> list[date]:
-        # sessions() is the RUN-START call, so it alone refreshes a stale
-        # listing (self-improvement thesis: last night's recorder sessions
-        # reach a warm container's next run). Per-session source_for reads
-        # keep the run's snapshot — provenance can never shift mid-run.
-        return sorted(self._session_sources(refresh=True))
+        return sorted(self._session_sources())
 
     def source_for(self, session: date) -> str | None:
         return self._session_sources().get(session)

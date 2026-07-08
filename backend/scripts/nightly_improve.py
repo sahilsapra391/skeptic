@@ -81,11 +81,27 @@ def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
             .filter(db.Run.status == "done", db.Run.unlock_json.isnot(None))
             .all()
         )
-        superseded = {
-            pid for (pid,) in s.query(db.Run.parent_run_id)
+        # a child that ERRORED did not upgrade anything (review finding: a
+        # staleness-refused re-run must not close its parent's unlock path
+        # forever). Bounded retry: after 3 errored attempts the parent is
+        # retired LOUDLY — a permanently-refused spec (e.g. conditioned on
+        # a frozen UW series) must not burn a nightly slot every night.
+        children = (
+            s.query(db.Run.parent_run_id, db.Run.status)
             .filter(db.Run.parent_run_id.isnot(None), db.Run.origin == "auto_unlock")
             .all()
-        }
+        )
+        superseded = {pid for pid, status in children if status != "error"}
+        error_counts: dict[str, int] = {}
+        for pid, status in children:
+            if status == "error":
+                error_counts[pid] = error_counts.get(pid, 0) + 1
+        for pid, n in error_counts.items():
+            if n >= 3 and pid not in superseded:
+                log.warning("unlock retired after %d errored re-runs: %s "
+                            "(see the child runs' errors — likely a signal "
+                            "feed frozen behind the requested window)", n, pid)
+                superseded.add(pid)
     for run_id, unlock_json in rows:
         if run_id in superseded:
             continue  # already upgraded once — its successor carries on

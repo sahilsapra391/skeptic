@@ -47,6 +47,10 @@ CHAIN_QUALITY_FIELDS = [
     "volume", "open_interest",
 ]
 
+# the Alpaca minute lake counts as accruing while its newest session is
+# within this many days — ONE constant for the chip and the blind spot
+ALPACA_ACCRUING_DAYS = 7
+
 # (built_at, payload) written as ONE tuple — readers can never pair a fresh
 # timestamp with an older payload the way two separate keys could
 _CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {"snap": (0.0, None)}
@@ -149,7 +153,7 @@ def _blind_spots(
     m = minute.get("SPY")
     if m:
         stale_days = _days_since(m.get("last"), today)
-        if stale_days is not None and stale_days > 7:
+        if stale_days is not None and stale_days > ALPACA_ACCRUING_DAYS:
             spots.append({
                 "id": "minute-lake-frozen",
                 "text": f"Alpaca minute bars stopped accruing {m['last']} "
@@ -516,21 +520,45 @@ def build_coverage() -> dict[str, Any]:
 
     # the nightly EOD record: cboe_eod close chains + Yahoo snapshots (the
     # 2026-07-08 forward-record decision) — a session captured by either leg
-    # counts, so one leg's bad night doesn't misreport the streak
+    # counts, so one leg's bad night doesn't misreport the streak. Per-leg
+    # LIVENESS is reported separately below: the union must never hide a
+    # dead leg behind the other's heartbeat (review finding).
+    today_iso = now.date().isoformat()
     record_dates = sorted(
         set(eod_f[("cboe_eod", "SPY")].result()) | set(eod_f[("yahoo", "SPY")].result())
     )
     record = _range(record_dates) or {"sessions": 0, "first": None, "last": None}
 
-    # per-ticker chain window across sources (what a backtest can actually use)
+    def _leg_fresh(rng: dict[str, Any] | None, days: int) -> bool:
+        """A collection leg is alive when its last object is recent —
+        existence alone would show a green chip forever on history."""
+        last = (rng or {}).get("last")
+        age = _days_since(last, today_iso) if last else None
+        return age is not None and age <= days
+
+    # per-ticker chain window across sources: DISTINCT sessions (the two
+    # nightly legs bank the same dates — summing per-source counts would
+    # overstate usable coverage by ~2/day, review finding). Dolthub counts
+    # only its verified (quarantine-excluded) sessions.
+    verified_set = set(verified)
     chain_windows: dict[str, Any] = {}
     for ticker in TICKERS:
-        firsts = [e["first"] for src in EOD_SOURCES if (e := eod[src].get(ticker))]
-        lasts = [e["last"] for src in EOD_SOURCES if (e := eod[src].get(ticker))]
-        sessions = sum(e["sessions"] for src in EOD_SOURCES if (e := eod[src].get(ticker)))
-        chain_windows[ticker] = (
-            {"first": min(firsts), "last": max(lasts), "sessions": sessions} if firsts else None
-        )
+        dates: set[str] = set()
+        for src in EOD_SOURCES:
+            src_dates = eod_f[(src, ticker)].result()
+            if src == "dolthub":
+                src_dates = [d for d in src_dates if d in verified_set]
+            dates.update(src_dates)
+        chain_windows[ticker] = _range(sorted(dates))
+
+    # where each frozen vendor family last observed (SPY) — ONE construction
+    # feeding both the payload and the blind spots (review finding: two
+    # copies of the same fact WILL disagree eventually)
+    vendor_lasts = {
+        "ivs": (ivs_signal_cov.get("SPY") or {}).get("last"),
+        "uw": (flow_cov.get("SPY") or {}).get("last"),
+        "uw_positioning": (dealer_cov.get("SPY") or {}).get("last"),
+    }
 
     return {
         "generated_at": now.isoformat(),
@@ -551,11 +579,7 @@ def build_coverage() -> dict[str, Any]:
         # in-house forward-record continuations (2026-07-08) + where each
         # family's vendor series last observed — the Observatory's seam view
         "inhouse_signals": inhouse_cov,
-        "vendor_lasts": {
-            "ivs": (ivs_signal_cov.get("SPY") or {}).get("last"),
-            "uw": (flow_cov.get("SPY") or {}).get("last"),
-            "uw_positioning": (dealer_cov.get("SPY") or {}).get("last"),
-        },
+        "vendor_lasts": vendor_lasts,
         "cross_validation": xval_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
@@ -575,16 +599,21 @@ def build_coverage() -> dict[str, Any]:
         "resolution_mix": resolution_mix,
         "new_sources": new_sources,
         "blind_spots": _blind_spots(
-            dolthub_state, minute, now.date().isoformat(), chain_windows,
-            {"ivs": (ivs_signal_cov.get("SPY") or {}).get("last"),
-             "uw": (flow_cov.get("SPY") or {}).get("last")},
+            dolthub_state, minute, today_iso, chain_windows, vendor_lasts,
             (inhouse_cov.get("SPY") or {}).get("first"),
         ),
         "sources_status": {
-            "yahoo_eod": bool(eod["yahoo"].get("SPY")),
-            "cboe_eod": bool(eod["cboe_eod"].get("SPY")),
+            # the two nightly EOD legs report LIVENESS (last object ≤ 4
+            # days old — the record-staleness banner's own bound), never
+            # bare existence: history alone must not keep a chip green
+            "yahoo_eod": _leg_fresh(eod["yahoo"].get("SPY"), 4),
+            "cboe_eod": _leg_fresh(eod["cboe_eod"].get("SPY"), 4),
             "dolthub_backfill": bool(eod["dolthub"].get("SPY")),
             "alpaca_minute": bool(minute.get("SPY")),
+            # frozen-vs-accruing decided HERE, once — the frontend chip and
+            # the blind spot read the same verdict (review finding)
+            "alpaca_minute_accruing": _leg_fresh(minute.get("SPY"),
+                                                 ALPACA_ACCRUING_DAYS),
             "alphavantage": "dormant",  # premium-gated; resumes automatically if entitled
             "intraday_recorder": bool(intraday["cboe_delayed"].get("SPY")),
         },

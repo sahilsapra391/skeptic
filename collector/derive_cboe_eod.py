@@ -61,6 +61,7 @@ from collect import (  # noqa: E402  (env loads first, like the other derives)
     CANONICAL_COLUMNS,
     TICKERS,
     list_chain_dates,
+    list_date_prefixes,
     nyse,
     r2_client,
     r2_get_parquet,
@@ -79,6 +80,14 @@ EXTRA_COLUMNS = ["source_ts", "bid_size", "ask_size", "iv30"]
 # feed runs ~15 min delayed — before close+30min the "last" snapshot cannot
 # show the close state yet
 SESSION_SETTLE_MINUTES = 30
+# The delayed feed at capture time T shows ~T−15min, so a snapshot only
+# reflects the CLOSE when captured ≥ close+15min. The recorder's 60s cycle
+# guarantees a healthy day a snapshot in [close+14:00, close+15:00) (its
+# loop runs to close+15 and key stamps truncate to the minute), so ≥ +14min
+# is the tightest gate that never rejects a healthy day — a recorder that
+# died at 16:02 ET, whose last snapshot shows ~15:47 state, is refused
+# rather than minted as a "close" chain (review finding).
+CLOSE_CAPTURE_MIN_LAG_MINUTES = 14
 MIN_ROWS = 50
 MAX_CROSSED_SHARE = 0.05
 DELTA_EPS = 1e-6
@@ -154,23 +163,10 @@ def _normalize(df: pd.DataFrame, ticker: str, d: str) -> pd.DataFrame:
     return out[cols]
 
 
-def _snap_dates(s3, ticker: str) -> list[str]:
-    """Sorted recorder date partitions (cheap Delimiter listing)."""
-    dates: list[str] = []
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=os.environ["R2_BUCKET"],
-                                   Prefix=f"{SNAP_PREFIX}/ticker={ticker}/",
-                                   Delimiter="/"):
-        for cp in page.get("CommonPrefixes", []):
-            m = re.search(r"date=(\d{4}-\d{2}-\d{2})", cp["Prefix"])
-            if m:
-                dates.append(m.group(1))
-    return sorted(dates)
-
-
 def derive_ticker(s3, ticker: str, now: pd.Timestamp) -> int:
     have = set(list_chain_dates(s3, "cboe_eod", ticker))
-    todo = [d for d in _snap_dates(s3, ticker) if d not in have]
+    snap_dates = list_date_prefixes(s3, f"{SNAP_PREFIX}/ticker={ticker}/")
+    todo = [d for d in snap_dates if d not in have]
     if not todo:
         log.info("%s: up to date (%d sessions)", ticker, len(have))
         return 0
@@ -189,12 +185,14 @@ def derive_ticker(s3, ticker: str, now: pd.Timestamp) -> int:
             log.warning("%s %s: no parseable snapshots — retry next run", ticker, d)
             continue
         key, captured = last
-        if captured < close:
-            # recorder died before the close: nothing on this date can
-            # honestly claim to be the EOD chain (retried nightly — cheap,
-            # and a later manual backfill of snaps would self-heal it)
-            log.warning("%s %s: last snapshot %s predates the close %s — no honest "
-                        "EOD chain for this session", ticker, d, captured, close)
+        if captured < close + timedelta(minutes=CLOSE_CAPTURE_MIN_LAG_MINUTES):
+            # recorder died before the close was VISIBLE on the delayed
+            # feed: nothing on this date can honestly claim to be the EOD
+            # chain (retried nightly — cheap, and a later manual backfill
+            # of snaps would self-heal it)
+            log.warning("%s %s: last snapshot %s cannot show the %s close on a "
+                        "~15-min-delayed feed — no honest EOD chain for this "
+                        "session", ticker, d, captured, close)
             continue
         df = r2_get_parquet(s3, key)
         if df is None or df.empty:
