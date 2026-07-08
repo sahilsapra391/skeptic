@@ -107,7 +107,10 @@ function conditions(draft: SpecDraft, baseConds: Json[] = []): Json[] {
     if (first != null && first.indicator === t.indicator && first.timeframe != null) {
       cond.timeframe = first.timeframe;
     }
-    return [cond];
+    // the dial edits the FIRST condition only; the rest of the entry logic
+    // survives the rebuild whole — exactly what the TRIGGER strip shows as
+    // "& …" chips (owner call 2026-07-08; dropping them was FX.5 scope)
+    return [cond, ...baseConds.slice(1)];
   }
   if (draft.fromChart) {
     // chart drafts always carry a pin-derived trigger — one missing is
@@ -216,11 +219,12 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
   // Parser-only vocabulary the dials cannot express survives a dial edit
   // (the D5d hole: the rebuild silently DROPPED the ladder). What survives:
   // scale_in, intraday_scan, resolution, time_of_day, clock, ALL entry
-  // conditions when the trigger dial is unedited (multi-condition specs +
-  // timeframes), the edited trigger's timeframe/period extras, label-
-  // inexpressible exit fields (delta stops, theta harvest, exit
-  // conditions), max_concurrent and max_vega. close_at_time lives in the
-  // exit LABEL and is removed by replacing the exit — visibly.
+  // conditions beyond the first (the trigger dial edits only the first;
+  // the strip shows the rest as "& …" chips), timeframes, the edited
+  // trigger's timeframe/period extras, label-inexpressible exit fields
+  // (delta stops, theta harvest, exit conditions), max_concurrent and
+  // max_vega. close_at_time lives in the exit LABEL and is removed by
+  // replacing the exit — visibly.
   const scaleIn = baseEntry.scale_in ?? null;
   const baseConds = (baseEntry.conditions as Json[] | undefined) ?? [];
   const entry: Json = {
