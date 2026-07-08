@@ -118,25 +118,29 @@ class TestQuoteClose:
 
 
 class TestMassiveVsIvol5m:
-    def test_close_inside_day_nbbo_range(self) -> None:
+    # the two vendors format the OCC differently — Massive "O:QQQ...",
+    # iVol pads the root ("QQQ   250620P00100000"). The comparator must
+    # NORMALIZE before joining (real-lake acceptance 2026-07-08: the raw
+    # join found nothing, so every session read 0/0).
+    def test_close_inside_day_nbbo_range_across_occ_formats(self) -> None:
         massive = pd.DataFrame({"occ_symbol": ["O:QQQ250620P00100000"],
                                 "c": [2.05]})
         ivol = pd.DataFrame({
-            "occ_symbol": ["O:QQQ250620P00100000"] * 2,
+            "occ_symbol": ["QQQ   250620P00100000"] * 2,  # iVol padding
             "bid": [2.00, 1.90], "ask": [2.10, 2.00],
         })
         rec = compare_massive_ivol5m(massive, ivol)
-        # day range [1.90, 2.10]; close 2.05 inside
+        # day range [1.90, 2.10]; close 2.05 inside — and the join SUCCEEDS
         assert rec == {"joined": 1, "checked": 1, "within_band": 1,
                        "agreement_rate": 1.0}
 
     def test_close_outside_range_flags(self) -> None:
         massive = pd.DataFrame({"occ_symbol": ["O:QQQ250620P00100000"],
                                 "c": [3.00]})
-        ivol = pd.DataFrame({"occ_symbol": ["O:QQQ250620P00100000"],
+        ivol = pd.DataFrame({"occ_symbol": ["QQQ   250620P00100000"],
                              "bid": [2.00], "ask": [2.10]})
         rec = compare_massive_ivol5m(massive, ivol)
-        assert rec is not None and rec["within_band"] == 0
+        assert rec is not None and rec["joined"] == 1 and rec["within_band"] == 0
 
 
 class TestSignalValues:

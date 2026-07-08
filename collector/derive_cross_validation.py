@@ -199,6 +199,20 @@ def _ivol_last_quotes(day: pd.DataFrame) -> pd.DataFrame | None:
             .agg(bid=("bid", "last"), ask=("ask", "last")).reset_index())
 
 
+def _latest_yahoo_snapshot(s3, ticker: str, d: str):
+    """Yahoo banks intraday snapshots (snap_<ts>.parquet), not a single
+    chain.parquet — read the LAST one of the session (closest to the
+    close), the same convention the coverage builder uses."""
+    prefix = f"options/source=yahoo/ticker={ticker}/date={d}/"
+    keys = [o["Key"] for page in s3.get_paginator("list_objects_v2").paginate(
+        Bucket=os.environ["R2_BUCKET"], Prefix=prefix)
+        for o in page.get("Contents", [])
+        if o["Key"].endswith(".parquet")]
+    if not keys:
+        return None
+    return r2_get_parquet(s3, sorted(keys)[-1])
+
+
 def run_yahoo_vs_ivol5m(s3, ticker: str) -> int:
     key = PAIR_KEY.format(pair="yahoo_vs_ivol5m", ticker=ticker)
     existing, have = _artifact(s3, key)
@@ -210,7 +224,7 @@ def run_yahoo_vs_ivol5m(s3, ticker: str) -> int:
         return 0
     rows: list[dict] = []
     for d in todo:
-        ref = r2_get_parquet(s3, f"options/source=yahoo/ticker={ticker}/date={d}/chain.parquet")
+        ref = _latest_yahoo_snapshot(s3, ticker, d)
         day = r2_get_parquet(
             s3, f"options_intraday/source=ivolatility/ticker={ticker}/date={d}/bars.parquet")
         rec = compare_quote_close(ref, _ivol_last_quotes(day))

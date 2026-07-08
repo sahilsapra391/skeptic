@@ -216,6 +216,14 @@ def compare_quote_close(
     return _record(len(j), len(two), int(ok.sum()))
 
 
+def _norm_occ(col: pd.Series) -> pd.Series:
+    """Canonical OCC key: strip the "O:" prefix and any root padding so
+    Massive ("O:QQQ260702C00705000") and iVol ("QQQ   260702C00705000")
+    join. Unambiguous for our 3-char roots."""
+    return col.astype(str).str.replace("O:", "", regex=False).str.replace(
+        " ", "", regex=False)
+
+
 def compare_massive_ivol5m(
     massive_day: pd.DataFrame, ivol_day: pd.DataFrame
 ) -> dict[str, Any] | None:
@@ -236,11 +244,18 @@ def compare_massive_ivol5m(
     iv = ivol_day.copy()
     iv["bid"] = pd.to_numeric(iv["bid"], errors="coerce")
     iv["ask"] = pd.to_numeric(iv["ask"], errors="coerce")
-    rng = iv.groupby("occ_symbol").agg(lo=("bid", "min"),
-                                       hi=("ask", "max")).reset_index()
+    # the two vendors format the OCC symbol differently — Massive prefixes
+    # "O:", iVol pads the root to six chars — so the raw join finds NOTHING
+    # (real-lake acceptance 2026-07-08). Normalize both to the canonical
+    # {root}{YYMMDD}{C/P}{strike8} before joining (all tickers are 3-char
+    # roots, so stripping "O:" and whitespace is unambiguous).
+    iv["_occ"] = _norm_occ(iv["occ_symbol"])
+    rng = iv.groupby("_occ").agg(lo=("bid", "min"),
+                                 hi=("ask", "max")).reset_index()
     m = massive_day.copy()
     m["c"] = pd.to_numeric(m["c"], errors="coerce")
-    j = m.merge(rng, on="occ_symbol", how="inner")
+    m["_occ"] = _norm_occ(m["occ_symbol"])
+    j = m.merge(rng, on="_occ", how="inner")
     checked = j[j["c"].notna() & j["lo"].notna() & j["hi"].notna()]
     if checked.empty:
         return _record(len(j), 0, 0)
