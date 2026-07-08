@@ -168,6 +168,10 @@ s3://skeptic-data/
     source=cboe_delayed/ticker=SPY/date=2026-07-02/snap_20260702T1330Z.parquet
     source=yahoo/ticker=SPY/date=2026-07-02/snap_20260702T1330Z.parquet
   underlying_minute/ticker=SPY/month=2026-07/bars.parquet
+  options/source=ivolatility/ticker=SPY/date=2015-01-23/chain.parquet  (EOD delta-ladder chains 2005->, PR #71; regroup guarded: never supersedes fuller sources)
+  ivol_eod_staging/ticker=SPY/id=131262384.parquet   (raw per-contract EOD staging; engine does NOT read this prefix)
+  bars_1m/source=ivolatility/ticker=SPY/date=2026-07-01/bars.parquet   (1-min underlying bars 2011->)
+  uw/...                                       (Unusual Whales daily/intraday family lake, see app/data/uw.py)
   reference/derived/inhouse_signals/ticker=SPY.parquet   (2026-07-08 forward record)
   reference/derived/hv_inhouse/ticker=SPY.parquet        (full-history HV, own dailies)
   state/backfill_frontier.json                 {ticker: earliest_date_done}
