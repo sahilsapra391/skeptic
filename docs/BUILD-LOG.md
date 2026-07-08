@@ -1748,3 +1748,54 @@ a retry path; empty cross-source lines hidden; joined = inner-join
 count per the module contract; artifact-load failures logged;
 session-range kind pinned observable; massive double-count crash
 window documented.
+
+## F8 (ENGINE-V4) — the surfacing weave: signal thresholds enter the sweep (2026-07-08)
+
+WHAT: the LAST masterplan phase. Survey found the Observatory already
+carries a panel per signal family (vol-surface, dealer positioning,
+flow/pin, in-house continuations, cross-source, resolution mix — the
+incremental per-phase surfacing + forward-record's live panels), so the
+real gap was the ANTI-OVERFITTING core: the sensitivity sweep perturbed
+strike/dte/pt/sl but NEVER the entry-condition thresholds — a strategy
+overfit to "skew > 5" or "RSI < 30" was never stress-tested. F8 sweeps
+entry-condition thresholds, which auto-weaves the three target surfaces
+(recommendations, sensitivity grid, verdict caveats all consume
+sensitivity.params generically). OWNER DECISIONS 2026-07-08: skip
+sign-at-zero conditions disclosed (sign IS the signal; opaque units —
+the invented-convention sin if perturbed); cap first 3 entry conditions
+(cost on the serialized engine; secondary filters are where curve-
+fitting hides); entry conditions only in v1 (exit/rung deferred — rung
+perturbation entangles the D5 basket cap).
+HOW: _mutations returns (mutations, conditions_note) + _append_condition_sweeps
+(±20% multiplicative, base_index 2; rank forms clamped 0-100; repeated
+indicators disambiguated by operator; setter mutates conditions[i]);
+Sensitivity.conditions_note surfaces the skip/cap disclosure in BOTH
+verdict voices (quant + retail); _param_label unit-free for cond_ sweeps
+(never "rsi 24%"); _sweep_display_name strips the cond_ prefix for the
+grid + recommendations. NO parser change, NO engine-run change — daily
+digests bit-identical (the sweep is a gauntlet stage).
+REAL-LAKE ACCEPTANCE: SPY short put w/ ivx_rank_1y>50, 2021→now — the
+threshold now sweeps [40,45,50,55,60], engine re-ran each (Sharpe
+0.35-0.43), classified PLATEAU (the filter isn't fragile, just weakly
+additive — matches the D1 finding that ivx_rank>50 underperforms
+unfiltered). First time a signal condition has ever been stress-tested.
+TESTS: 10 new (565 total) — ±20% RSI sweep + setter-by-index, sign-test
+skip+disclose, rank clamp to 100, 3-condition cap disclosure, repeated-
+indicator disambiguation, mixed sign+real, unit-free labels, display-
+name strip, grid-store integration (real swept row, classified),
+recommendation never mislabels a threshold as a percent.
+REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
+2 MINOR + 1 NIT — MAJOR FIXED: a sign-test condition positioned AFTER
+the 3-cap was silently undisclosed (the loop broke before examining it,
+and the cap count excluded sign tests) — the exact "absence misread as
+a free pass" failure this feature exists to prevent, on realistic 0DTE
+specs (RSI+VIX+rvol+gex_level>0) → the loop now examines EVERY condition
+(sign tests always disclosed regardless of cap; capped-count tracks
+eligible-beyond-3 honestly), pinned with two regression fixtures.
+MINOR fixed: 3+ same-indicator+operator conditions could collide into
+duplicate sweep names → unique-name fallback (indicator → +operator →
++index), pinned; a trivially-true integration assertion replaced with a
+real cond_-leak check. NIT (rank-clamp duplicate cell at base 95)
+accepted — no correctness impact, base_index stays correct. 568 tests.
+Bit-identity confirmed by the reviewer: no engine/model files touched,
+setters mutate only deepcopies, daily-clock digests pass.

@@ -781,3 +781,43 @@ Rules the numbers depend on (owner decisions 2026-07-08):
   window of the fill bar, degrading to the session range when no bar
   time exists (disclosed by kind). `no_trades` is honest absence, never
   counted against the run. The stored audit never rewrites the verdict.
+
+## F8 (ENGINE-V4): the sensitivity sweep reaches the signal thresholds
+
+The anti-overfitting sweep perturbed strike/DTE/profit-target/stop-loss
+since M3 — but never the ENTRY-CONDITION thresholds. A strategy overfit
+to exactly "RSI < 30" or "25Δ skew > 5" sailed through untested. F8
+closes that: the sweep now perturbs entry-condition thresholds ±20% in
+5 steps, re-running the real engine at each, classified plateau/cliff
+like every other parameter. Because recommendations, the sensitivity
+grid, and the verdict caveats all consume the sweep params generically,
+weaving the SWEEP is the whole weave — a fragile signal threshold now
+drags the verdict to "cliff", and a better neighbor becomes a grounded
+recommendation.
+
+Rules (owner decisions 2026-07-08):
+
+- **Sign tests are skipped, disclosed.** A condition whose threshold is
+  exactly 0 (gex_level > 0, market_tide > 0, term_structure_slope < 0,
+  price-below-VWAP) is a REGIME SIGN test — the sign IS the signal,
+  there is no "20% more than zero", and the vendor units are the ones
+  we deliberately refused to let users state. Perturbing them would be
+  the invented-convention sin committed by the honesty tool itself. The
+  report names them ("gex_level is a sign test, not a swept threshold")
+  so absence is never misread as a free pass. The RANK forms
+  (gex_rank_1y etc.) ARE real 0-100 thresholds and sweep normally once
+  they clear the 126-observation floor.
+- **Capped at the first 3 entry conditions.** Each swept condition adds
+  5 engine re-runs on the serialized, OOM-sensitive engine; 3 covers
+  the overfit surface of nearly every real spec (secondary filters
+  included — that's where curve-fitting hides), and the rest are
+  disclosed ("N further conditions not swept (cost cap)"). A structural
+  bound from a stated fact, not an invented threshold.
+- **Entry conditions only in v1.** Exit-condition and scale-in rung
+  thresholds are deferred-with-disclosure: rung perturbation entangles
+  with the D5 basket cap logic, and reopening that at the finish line
+  would bloat the last chunk. They earn their own pass if a real
+  strategy demonstrates the need.
+
+Bit-identity holds: the sweep is a gauntlet stage, not the engine run —
+the daily-clock regression digests (which pin the RUN) are unchanged.
