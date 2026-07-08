@@ -428,6 +428,12 @@ def get_run(run_id: str) -> dict[str, Any]:
                 payload["receipts"] = json.loads(run.receipts_json)
             except Exception:
                 pass
+        # F7: the fill audit also arrives after the payload froze
+        if run.audit_json:
+            try:
+                payload["fillAudit"] = json.loads(run.audit_json)
+            except Exception:
+                pass
         spec_dict = json.loads(run.spec_json) if run.spec_json else {}
         from app.api.replay import replay_eligible_spec
 
@@ -489,6 +495,75 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
         s.commit()
     tasks.add_task(_execute_run, new_id, None)
     return {"run_id": new_id, "demo": False, "status": "queued", "parent": run_id}
+
+
+@router.post("/runs/{run_id}/audit")
+def audit_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
+    """On-demand fill audit (F7, owner decision 2026-07-08): re-run THIS
+    spec deterministically (same spec + data + seed ⇒ identical fills)
+    and check every regenerated option-leg fill against Alpaca minute
+    TRADES — a vendor no fill price ever came from. Stored like a
+    receipt; the run's verdict is never rewritten."""
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or run.status != "done" or not run.spec_json:
+            raise HTTPException(status_code=404, detail="no completed run to audit")
+    tasks.add_task(_execute_audit, run_id)
+    return {"run_id": run_id, "demo": False, "status": "auditing"}
+
+
+def _execute_audit(run_id: str) -> None:
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+
+    try:
+        with db.session() as s:
+            run = s.get(db.Run, run_id)
+            if run is None or not run.spec_json:
+                return
+            spec = StrategySpec.model_validate(json.loads(run.spec_json))
+        from app.data import r2 as _r2
+        from app.data.chains import load_market_store
+        from app.data.fill_audit import audit_fills
+        from app.engine.runner import run_backtest
+
+        store = load_market_store(spec.underlying.ticker.value)
+        intraday = None
+        if spec.backtest.clock.value != "daily":
+            from app.data.intraday import load_intraday_store
+
+            intraday = load_intraday_store(spec.underlying.ticker.value)
+        with _ENGINE_LOCK:  # the audit re-run is engine work — serialized
+            result = run_backtest(spec, store, intraday)
+        bar_times: dict[int, str] = {
+            t.position_id: t.bar_time for t in result.trades
+            if t.action == "OPEN" and t.position_id is not None
+            and t.bar_time is not None
+        }
+        ticker = spec.underlying.ticker.value
+        s3 = _r2.r2_client()
+
+        def _load_day(d: str) -> Any:
+            return _r2.get_parquet(
+                s3, f"options_minute/source=alpaca/ticker={ticker}"
+                    f"/date={d}/bars.parquet")
+
+        audit = audit_fills(result.fill_log, bar_times, _load_day)
+        audit["generated_at"] = _dt.now(_UTC).isoformat()
+        audit["fills_total"] = len(result.fill_log)
+        with db.session() as s:
+            run = s.get(db.Run, run_id)
+            if run is not None:
+                run.audit_json = json.dumps(audit)
+                s.commit()
+    except Exception:
+        log.exception("fill audit failed for %s", run_id)
+        with db.session() as s:
+            run = s.get(db.Run, run_id)
+            if run is not None:
+                run.audit_json = json.dumps(
+                    {"error": "audit failed — see server logs"})
+                s.commit()
 
 
 @router.post("/runs/{run_id}/ask")

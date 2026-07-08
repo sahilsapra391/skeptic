@@ -514,6 +514,34 @@ export default function DataPage() {
         </div>
       )}
 
+      {coverage.cross_validation &&
+        Object.keys(coverage.cross_validation).length > 0 && (
+        <div className={clsx(PANEL, "mt-3")}>
+          <div className={clsx(PANEL_TITLE, "mb-1")}>
+            CROSS-SOURCE VALIDATION — INDEPENDENT VENDORS, PER-PAIR AGREEMENT
+          </div>
+          <div className="mb-3 text-[11.5px] leading-[1.5] text-ink-4">
+            agreement rates travel with their audited denominators — reported,
+            never scored; thresholds are earned from this history, not invented
+          </div>
+          <div className="grid grid-cols-[200px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+            {Object.entries(coverage.cross_validation).flatMap(([pair, byT]) =>
+              Object.entries(byT).map(([t, r]) => (
+                <Lane
+                  key={`${pair}-${t}`}
+                  label={`${t} ${pair.replace(/_/g, " ")}`}
+                  first={r.first}
+                  last={r.last}
+                  t0="2024-01-01"
+                  t1={today}
+                  note={`${r.agreement_rate != null ? (r.agreement_rate * 100).toFixed(1) + "% of " : ""}${r.checked.toLocaleString()} checked · ${r.sessions.toLocaleString()} sessions`}
+                />
+              )),
+            )}
+          </div>
+        </div>
+      )}
+
       {(coverage.resolution_mix?.SPY ||
         coverage.resolution_mix?.QQQ ||
         coverage.resolution_mix?.IWM) && (

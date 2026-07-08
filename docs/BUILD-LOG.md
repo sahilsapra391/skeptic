@@ -1685,3 +1685,40 @@ correct); run 2 passed 43 but hit an upstream OpenRouter network flake
 clean. Cases 44/45 refuse raw NOPE and dollar thresholds offering
 sign/rank; case 42 pairs the market-wide tide with a raw put/call
 ratio; case 43's "within 1% of max pain" compiles to the ANDed pair.
+
+## F7 (ENGINE-V4) — cross-source validation & data confidence (2026-07-08)
+
+WHAT: the honesty layer's sharpest expression — independent vendors
+compared nightly wherever they overlap, per-run data confidence, and an
+on-demand fill audit. SURVEY REALITY: no two EOD chain sources share a
+single session (iVol/AV chains never banked — tariff/undecided; Yahoo
+5 sessions; DoltHub 1,115 with none of the others), and DoltHub's
+≥11-DTE floor is contract-disjoint from the iVol short-DTE slice — so
+F7 v1 was built on the pairs that EXIST: dolthub_vs_alpaca (527
+sessions, productionizing the proven one-off methodology),
+dolthub_vs_uw (85), yahoo_vs_ivol5m (5, grows nightly),
+massive_vs_ivol5m (activates as the ATM-band crawl lands). OWNER
+DECISIONS: per-pair rates + audited-share denominators, NO blended
+score ("a confidence score whose own confidence is unfounded");
+REPORTED-only v1 (thresholds EARNED from the accumulated distribution,
+D3d staging — the FX.4 cap had a binary trigger + borrowable floor,
+nothing comparable exists here); fill audit ON-DEMAND (two-tier:
+ambient checks cheap and automatic, deep audit human-triggered —
+"detection automatic, spend on demand").
+HOW: app/data/cross_validation.py comparators (single-sourced,
+fixture-tested) + collector/derive_cross_validation.py (set-difference;
+Massive pair works per SYMBOL with counts accumulating) + nightly step/
+CI/Make; stages.data_confidence aggregates the run's own window
+(numeric fields — grounding-safe; no-overlap → None, never a fabricated
+100%); verdict caveat; payload dataConfidence; results-view line;
+Observatory pair lanes; RunResult.fill_log (structured per-leg fills at
+all three sites, pid-joined to trade-log bar times);
+app/data/fill_audit.py pure core + POST /runs/{id}/audit (re-runs the
+spec deterministically under the engine lock, audits vs Alpaca minute
+trades, stores audit_json like receipts — verdict never rewritten) +
+frontend audit button/line. NO parser change — no eval gate.
+TESTS: 17 new (514 total) — comparator hand-fixtures (stale-print
+excluded-not-flagged; band edges both sides; expiry-total bands 5%/10%;
+day-range checks), confidence window-scoping + honest-absence, fill_log
+recording (sell entry + PT buyback), audit within/outside/no_trades/
+no_coverage/session-range degradation.

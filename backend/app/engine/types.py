@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 MULT = 100  # options contract multiplier
 
@@ -183,3 +184,7 @@ class RunResult:
     # scale-in per-rung fills (D5a), flat across baskets (group by basket_pid).
     # The depth-attribution stage (D5b) is built entirely from these.
     rung_fills: list[RungFill] = field(default_factory=list)
+    # F7: structured per-leg fill log (pid links to the trade log's events
+    # for bar_time) — the on-demand fill audit re-runs the spec
+    # deterministically and audits THESE against an independent vendor
+    fill_log: list[dict[str, Any]] = field(default_factory=list)

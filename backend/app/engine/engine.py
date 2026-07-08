@@ -30,6 +30,7 @@ from bisect import bisect_right
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import Any
 
 from app.engine import fills
 from app.engine.conditions import INTRADAY_LOOKBACK_BARS, all_conditions_pass
@@ -103,6 +104,9 @@ class _State:
     # F5: fill qty vs displayed NBBO depth on the traded side (disclosure)
     fills_depth_known: int = 0
     fills_beyond_depth: int = 0
+    # F7: structured per-leg fills for the on-demand audit (pid joins the
+    # trade log's bar_time); bounded by MAX_RUN_FILLS × legs
+    fill_log: list[dict[str, Any]] = field(default_factory=list)
     fill_sources: dict[str, int] = field(default_factory=dict)  # provenance (D2b)
     rung_fills: list[RungFill] = field(default_factory=list)  # scale-in adds (D5a)
     # FX.2: every skip COUNTED with its reason (the trade log stays deduped;
@@ -648,6 +652,13 @@ def _try_entry(
 
     for key, leg, px in zip(keys, spec.position.legs, entry_fills, strict=True):
         qty = leg.ratio * contracts
+        state.fill_log.append({
+            "pid": pos.pid, "day": day.isoformat(),
+            "action": fills.open_action(leg.side.value),
+            "expiration": key.expiration.isoformat(), "right": key.right,
+            "strike": key.strike, "qty": qty, "price": px,
+            "source": view.fill_source,
+        })
         cash_delta = px * qty * MULT if leg.side is Side.SHORT else -px * qty * MULT
         cash_delta -= commission * qty
         state.cash += cash_delta
@@ -791,6 +802,12 @@ def _fire_rungs(
         leg.entry_price = blended
         leg.last_mark = px
         basket.fired_rungs.add(idx)
+        state.fill_log.append({
+            "pid": basket.pid, "day": view.as_of.isoformat(), "action": "buy",
+            "expiration": key.expiration.isoformat(), "right": key.right,
+            "strike": key.strike, "qty": qty, "price": px,
+            "source": view.fill_source,
+        })
         depth_note = _record_leg_fill(state, q, eff, slip, stressed,
                                       view.fill_source, action="buy", qty=qty)
         state.rung_fills.append(
@@ -952,6 +969,13 @@ def _close_position(
         state.cash += cash_delta
         pos.cash_flow += cash_delta
         leg.settled = True
+        state.fill_log.append({
+            "pid": pos.pid, "day": view.as_of.isoformat(),
+            "action": fills.close_action(leg.side),
+            "expiration": leg.key.expiration.isoformat(), "right": leg.key.right,
+            "strike": leg.key.strike, "qty": leg.qty, "price": px,
+            "source": view.fill_source,
+        })
         note = _record_leg_fill(
             state, q, eff, slip, stressed=False, source=view.fill_source,
             action=fills.close_action(leg.side), qty=leg.qty,
@@ -1710,6 +1734,7 @@ def run_engine(
     result.fills_depth_known = state.fills_depth_known
     result.fills_beyond_depth = state.fills_beyond_depth
     result.fill_sources = state.fill_sources
+    result.fill_log = state.fill_log
     result.rung_fills = state.rung_fills
     result.skip_reasons = state.skip_counts
     if session_resolutions:

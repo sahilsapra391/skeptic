@@ -21,6 +21,7 @@ from app.engine.types import MULT, RungFill, RunResult
 from app.honesty.report import (
     Concentration,
     Coverage,
+    DataConfidence,
     Dsr,
     HonestyReport,
     LadderDepth,
@@ -29,6 +30,7 @@ from app.honesty.report import (
     LiquidityProfile,
     MonteCarlo,
     OosSplit,
+    PairConfidence,
     ParamSweep,
     RegimeSample,
     ResolutionBucket,
@@ -1007,6 +1009,69 @@ def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile
         material=bool(notes),
         note="; ".join(notes) if notes else None,
     )
+
+
+# ------------------------------------------- F7: data confidence (reported)
+def data_confidence(
+    result: RunResult,
+    spec: StrategySpec,
+    summaries: dict[str, dict[str, dict[str, Any]]] | None = None,
+) -> DataConfidence | None:
+    """Cross-source agreement over THIS run's window, per pair — REPORTED,
+    never scored. `summaries` maps pair → {iso-date: record}; None loads
+    the nightly artifacts (honest absence on any failure). Pairs with no
+    audited session inside the window are omitted — an empty result is
+    None, and the verdict simply says nothing (never a fabricated 100%)."""
+    ticker = result.ticker
+    if summaries is None:
+        summaries = {}
+        try:
+            from app.data import r2
+            from app.data.cross_validation import PAIRS, load_pair_summary
+
+            s3 = r2.r2_client()
+            for pair in PAIRS:
+                loaded = load_pair_summary(s3, pair, ticker)
+                if loaded:
+                    summaries[pair] = loaded
+        except Exception:
+            return None
+    start = result.effective_start.isoformat()
+    end = result.effective_end.isoformat()
+    window_sessions = result.sessions_with_chain
+    pairs: list[PairConfidence] = []
+    for pair, by_date in sorted(summaries.items()):
+        rows = [(d, r) for d, r in by_date.items() if start <= d <= end]
+        if not rows:
+            continue
+        joined = sum(int(r.get("joined") or 0) for _, r in rows)
+        checked = sum(int(r.get("checked") or 0) for _, r in rows)
+        within = sum(int(r.get("within_band") or 0) for _, r in rows)
+        session_rates = [(d, float(r["agreement_rate"])) for d, r in rows
+                         if r.get("agreement_rate") is not None]
+        worst = min(session_rates, key=lambda x: x[1]) if session_rates else None
+        pairs.append(PairConfidence(
+            pair=pair,
+            audited_sessions=len(rows),
+            window_sessions=window_sessions,
+            joined=joined,
+            checked=checked,
+            within_band=within,
+            agreement_rate=round(within / checked, 4) if checked else None,
+            worst_session_rate=(round(worst[1], 4) if worst else None),
+            worst_session=worst[0] if worst else None,
+        ))
+    if not pairs:
+        return None
+    noted = [p for p in pairs if p.agreement_rate is not None]
+    note = None
+    if noted:
+        parts = [f"{p.pair}: {round((p.agreement_rate or 0.0) * 100, 1)}% of "
+                 f"{p.checked} checked rows within band over "
+                 f"{p.audited_sessions} of {p.window_sessions} sessions"
+                 for p in noted]
+        note = "; ".join(parts)
+    return DataConfidence(pairs=pairs, note=note)
 
 
 # ------------------------------------------------ stage 6b: coverage guard

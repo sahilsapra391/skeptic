@@ -18,7 +18,15 @@ from typing import Any
 
 import pandas as pd
 
-from app.data import chains, flow_signals, gex_signals, ivs_signals, r2, resolution
+from app.data import (
+    chains,
+    cross_validation,
+    flow_signals,
+    gex_signals,
+    ivs_signals,
+    r2,
+    resolution,
+)
 
 TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "yahoo", "dolthub"]
@@ -245,6 +253,26 @@ def _flow_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
     }
 
 
+def _pair_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
+    """Window + aggregate agreement of one cross-validation pair (F7)."""
+    if df is None or df.empty or "date" not in df.columns:
+        return None
+    dates = df["date"].astype(str)
+    if not {"checked", "within_band"}.issubset(df.columns):
+        return None
+    checked = pd.to_numeric(df["checked"], errors="coerce").sum(min_count=1)
+    within = pd.to_numeric(df["within_band"], errors="coerce").sum(min_count=1)
+    return {
+        "sessions": int(len(df)),
+        "first": str(dates.min()),
+        "last": str(dates.max()),
+        "checked": int(checked) if pd.notna(checked) else 0,
+        "within_band": int(within) if pd.notna(within) else 0,
+        "agreement_rate": (round(float(within) / float(checked), 4)
+                           if pd.notna(checked) and checked else None),
+    }
+
+
 def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
@@ -300,6 +328,14 @@ def build_coverage() -> dict[str, Any]:
             for t in TICKERS
         }
         tide_f = pool.submit(r2.get_parquet, s3, flow_signals.TIDE_KEY)
+        xval_f = {
+            (pair, t): pool.submit(
+                r2.get_parquet, s3,
+                cross_validation.PAIR_KEY.format(pair=pair, ticker=t),
+            )
+            for pair in cross_validation.PAIRS
+            for t in TICKERS
+        }
         quality_f = pool.submit(r2.get_json, s3, "state/quality_flags.json", {})
         priorities_f = pool.submit(r2.get_json, s3, "state/collection_priorities.json", None)
         new_sources_f = pool.submit(r2.get_json, s3, "state/source_coverage.json", None)
@@ -351,6 +387,11 @@ def build_coverage() -> dict[str, Any]:
             t: _flow_signals_range(flow_f[t].result()) for t in TICKERS
         }
         tide_cov = _flow_signals_range(tide_f.result())
+        xval_cov: dict[str, dict[str, Any]] = {}
+        for (pair, t), xfut in xval_f.items():
+            rng = _pair_range(xfut.result())
+            if rng is not None:
+                xval_cov.setdefault(pair, {})[t] = rng
         chain_quality = {t: chain_quality_f[t].result() for t in TICKERS}
         resolution_mix = {t: resolution_f[t].result() for t in TICKERS}
         dolthub_state = dolthub_f.result()
@@ -397,6 +438,7 @@ def build_coverage() -> dict[str, Any]:
         "dealer_positioning": dealer_cov,
         "flow_signals": flow_cov,
         "market_tide": tide_cov,
+        "cross_validation": xval_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
         # D3d: the weekly demand ranking (build_priorities.py) — what the

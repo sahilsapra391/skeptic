@@ -624,6 +624,8 @@ def build_run_payload(
         "honesty": _honesty_panels(report),
         "coverage": report.coverage.model_dump(),
         "liquidity": report.liquidity.model_dump() if report.liquidity else None,
+        "dataConfidence": (report.data_confidence.model_dump()
+                           if report.data_confidence else None),
         "concentration": report.concentration.model_dump() if report.concentration else None,
         # per-fill provenance (D2b): which quote record priced each leg fill
         "fillSources": result.fill_sources,

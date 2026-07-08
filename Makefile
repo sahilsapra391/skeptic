@@ -19,6 +19,9 @@ ivs-signals:
 flow-signals:
 	cd collector && uv run python derive_flow_signals.py
 
+cross-validation:
+	cd collector && uv run python derive_cross_validation.py
+
 unlock-scan:
 	cd backend && PYTHONPATH=. uv run python scripts/nightly_improve.py
 
