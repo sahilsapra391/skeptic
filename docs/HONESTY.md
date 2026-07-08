@@ -741,7 +741,12 @@ comparator math is single-sourced in app/data/cross_validation.py):
   session's capture spot self-calibrated from its own high-|delta|
   contracts.
 - **dolthub_vs_uw** (SPY) — chain volume/OI per expiry vs UW's
-  aggregates (OI band 5%, volume 10% — capture cutoffs differ).
+  aggregates (OI band 5%, volume 10% — capture cutoffs differ). NOTE
+  (real-lake 2026-07-08): the DoltHub archive carries the volume/OI
+  columns but never POPULATES them (all-NaN across every session), so
+  this pair currently derives checked=0 — honest absence, not a bug; it
+  lights up automatically if a volume-bearing EOD source ever overlaps
+  the UW window.
 - **yahoo_vs_ivol5m** — EOD quote mids vs the last 5-min NBBO (grows
   nightly with the Yahoo capture).
 - **massive_vs_ivol5m** (QQQ/IWM) — the daily vendor close must sit
