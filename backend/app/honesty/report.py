@@ -84,6 +84,9 @@ class Sensitivity(BaseModel):
     # (gauntlet cost is benchmark-bound; docs/HONESTY.md has the arithmetic).
     # Disclosed here so the verdict can say so.
     window_note: str | None = None
+    # F8: which entry conditions were NOT swept and why (sign tests /
+    # cost cap) — surfaced so absence is never misread as an oversight.
+    conditions_note: str | None = None
 
 
 class Dsr(BaseModel):

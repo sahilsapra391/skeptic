@@ -357,6 +357,10 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         )
     if report.sensitivity.window_note:
         caveats.append(report.sensitivity.window_note + ".")
+    # F8: which entry conditions were not stress-tested and why — so a
+    # missing threshold sweep is never misread as a free pass
+    if report.sensitivity.conditions_note:
+        caveats.append(report.sensitivity.conditions_note.capitalize() + ".")
     # F7: cross-source agreement over THIS run's window — reported, never
     # scored; every number quoted exists as a numeric report field
     if report.data_confidence is not None and report.data_confidence.note:
@@ -491,6 +495,12 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         f"covered · {report.effective_start} → {report.effective_end}",
         "Backtests always look better than real trading. This is research, not advice.",
     ]
+    # F8: name any entry conditions we couldn't stress-test, in plain terms
+    if report.sensitivity.conditions_note:
+        caveats.append(
+            "We couldn't stress-test every entry rule: "
+            + report.sensitivity.conditions_note + "."
+        )
     cov = report.coverage
     if cov.coverage_ratio < 1.0:
         caveats.insert(

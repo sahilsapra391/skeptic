@@ -132,6 +132,15 @@ def _mc_fan(report: HonestyReport) -> dict[str, str]:
     }
 
 
+def _sweep_display_name(name: str) -> str:
+    """Row label for a sweep param. F8 condition sweeps carry a 'cond_'
+    prefix (and maybe an operator suffix for a repeated indicator) — strip
+    it so the grid reads 'skew 25d', not 'cond skew 25d'."""
+    if name.startswith("cond_"):
+        return name[len("cond_"):].replace("_", " ")
+    return name.replace("_", " ")
+
+
 def _param_label(name: str, v: float) -> str:
     if name == "delta":
         return f".{int(round(v * 100)):02d}Δ"
@@ -139,6 +148,8 @@ def _param_label(name: str, v: float) -> str:
         return f"{int(v)}d"
     if name == "entry_time":
         return f"{int(v):+d}m"  # the D2d entry-time nudge, minutes
+    if name.startswith("cond_"):
+        return f"{v:g}"  # F8: an indicator threshold — unit-free number
     return f"{v:g}%"
 
 
@@ -161,7 +172,7 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
         ]
         out.append(
             {
-                "name": sweep.name.replace("_", " "),
+                "name": _sweep_display_name(sweep.name),
                 "cls": sweep.classification or "",
                 "base": sweep.base_index,
                 "cells": cells,
@@ -203,7 +214,7 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
         best_v, best_s = max(pairs, key=lambda t: t[1])
         base_v = sweep.values[sweep.base_index]
         if best_v != base_v and best_s >= base_s + 0.05:
-            name = sweep.name.replace("_", " ")
+            name = _sweep_display_name(sweep.name)
             if retail:
                 recs.append(
                     f"When we tried {name} at {_param_label(sweep.name, best_v)} instead "

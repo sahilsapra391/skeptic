@@ -270,9 +270,12 @@ def monte_carlo(
 Setter = Callable[[StrategySpec, float], None]
 
 
-def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], int, Setter]]:
-    """(name, values ±20% in 5 steps, base index, setter) per numeric param
-    present. The base index marks the as-specced value inside `values`."""
+def _mutations(
+    spec: StrategySpec,
+) -> tuple[list[tuple[str, list[float], int, Setter]], str | None]:
+    """((name, values ±20% in 5 steps, base index, setter) per numeric
+    param present, conditions-disclosure note). The base index marks the
+    as-specced value inside `values`."""
     out: list[tuple[str, list[float], int, Setter]] = []
     factors = [0.8, 0.9, 1.0, 1.1, 1.2]
 
@@ -323,7 +326,66 @@ def _mutations(spec: StrategySpec) -> list[tuple[str, list[float], int, Setter]]
 
         out.append(("stop_loss", [round(base_sl * f, 2) for f in factors], 2, set_sl))
 
-    return out
+    # F8: sweep the ENTRY-CONDITION thresholds too — a strategy overfit to
+    # "skew > 5" or "RSI < 30" must be caught, not just strike/dte/exits
+    # (owner decisions 2026-07-08). Cap at the first 3 conditions (cost on
+    # the serialized engine); SKIP sign-at-zero conditions (the sign IS the
+    # signal — nothing to perturb, opaque units); rank forms sweep as 0-100.
+    # Entry conditions only in v1 (exit/rung deferred, disclosed).
+    note = _append_condition_sweeps(spec, out, factors)
+    return out, note
+
+
+def _append_condition_sweeps(
+    spec: StrategySpec, out: list[tuple[str, list[float], int, Setter]],
+    factors: list[float],
+) -> str | None:
+    """Add up to 3 entry-condition threshold sweeps to `out`; return a
+    disclosure note for the conditions that were skipped or capped."""
+    conds = spec.entry.conditions
+    swept = 0
+    skipped_sign: list[str] = []
+    seen: dict[str, int] = {}
+    for i, cond in enumerate(conds):
+        if swept >= 3:
+            break
+        if cond.value == 0:
+            # a sign test (e.g. gex_level > 0) has no threshold to perturb
+            skipped_sign.append(cond.indicator.value)
+            continue
+        is_rank = cond.indicator.value.endswith("_rank_1y") or \
+            cond.indicator.value == "iv_percentile_1y"
+        base = cond.value
+        vals = [round(base * f, 4) for f in factors]
+        if is_rank:
+            vals = [round(min(100.0, max(0.0, x)), 4) for x in vals]
+
+        name = cond.indicator.value
+        seen[name] = seen.get(name, 0) + 1
+        sweep_name = f"cond_{name}" if seen[name] == 1 else \
+            f"cond_{name}_{cond.operator.value}"
+
+        def _make_setter(idx: int) -> Setter:
+            def _set(s: StrategySpec, v: float) -> None:
+                s.entry.conditions[idx].value = v
+            return _set
+
+        out.append((sweep_name, vals, 2, _make_setter(i)))
+        swept += 1
+
+    parts: list[str] = []
+    if skipped_sign:
+        uniq = sorted(set(skipped_sign))
+        parts.append(
+            f"{', '.join(uniq)} {'is a' if len(uniq) == 1 else 'are'} sign "
+            f"test{'' if len(uniq) == 1 else 's'} (threshold 0 — nothing to "
+            "perturb), not swept"
+        )
+    n_eligible = sum(1 for c in conds if c.value != 0)
+    if n_eligible > 3:
+        parts.append(f"{n_eligible - 3} further condition"
+                     f"{'' if n_eligible - 3 == 1 else 's'} not swept (cost cap)")
+    return "; ".join(parts) or None
 
 
 def _classify(sharpes: list[float | None]) -> str | None:
@@ -378,8 +440,9 @@ def sensitivity(
     only exists at exactly one minute of the day is noise — classified with
     the same plateau/cliff rules as every parameter."""
     sweep_spec, window_note = _sweep_base_spec(spec, intraday)
+    mutations, conditions_note = _mutations(sweep_spec)
     sweeps: list[ParamSweep] = []
-    for name, values, base_index, setter in _mutations(sweep_spec):
+    for name, values, base_index, setter in mutations:
         sharpes: list[float | None] = []
         for v in values:
             mutated = copy.deepcopy(sweep_spec)
@@ -428,7 +491,8 @@ def sensitivity(
     verdict: str | None = None
     if classified:
         verdict = "cliff" if "cliff" in classified else "plateau"
-    return Sensitivity(params=sweeps, verdict=verdict, window_note=window_note)
+    return Sensitivity(params=sweeps, verdict=verdict, window_note=window_note,
+                       conditions_note=conditions_note)
 
 
 def session_split(result: RunResult) -> SessionSplit:
