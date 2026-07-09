@@ -18,8 +18,17 @@ id "$SVC_USER" &>/dev/null || useradd --system --create-home --shell /usr/sbin/n
 mkdir -p /var/log/skeptic && chown "$SVC_USER" /var/log/skeptic
 
 echo "== uv (pinned python + venv) =="
+# The systemd units call /usr/local/bin/uv by absolute path, so guarantee uv is
+# there. UV_INSTALL_DIR is honored by current installers, but pin the result with
+# a symlink so a version that ignores it (landing uv in ~/.local/bin or
+# ~/.cargo/bin) still leaves a working /usr/local/bin/uv.
 if [ ! -x /usr/local/bin/uv ]; then
-    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh || true
+    if [ ! -x /usr/local/bin/uv ]; then
+        found="$(command -v uv || echo /root/.local/bin/uv)"
+        [ -x "$found" ] || { echo "!! uv install failed — install it manually" >&2; exit 1; }
+        ln -sf "$found" /usr/local/bin/uv
+    fi
 fi
 
 echo "== code ($BRANCH) =="
