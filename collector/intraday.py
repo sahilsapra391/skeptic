@@ -51,6 +51,7 @@ CBOE_OCC_RE = re.compile(r"^([A-Z]+)\s*(\d{6})([CP])(\d{8})$")
 PREFIX = "options_intraday"
 OPTIONS_CLOSE_LAG_MIN = 15  # ETF options trade 15 min past the equity close
 USER_AGENT = "skeptic-collector/0.1 (personal research)"
+PRE_OPEN_POLL_SEC = 30  # re-check the wall clock this often while waiting for the open
 
 
 def load_dotenv(path: Path) -> None:
@@ -207,7 +208,18 @@ def run_loop(yahoo_every: int, dry_run: bool, max_lake_gb: float) -> int:
         if now < start:
             wait = (start - now).total_seconds()
             log.info("market closed; sleeping %.0f min until %s", wait / 60, start)
-            time.sleep(min(wait, 3600))
+            # Re-check the wall clock in short polls rather than sleeping the whole
+            # gap in one call. macOS suspends time.sleep() while the host sleeps, so
+            # a single long sleep begun before a laptop sleep has not elapsed on
+            # wake and we would sail straight past the open (observed 2026-07-09,
+            # when the recorder missed 164 min of the session). Short polls cost
+            # nothing and re-evaluate within one interval of any wake, so we enter
+            # the session on time.
+            while True:
+                remaining = (start - pd.Timestamp.now(tz="UTC")).total_seconds()
+                if remaining <= 0:
+                    break
+                time.sleep(min(PRE_OPEN_POLL_SEC, remaining))
             continue
         if not dry_run:
             used = prefix_gb(s3, PREFIX)
