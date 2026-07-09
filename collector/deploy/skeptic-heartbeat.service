@@ -1,0 +1,12 @@
+[Unit]
+Description=Skeptic recorder heartbeat check (pages on a stalled session)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=skeptic
+WorkingDirectory=/opt/skeptic/collector
+# Set ALERT_WEBHOOK in collector/.env (an ntfy.sh topic URL, Slack, or Discord
+# webhook). Without it the check still logs loudly to the journal.
+ExecStart=/usr/local/bin/uv run --env-file .env python deploy/heartbeat.py --stale-min 6

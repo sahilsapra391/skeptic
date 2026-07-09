@@ -1,0 +1,23 @@
+[Unit]
+Description=Skeptic intraday options recorder (CBOE minute chain + Yahoo cross-check)
+Documentation=https://github.com/sahilsapra391/skeptic/blob/main/docs/INTRADAY-OPTIONS-DATA-EVAL.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=skeptic
+WorkingDirectory=/opt/skeptic/collector
+# uv resolves the pinned venv; --env-file loads collector/.env (R2 + vendor keys,
+# never committed). intraday.py also self-loads .env, so this is belt-and-suspenders.
+ExecStart=/usr/local/bin/uv run --env-file .env python intraday.py
+# The whole point of moving off the laptop: a cloud VM never sleeps, and systemd
+# brings the recorder straight back on any crash. No time.sleep can strand it.
+Restart=always
+RestartSec=10
+TimeoutStopSec=15
+StandardOutput=append:/var/log/skeptic/intraday.log
+StandardError=append:/var/log/skeptic/intraday.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the skeptic recorder heartbeat every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+# fire a catch-up run on boot / after the VM wakes from any maintenance
+Persistent=true
+
+[Install]
+WantedBy=timers.target
