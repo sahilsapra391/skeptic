@@ -25,6 +25,8 @@ from app.data.cross_validation import (
     compare_quote_close,
     compare_recorder_tape_window,
     compare_signal_values,
+    merge_records,
+    recorder_tape_window,
 )
 from app.data.fill_audit import audit_fills
 from app.engine.market import build_fixture_slice, build_fixture_store
@@ -414,3 +416,79 @@ class TestRecorderVsUwTape:
             self._snap(), self._trades().drop(columns=["price"])) is None
         assert compare_recorder_tape_window(
             self._snap(), self._trades().iloc[0:0]) is None
+
+
+class TestRecorderTapeWindow:
+    """Hand-computed: the measured 15-min shift and the 60 s half-open
+    window. Prints at 13:44:59, 13:45:00, 13:45:30, 13:45:59.9, 13:46:00
+    UTC against a snap stamped 14:00:00 → window [13:45:00, 13:46:00)."""
+
+    def _ts(self) -> pd.Series:
+        return pd.Series(pd.to_datetime([
+            "2026-07-08 13:44:59.000+00:00", "2026-07-08 13:45:00.000+00:00",
+            "2026-07-08 13:45:30.000+00:00", "2026-07-08 13:45:59.900+00:00",
+            "2026-07-08 13:46:00.000+00:00",
+        ], utc=True))
+
+    def test_shift_direction_and_boundaries(self) -> None:
+        lo, hi, end = recorder_tape_window(self._ts(), "2026-07-08 14:00:00")
+        # 15 min BEHIND the stamp, start inclusive, end exclusive
+        assert (lo, hi) == (1, 4)
+        assert end == pd.Timestamp("2026-07-08 13:46:00", tz="UTC")
+
+    def test_stalled_feed_window_collapses_to_empty(self) -> None:
+        ts = self._ts()
+        _, _, end = recorder_tape_window(ts, "2026-07-08 14:00:00")
+        # the next snap repeats the stamp (feed stall): clamped to the
+        # previous end, the window is empty — the same prints are never
+        # judged twice
+        lo2, hi2, _ = recorder_tape_window(ts, "2026-07-08 14:00:00", end)
+        assert lo2 >= hi2
+
+    def test_partial_overlap_clamps_to_new_coverage_only(self) -> None:
+        ts = self._ts()
+        _, _, end = recorder_tape_window(ts, "2026-07-08 14:00:00")
+        # 30 s later stamp: only [13:46:00, 13:46:30) is new — the print
+        # at 13:46:00 is picked up exactly once
+        lo2, hi2, _ = recorder_tape_window(ts, "2026-07-08 14:00:30", end)
+        assert (lo2, hi2) == (4, 5)
+
+
+class TestMergeRecords:
+    def test_hand_computed_fold(self) -> None:
+        parts = [
+            {"joined": 4, "checked": 3, "within_band": 1,
+             "below_bid": 1, "beyond_ask": 1},
+            {"joined": 2, "checked": 2, "within_band": 2,
+             "below_bid": 0, "beyond_ask": 0},
+        ]
+        row = merge_records(parts, "below_bid", "beyond_ask",
+                            tape_trades=10, snaps=2)
+        assert row["joined"] == 6 and row["checked"] == 5
+        assert row["within_band"] == 3
+        assert row["agreement_rate"] == round(3 / 5, 4)
+        assert row["below_bid"] == 1 and row["beyond_ask"] == 1
+        assert row["tape_trades"] == 10 and row["snaps"] == 2
+
+    def test_empty_fold_is_zero_coverage_not_a_rate(self) -> None:
+        row = merge_records([], "below_bid", "beyond_ask", snaps=0)
+        assert row["joined"] == 0 and row["checked"] == 0
+        assert row["agreement_rate"] is None  # never a fabricated 100%
+
+
+class TestCrossedQuoteGuard:
+    def test_crossed_quote_is_joined_never_checked(self) -> None:
+        # bid 5.00 / ask 1.00 is not an honest market: without the guard
+        # a 3.00 print lands in below_bid AND beyond_ask
+        snap = pd.DataFrame({
+            "expiration": ["2026-07-18"], "right": ["call"],
+            "strike": [100.0], "bid": [5.00], "ask": [1.00],
+        })
+        trades = pd.DataFrame({
+            "expiry": ["2026-07-18"], "option_type": ["call"],
+            "strike": [100.0], "price": [3.00],
+        })
+        rec = compare_recorder_tape_window(snap, trades)
+        assert rec is not None
+        assert rec["joined"] == 1 and rec["checked"] == 0
+        assert rec["below_bid"] == 0 and rec["beyond_ask"] == 0

@@ -40,6 +40,10 @@ from app.engine.market import LookaheadError
 
 # ── family registry (probe-verified against the lake, 2026-07-07) ──────────
 # Per-session families under uw/{family}/ticker={T}/date={D}/rows.parquet.
+# screener_contracts: banked by the 2026-07-09 trial-endgame one-off (top-500
+# by-volume daily contract cross-sections, 91 sessions × 3 tickers, standard
+# rows.parquet layout, lake-verified); the trial is over, so the window is
+# immutable — there is deliberately no collector mode for it.
 TICKER_DATE_FAMILIES = frozenset({
     "atm_chains", "darkpool", "etf_tide", "expiry_breakdown",
     "flow_per_strike", "flow_per_strike_intraday", "greek_exposure_expiry",
