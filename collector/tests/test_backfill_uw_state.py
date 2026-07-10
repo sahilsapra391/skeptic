@@ -201,6 +201,32 @@ def test_run_tape_non200_leaves_date_unrecorded(monkeypatch):
     assert len(calls) == uw.TRANSIENT_STOP
 
 
+def test_run_tape_parse_error_counts_toward_breaker(monkeypatch):
+    """A 200 whose payload is a corrupt zip leaves the date unrecorded AND
+    counts toward TRANSIENT_STOP — N consecutive corrupt days must not keep
+    downloading ~1.8 GB each, unbounded."""
+    class _Resp:
+        status_code = 200
+        headers: dict = {}
+
+        def iter_content(self, chunk_size):
+            return iter([b"not a zip"])
+
+    calls: list[str] = []
+
+    def fake_get(url, **kw):
+        calls.append(url)
+        return _Resp()
+
+    monkeypatch.setattr(uw, "sessions_desc", lambda a, b: list(DATES))
+    monkeypatch.setattr(uw, "_last_complete_session", lambda e: e)
+    monkeypatch.setattr(uw.requests, "get", fake_get)
+    state = _fresh_state()
+    uw.run_tape(None, state, ["SPY"], DATES[-1], DATES[0], dry=True)
+    assert state["tape"] == {"done": [], "empty": [], "blocked": []}
+    assert len(calls) == uw.TRANSIENT_STOP
+
+
 # ------------------------------------------- _last_complete_session
 def _freeze(monkeypatch, *, hour: int, minute: int):
     class _FakeDT(datetime):

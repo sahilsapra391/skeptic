@@ -635,17 +635,26 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
     log.info("tape: %d sessions to pull (~1.8 GB download each)", len(todo))
     hdr = {"Authorization": f"Bearer {_TOKEN}"}
     transient = 0
+
+    def _trip(d: str, why: str) -> bool:
+        """Count one transient failure (the date stays unrecorded — retried
+        next run); True = TRANSIENT_STOP hit, abandon the sweep this run."""
+        nonlocal transient
+        transient += 1
+        log.warning("tape %s: %s — date left unrecorded", d, why)
+        if transient >= TRANSIENT_STOP:
+            log.warning("tape: %d consecutive transient failures — abandoned this run",
+                        transient)
+            return True
+        return False
+
     for d in todo:
         _LIM.wait()
         try:
             r = requests.get(f"{BASE}/api/option-trades/full-tape/{d}",
                              headers=hdr, stream=True, timeout=900)
         except Exception as exc:  # noqa: BLE001
-            log.warning("tape %s: %s — date left unrecorded", d, exc)
-            transient += 1
-            if transient >= TRANSIENT_STOP:
-                log.warning("tape: %d consecutive transient failures — abandoned this run",
-                            transient)
+            if _trip(d, str(exc)):
                 break
             continue
         _LIM.observe(r.headers)
@@ -654,15 +663,9 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
             log.info("tape: history floor at %s", d)
             break
         if r.status_code != 200:
-            log.warning("tape %s: transient status %d — date left unrecorded",
-                        d, r.status_code)
-            transient += 1
-            if transient >= TRANSIENT_STOP:
-                log.warning("tape: %d consecutive transient failures — abandoned this run",
-                            transient)
+            if _trip(d, f"transient status {r.status_code}"):
                 break
             continue
-        transient = 0
         with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
             for chunk in r.iter_content(chunk_size=1 << 20):  # stream to disk, 1 MB
                 tmp.write(chunk)
@@ -684,7 +687,10 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
                                     if len(tt):
                                         parts[t].append(tt)
             except Exception as exc:  # noqa: BLE001 — bad zip/csv → retry next run
-                log.warning("tape %s parse error: %s", d, exc)
+                # counts toward the breaker: N consecutive corrupt days must not
+                # keep downloading ~1.8 GB each, unbounded
+                if _trip(d, f"parse error: {exc}"):
+                    break
                 continue
         wrote = 0
         for t in want:
@@ -695,6 +701,7 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
                     r2_put_parquet(s3, f"uw/option_tape/ticker={t}/date={d}/trades.parquet", df)
                 wrote += len(df)
         ts["done"].append(d)
+        transient = 0
         log.info("tape %s: %d trades kept for %s", d, wrote, "/".join(sorted(want)))
         _flush(s3, state)
 
