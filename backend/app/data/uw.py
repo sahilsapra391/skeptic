@@ -46,10 +46,11 @@ TICKER_DATE_FAMILIES = frozenset({
     "greek_exposure_strike", "greek_exposure_strike_expiry", "greek_flow",
     "greek_flow_expiry", "interpolated_iv", "lit_flow", "max_pain",
     "net_prem_ticks", "nope", "oi_change", "oi_per_expiry", "oi_per_strike",
-    "option_historic", "option_volume_profile", "spot_exposures",
-    "spot_exposures_by_expiry", "spot_exposures_expiry_strike",
-    "spot_exposures_strike", "stock_price_levels",
-    "stock_volume_price_levels", "vol_term_structure", "volume_oi_expiry",
+    "option_historic", "option_volume_profile", "screener_contracts",
+    "spot_exposures", "spot_exposures_by_expiry",
+    "spot_exposures_expiry_strike", "spot_exposures_strike",
+    "stock_price_levels", "stock_volume_price_levels",
+    "vol_term_structure", "volume_oi_expiry",
 })
 # Market-wide per-session families under uw/{family}/date={D}/rows.parquet.
 MARKET_DATE_FAMILIES = frozenset({

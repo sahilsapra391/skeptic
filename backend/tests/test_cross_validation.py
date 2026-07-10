@@ -23,6 +23,7 @@ from app.data.cross_validation import (
     compare_dolthub_uw,
     compare_massive_ivol5m,
     compare_quote_close,
+    compare_recorder_tape_window,
     compare_signal_values,
 )
 from app.data.fill_audit import audit_fills
@@ -355,3 +356,61 @@ class TestAuditFills:
         close_fill["action"] = "buy"
         audit = audit_fills([close_fill], lambda d: bars)
         assert audit["within"] == 1  # honest against ITS bar, not the open
+
+
+class TestRecorderVsUwTape:
+    """Hand-computed: recorder displayed quotes vs tape prints in one
+    snap window. Contract A quotes 2.00/2.10 (mid 2.05, tol 0.05 → band
+    [1.95, 2.15]); C quotes 5.00/5.50 (mid 5.25, tol 0.105 → band
+    [4.895, 5.605]); B has no bid — joined, never checked."""
+
+    def _snap(self, right_a: str = "call") -> pd.DataFrame:
+        return pd.DataFrame({
+            "expiration": ["2026-07-18"] * 3,
+            "right": [right_a, "put", "call"],
+            "strike": [100.0, 100.0, 105.0],
+            "bid": [2.00, 0.00, 5.00],
+            "ask": [2.10, 0.05, 5.50],
+        })
+
+    def _trades(self) -> pd.DataFrame:
+        return pd.DataFrame({
+            "expiry": ["2026-07-18"] * 5,
+            "option_type": ["call", "call", "call", "put", "call"],
+            "strike": [100.0, 100.0, 105.0, 100.0, 999.0],
+            "price": [2.05, 1.80, 5.70, 0.03, 1.00],
+        })
+
+    def test_hand_computed_counts_and_directions(self) -> None:
+        rec = compare_recorder_tape_window(self._snap(), self._trades())
+        assert rec is not None
+        # the 999 strike is unlisted — joins zero (honest absence)
+        assert rec["joined"] == 4
+        # the no-bid put print is joined but never checked
+        assert rec["checked"] == 3
+        # 2.05 within [1.95, 2.15]; 1.80 below; 5.70 beyond
+        assert rec["within_band"] == 1
+        assert rec["below_bid"] == 1
+        assert rec["beyond_ask"] == 1
+        assert rec["agreement_rate"] == round(1 / 3, 4)
+
+    def test_right_normalizes_across_conventions(self) -> None:
+        # the recorder writes "call"/"put"; an OCC-lettered source ("C")
+        # must join the tape's "call" all the same
+        rec = compare_recorder_tape_window(self._snap(right_a="C"),
+                                           self._trades())
+        assert rec is not None and rec["joined"] == 4
+
+    def test_duplicate_snap_row_never_double_counts(self) -> None:
+        snap = pd.concat([self._snap(), self._snap().iloc[[0]]],
+                         ignore_index=True)
+        rec = compare_recorder_tape_window(snap, self._trades())
+        assert rec is not None and rec["joined"] == 4 and rec["checked"] == 3
+
+    def test_unrecognized_shape_is_none(self) -> None:
+        assert compare_recorder_tape_window(
+            self._snap().drop(columns=["ask"]), self._trades()) is None
+        assert compare_recorder_tape_window(
+            self._snap(), self._trades().drop(columns=["price"])) is None
+        assert compare_recorder_tape_window(
+            self._snap(), self._trades().iloc[0:0]) is None

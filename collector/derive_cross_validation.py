@@ -30,6 +30,7 @@ Env:  R2_* vars (same as collect.py).
 from __future__ import annotations
 
 import argparse
+import io
 import logging
 import os
 import re
@@ -59,10 +60,13 @@ from app.data.cross_validation import (  # noqa: E402
     MPD_ABS_TOL,
     PAIR_KEY,
     PCR_REL_TOL,
+    RECORDER_DELAY_MIN,
+    RECORDER_SNAP_WINDOW_SEC,
     compare_dolthub_alpaca,
     compare_dolthub_uw,
     compare_massive_ivol5m,
     compare_quote_close,
+    compare_recorder_tape_window,
     compare_signal_values,
 )
 from app.data.flow_signals import FLOW_KEY  # noqa: E402
@@ -302,6 +306,101 @@ def run_massive_vs_ivol5m(s3, ticker: str) -> int:
     return len(processed)
 
 
+_TAPE_COLUMNS = ["executed_at", "expiry", "option_type", "strike", "price"]
+_SNAP_COLUMNS = ["source_ts", "expiration", "right", "strike", "bid", "ask"]
+
+
+def _get_parquet_columns(s3, key: str, columns: list[str]) -> pd.DataFrame | None:
+    """Column-projected parquet read — a tape day is millions of prints
+    across ~40 columns; decoding five keeps the frame bounded (OOM rule)."""
+    try:
+        obj = s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)
+        return pd.read_parquet(io.BytesIO(obj["Body"].read()), columns=columns)
+    except Exception:
+        return None
+
+
+def _tape_day(s3, ticker: str, d: str) -> pd.DataFrame | None:
+    df = _get_parquet_columns(
+        s3, f"uw/option_tape/ticker={ticker}/date={d}/trades.parquet",
+        _TAPE_COLUMNS)
+    if df is None or df.empty:
+        return None
+    df["_ts"] = pd.to_datetime(df["executed_at"], utc=True,
+                               format="ISO8601", errors="coerce")
+    return df.dropna(subset=["_ts"]).sort_values("_ts").reset_index(drop=True)
+
+
+def _snap_keys(s3, ticker: str, d: str) -> list[str]:
+    prefix = f"options_intraday/source=cboe_delayed/ticker={ticker}/date={d}/"
+    keys = [o["Key"] for page in s3.get_paginator("list_objects_v2").paginate(
+        Bucket=os.environ["R2_BUCKET"], Prefix=prefix)
+        for o in page.get("Contents", []) if o["Key"].endswith(".parquet")]
+    return sorted(keys)
+
+
+def run_recorder_vs_uw_tape(s3, ticker: str) -> int:
+    """Recorder displayed quotes vs the UW full-tape prints. Per snap:
+    prints executed inside [source_ts − RECORDER_DELAY_MIN, +60 s) are
+    checked against that snap's two-sided quotes; per-session counts
+    accumulate across snaps (the massive-pair convention). Extras:
+    below_bid / beyond_ask (violation direction — the displayed-quote
+    calibration signal) and tape_trades (the session's total prints, so
+    the record shows how much of the tape the recorder could even see —
+    on a gap day the uncovered share is visible, never hidden)."""
+    key = PAIR_KEY.format(pair="recorder_vs_uw_tape", ticker=ticker)
+    existing, have = _artifact(s3, key)
+    rec = set(_sessions(s3, f"options_intraday/source=cboe_delayed/ticker={ticker}/"))
+    tape = set(_sessions(s3, f"uw/option_tape/ticker={ticker}/"))
+    todo = sorted((rec & tape) - have)
+    if not todo:
+        log.info("recorder_vs_uw_tape %s: up to date (%d sessions)",
+                 ticker, len(have))
+        return 0
+    rows: list[dict] = []
+    for d in todo:
+        trades = _tape_day(s3, ticker, d)
+        if trades is None or trades.empty:
+            continue  # unreadable tape — no row, retries next run
+        counts = {"joined": 0, "checked": 0, "within_band": 0,
+                  "below_bid": 0, "beyond_ask": 0}
+        snapped = 0
+        for skey in _snap_keys(s3, ticker, d):
+            snap = _get_parquet_columns(s3, skey, _SNAP_COLUMNS)
+            if snap is None or snap.empty or "source_ts" not in snap.columns:
+                continue
+            src = pd.to_datetime(str(snap["source_ts"].iloc[0]),
+                                 utc=True, errors="coerce")
+            if pd.isna(src):
+                continue  # pre-source_ts snaps can't be placed on the
+                # feed clock — skipped, never joined at the wrong moment
+            start = src - pd.Timedelta(minutes=RECORDER_DELAY_MIN)
+            end = start + pd.Timedelta(seconds=RECORDER_SNAP_WINDOW_SEC)
+            lo = int(trades["_ts"].searchsorted(start, side="left"))
+            hi = int(trades["_ts"].searchsorted(end, side="left"))
+            if lo >= hi:
+                continue
+            rec_row = compare_recorder_tape_window(snap, trades.iloc[lo:hi])
+            if rec_row is None:
+                continue
+            snapped += 1
+            for k in counts:
+                counts[k] += int(rec_row.get(k) or 0)
+        if snapped == 0:
+            continue  # no usable snap — honest absence, retries next run
+        rows.append({"date": d, **counts,
+                     "agreement_rate": (round(counts["within_band"]
+                                              / counts["checked"], 4)
+                                        if counts["checked"] else None),
+                     "tape_trades": int(len(trades)),
+                     "snaps": snapped})
+    if rows:
+        _write(s3, key, existing, rows)
+    log.info("recorder_vs_uw_tape %s: derived %d sessions → r2://%s",
+             ticker, len(rows), key)
+    return len(rows)
+
+
 def _col_series(df: pd.DataFrame | None, col: str) -> dict[str, float]:
     """iso-date → value from a derived artifact frame (NaN rows dropped)."""
     if df is None or df.empty or "date" not in df.columns or col not in df.columns:
@@ -442,7 +541,8 @@ def main() -> int:
     want = (set(args.pairs.split(",")) if args.pairs != "all"
             else {"dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
                   "massive_vs_ivol5m", "hv_inhouse_vs_ivol",
-                  "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw"})
+                  "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw",
+                  "recorder_vs_uw_tape"})
     s3 = r2_client()
     n = 0
     if "dolthub_vs_alpaca" in want:
@@ -464,6 +564,9 @@ def main() -> int:
     if "positioning_cboe_vs_uw" in want:
         for t in ("SPY", "QQQ", "IWM"):
             n += run_positioning_cboe_vs_uw(s3, t)
+    if "recorder_vs_uw_tape" in want:
+        for t in ("SPY", "QQQ", "IWM"):
+            n += run_recorder_vs_uw_tape(s3, t)
     log.info("done: %d units derived", n)
     return 0
 
