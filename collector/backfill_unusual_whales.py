@@ -14,6 +14,12 @@ Everything is resumable (an R2 object or a state entry = done) and faithful
 (rows are banked via json_normalize — we collect now, interpret in the engine
 later, exactly the owner's instruction).
 
+State only records FINAL outcomes: 200 (a definitive body, even empty) and 403
+(tariff/depth floor). Transient failures — network errors, 429/5xx after
+backoff, stray 4xx — leave the date/unit unrecorded so a later run retries it,
+and per-date sweeps never include the current session before the options close
+(16:15 ET): a pre-close sweep would finalize a partial day.
+
 Modes:
   probe      hit ONE call per manifest endpoint; report status, row count, and —
              crucially — how many distinct dates a no-date call returns, so we
@@ -43,7 +49,8 @@ import tempfile
 import threading
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -74,6 +81,10 @@ BACKOFF_BASE = 2.0
 DEFAULT_RATE = 110          # req/min; UW ceiling ≈120, stay under
 DAILY_SAFETY_MARGIN = 25    # stop this many requests short of the daily cap
 PROBE_DATE = "2024-06-14"   # a boring, definitely-open session for date probes
+FINAL_CODES = (200, 403)    # the only outcomes ever recorded in state
+TRANSIENT_STOP = 3          # consecutive transient failures before a scope is abandoned
+ET = ZoneInfo("America/New_York")
+OPTIONS_CLOSE_ET = (16, 15)  # options close 16:15 ET; before that, today is partial
 
 
 # --------------------------------------------------------- auth + limiter
@@ -167,6 +178,33 @@ def _get(path: str, params: dict | None = None) -> tuple[int, object]:
             continue
         return r.status_code, None  # 400/403 — no retry (tariff/param)
     return 429, None
+
+
+def _transient(code: int) -> bool:
+    """True when the outcome could differ on a future run and must therefore
+    never be recorded in state. Only 200 (a definitive body, even an empty one)
+    and 403 (tariff/depth floor) are final answers; -1 (network down after all
+    retries), 429/5xx (backoff exhausted) and stray 4xx (expired token) would
+    permanently poison the date as "empty" if banked — a DNS-hijacked network
+    did exactly that to 89 scopes on 2026-07-10."""
+    return code not in FINAL_CODES
+
+
+def _last_complete_session(end: str) -> str:
+    """Refuse to sweep the CURRENT session before the options close (16:15 ET):
+    pre-close, today's endpoints answer with partial (or empty) data and the
+    date would be finalized in state as if that were the whole day. Past end
+    dates pass through untouched."""
+    now = datetime.now(ET)
+    today = now.date().isoformat()
+    if end < today:
+        return end
+    if (now.hour, now.minute) >= OPTIONS_CLOSE_ET:
+        return today
+    clamped = (now.date() - timedelta(days=1)).isoformat()
+    log.info("end %s clamped to %s — today's options session isn't closed yet (16:15 ET)",
+             end, clamped)
+    return clamped
 
 
 def rows_of(body: object) -> list[dict]:
@@ -289,6 +327,9 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
                     log.info("%s %s: tariff-blocked", name, t)
                     units[uid] = "empty"
                     continue
+                if _transient(code):
+                    log.warning("%s %s: transient %d — unit left unrecorded", name, t, code)
+                    continue
                 rows = rows_of(body)
                 key = f"reference/uw/{name}/ticker={t}.parquet"
                 if not dry and _write(s3, key, rows, ticker=t, endpoint=name):
@@ -302,6 +343,9 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
             if units.get(uid) in ("done", "empty"):
                 continue
             code, body = _get(path)
+            if _transient(code):
+                log.warning("%s: transient %d — unit left unrecorded", name, code)
+                continue
             rows = rows_of(body)
             key = f"reference/uw/{name}.parquet"
             units[uid] = "done" if (not dry and _write(s3, key, rows, endpoint=name)) else "empty"
@@ -315,6 +359,10 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
                     if units.get(uid) in ("done", "empty"):
                         continue
                     code, body = _get(path.format(ticker=t, candle=candle))
+                    if _transient(code):
+                        log.warning("ohlc %s %s: transient %d — unit left unrecorded",
+                                    t, candle, code)
+                        continue
                     rows = rows_of(body)
                     key = f"reference/uw/ohlc/ticker={t}/candle={candle}.parquet"
                     ok = not dry and _write(s3, key, rows, ticker=t, candle=candle, endpoint="ohlc")
@@ -326,6 +374,7 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
 
 def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
               start: str, end: str, dry: bool) -> None:
+    end = _last_complete_session(end)
     dates = state["dates"]
     for ep in MANIFEST:
         if ep["priority"] not in priorities or not ep["mode"].endswith("_date"):
@@ -341,6 +390,7 @@ def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
             todo = [d for d in sessions_desc(floor, end) if d not in seen]
             if todo:
                 log.info("%s %s: %d sessions", name, scope, len(todo))
+            transient = 0
             for i, d in enumerate(todo):
                 url = path.format(ticker=scope) if mode == "ticker_date" else path
                 code, body = _get(url, {"date": d})
@@ -354,6 +404,16 @@ def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
                     log.info("%s %s: history floor at %s — %d newer captured, %d older blocked",
                              name, scope, d, len(st["done"]), len(remaining))
                     break
+                if _transient(code):
+                    transient += 1
+                    log.warning("%s %s %s: transient %d — date left unrecorded",
+                                name, scope, d, code)
+                    if transient >= TRANSIENT_STOP:
+                        log.warning("%s %s: %d consecutive transient failures — "
+                                    "scope abandoned this run", name, scope, transient)
+                        break
+                    continue
+                transient = 0
                 rows = rows_of(body)
                 if mode == "ticker_date":
                     key = f"uw/{name}/ticker={scope}/date={d}/rows.parquet"
@@ -395,6 +455,7 @@ def run_expiry(s3, state: dict, tickers: list[str], dry: bool) -> None:
             name, param = ep["name"], ep["param"]
             st = exp_state.setdefault(f"{name}|{t}", {"done": [], "empty": []})
             seen = set(st["done"]) | set(st["empty"])
+            transient = 0
             for e in [x for x in expiries if x not in seen]:
                 if param == "path":
                     url, params = ep["path"].format(ticker=t, expiry=e), None
@@ -405,6 +466,16 @@ def run_expiry(s3, state: dict, tickers: list[str], dry: bool) -> None:
                     log.info("%s %s: tariff-blocked", name, t)
                     st["empty"].extend(x for x in expiries if x not in st["empty"])
                     break
+                if _transient(code):
+                    transient += 1
+                    log.warning("%s %s %s: transient %d — expiry left unrecorded",
+                                name, t, e, code)
+                    if transient >= TRANSIENT_STOP:
+                        log.warning("%s %s: %d consecutive transient failures — "
+                                    "scope abandoned this run", name, t, transient)
+                        break
+                    continue
+                transient = 0
                 rows = rows_of(body)
                 key = f"uw/{name}/ticker={t}/expiry={e}/rows.parquet"
                 ok = not dry and _write(s3, key, rows, ticker=t, expiry=e, endpoint=name)
@@ -444,13 +515,19 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
         seen = set(st["done"])
         todo = [s for s in _contract_symbols(s3, t) if s not in seen]
         log.info("%s: %d option contracts × %d sub-endpoints", t, len(todo), len(CONTRACT_SUBS))
+        transient = 0
         for sym in todo:
-            blocked = False
+            blocked = failed = False
             for sub, path in CONTRACT_SUBS:
                 code, body = _get(path.format(id=sym))
                 if code == 403:
                     log.info("contracts %s: tariff-blocked", sub)
                     blocked = True
+                    break
+                if _transient(code):
+                    log.warning("contracts %s %s: transient %d — symbol left unrecorded",
+                                sub, sym, code)
+                    failed = True
                     break
                 rows = rows_of(body)
                 key = f"uw/option_{sub}/ticker={t}/symbol={sym}.parquet"
@@ -458,6 +535,14 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
                     _write(s3, key, rows, ticker=t, occ_symbol=sym, endpoint=f"option_{sub}")
             if blocked:
                 return
+            if failed:
+                transient += 1
+                if transient >= TRANSIENT_STOP:
+                    log.warning("%s contracts: %d consecutive transient failures — "
+                                "abandoned this run", t, transient)
+                    return
+                continue
+            transient = 0
             st["done"].append(sym)
             if _LIM.count % 100 == 0:
                 _flush(s3, state)
@@ -474,6 +559,7 @@ def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end:
     One call per (contract, session): walk sessions newest-first, stop a contract
     at its history-depth floor (403) or once past its listing (N empty days).
     → uw/option_intraday/ticker={T}/symbol={SYM}/date={D}/bars.parquet."""
+    end = _last_complete_session(end)
     intraday = state.setdefault("intraday", {})
     for t in tickers:
         symbols = _contract_symbols(s3, t)
@@ -481,15 +567,23 @@ def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end:
         pending = [s for s in symbols if not intraday.get(f"{t}|{s}", {}).get("complete")]
         log.info("%s: %d contracts to walk for intraday (%d sessions each, newest-first)",
                  t, len(pending), len(sessions))
+        transient = 0
         for sym in pending:
             skey = f"{t}|{sym}"
             st = intraday.setdefault(skey, {"done": [], "empty": [], "complete": False})
             seen = set(st["done"]) | set(st["empty"])
             consecutive_empty = 0
+            failed = False
             for d in [x for x in sessions if x not in seen]:
                 code, body = _get(f"/api/option-contract/{sym}/intraday", {"date": d})
                 if code == 403:
                     st["complete"] = True  # depth floor — older is unavailable
+                    break
+                if _transient(code):
+                    # break WITHOUT complete: the date stays unrecorded and the
+                    # whole contract walk resumes on the next run
+                    log.warning("intraday %s %s: transient %d — walk paused", sym, d, code)
+                    failed = True
                     break
                 rows = rows_of(body)
                 if rows:
@@ -510,6 +604,14 @@ def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end:
             else:
                 st["complete"] = True  # exhausted the session range
             _flush(s3, state)
+            if failed:
+                transient += 1
+                if transient >= TRANSIENT_STOP:
+                    log.warning("intraday %s: %d consecutive transient walks — "
+                                "abandoned this run", t, transient)
+                    return
+            else:
+                transient = 0
 
 
 def _underlying_col(df: pd.DataFrame) -> str | None:
@@ -524,6 +626,7 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
     (~1.8 GB zipped CSV each) — streamed, unzipped and filtered to our tickers.
     One request per session, newest-first, depth-floor aware, resumable.
     → uw/option_tape/ticker={T}/date={D}/trades.parquet."""
+    end = _last_complete_session(end)
     ts = state.setdefault("tape", {"done": [], "empty": [], "blocked": []})
     want = {t.upper() for t in tickers}
     seen = set(ts["done"]) | set(ts["empty"]) | set(ts["blocked"])
@@ -531,13 +634,28 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
     todo = [x for x in sessions if x not in seen]
     log.info("tape: %d sessions to pull (~1.8 GB download each)", len(todo))
     hdr = {"Authorization": f"Bearer {_TOKEN}"}
+    transient = 0
+
+    def _trip(d: str, why: str) -> bool:
+        """Count one transient failure (the date stays unrecorded — retried
+        next run); True = TRANSIENT_STOP hit, abandon the sweep this run."""
+        nonlocal transient
+        transient += 1
+        log.warning("tape %s: %s — date left unrecorded", d, why)
+        if transient >= TRANSIENT_STOP:
+            log.warning("tape: %d consecutive transient failures — abandoned this run",
+                        transient)
+            return True
+        return False
+
     for d in todo:
         _LIM.wait()
         try:
             r = requests.get(f"{BASE}/api/option-trades/full-tape/{d}",
                              headers=hdr, stream=True, timeout=900)
         except Exception as exc:  # noqa: BLE001
-            log.warning("tape %s: %s", d, exc)
+            if _trip(d, str(exc)):
+                break
             continue
         _LIM.observe(r.headers)
         if r.status_code == 403:
@@ -545,8 +663,8 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
             log.info("tape: history floor at %s", d)
             break
         if r.status_code != 200:
-            ts["empty"].append(d)
-            _flush(s3, state)
+            if _trip(d, f"transient status {r.status_code}"):
+                break
             continue
         with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
             for chunk in r.iter_content(chunk_size=1 << 20):  # stream to disk, 1 MB
@@ -569,7 +687,10 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
                                     if len(tt):
                                         parts[t].append(tt)
             except Exception as exc:  # noqa: BLE001 — bad zip/csv → retry next run
-                log.warning("tape %s parse error: %s", d, exc)
+                # counts toward the breaker: N consecutive corrupt days must not
+                # keep downloading ~1.8 GB each, unbounded
+                if _trip(d, f"parse error: {exc}"):
+                    break
                 continue
         wrote = 0
         for t in want:
@@ -580,6 +701,7 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
                     r2_put_parquet(s3, f"uw/option_tape/ticker={t}/date={d}/trades.parquet", df)
                 wrote += len(df)
         ts["done"].append(d)
+        transient = 0
         log.info("tape %s: %d trades kept for %s", d, wrote, "/".join(sorted(want)))
         _flush(s3, state)
 
