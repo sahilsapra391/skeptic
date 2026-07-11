@@ -83,6 +83,7 @@ DAILY_SAFETY_MARGIN = 25    # stop this many requests short of the daily cap
 PROBE_DATE = "2024-06-14"   # a boring, definitely-open session for date probes
 FINAL_CODES = (200, 403)    # the only outcomes ever recorded in state
 TRANSIENT_STOP = 3          # consecutive transient failures before a scope is abandoned
+NETWORK_DOWN_AFTER = 8      # consecutive transient outcomes → abort the whole run
 ET = ZoneInfo("America/New_York")
 OPTIONS_CLOSE_ET = (16, 15)  # options close 16:15 ET; before that, today is partial
 
@@ -104,6 +105,31 @@ def _load_dotenv() -> None:
 
 class BudgetExhausted(RuntimeError):
     """Daily request budget nearly spent — stop cleanly, resume tomorrow."""
+
+
+class NetworkDown(RuntimeError):
+    """Transient outcomes on every recent request across scopes — the host,
+    not the API, is failing. TRANSIENT_STOP already caps each scope at 3
+    futile tries, but with ~50 scopes a dead network still grinds for hours
+    (each try survives 4 in-function retries with up to 90 s timeouts) and
+    then exits 0 — invisible to the collection-guaranteed-daily alerting.
+    Abort instead: unrecorded work retries next run by design."""
+
+
+# run-level network health, fed by _get: `consecutive` trips NetworkDown,
+# `transient_total` makes a completed-but-partial run exit non-zero
+_net = {"consecutive": 0, "transient_total": 0}
+
+
+def _note_outcome(code: int) -> None:
+    if _transient(code):
+        _net["consecutive"] += 1
+        _net["transient_total"] += 1
+        if _net["consecutive"] >= NETWORK_DOWN_AFTER:
+            raise NetworkDown(
+                f"{_net['consecutive']} consecutive transient outcomes")
+    else:
+        _net["consecutive"] = 0
 
 
 class Limiter:
@@ -155,7 +181,9 @@ _LIM = Limiter(DEFAULT_RATE)
 
 
 def _get(path: str, params: dict | None = None) -> tuple[int, object]:
-    """Rate-gated Bearer GET with 429/5xx backoff. Returns (status, json)."""
+    """Rate-gated Bearer GET with 429/5xx backoff. Returns (status, json).
+    Every outcome feeds _note_outcome, which raises NetworkDown once
+    NETWORK_DOWN_AFTER consecutive requests come back transient."""
     headers = {"Authorization": f"Bearer {_TOKEN}", "Accept": "application/json"}
     for attempt in range(RETRIES):
         _LIM.wait()
@@ -164,11 +192,13 @@ def _get(path: str, params: dict | None = None) -> tuple[int, object]:
         except Exception as exc:  # noqa: BLE001 — retry then give up
             if attempt == RETRIES - 1:
                 log.warning("request error %s: %s", path, exc)
+                _note_outcome(-1)
                 return -1, None
             time.sleep(BACKOFF_BASE * 2**attempt)
             continue
         _LIM.observe(r.headers)
         if r.status_code == 200:
+            _note_outcome(200)
             try:
                 return 200, r.json()
             except Exception:
@@ -176,7 +206,9 @@ def _get(path: str, params: dict | None = None) -> tuple[int, object]:
         if r.status_code in (429, 500, 502, 503, 504):
             time.sleep(BACKOFF_BASE * 2**attempt)
             continue
+        _note_outcome(r.status_code)
         return r.status_code, None  # 400/403 — no retry (tariff/param)
+    _note_outcome(429)
     return 429, None
 
 
@@ -757,7 +789,20 @@ def main() -> int:
         _flush(s3, state)
         log.warning("STOPPED: %s — rerun tomorrow to resume", exc)
         return 0
+    except NetworkDown as exc:
+        _flush(s3, state)  # transient work is unrecorded → retried next run
+        log.error("ABORTED: %s — exiting non-zero so the outage is visible",
+                  exc)
+        return 1
     _flush(s3, state)
+    if _net["transient_total"]:
+        # completed the walk, but transient failures left work unrecorded —
+        # a partial run must LOOK partial to daily alerting (exit 0 + "done"
+        # is how the 2026-07-09/-10 outages stayed invisible)
+        log.warning("done DEGRADED (mode=%s, requests=%d, %d transient "
+                    "failures left work unrecorded for retry)",
+                    args.mode, _LIM.count, _net["transient_total"])
+        return 1
     log.info("done (mode=%s, requests=%d)", args.mode, _LIM.count)
     return 0
 

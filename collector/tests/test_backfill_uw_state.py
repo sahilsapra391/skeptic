@@ -248,3 +248,40 @@ def test_last_complete_session_allows_today_after_close(monkeypatch):
     _freeze(monkeypatch, hour=16, minute=15)  # exactly the options close
     assert uw._last_complete_session("2024-06-14") == "2024-06-14"
     assert uw._last_complete_session("2024-06-01") == "2024-06-01"
+
+
+# ------------------------------------------------------------ network breaker
+class TestNetworkDownBreaker:
+    """A dead network must abort visibly, not grind every scope to its
+    TRANSIENT_STOP and then exit 0 ("done") — that exit code is how the
+    2026-07-09/-10 outages stayed invisible to daily alerting."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_net(self):
+        uw._net.update(consecutive=0, transient_total=0)
+        yield
+        uw._net.update(consecutive=0, transient_total=0)
+
+    def test_raises_after_consecutive_transients(self):
+        for _ in range(uw.NETWORK_DOWN_AFTER - 1):
+            uw._note_outcome(-1)
+        with pytest.raises(uw.NetworkDown):
+            uw._note_outcome(429)  # any transient kind continues the streak
+
+    def test_final_answer_resets_the_streak(self):
+        for _ in range(uw.NETWORK_DOWN_AFTER - 1):
+            uw._note_outcome(-1)
+        uw._note_outcome(200)  # the network answered — not an outage
+        for _ in range(uw.NETWORK_DOWN_AFTER - 1):
+            uw._note_outcome(-1)  # a fresh streak, no raise yet
+        assert uw._net["consecutive"] == uw.NETWORK_DOWN_AFTER - 1
+
+    def test_transient_total_survives_streak_resets(self):
+        # drives the degraded exit: a completed run with ANY unrecorded
+        # work exits non-zero even though no streak ever tripped
+        uw._note_outcome(-1)
+        uw._note_outcome(200)
+        uw._note_outcome(429)
+        uw._note_outcome(403)  # final — resets the streak, not the total
+        assert uw._net["transient_total"] == 2
+        assert uw._net["consecutive"] == 0
