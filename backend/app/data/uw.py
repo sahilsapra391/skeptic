@@ -40,16 +40,21 @@ from app.engine.market import LookaheadError
 
 # ── family registry (probe-verified against the lake, 2026-07-07) ──────────
 # Per-session families under uw/{family}/ticker={T}/date={D}/rows.parquet.
+# screener_contracts: banked by the 2026-07-09 trial-endgame one-off (top-500
+# by-volume daily contract cross-sections, 91 sessions × 3 tickers, standard
+# rows.parquet layout, lake-verified); the trial is over, so the window is
+# immutable — there is deliberately no collector mode for it.
 TICKER_DATE_FAMILIES = frozenset({
     "atm_chains", "darkpool", "etf_tide", "expiry_breakdown",
     "flow_per_strike", "flow_per_strike_intraday", "greek_exposure_expiry",
     "greek_exposure_strike", "greek_exposure_strike_expiry", "greek_flow",
     "greek_flow_expiry", "interpolated_iv", "lit_flow", "max_pain",
     "net_prem_ticks", "nope", "oi_change", "oi_per_expiry", "oi_per_strike",
-    "option_historic", "option_volume_profile", "spot_exposures",
-    "spot_exposures_by_expiry", "spot_exposures_expiry_strike",
-    "spot_exposures_strike", "stock_price_levels",
-    "stock_volume_price_levels", "vol_term_structure", "volume_oi_expiry",
+    "option_historic", "option_volume_profile", "screener_contracts",
+    "spot_exposures", "spot_exposures_by_expiry",
+    "spot_exposures_expiry_strike", "spot_exposures_strike",
+    "stock_price_levels", "stock_volume_price_levels",
+    "vol_term_structure", "volume_oi_expiry",
 })
 # Market-wide per-session families under uw/{family}/date={D}/rows.parquet.
 MARKET_DATE_FAMILIES = frozenset({

@@ -752,6 +752,19 @@ comparator math is single-sourced in app/data/cross_validation.py):
 - **massive_vs_ivol5m** (QQQ/IWM) — the daily vendor close must sit
   inside the day's quoted NBBO range (the F5-deferred cross-check;
   activates as the ATM-band crawl lands; Massive is never a fill source).
+- **recorder_vs_uw_tape** (SPY/QQQ/IWM, tape-banked sessions only) —
+  every UW full-tape print vs the recorder's displayed quote valid at
+  that moment. The recorder's CBOE quotes lag the feed's publish stamp
+  by the OPRA delayed-data standard — MEASURED at 15 minutes, not
+  assumed (probe 2026-07-09: lag sweep on the 2026-07-08 SPY overlap,
+  agreement 0.93 at 15 min vs ≤0.74 at every other lag) — so prints are
+  sliced by `source_ts − 15 min` into fixed 60 s windows; a print on a
+  two-sided contract must sit inside [bid − tol, ask + tol] (the
+  standard band). Extras carry the violation DIRECTION (`below_bid` /
+  `beyond_ask` — the displayed-quote calibration raw material for the
+  D3d fill-model staging) and `tape_trades`, so a session where the
+  recorder missed minutes shows how much tape it never saw (the
+  2026-07-09 gap day is visibly partial, never silently complete).
 
 Rules the numbers depend on (owner decisions 2026-07-08):
 

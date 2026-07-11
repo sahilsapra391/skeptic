@@ -88,10 +88,30 @@ def r2_put_parquet(s3, key: str, df: pd.DataFrame) -> None:
     log.info("wrote r2://%s (%s rows)", key, f"{len(df):,}")
 
 
-def r2_get_parquet(s3, key: str) -> pd.DataFrame | None:
+def r2_get_parquet(s3, key: str,
+                   columns: list[str] | None = None) -> pd.DataFrame | None:
+    """`columns` projects at decode time — the bytes still download whole,
+    so for GB-scale objects prefer r2_get_parquet_spooled."""
     try:
         obj = s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)
-        return pd.read_parquet(io.BytesIO(obj["Body"].read()))
+        return pd.read_parquet(io.BytesIO(obj["Body"].read()), columns=columns)
+    except Exception:
+        return None
+
+
+def r2_get_parquet_spooled(s3, key: str,
+                           columns: list[str] | None = None
+                           ) -> pd.DataFrame | None:
+    """Stream the object to a temp file, then column-project the read —
+    the full multi-hundred-MB byte buffer never resides in memory next to
+    the decoded frame (the OOM rule for tape-scale objects)."""
+    import tempfile
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
+            s3.download_fileobj(os.environ["R2_BUCKET"], key, tmp)
+            tmp.flush()
+            return pd.read_parquet(tmp.name, columns=columns)
     except Exception:
         return None
 

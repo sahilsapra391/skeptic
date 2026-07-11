@@ -67,8 +67,9 @@ started BEFORE the app, because history only accrues forward.*
 >   3. **NOT spliced:** in-house net GEX/DEX (gamma·OI / delta·OI
 >      conventions) disagreed with UW's sign on the overlap — banked and
 >      sign-checked only, never a continuation. net_premium, NOPE and
->      market_tide have **no free substitute** and freeze at 2026-07-06;
->      their rank forms (91 obs < 126 floor) stay locked.
+>      market_tide have **no free substitute**; the 2026-07-09
+>      trial-endgame catch-up extended them through 2026-07-09, where
+>      they freeze; their rank forms (94 obs < 126 floor) stay locked.
 >   4. **Tail-staleness guard** (engine): a coverage-capped signal whose
 >      window runs > 5 sessions past the series' last observation refuses
 >      the run with the covered window named — a dead feed can never

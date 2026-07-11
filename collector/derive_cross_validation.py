@@ -17,6 +17,12 @@ implementation, fixture-tested):
                       unit of work is the SYMBOL (each aggs file holds the
                       contract's whole history); per-session COUNTS
                       accumulate as the crawl lands (F5-deferred check)
+  hv_inhouse_vs_ivol · ivs_cboe_vs_ivol · positioning_cboe_vs_uw
+                      in-house continuations vs their frozen vendor series
+                      (one table-driven runner; see _run_signal_pair)
+  recorder_vs_uw_tape SPY/QQQ/IWM: every UW full-tape print vs the
+                      recorder's displayed quote valid at that moment
+                      (measured 15-min feed lag; tape-banked sessions)
 
 Incremental by SET DIFFERENCE per pair (the F4 self-healing rule): session
 pairs derive exactly the overlapping sessions absent from the artifact;
@@ -63,7 +69,10 @@ from app.data.cross_validation import (  # noqa: E402
     compare_dolthub_uw,
     compare_massive_ivol5m,
     compare_quote_close,
+    compare_recorder_tape_window,
     compare_signal_values,
+    merge_records,
+    recorder_tape_window,
 )
 from app.data.flow_signals import FLOW_KEY  # noqa: E402
 from app.data.gex_signals import load_dealer_exposure  # noqa: E402
@@ -71,7 +80,13 @@ from app.data.inhouse_signals import CHAIN_SIGNALS_KEY, HV_KEY  # noqa: E402
 from app.data.ivol_analytics import load_hv_30d  # noqa: E402
 from app.data.ivs_signals import SIGNALS_KEY as IVS_SIGNALS_KEY  # noqa: E402
 
-from collect import r2_client, r2_get_parquet, r2_put_parquet  # noqa: E402
+from collect import (  # noqa: E402
+    r2_client,
+    r2_get_parquet,
+    r2_get_parquet_spooled,
+    r2_list_keys,
+    r2_put_parquet,
+)
 
 log = logging.getLogger("cross_validation")
 _DATE_RE = re.compile(r"date=(\d{4}-\d{2}-\d{2})")
@@ -302,6 +317,112 @@ def run_massive_vs_ivol5m(s3, ticker: str) -> int:
     return len(processed)
 
 
+_TAPE_COLUMNS = ["executed_at", "expiry", "option_type", "strike", "price"]
+_SNAP_COLUMNS = ["source_ts", "expiration", "right", "strike", "bid", "ask"]
+
+
+def _tape_day(s3, ticker: str, d: str) -> pd.DataFrame | None:
+    """One session's tape prints, ts-sorted. Spooled read — the file is
+    millions of prints across ~40 columns, so the bytes stream to disk
+    and only the five projected columns are decoded; the raw executed_at
+    strings are dropped once parsed (OOM rule: nothing dead resident)."""
+    df = r2_get_parquet_spooled(
+        s3, f"uw/option_tape/ticker={ticker}/date={d}/trades.parquet",
+        columns=_TAPE_COLUMNS)
+    if df is None or df.empty:
+        return None
+    df["_ts"] = pd.to_datetime(df["executed_at"], utc=True,
+                               format="ISO8601", errors="coerce")
+    return (df.drop(columns=["executed_at"]).dropna(subset=["_ts"])
+            .sort_values("_ts").reset_index(drop=True))
+
+
+def _snap_keys(s3, ticker: str, d: str) -> list[str]:
+    prefix = f"options_intraday/source=cboe_delayed/ticker={ticker}/date={d}/"
+    return sorted(k for k in r2_list_keys(s3, prefix)
+                  if k.endswith(".parquet"))
+
+
+def run_recorder_vs_uw_tape(s3, ticker: str) -> int:
+    """Recorder displayed quotes vs the UW full-tape prints. Per snap:
+    prints inside the snap's shifted validity window (recorder_tape_window
+    — the measured 15-min feed lag, 60 s span, clamped disjoint so a
+    stalled feed never judges the same print twice) are checked against
+    that snap's two-sided quotes; per-session counts fold through
+    merge_records, the single-sourced rate math.
+
+    Session semantics:
+      * the CURRENT ET session is never derived — both inputs can exist
+        in partial form intraday, and a partial row would freeze forever
+        under set-difference incrementality;
+      * any snap READ failure aborts the session row (transient — retried
+        next run, the same depth the tape-read failure already gets);
+      * a session whose snaps yield no usable window writes an explicit
+        zero-coverage row (snaps=0): honest absence that also stops the
+        nightly from re-downloading the whole tape day forever.
+
+    Extras: below_bid / beyond_ask (violation direction — the
+    displayed-quote calibration signal), tape_trades (session prints),
+    windowed_trades (prints the snap windows could actually see, so a
+    recorder gap day is visibly partial), snaps (usable windows)."""
+    key = PAIR_KEY.format(pair="recorder_vs_uw_tape", ticker=ticker)
+    existing, have = _artifact(s3, key)
+    rec = set(_sessions(s3, f"options_intraday/source=cboe_delayed/ticker={ticker}/"))
+    tape = set(_sessions(s3, f"uw/option_tape/ticker={ticker}/"))
+    today_et = pd.Timestamp.now(tz="America/New_York").date().isoformat()
+    todo = sorted(d for d in (rec & tape) - have if d < today_et)
+    if not todo:
+        log.info("recorder_vs_uw_tape %s: up to date (%d sessions)",
+                 ticker, len(have))
+        return 0
+    rows: list[dict] = []
+    for d in todo:
+        trades = _tape_day(s3, ticker, d)
+        if trades is None or trades.empty:
+            continue  # unreadable tape — no row, retries next run
+        parts: list[dict] = []
+        windowed = 0
+        failed_reads = 0
+        not_before = None
+        for skey in _snap_keys(s3, ticker, d):
+            snap = r2_get_parquet(s3, skey, columns=_SNAP_COLUMNS)
+            if snap is None:
+                failed_reads += 1  # transient R2 failure — the session
+                continue           # must not freeze half-covered
+            if snap.empty:
+                continue
+            src = pd.to_datetime(str(snap["source_ts"].iloc[0]),
+                                 utc=True, errors="coerce")
+            if pd.isna(src):
+                continue  # unplaceable on the feed clock — skipped,
+                # never joined at the wrong moment (permanent shape,
+                # not a read failure)
+            lo, hi, not_before = recorder_tape_window(
+                trades["_ts"], src, not_before)
+            if lo >= hi:
+                continue
+            rec_row = compare_recorder_tape_window(snap, trades.iloc[lo:hi])
+            if rec_row is None:
+                continue
+            windowed += hi - lo
+            parts.append(rec_row)
+        if failed_reads:
+            log.warning("recorder_vs_uw_tape %s %s: %d snap reads failed — "
+                        "no row, retrying next run", ticker, d, failed_reads)
+            continue
+        row = merge_records(parts, "below_bid", "beyond_ask",
+                            tape_trades=int(len(trades)),
+                            windowed_trades=int(windowed),
+                            snaps=len(parts))
+        row["date"] = d
+        rows.append(row)
+    if rows:
+        _write(s3, key, existing, rows)
+    log.info("recorder_vs_uw_tape %s: derived %d sessions → r2://%s",
+             ticker, len(rows), key)
+    return len(rows)
+
+
 def _col_series(df: pd.DataFrame | None, col: str) -> dict[str, float]:
     """iso-date → value from a derived artifact frame (NaN rows dropped)."""
     if df is None or df.empty or "date" not in df.columns or col not in df.columns:
@@ -442,7 +563,8 @@ def main() -> int:
     want = (set(args.pairs.split(",")) if args.pairs != "all"
             else {"dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
                   "massive_vs_ivol5m", "hv_inhouse_vs_ivol",
-                  "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw"})
+                  "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw",
+                  "recorder_vs_uw_tape"})
     s3 = r2_client()
     n = 0
     if "dolthub_vs_alpaca" in want:
@@ -464,6 +586,9 @@ def main() -> int:
     if "positioning_cboe_vs_uw" in want:
         for t in ("SPY", "QQQ", "IWM"):
             n += run_positioning_cboe_vs_uw(s3, t)
+    if "recorder_vs_uw_tape" in want:
+        for t in ("SPY", "QQQ", "IWM"):
+            n += run_recorder_vs_uw_tape(s3, t)
     log.info("done: %d units derived", n)
     return 0
 

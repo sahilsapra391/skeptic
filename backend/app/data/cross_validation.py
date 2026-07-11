@@ -28,6 +28,7 @@ reporting convention, never scoring.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any, cast
 
 import pandas as pd
@@ -48,7 +49,24 @@ PAIRS = ("dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
          # forward-record continuations vs their frozen vendor series (the
          # 2026-07-08 no-subscription decision): the overlap MEASURES each
          # convention seam instead of asserting it
-         "hv_inhouse_vs_ivol", "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw")
+         "hv_inhouse_vs_ivol", "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw",
+         # recorder displayed quotes vs the UW full option tape (the
+         # 2026-07-09 trial-endgame bank): real prints checked against the
+         # delayed NBBO record the engine quotes intraday fills from
+         "recorder_vs_uw_tape")
+
+# The CBOE delayed feed's quotes lag its own publish stamp by the OPRA
+# delayed-data standard. MEASURED, not assumed (probe 2026-07-09: SPY
+# 2026-07-08 tape NBBO vs 4 recorder snaps, lag sweep 0/5/10/14/15/16/20
+# min → agreement 0.93 at 15 min, 0.74 at 16, ≤0.43 elsewhere). A snap's
+# quotes are therefore valid around source_ts − 15 min, and the tape join
+# slices trades by that shifted moment — never capture time.
+RECORDER_DELAY_MIN = 15
+# One snap's quote validity window: the recorder loop is per-minute, so a
+# snap covers the 60 s starting at its shifted moment. Gaps in the record
+# (missed minutes) leave prints uncovered — honest absence, they are never
+# joined against a stale quote.
+RECORDER_SNAP_WINDOW_SEC = 60
 
 # In-house continuation bands (reporting conventions, reviewed constants):
 # vol-point quantities compare a FITTED surface against a raw-chain
@@ -73,6 +91,54 @@ def _record(joined: int, checked: int, within: int,
     }
     out.update(extra)
     return out
+
+
+def band_tol(mid: pd.Series) -> pd.Series:
+    """THE reviewed price band, single-sourced: max(ABS_TOL, REL_TOL × mid)
+    per row. Every price comparator uses this — a tolerance tweak lands
+    everywhere at once or the cross-pair rates stop being comparable."""
+    return (mid * REL_TOL).clip(lower=ABS_TOL)
+
+
+def merge_records(parts: list[dict[str, Any]], *sum_extras: str,
+                  **extra: Any) -> dict[str, Any]:
+    """Fold per-window comparator records into one session record. Sums
+    joined/checked/within_band plus any named integer extras, then rebuilds
+    the record through _record so the agreement_rate convention (round-4,
+    checked==0 → None) has exactly one implementation."""
+    joined = sum(int(p.get("joined") or 0) for p in parts)
+    checked = sum(int(p.get("checked") or 0) for p in parts)
+    within = sum(int(p.get("within_band") or 0) for p in parts)
+    sums = {k: sum(int(p.get(k) or 0) for p in parts) for k in sum_extras}
+    return _record(joined, checked, within, **sums, **extra)
+
+
+def recorder_tape_window(
+    ts: pd.Series, source_ts: Any, not_before: Any = None
+) -> tuple[int, int, Any]:
+    """Slice bounds [lo, hi) of the tape prints a recorder snap may judge,
+    plus the window's end moment for the caller to thread as the next
+    snap's `not_before`. The snap's quotes are valid RECORDER_DELAY_MIN
+    behind its feed stamp (measured constant above), for
+    RECORDER_SNAP_WINDOW_SEC. Clamping `start` to `not_before` keeps
+    windows disjoint when the feed stalls and consecutive snaps repeat a
+    source_ts — the same print is never judged twice (a stalled feed
+    would otherwise over-weight one minute's prints up to ~14×).
+    `ts` must be sorted and on the same clock as `source_ts` (UTC)."""
+    src = pd.Timestamp(source_ts)
+    if src.tzinfo is None:
+        src = src.tz_localize("UTC")
+    start = src - timedelta(minutes=RECORDER_DELAY_MIN)
+    end = start + timedelta(seconds=RECORDER_SNAP_WINDOW_SEC)
+    if not_before is not None:
+        nb = pd.Timestamp(not_before)
+        if nb > start:
+            start = nb
+    if start >= end:
+        return 0, 0, end
+    lo = int(ts.searchsorted(start, side="left"))
+    hi = int(ts.searchsorted(end, side="left"))
+    return lo, hi, end
 
 
 def compare_dolthub_alpaca(
@@ -136,9 +202,7 @@ def compare_dolthub_alpaca(
                        .div(hd["delta"]).median())
         offset = max(-3.0, min(3.0, offset))
     traded["cmp_price"] = traded["cmp_price"] + traded["delta"] * offset
-    mid = (traded["bid"] + traded["ask"]) / 2
-    tol = pd.concat([pd.Series(ABS_TOL, index=mid.index), mid * REL_TOL],
-                    axis=1).max(axis=1)
+    tol = band_tol((traded["bid"] + traded["ask"]) / 2)
     inside = ((traded["cmp_price"] >= traded["bid"] - tol)
               & (traded["cmp_price"] <= traded["ask"] + tol))
     return _record(joined, len(traded), int(inside.sum()),
@@ -210,9 +274,7 @@ def compare_quote_close(
         return _record(len(j), 0, 0)
     mid_ref = (two["bid_ref"] + two["ask_ref"]) / 2
     mid_liv = (two["bid_liv"] + two["ask_liv"]) / 2
-    tol = pd.concat([pd.Series(ABS_TOL, index=two.index), mid_ref * REL_TOL],
-                    axis=1).max(axis=1)
-    ok = (mid_ref - mid_liv).abs() <= tol
+    ok = (mid_ref - mid_liv).abs() <= band_tol(mid_ref)
     return _record(len(j), len(two), int(ok.sum()))
 
 
@@ -259,12 +321,65 @@ def compare_massive_ivol5m(
     checked = j[j["c"].notna() & j["lo"].notna() & j["hi"].notna()]
     if checked.empty:
         return _record(len(j), 0, 0)
-    tol = pd.concat([pd.Series(ABS_TOL, index=checked.index),
-                     (checked["lo"] + checked["hi"]) / 2 * REL_TOL],
-                    axis=1).max(axis=1)
+    tol = band_tol((checked["lo"] + checked["hi"]) / 2)
     ok = ((checked["c"] >= checked["lo"] - tol)
           & (checked["c"] <= checked["hi"] + tol))
     return _record(len(j), len(checked), int(ok.sum()))
+
+
+def compare_recorder_tape_window(
+    snap: pd.DataFrame, trades: pd.DataFrame
+) -> dict[str, Any] | None:
+    """One recorder snapshot vs the UW tape prints inside its validity
+    window (the runner slices trades by source_ts − RECORDER_DELAY_MIN):
+    a print on a contract the snap quotes two-sided must sit inside
+    [bid − tol, ask + tol], tol = max(ABS_TOL, REL_TOL × mid) — the
+    reviewed band. The quote is delayed top-of-book and a print inside
+    the next 60 s may legitimately chase a fast move, so the band is a
+    reporting convention, never scoring. Extras `below_bid`/`beyond_ask`
+    accumulate the DIRECTION of every violation — the displayed-quote
+    calibration signal (F5 disclosure → D3d staging), reported only.
+    Prints on contracts the snap doesn't list join zero (honest absence);
+    an unrecognized shape is None, like every pair."""
+    if snap is None or snap.empty or trades is None or trades.empty:
+        return None
+    if not {"expiration", "right", "strike", "bid", "ask"}.issubset(snap.columns):
+        return None
+    if not {"expiry", "option_type", "strike", "price"}.issubset(trades.columns):
+        return None
+    keys = ["_exp", "_right", "_strike"]
+    q = snap.copy()
+    q["_exp"] = q["expiration"].astype(str).str[:10]
+    q["_right"] = q["right"].astype(str).str[:1].str.lower()
+    q["_strike"] = pd.to_numeric(q["strike"], errors="coerce")
+    q["bid"] = pd.to_numeric(q["bid"], errors="coerce")
+    q["ask"] = pd.to_numeric(q["ask"], errors="coerce")
+    # a snap lists each contract once; a malformed duplicate would fan the
+    # merge out and double-count prints — keep the first, defensively
+    q = (q.dropna(subset=["_strike"])
+         .drop_duplicates(subset=keys, keep="first"))[keys + ["bid", "ask"]]
+    t = trades.copy()
+    t["_exp"] = t["expiry"].astype(str).str[:10]
+    t["_right"] = t["option_type"].astype(str).str[:1].str.lower()
+    t["_strike"] = pd.to_numeric(t["strike"], errors="coerce")
+    t["_price"] = pd.to_numeric(t["price"], errors="coerce")
+    t = t.dropna(subset=["_strike", "_price"])
+    if t.empty:
+        return None
+    j = t.merge(q, on=keys, how="inner")
+    # a crossed quote (bid > ask — the delayed feed does serve them) is
+    # not an honest two-sided market: excluded from checked, or one print
+    # could land in below_bid AND beyond_ask and the direction extras
+    # would stop reconciling with checked
+    two = j[(j["bid"] > 0) & j["ask"].notna() & (j["ask"] >= j["bid"])]
+    if two.empty:
+        return _record(len(j), 0, 0, below_bid=0, beyond_ask=0)
+    tol = band_tol((two["bid"] + two["ask"]) / 2)
+    below = two["_price"] < two["bid"] - tol
+    beyond = two["_price"] > two["ask"] + tol
+    within = ~(below | beyond)
+    return _record(len(j), len(two), int(within.sum()),
+                   below_bid=int(below.sum()), beyond_ask=int(beyond.sum()))
 
 
 def compare_signal_values(
