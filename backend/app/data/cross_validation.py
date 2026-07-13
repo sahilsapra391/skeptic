@@ -53,7 +53,11 @@ PAIRS = ("dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
          # recorder displayed quotes vs the UW full option tape (the
          # 2026-07-09 trial-endgame bank): real prints checked against the
          # delayed NBBO record the engine quotes intraday fills from
-         "recorder_vs_uw_tape")
+         "recorder_vs_uw_tape",
+         # the in-house forward flow family (Alpaca×recorder classification)
+         # vs the frozen UW flow artifact on their overlap — the numbers a
+         # future unfreeze/substitution decision must cite
+         "flow_inhouse_vs_uw")
 
 # The CBOE delayed feed's quotes lag its own publish stamp by the OPRA
 # delayed-data standard. MEASURED, not assumed (probe 2026-07-09: SPY
