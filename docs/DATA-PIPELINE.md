@@ -46,6 +46,17 @@ started BEFORE the app, because history only accrues forward.*
 > ~2026-07-10; series frozen at 2026-07-02) and Unusual Whales (trial
 > banked 2025-07-08 → 2026-07-06) are not renewed. Consequences, all
 > implemented on this date:
+>
+> **TERMINAL (owner, 2026-07-13): both trials are OVER.** iVolatility keys
+> are dead — every iVol capture (analytics series, 5-min intraday, EOD
+> per-contract staging, bars_1m) is CONCLUDED; no new iVolatility data will
+> ever be pulled, the launchd capture agents (com.skeptic.ivol-eod,
+> com.skeptic.recover-0710) are unloaded, and every iVol-sourced artifact
+> in the lake is a frozen historical record. The Unusual Whales key was
+> drained through 2026-07-13 (deep tape walk, per-contract lifetime
+> histories, expiry slices, final series snapshots) and dies with the
+> trial; the forward record from here is CBOE recorder + Alpaca + Yahoo +
+> in-house derives only.
 >   1. **cboe_eod close chains** (`collector/derive_cboe_eod.py`): the
 >      recorder's LAST snapshot per session becomes a canonical EOD chain
 >      at `options/source=cboe_eod/` — full chain, vendor greeks/IV/OI,
