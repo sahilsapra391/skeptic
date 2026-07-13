@@ -55,9 +55,10 @@ from collect import (  # noqa: E402
 log = logging.getLogger("fill_calibration")
 _DATE_RE = re.compile(r"date=(\d{4}-\d{2}-\d{2})")
 
-_TAPE_COLUMNS = ["price", "size", "nbbo_bid", "nbbo_ask", "ask_vol",
-                 "bid_vol", "mid_vol", "no_side_vol", "multi_vol",
-                 "stock_multi_vol"]
+# the five required columns only (per-print side lives in `tags`; the
+# *_vol columns are cumulative contract-day counters — never read). A
+# leaner projection also can't hard-fail on a future source's schema.
+_TAPE_COLUMNS = ["price", "size", "nbbo_bid", "nbbo_ask", "tags"]
 
 
 def _tape_sessions(s3, ticker: str) -> list[str]:

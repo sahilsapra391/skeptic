@@ -278,5 +278,9 @@ def get_fill_calibration() -> dict[str, Any]:
             tickers[t] = (fill_calibration.pooled_summary(df)
                           if df is not None else None)
         payload = {"note": _FILL_CAL_NOTE, "tickers": tickers}
-        _FILL_CAL_CACHE.update(at=time.time(), payload=payload)
+        # a transient R2 failure reads as None — cache that only briefly,
+        # or a blip would serve "not measured" for the full hour
+        complete = all(v is not None for v in tickers.values())
+        at = time.time() if complete else time.time() - _FILL_CAL_TTL + 60.0
+        _FILL_CAL_CACHE.update(at=at, payload=payload)
         return payload

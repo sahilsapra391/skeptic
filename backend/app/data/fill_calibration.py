@@ -14,14 +14,26 @@ slip ≤ 0 is mid-or-better (price improvement); slip = 1 is exactly the
 touch; slip > 1 printed beyond the displayed quote (the F5 displayed-depth
 story, now with a number).
 
+Schema truth (review 2026-07-13, verified against the live lake): the
+tape's ask_vol/bid_vol/mid_vol columns are CUMULATIVE contract-day
+counters, useless per print — the per-print aggressor side is the
+{ask_side}/{bid_side}/{mid_side}/{no_side} token in `tags`, which
+partitions every session's prints exactly. There is NO per-print
+multi-leg marker anywhere in the capture (report_flags carries only
+sweep/cross/floor codes), so **package legs are INCLUDED and disclosed**:
+a multi-leg print can legitimately execute outside its leg's NBBO, and
+those prints land in the beyond-touch tail rather than being silently
+(and wrongly) excluded.
+
 Artifact (reference/derived/fill_calibration/ticker={T}.parquet): one row
 per (date, side, size_bucket) holding n, the slip HISTOGRAM in fixed bins,
 and the session median. Histograms SUM across sessions, so pooled
 quantiles are estimated from merged bins — per-session medians never
-averaged (that would be wrong math). Excluded prints are counted, never
-silently dropped: multi-leg packages legitimately print outside the leg
-NBBO, mid/no-side prints carry no aggressor, locked or crossed quotes
-have no half-spread to measure against.
+averaged (that would be wrong math). Every excluded print is counted:
+mid/no-side prints carry no aggressor, locked or crossed quotes have no
+half-spread to measure against, unparseable rows get their own counter. A
+session where nothing is measurable still writes a context-only row, so
+its exclusion counts bank and the frozen tape is never re-read for it.
 
 This module is measurement + disclosure only. The engine's configured
 slip is untouched; any change to live fill pricing is a separate
@@ -37,8 +49,9 @@ import pandas as pd
 FILL_CAL_KEY = "reference/derived/fill_calibration/ticker={ticker}.parquet"
 
 # fixed slip-histogram bin edges; bins are (edge, next-edge], first bin is
-# (−inf, 0] (mid-or-better), last is (1.5, +inf). Changing these invalidates
-# every banked row — treat as frozen once derived.
+# (−inf, 0] (mid-or-better), last is (1.5, +inf). Columns are named by their
+# UPPER edge. Changing these invalidates every banked row — frozen once
+# derived.
 SLIP_EDGES = (0.0, 0.25, 0.5, 0.75, 1.0, 1.5)
 BIN_COLUMNS = ("b_le0", "b_025", "b_050", "b_075", "b_100", "b_150", "b_gt150")
 
@@ -46,8 +59,11 @@ BIN_COLUMNS = ("b_le0", "b_025", "b_050", "b_075", "b_100", "b_150", "b_gt150")
 SIZE_BUCKETS = ((1, 1, "1"), (2, 10, "2-10"), (11, 50, "11-50"),
                 (51, 250, "51-250"), (251, None, "251+"))
 
-_NUMERIC = ("price", "size", "nbbo_bid", "nbbo_ask", "ask_vol", "bid_vol",
-            "mid_vol", "no_side_vol", "multi_vol", "stock_multi_vol")
+_PRICE_COLUMNS = ("price", "size", "nbbo_bid", "nbbo_ask")
+REQUIRED_COLUMNS = (*_PRICE_COLUMNS, "tags")
+
+_ARTIFACT_SHAPE = frozenset({"date", "side", "size_bucket", "n",
+                             *BIN_COLUMNS})
 
 
 def _bucket_label(size: float) -> str:
@@ -65,32 +81,33 @@ def _bin_counts(slips: pd.Series) -> list[int]:
 
 def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
     """Reduce one session's tape prints to (side, size_bucket) histogram
-    rows. Returns None on an unrecognized shape (honest absence — the
-    derive leaves no row and retries when the input heals)."""
-    need = {"price", "size", "nbbo_bid", "nbbo_ask", "ask_vol", "bid_vol"}
-    if prints is None or prints.empty or not need.issubset(prints.columns):
+    rows plus, always, the session's exclusion accounting. Returns None
+    only on an unrecognized shape (missing required columns / empty) —
+    a readable session ALWAYS banks at least a context-only row."""
+    if prints is None or prints.empty \
+            or not set(REQUIRED_COLUMNS).issubset(prints.columns):
         return None
     t = prints.copy()
-    for col in _NUMERIC:
-        t[col] = (pd.to_numeric(t[col], errors="coerce")
-                  if col in t.columns else 0.0)
-    t = t.dropna(subset=["price", "size", "nbbo_bid", "nbbo_ask"])
-    if t.empty:
-        return None
+    for col in _PRICE_COLUMNS:
+        t[col] = pd.to_numeric(t[col], errors="coerce")
+    n_raw = int(len(t))
+    parse_ok = t[list(_PRICE_COLUMNS)].notna().all(axis=1)
+    n_unparseable = int((~parse_ok).sum())
+    t = t[parse_ok]
 
-    n_all = int(len(t))
-    multi = (t["multi_vol"] > 0) | (t["stock_multi_vol"] > 0)
-    n_multi = int(multi.sum())
-    t = t[~multi]
     # a locked (bid == ask) or crossed (bid > ask) quote has no half-spread
     # to measure a concession against; zero/negative bids are not a market
-    bad_quote = ~((t["nbbo_bid"] > 0) & (t["nbbo_ask"] > t["nbbo_bid"]))
-    n_bad_quote = int(bad_quote.sum())
-    t = t[~bad_quote]
+    good_quote = (t["nbbo_bid"] > 0) & (t["nbbo_ask"] > t["nbbo_bid"])
+    n_bad_quote = int((~good_quote).sum())
+    t = t[good_quote]
 
-    is_ask = t["ask_vol"] > 0
-    is_bid = ~is_ask & (t["bid_vol"] > 0)
-    n_mid = int((~is_ask & ~is_bid & (t["mid_vol"] > 0)).sum())
+    # per-print aggressor side: the tags token (the *_vol columns are
+    # cumulative contract-day counters — see module docstring)
+    tags = t["tags"].astype(str)
+    is_ask = tags.str.contains("ask_side", regex=False)
+    is_bid = ~is_ask & tags.str.contains("bid_side", regex=False)
+    n_mid = int((~is_ask & ~is_bid
+                 & tags.str.contains("mid_side", regex=False)).sum())
     n_no_side = int(len(t) - is_ask.sum() - is_bid.sum() - n_mid)
 
     m = (t["nbbo_bid"] + t["nbbo_ask"]) / 2
@@ -99,15 +116,19 @@ def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
     slip[is_ask] = (t["price"] - m)[is_ask] / half[is_ask]
     slip[is_bid] = (m - t["price"])[is_bid] / half[is_bid]
 
-    context = {"tape_prints": n_all, "n_multi": n_multi,
+    context = {"tape_prints": n_raw, "n_unparseable": n_unparseable,
                "n_bad_quote": n_bad_quote, "n_mid_side": n_mid,
                "n_no_side": n_no_side}
     rows: list[dict[str, Any]] = []
-    sided = t[is_ask | is_bid].assign(
-        _slip=slip[is_ask | is_bid],
+    # build the working columns on the FULL frame, then filter once —
+    # .assign of full-index Series onto an empty filtered frame resurrects
+    # rows via index alignment (found by the nothing-measurable fixture)
+    work = t.assign(
+        _slip=slip,
         _side=pd.Series("ask", index=t.index).where(is_ask, "bid"),
         _bucket=t["size"].map(_bucket_label),
     )
+    sided = work[is_ask | is_bid]
     for (side, bucket), grp in sided.groupby(["_side", "_bucket"]):
         bins = _bin_counts(grp["_slip"])
         rows.append({
@@ -116,7 +137,13 @@ def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
             "slip_median": round(float(grp["_slip"].median()), 4),
             **context,
         })
-    return rows or None
+    if not rows:
+        # nothing measurable — bank the accounting anyway so the frozen
+        # tape session is never re-read and its exclusions are disclosed
+        rows.append({"side": "none", "size_bucket": "none", "n": 0,
+                     **dict.fromkeys(BIN_COLUMNS, 0),
+                     "slip_median": None, **context})
+    return rows
 
 
 def _quantile_from_bins(bins: list[int], q: float) -> float | None:
@@ -144,10 +171,11 @@ def _quantile_from_bins(bins: list[int], q: float) -> float | None:
     return 1.5
 
 
-def pooled_summary(df: pd.DataFrame) -> dict[str, Any] | None:
+def pooled_summary(df: pd.DataFrame | None) -> dict[str, Any] | None:
     """Merge every banked session into per-(side, bucket) pooled stats.
-    Bin counts sum exactly; quantiles are bin estimates; shares are exact."""
-    if df is None or df.empty or "side" not in df.columns:
+    Bin counts sum exactly; quantiles are bin estimates; shares are exact.
+    None on an unrecognized artifact shape (honest absence, never a 500)."""
+    if df is None or df.empty or not _ARTIFACT_SHAPE.issubset(df.columns):
         return None
     dates = sorted(df["date"].astype(str).unique())
     out: dict[str, Any] = {
@@ -158,7 +186,7 @@ def pooled_summary(df: pd.DataFrame) -> dict[str, Any] | None:
         bins = [int(grp[c].sum()) for c in BIN_COLUMNS]
         n = int(grp["n"].sum())
         if n == 0:
-            continue
+            continue  # context-only rows carry no measurements
         out["buckets"].append({
             "side": side, "size_bucket": bucket, "prints": n,
             "slip_p50_est": _quantile_from_bins(bins, 0.5),
@@ -167,8 +195,8 @@ def pooled_summary(df: pd.DataFrame) -> dict[str, Any] | None:
             "share_mid_or_better": round(bins[0] / n, 4),
             "share_beyond_touch": round((bins[5] + bins[6]) / n, 4),
         })
-    ctx_cols = ("tape_prints", "n_multi", "n_bad_quote", "n_mid_side",
-                "n_no_side")
+    ctx_cols = ("tape_prints", "n_unparseable", "n_bad_quote",
+                "n_mid_side", "n_no_side")
     if set(ctx_cols).issubset(df.columns):
         per_date = df.drop_duplicates(subset=["date"])
         out["excluded"] = {c: int(per_date[c].sum()) for c in ctx_cols[1:]}
