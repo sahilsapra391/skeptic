@@ -15,9 +15,16 @@ calendar-aware including early closes):
     (M1.5 step-0 finding C) AND the raw material for the nightly cboe_eod
     close chain (collector/derive_cboe_eod.py).
   - Every --yahoo-every minutes (default 15): the yfinance chain snapshot
-    (reusing collect.yahoo_snapshot) as cross-source redundancy. Yahoo at
-    1-min cadence would need ~120 req/min and risks throttling the same
-    source the nightly EOD record depends on, so it stays at a gentle cadence.
+    (reusing collect.yahoo_snapshot) as cross-source redundancy, dispatched
+    to a single worker thread (YahooLeg) so a slow Yahoo session can never
+    starve the per-minute CBOE cadence — a cold first cycle at the open
+    (crumb fetch + per-ticker retries) ran 09:33→09:38 ET on 2026-07-13 and
+    cost the 13:34–13:38Z CBOE snapshots. Yahoo at 1-min cadence would need
+    ~120 req/min and risks throttling the same source the nightly EOD record
+    depends on, so it stays at a gentle cadence; a tick that fires while the
+    previous leg is still in flight is skipped, never queued. Each leg gets a
+    YAHOO_LEG_BUDGET_SEC wall budget (a slow crawl truncates, disclosed in the
+    log), and a leg hung past that (see YahooLeg) is abandoned and replaced.
 
 Layout: options_intraday/source={cboe_delayed,yahoo}/ticker=T/date=D/
 snap_YYYYMMDDTHHMMZ.parquet — same snap_* shape as the EOD Yahoo record.
@@ -35,8 +42,9 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -52,6 +60,7 @@ PREFIX = "options_intraday"
 OPTIONS_CLOSE_LAG_MIN = 15  # ETF options trade 15 min past the equity close
 USER_AGENT = "skeptic-collector/0.1 (personal research)"
 PRE_OPEN_POLL_SEC = 30  # re-check the wall clock this often while waiting for the open
+YAHOO_LEG_BUDGET_SEC = 12 * 60  # wall budget per yahoo leg, under the 15-min default cadence
 
 
 def load_dotenv(path: Path) -> None:
@@ -86,7 +95,7 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
     payload = resp.json()
     data = payload.get("data") or {}
     options = data.get("options") or []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     spot = data.get("current_price") or data.get("close")
     # the underlying's CUMULATIVE session share volume (the CBOE quote carries
     # it alongside spot); banked per snapshot so the chart's intraday tail can
@@ -140,14 +149,18 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
                         + ["source_ts", "und_volume", "bid_size", "ask_size", "iv30"])
 
 
+def _stamp(ts: datetime) -> str:
+    """The snap_* timestamp token. One definition, so the stamps quoted in
+    YahooLeg's logs always match the R2 keys they refer to."""
+    return ts.strftime("%Y%m%dT%H%MZ")
+
+
 def snap_key(source: str, ticker: str, ts: datetime) -> str:
     d = ts.astimezone(_ET).date()
-    stamp = ts.strftime("%Y%m%dT%H%MZ")
-    return f"{PREFIX}/source={source}/ticker={ticker}/date={d}/snap_{stamp}.parquet"
+    return f"{PREFIX}/source={source}/ticker={ticker}/date={d}/snap_{_stamp(ts)}.parquet"
 
 
-def snapshot_cycle(s3, do_yahoo: bool, dry_run: bool) -> None:
-    ts = datetime.now(timezone.utc)
+def cboe_cycle(s3, ts: datetime, dry_run: bool) -> None:
     for ticker in TICKERS:
         try:
             df = fetch_cboe_chain(ticker)
@@ -158,18 +171,92 @@ def snapshot_cycle(s3, do_yahoo: bool, dry_run: bool) -> None:
             log.info("cboe %s: %d rows%s", ticker, len(df), " (dry-run)" if dry_run else "")
         except Exception as exc:
             log.warning("cboe %s failed: %s", ticker, exc)
+
+
+def yahoo_cycle(s3, ts: datetime, dry_run: bool) -> None:
+    # leg-wide wall budget: with the default 15-min cadence a leg always ends
+    # (truncated if need be, disclosed by yahoo_snapshot's log) before the next
+    # yahoo tick, so overlap skips mean a genuine hang, not a slow crawl
+    deadline = time.monotonic() + YAHOO_LEG_BUDGET_SEC
+    for ticker in TICKERS:
+        try:
+            df = yahoo_snapshot(ticker, deadline=deadline)
+            if df is None or df.empty:
+                log.warning("yahoo %s: empty snapshot", ticker)
+            elif not dry_run:
+                r2_put_parquet(s3, snap_key("yahoo", ticker, ts), df)
+            log.info("yahoo %s: %d rows%s", ticker,
+                     0 if df is None else len(df), " (dry-run)" if dry_run else "")
+        except Exception as exc:
+            log.warning("yahoo %s failed: %s", ticker, exc)
+
+
+def snapshot_cycle(s3, do_yahoo: bool, dry_run: bool, yahoo_run=yahoo_cycle) -> None:
+    """One snapshot cycle. --once runs the yahoo leg inline (the default
+    yahoo_run); the session loop injects YahooLeg.maybe_start (same signature)
+    so the leg runs off-thread and can never block the next CBOE minute."""
+    ts = datetime.now(UTC)
+    cboe_cycle(s3, ts, dry_run)
     if do_yahoo:
-        for ticker in TICKERS:
-            try:
-                df = yahoo_snapshot(ticker)
-                if df is None or df.empty:
-                    log.warning("yahoo %s: empty snapshot", ticker)
-                elif not dry_run:
-                    r2_put_parquet(s3, snap_key("yahoo", ticker, ts), df)
-                log.info("yahoo %s: %d rows%s", ticker,
-                         0 if df is None else len(df), " (dry-run)" if dry_run else "")
-            except Exception as exc:
-                log.warning("yahoo %s failed: %s", ticker, exc)
+        yahoo_run(s3, ts, dry_run)
+
+
+def yahoo_tick_due(minute_idx: int, yahoo_every: int) -> bool:
+    """--yahoo-every 0 means never — including minute 0 of a session window,
+    where a bare modulo would still fire (0 % anything == 0)."""
+    return yahoo_every > 0 and minute_idx % yahoo_every == 0
+
+
+class YahooLeg:
+    """Off-thread dispatcher for the Yahoo snapshot leg.
+
+    A cold yfinance session (crumb fetch, per-ticker retry sleeps) can run
+    for minutes; inline it blocks the per-minute CBOE cadence. The leg
+    therefore runs in a single daemon worker thread, writing through the
+    same r2_put_parquet path (boto3 clients are thread-safe; the client is
+    created once on the main thread). At most one leg is in flight: a tick
+    that fires while the previous leg is still running is skipped, never
+    queued — Yahoo is cross-source redundancy and the next tick recovers
+    it. YAHOO_LEG_BUDGET_SEC bounds a slow-but-progressing leg, so a leg
+    still alive after WEDGED_AFTER_SEC of wall time is hung on something
+    yfinance's per-request timeout does not cover (DNS, drip-fed reads).
+    Python threads cannot be killed, so that leg is abandoned (a bounded
+    leak of one daemon thread per wedge) and a fresh leg takes over —
+    yahoo capture must never stay dead on an unattended host.
+    """
+
+    WEDGED_AFTER_SEC = 30 * 60
+
+    def __init__(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._started = ""
+        self._started_mono = 0.0
+
+    def maybe_start(self, s3, ts: datetime, dry_run: bool) -> bool:
+        if self._thread is not None and self._thread.is_alive():
+            in_flight = time.monotonic() - self._started_mono
+            if in_flight < self.WEDGED_AFTER_SEC:
+                log.warning("yahoo leg started %s still running; skipping this tick",
+                            self._started)
+                return False
+            log.error("yahoo leg started %s wedged after %.0f min; abandoning it "
+                      "and starting a fresh leg", self._started, in_flight / 60)
+            self._thread = None
+        try:
+            thread = threading.Thread(target=yahoo_cycle, args=(s3, ts, dry_run),
+                                      name="yahoo-leg", daemon=True)
+            thread.start()
+        except RuntimeError as exc:
+            # thread creation failed (resource pressure); a yahoo dispatch
+            # failure must never take the CBOE cadence down with it — log,
+            # leave no half-started state, retry at the next tick
+            log.error("yahoo leg failed to start: %s", exc)
+            self._thread = None
+            return False
+        self._thread = thread
+        self._started = _stamp(ts)
+        self._started_mono = time.monotonic()
+        return True
 
 
 # ----------------------------- session loop ---------------------------------
@@ -200,6 +287,7 @@ def prefix_gb(s3, prefix: str) -> float:
 
 def run_loop(yahoo_every: int, dry_run: bool, max_lake_gb: float) -> int:
     s3 = None if dry_run else r2_client()
+    yahoo_leg = YahooLeg()
     log.info("intraday recorder up: CBOE every minute, Yahoo every %d min, "
              "lake cap %.1f GB", yahoo_every, max_lake_gb)
     while True:
@@ -235,7 +323,8 @@ def run_loop(yahoo_every: int, dry_run: bool, max_lake_gb: float) -> int:
         minute_idx = 0
         while pd.Timestamp.now(tz="UTC") < end:
             cycle_start = time.monotonic()
-            snapshot_cycle(s3, do_yahoo=(minute_idx % yahoo_every == 0), dry_run=dry_run)
+            snapshot_cycle(s3, do_yahoo=yahoo_tick_due(minute_idx, yahoo_every),
+                           dry_run=dry_run, yahoo_run=yahoo_leg.maybe_start)
             minute_idx += 1
             elapsed = time.monotonic() - cycle_start
             time.sleep(max(0.0, 60.0 - elapsed))
@@ -265,8 +354,6 @@ def main() -> int:
         s3 = None if args.dry_run else r2_client()
         snapshot_cycle(s3, do_yahoo=(args.yahoo_every > 0), dry_run=args.dry_run)
         return 0
-    if args.yahoo_every <= 0:
-        args.yahoo_every = 10 ** 9  # effectively never
     return run_loop(args.yahoo_every, args.dry_run, args.max_lake_gb)
 
 

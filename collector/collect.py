@@ -281,8 +281,14 @@ def av_fetch_chain(ticker: str, trading_date: date) -> pd.DataFrame:
 
 # ----------------------------- Yahoo source --------------------------------
 
-def yahoo_snapshot(ticker: str, max_dte: int = YAHOO_MAX_DTE) -> pd.DataFrame:
-    """Live chain snapshot. Non-fatal by design; AV is the record."""
+def yahoo_snapshot(ticker: str, max_dte: int = YAHOO_MAX_DTE,
+                   deadline: float | None = None) -> pd.DataFrame:
+    """Live chain snapshot. Non-fatal by design; AV is the record.
+
+    `deadline` is a time.monotonic() value: once past it the expiration crawl
+    truncates (partial snapshot, disclosed in the log). The intraday recorder
+    uses it to bound a leg's wall time; the nightly EOD path passes nothing
+    and crawls everything, unchanged."""
     import yfinance as yf  # local import: optional leg
 
     tk = yf.Ticker(ticker)
@@ -298,7 +304,12 @@ def yahoo_snapshot(ticker: str, max_dte: int = YAHOO_MAX_DTE) -> pd.DataFrame:
         return pd.DataFrame()
 
     frames = []
-    for exp in expirations:
+    for n_seen, exp in enumerate(expirations):
+        if deadline is not None and time.monotonic() >= deadline:
+            log.warning("[yahoo:%s] leg budget exhausted; truncating with %d of %d "
+                        "expirations unfetched", ticker, len(expirations) - n_seen,
+                        len(expirations))
+            break
         exp_d = datetime.strptime(exp, "%Y-%m-%d").date()
         dte = (exp_d - now.date()).days
         if not (0 <= dte <= max_dte):
