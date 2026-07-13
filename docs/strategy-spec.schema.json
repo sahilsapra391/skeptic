@@ -223,8 +223,15 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 1,
-          "default": 0.5,
-          "description": "Fraction of the half-spread conceded from mid toward the adverse quote. 0 (mid fills) is forbidden by validation; 1.0 = full adverse quote. When a quote's open interest is known and thin, the effective fraction scales up to 1.0: slip_eff = slip + (1 - slip) * max(0, 1 - oi / (10 * min_open_interest)); unknown liquidity is never penalized, only disclosed."
+          "default": 0.85,
+          "description": "Fraction of the half-spread conceded from mid toward the adverse quote on BUY fills. 0 (mid fills) is forbidden by validation; 1.0 = full adverse quote. The default is EARNED from the D3d fill calibration (233M real prints over 90 tape sessions: median implied slip ~0.87, only 0.1% of prints at mid or better), replacing the assumed 0.5 on 2026-07-13 (owner decision). When a quote's open interest is known and thin, the effective fraction scales up to 1.0: slip_eff = slip + (1 - slip) * max(0, 1 - oi / (10 * min_open_interest)); unknown liquidity is never penalized, only disclosed."
+        },
+        "slippage_half_spread_fraction_sell": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.9,
+          "description": "Fraction of the half-spread conceded on SELL fills. Defaults harsher than buys per the D3d calibration: seller-aggressor prints land at/beyond the displayed bid measurably more often (p50 ~0.90; 17-26% beyond touch, a tail partly inflated by multi-leg package prints that carry no per-print marker). A single user-stated slippage number sets BOTH sides via the parser; asymmetry only ever comes from these defaults or an explicit two-value request."
         },
         "max_spread_pct": {
           "type": "number",

@@ -21,8 +21,10 @@ export const ACCENTS: Accent[] = ["cyan", "sage", "lavender", "rose"];
 export interface AppSettings {
   /** $ per contract per side; ≥ 0 */
   commission: number;
-  /** fraction of the half-spread conceded, (0, 1] — 0 (mid fills) is banned */
+  /** fraction of the half-spread conceded on BUYS, (0, 1] — 0 (mid fills) is banned */
   slippage: number;
+  /** fraction conceded on SELLS — defaults harsher (D3d: sellers measurably concede more) */
+  slippageSell: number;
   verbiage: Verbiage;
   theme: Theme;
   accent: Accent;
@@ -30,7 +32,10 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   commission: 0.65,
-  slippage: 0.5,
+  // D3d-earned defaults (233M tape prints, owner 2026-07-13): buys 0.85,
+  // sells 0.90 — replacing the assumed flat 0.5
+  slippage: 0.85,
+  slippageSell: 0.9,
   verbiage: "institutional",
   // Market Hours is the default for everyone: light through the trading day,
   // dark after the close (owner directive 2026-07-04).
@@ -44,7 +49,11 @@ const EVT = "skeptic-settings-changed";
 function clampSettings(s: AppSettings): AppSettings {
   return {
     commission: Math.min(5, Math.max(0, Number.isFinite(s.commission) ? s.commission : 0.65)),
-    slippage: Math.min(1, Math.max(0.05, Number.isFinite(s.slippage) ? s.slippage : 0.5)),
+    slippage: Math.min(1, Math.max(0.05, Number.isFinite(s.slippage) ? s.slippage : 0.85)),
+    slippageSell: Math.min(
+      1,
+      Math.max(0.05, Number.isFinite(s.slippageSell) ? s.slippageSell : 0.9),
+    ),
     verbiage: s.verbiage === "retail" ? "retail" : "institutional",
     theme: s.theme === "light" ? "light" : s.theme === "dark" ? "dark" : "market",
     accent: ACCENTS.includes(s.accent) ? s.accent : "cyan",

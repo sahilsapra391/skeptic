@@ -55,7 +55,8 @@ SPEC_BASE: dict = {
     },
     "exit": {"time_exit_dte": 0},
     "sizing": {"method": "fixed_contracts", "value": 1},
-    "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
+    "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5,
+                                               "slippage_half_spread_fraction_sell": 0.5},
     "backtest": {"start": None, "end": None, "initial_capital": 10_000, "seed": 42},
 }
 

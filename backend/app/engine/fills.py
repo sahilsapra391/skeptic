@@ -77,6 +77,17 @@ def spread_pct(q: Quote) -> float | None:
     return (q.ask - q.bid) / m
 
 
+def base_slip(costs: Costs, action: str) -> float:
+    """Side-aware base slip for `action` ("buy" | "sell") — the D3d-earned
+    defaults: 233M real prints put seller-aggressor concessions measurably
+    above buyers' (p50 ~0.90 vs ~0.85-0.87). A single user-stated slippage
+    number sets both spec fields at the parser, so asymmetry only ever
+    comes from the defaults or an explicit two-value request."""
+    if action == "sell":
+        return costs.slippage_half_spread_fraction_sell
+    return costs.slippage_half_spread_fraction
+
+
 def effective_slip(base: float, q: Quote, min_open_interest: int) -> float:
     """OI-scaled slip in [base, 1.0] per the module docstring. Unknown OI or
     a disabled floor (min_open_interest = 0) → base, unchanged."""

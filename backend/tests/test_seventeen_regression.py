@@ -68,7 +68,8 @@ def _daily_short_put(max_concurrent: int = 10) -> dict:
                   "max_concurrent_positions": max_concurrent},
         "exit": {"time_exit_dte": 108},  # closes ~next session → concurrency stays low
         "sizing": {"method": "fixed_contracts", "value": 1},
-        "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
+        "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5,
+                                                   "slippage_half_spread_fraction_sell": 0.5},
         "backtest": {"start": None, "end": None, "initial_capital": 25_000, "seed": 42},
     }
 

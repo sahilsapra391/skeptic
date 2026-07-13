@@ -168,7 +168,8 @@ THE SPEC (all fields required unless noted):
           "close_at_time": "HH:MM" (OPTIONAL, ET, clock "5min" only — flatten every open
                            position at/after this bar; "no overnight")},
  "sizing": {"method": "fixed_contracts", "value": 1},
- "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
+ "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.85,
+           "slippage_half_spread_fraction_sell": 0.90},
  "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42,
               "clock": "daily" (default) | "5min",
               "resolution": "finest" (OPTIONAL, clock "5min" only — per-session
@@ -176,6 +177,10 @@ THE SPEC (all fields required unless noted):
 }
 
 CONVENTIONS:
+- A single stated slippage ("slippage 30%", "0.3 slippage") sets BOTH
+  slippage_half_spread_fraction AND slippage_half_spread_fraction_sell to that
+  number — never leave one side at its default when the user gave one value.
+  Distinct buy/sell values only on an explicit two-value request.
 - "30 delta" → {"method": "delta", "value": 0.30}. Delta values are decimals in (0, 1).
 - "5% below spot" (a put) → {"method": "offset_pct", "value": -0.05}; above spot → positive.
 - "ATM" / "at the money" → {"method": "delta", "value": 0.50} — an at-the-money
