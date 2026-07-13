@@ -99,10 +99,11 @@ def reduce_flow_session(
         npp = prem[classified["right"] == "put"].sum(min_count=1)
         out["net_call_premium"] = round(float(ncp), 2) if pd.notna(ncp) else None
         out["net_put_premium"] = round(float(npp), 2) if pd.notna(npp) else None
-        if pd.notna(ncp) or pd.notna(npp):
-            out["net_premium"] = round(
-                float((0.0 if pd.isna(ncp) else ncp)
-                      - (0.0 if pd.isna(npp) else npp)), 2)
+        # BOTH sides must be measured (the vendor reduction's min_count
+        # rule): a side whose flow was observed-but-unclassifiable is
+        # absence, never a fabricated zero
+        if pd.notna(ncp) and pd.notna(npp):
+            out["net_premium"] = round(float(ncp - npp), 2)
         has_delta = classified["delta"].notna()
         out["delta_missing_volume"] = float(
             classified.loc[~has_delta, "volume"].sum())
@@ -129,12 +130,17 @@ def tape_side_truth(tape: pd.DataFrame) -> pd.DataFrame | None:
     tags = t["tags"].astype(str)
     is_ask = tags.str.contains("ask_side", regex=False)
     is_bid = ~is_ask & tags.str.contains("bid_side", regex=False)
-    t = t[is_ask | is_bid].assign(
+    # build on the FULL frame, then filter once — .assign of full-index
+    # Series onto an empty filtered frame resurrects rows (the documented
+    # fill_calibration footgun; an all-mid tape day must yield None, not
+    # a fabricated all-sell truth frame)
+    work = t.assign(
         _sign=pd.Series(1.0, index=t.index).where(is_ask, -1.0),
         _minute=ts.dt.floor("min"),
         _size=pd.to_numeric(t["size"], errors="coerce"),
         _strike=pd.to_numeric(t["strike"], errors="coerce"),
     )
+    t = work[is_ask | is_bid]
     t = t[t["_size"].notna() & t["_strike"].notna()]
     if t.empty:
         return None

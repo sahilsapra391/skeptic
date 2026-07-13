@@ -95,13 +95,22 @@ def _snap_keys(s3, ticker: str, d: str) -> list[str]:
                   if k.endswith(".parquet"))
 
 
-def _read_snap(s3, key: str) -> pd.DataFrame | None:
-    snap = r2_get_parquet(s3, key, columns=_SNAP_FULL)
-    if snap is None:
-        snap = r2_get_parquet(s3, key, columns=_SNAP_LEAN)
+def _read_snap(s3, key: str, tier: list[str]) -> pd.DataFrame | None:
+    """Tier-sniffing read: snaps within a session are schema-homogeneous,
+    so after the first snap decides full vs lean the rest pay ONE download
+    (pre-#79 sessions lack und_volume; the two-tier retry would otherwise
+    double every read). Falls back to the other tier per snap so a
+    transient failure still gets its second chance."""
+    order = ([_SNAP_FULL, _SNAP_LEAN] if tier[0] == "full"
+             else [_SNAP_LEAN, _SNAP_FULL])
+    for cols in order:
+        snap = r2_get_parquet(s3, key, columns=cols)
         if snap is not None:
-            snap = snap.assign(und_volume=pd.NA)
-    return snap
+            tier[0] = "full" if cols is _SNAP_FULL else "lean"
+            if "und_volume" not in snap.columns:
+                snap = snap.assign(und_volume=pd.NA)
+            return snap
+    return None
 
 
 def _norm_keys(df: pd.DataFrame) -> pd.DataFrame:
@@ -111,7 +120,7 @@ def _norm_keys(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def derive_session(s3, ticker: str, d: str) -> dict | None:
+def derive_session(s3, ticker: str, d: str, has_tape: bool) -> dict | None:
     """One session → the flow row, or None (unreadable — retried next run)."""
     bars = r2_get_parquet(
         s3, f"options_minute/source=alpaca/ticker={ticker}/date={d}/bars.parquet",
@@ -132,8 +141,9 @@ def derive_session(s3, ticker: str, d: str) -> dict | None:
     und_volume: float | None = None
     failed_reads = 0
     not_before = None
+    tier = ["full"]
     for skey in _snap_keys(s3, ticker, d):
-        snap = _read_snap(s3, skey)
+        snap = _read_snap(s3, skey, tier)
         if snap is None:
             failed_reads += 1
             continue
@@ -153,10 +163,15 @@ def derive_session(s3, ticker: str, d: str) -> dict | None:
         snap = _norm_keys(snap)
         b = pd.to_numeric(snap["bid"], errors="coerce")
         a = pd.to_numeric(snap["ask"], errors="coerce")
-        two = snap[(b > 0) & a.notna() & (a >= b)].assign(
-            mid=((b + a) / 2)[(b > 0) & a.notna() & (a >= b)],
+        # build on the FULL frame, then filter once (the documented
+        # fill_calibration footgun — an all-bad-quote snap must yield an
+        # empty quote table, never resurrected NaN-keyed rows)
+        work = snap.assign(
+            mid=(b + a) / 2,
             _delta=pd.to_numeric(snap["delta"], errors="coerce"),
-        ).drop_duplicates(subset=_JOIN, keep="first")
+        )
+        two = (work[(b > 0) & a.notna() & (a >= b)]
+               .drop_duplicates(subset=_JOIN, keep="first"))
         sl = bars.iloc[lo:hi]
         covered.iloc[lo:hi] = True
         pieces.append(sl.merge(two[[*_JOIN, "mid", "_delta"]],
@@ -176,9 +191,9 @@ def derive_session(s3, ticker: str, d: str) -> dict | None:
     # tape-overlap accuracy: score the classifier against true sides
     row["tape_checked_volume"] = None
     row["tape_side_agreement"] = None
-    tape = r2_get_parquet_spooled(
+    tape = (r2_get_parquet_spooled(
         s3, f"uw/option_tape/ticker={ticker}/date={d}/trades.parquet",
-        columns=_TAPE_COLUMNS)
+        columns=_TAPE_COLUMNS) if has_tape else None)
     truth = tape_side_truth(tape) if tape is not None else None
     if truth is not None and pieces:
         cls = pd.concat(pieces, ignore_index=True)
@@ -207,6 +222,7 @@ def run(s3, ticker: str) -> int:
             and "date" in existing.columns else set())
     alp = set(_sessions(s3, f"options_minute/source=alpaca/ticker={ticker}/"))
     rec = set(_sessions(s3, f"options_intraday/source=cboe_delayed/ticker={ticker}/"))
+    tape_dates = set(_sessions(s3, f"uw/option_tape/ticker={ticker}/"))
     today_et = pd.Timestamp.now(tz="America/New_York").date().isoformat()
     todo = sorted(d for d in (alp & rec) - have if d < today_et)
     if not todo:
@@ -215,7 +231,7 @@ def run(s3, ticker: str) -> int:
     frames = [existing] if existing is not None and not existing.empty else []
     derived = 0
     for d in todo:
-        row = derive_session(s3, ticker, d)
+        row = derive_session(s3, ticker, d, has_tape=d in tape_dates)
         if row is None:
             continue
         row["date"] = d

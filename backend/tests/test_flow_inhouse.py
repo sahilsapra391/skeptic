@@ -99,3 +99,30 @@ class TestTapeSideTruth:
 
     def test_unrecognized_shape_is_none(self) -> None:
         assert tape_side_truth(pd.DataFrame({"x": [1]})) is None
+
+
+class TestReviewRegressions:
+    def test_one_sided_classification_never_fabricates_net_premium(self) -> None:
+        # calls classified, put volume observed but entirely unquoted:
+        # the put side is ABSENCE, never a zero (vendor min_count rule)
+        row = reduce_flow_session(pd.DataFrame([
+            _bar("call", 2.10, 3, 2.05, 0.5),
+            _bar("put", 1.00, 4, None, None),
+        ]), und_volume=1000.0)
+        assert row is not None
+        assert row["net_call_premium"] == 630.0
+        assert row["net_put_premium"] is None
+        assert row["net_premium"] is None  # not 630.0
+
+    def test_all_mid_tape_is_none_not_fabricated_truth(self) -> None:
+        # the assign-onto-empty-filtered-frame footgun: an all-mid tape
+        # must yield None, never a resurrected all-sell truth frame
+        tape = pd.DataFrame([
+            {"executed_at": "2026-07-08 13:30:01+00", "expiry": "2026-07-18",
+             "option_type": "call", "strike": "100", "size": "5",
+             "tags": "{mid_side,etf}"},
+            {"executed_at": "2026-07-08 13:30:40+00", "expiry": "2026-07-18",
+             "option_type": "put", "strike": "100", "size": "2",
+             "tags": "{no_side,etf}"},
+        ])
+        assert tape_side_truth(tape) is None

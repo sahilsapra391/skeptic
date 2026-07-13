@@ -492,3 +492,20 @@ class TestCrossedQuoteGuard:
         assert rec is not None
         assert rec["joined"] == 1 and rec["checked"] == 0
         assert rec["below_bid"] == 0 and rec["beyond_ask"] == 0
+
+
+class TestOutOfOrderStampClamp:
+    def test_out_of_order_stamp_never_rewinds_the_clamp(self) -> None:
+        # an out-of-order source_ts (feed hiccup / timestamp fallback)
+        # empties its own window AND must not rewind not_before — a
+        # rewound clamp would let the next normal snap re-slice rows
+        # already consumed (double-counted volume, banked forever)
+        ts = pd.Series(pd.to_datetime(
+            ["2026-07-08 13:45:10+00:00", "2026-07-08 13:45:30+00:00"],
+            utc=True))
+        _, _, end1 = recorder_tape_window(ts, "2026-07-08 14:00:00")
+        lo2, hi2, end2 = recorder_tape_window(ts, "2026-07-08 13:50:00", end1)
+        assert lo2 >= hi2          # the stale snap judges nothing
+        assert end2 == end1        # and the clamp never moves backward
+        lo3, hi3, _ = recorder_tape_window(ts, "2026-07-08 14:00:00", end2)
+        assert lo3 >= hi3          # a repeat stamp re-yields nothing

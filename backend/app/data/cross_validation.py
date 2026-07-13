@@ -138,6 +138,13 @@ def recorder_tape_window(
         nb = pd.Timestamp(not_before)
         if nb > start:
             start = nb
+        if nb > end:
+            # an out-of-order source_ts (feed hiccup / the recorder's
+            # timestamp-field fallback) must never REWIND the clamp — a
+            # rewound not_before would let the next normal snap re-slice
+            # rows already consumed (review 2026-07-13: double-counted
+            # volume banked forever under set-difference incrementality)
+            end = nb
     if start >= end:
         return 0, 0, end
     lo = int(ts.searchsorted(start, side="left"))
