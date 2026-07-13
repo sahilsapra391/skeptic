@@ -148,7 +148,7 @@ a human merges it.
 - Measurement: for every contract-date in BOTH the EOD chain record and
   the intraday slice's closing NBBO (ivol_5min sessions, last ≥15:45 ET
   bar), how many TRUE half-spreads does the daily model's fill concede
-  from the TRUE closing mid? The model intends f (= the slippage default);
+  from the TRUE closing mid? The model intends each side's slippage default (buys 0.85 / sells 0.90 since 2026-07-13, D3d-earned);
   stale or wide EOD marks push the measured median off f.
 - Asymmetric evidence bar (owner amendment 3): a CONSERVATIVE correction
   (daily fills measured cheaper than reality → raise the default) opens at

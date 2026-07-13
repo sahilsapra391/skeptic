@@ -808,7 +808,7 @@ def _fire_rungs(
         leg.last_mark = px
         basket.fired_rungs.add(idx)
         state.fill_log.append({
-            "pid": basket.pid, "day": view.as_of.isoformat(), "action": "buy",
+            "pid": basket.pid, "day": view.as_of.isoformat(), "action": action,
             "expiration": key.expiration.isoformat(), "right": key.right,
             "strike": key.strike, "qty": qty, "price": px,
             "source": view.fill_source,

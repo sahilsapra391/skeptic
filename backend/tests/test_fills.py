@@ -73,3 +73,36 @@ class TestSideAwareEarnedDefaults:
         q = Quote(bid=2.00, ask=2.20, delta=None)
         assert fill_price(q, "buy", base_slip(c, "buy")) == pytest.approx(2.15)
         assert fill_price(q, "sell", base_slip(c, "sell")) == pytest.approx(2.05)
+
+
+class TestSlippageMirrorValidator:
+    """The single-number contract at the MODEL layer (review finding 1+5):
+    a lone buy value mirrors into the absent sell field, so pre-2026-07-13
+    stored specs re-validate to the exact flat model their runs used —
+    audits and replays regenerate identical fills, never a hybrid."""
+
+    def test_old_stored_spec_stays_flat(self) -> None:
+        c = Costs.model_validate(
+            {"commission_per_contract": 0.65,
+             "slippage_half_spread_fraction": 0.5})
+        assert c.slippage_half_spread_fraction == 0.5
+        assert c.slippage_half_spread_fraction_sell == 0.5  # mirrored, not 0.90
+
+    def test_pure_defaults_stay_asymmetric(self) -> None:
+        c = Costs.model_validate({"commission_per_contract": 0.65})
+        assert c.slippage_half_spread_fraction == 0.85
+        assert c.slippage_half_spread_fraction_sell == 0.90
+
+    def test_explicit_two_values_untouched(self) -> None:
+        c = Costs.model_validate(
+            {"slippage_half_spread_fraction": 0.6,
+             "slippage_half_spread_fraction_sell": 0.7})
+        assert c.slippage_half_spread_fraction == 0.6
+        assert c.slippage_half_spread_fraction_sell == 0.7
+
+    def test_round_trip_is_stable(self) -> None:
+        # model_dump serializes BOTH fields, so a re-validated dump can
+        # never re-trigger the mirror differently
+        c1 = Costs.model_validate({"slippage_half_spread_fraction": 0.5})
+        c2 = Costs.model_validate(c1.model_dump())
+        assert c2 == c1

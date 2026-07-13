@@ -231,7 +231,7 @@
           "exclusiveMinimum": 0,
           "maximum": 1,
           "default": 0.9,
-          "description": "Fraction of the half-spread conceded on SELL fills. Defaults harsher than buys per the D3d calibration: seller-aggressor prints land at/beyond the displayed bid measurably more often (p50 ~0.90; 17-26% beyond touch, a tail partly inflated by multi-leg package prints that carry no per-print marker). A single user-stated slippage number sets BOTH sides via the parser; asymmetry only ever comes from these defaults or an explicit two-value request."
+          "description": "Fraction of the half-spread conceded on SELL fills. Defaults harsher than buys per the D3d calibration: seller-aggressor prints land at/beyond the displayed bid measurably more often (p50 ~0.90; 17-26% beyond touch, a tail partly inflated by multi-leg package prints that carry no per-print marker). A single supplied slippage number sets BOTH sides, enforced by a model validator: when this field is absent but the buy field is present, it mirrors the buy field (which also keeps pre-2026-07-13 stored specs on the exact flat model their runs used — audits and replays re-validate to identical fills). Deliberately NOT in the required array: absence IS the mirroring contract; asymmetry only ever comes from the defaults or an explicit two-value request."
         },
         "max_spread_pct": {
           "type": "number",

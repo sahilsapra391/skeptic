@@ -493,6 +493,26 @@ class Costs(BaseModel):
     # defaults or an explicit two-value request, never a silent guess.
     slippage_half_spread_fraction: float = Field(default=0.85, gt=0, le=1)
     slippage_half_spread_fraction_sell: float = Field(default=0.90, gt=0, le=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mirror_single_slippage(cls, data: Any) -> Any:
+        """A lone stated slippage number sets BOTH sides — enforced at the
+        model layer, not just the parser prompt. This also keeps every
+        pre-2026-07-13 stored spec (which pins only the buy field) on the
+        exact flat model its run used: audits and replays re-validate to
+        identical fills, never a 0.5-buy/0.90-sell hybrid no run ever
+        produced. Pure defaults (no costs / neither field) stay 0.85/0.90;
+        explicit two-value specs are untouched."""
+        if (
+            isinstance(data, dict)
+            and "slippage_half_spread_fraction" in data
+            and "slippage_half_spread_fraction_sell" not in data
+        ):
+            data["slippage_half_spread_fraction_sell"] = data[
+                "slippage_half_spread_fraction"
+            ]
+        return data
     # Liquidity floors (D1b, owner-confirmed Moderate defaults). Defaulted
     # cost knobs like commission/slippage — never entry/strike/exit params,
     # so guardrail #3 (no silent parser defaults) does not apply.

@@ -156,6 +156,7 @@ export default function SettingsPage() {
                   updateSettings({
                     commission: DEFAULT_SETTINGS.commission,
                     slippage: DEFAULT_SETTINGS.slippage,
+                    slippageSell: DEFAULT_SETTINGS.slippageSell,
                   })
                 }
                 className="shrink-0 rounded-[9px] border border-line px-3 py-1.5 text-[12.5px] text-ink-3 hover:border-line-hover hover:text-ink"

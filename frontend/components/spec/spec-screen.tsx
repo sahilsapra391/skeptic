@@ -606,7 +606,7 @@ export function SpecScreen({
         <div className={TILE}>
           <TileLabel name="FILLS" />
           <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
-            bid/ask + slip {settings.slippage} · ${settings.commission}/ct
+            bid/ask + slip {settings.slippage}/{settings.slippageSell} · ${settings.commission}/ct
           </div>
         </div>
       </div>

@@ -65,7 +65,18 @@ function load(): AppSettings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return clampSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
+    const parsed = JSON.parse(raw);
+    if (!("slippageSell" in parsed) && typeof parsed.slippage === "number") {
+      if (parsed.slippage === 0.5) {
+        // the OLD default, persisted by any unrelated settings change —
+        // never an explicit choice: adopt the earned defaults
+        delete parsed.slippage;
+      } else {
+        // an explicit single-value choice keeps the flat model it meant
+        parsed.slippageSell = parsed.slippage;
+      }
+    }
+    return clampSettings({ ...DEFAULT_SETTINGS, ...parsed });
   } catch {
     return DEFAULT_SETTINGS;
   }
