@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.data import bars as bars_mod
-from app.data import coverage
+from app.data import coverage, fill_calibration, r2
 from app.data.r2 import R2NotConfigured
 
 router = APIRouter()
@@ -237,3 +239,48 @@ def get_underlying(
     if not series:
         raise HTTPException(status_code=404, detail=f"no underlying dailies for {ticker}")
     return {"ticker": ticker, "series": series}
+
+
+_FILL_CAL_NOTE = (
+    "Measured from the frozen UW option tape (every SPY/QQQ/IWM print with "
+    "its NBBO at execution). slip is the fraction of the half-spread "
+    "conceded from mid toward the adverse quote — the same quantity the "
+    "engine CONFIGURES for fills. Reported only: the engine's configured "
+    "slip is unchanged by these numbers; quantiles are histogram-bin "
+    "estimates. Multi-leg, mid/no-side and locked/crossed-quote prints are "
+    "excluded and counted."
+)
+_FILL_CAL_CACHE: dict[str, Any] = {"at": 0.0, "payload": None}
+_FILL_CAL_TTL = 3600.0  # the artifact is frozen (tape trial over)
+_fill_cal_lock = threading.Lock()
+
+
+@router.get("/fill-calibration")
+def get_fill_calibration() -> dict[str, Any]:
+    """Pooled fill-slip calibration per ticker (D3d measurement surface)."""
+    now = time.time()
+    cached: dict[str, Any] | None = _FILL_CAL_CACHE["payload"]
+    if cached is not None and now - _FILL_CAL_CACHE["at"] < _FILL_CAL_TTL:
+        return cached
+    with _fill_cal_lock:
+        cached = _FILL_CAL_CACHE["payload"]
+        if cached is not None \
+                and time.time() - _FILL_CAL_CACHE["at"] < _FILL_CAL_TTL:
+            return cached
+        try:
+            s3 = r2.r2_client()
+        except R2NotConfigured as exc:
+            raise HTTPException(status_code=503,
+                                detail=f"{_R2_HINT} ({exc})") from exc
+        tickers: dict[str, Any] = {}
+        for t in coverage.TICKERS:
+            df = fill_calibration.load_fill_calibration(s3, t)
+            tickers[t] = (fill_calibration.pooled_summary(df)
+                          if df is not None else None)
+        payload = {"note": _FILL_CAL_NOTE, "tickers": tickers}
+        # a transient R2 failure reads as None — cache that only briefly,
+        # or a blip would serve "not measured" for the full hour
+        complete = all(v is not None for v in tickers.values())
+        at = time.time() if complete else time.time() - _FILL_CAL_TTL + 60.0
+        _FILL_CAL_CACHE.update(at=at, payload=payload)
+        return payload
