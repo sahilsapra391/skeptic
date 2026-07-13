@@ -112,6 +112,7 @@ def _scale_in_spec() -> StrategySpec:
         "exit": {"profit_target_pct": 200, "close_at_time": "15:45"},
         "sizing": {"method": "fixed_contracts", "value": 1},
         "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5,
+                                                   "slippage_half_spread_fraction_sell": 0.5,
                   "max_spread_pct": 500},
         "backtest": {"start": None, "end": "2025-01-06", "initial_capital": 10_000,
                      "seed": 42, "clock": "5min"},

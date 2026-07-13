@@ -249,7 +249,7 @@ def _spec(start: str, clock: str = "daily") -> StrategySpec:
         "exit": {"time_exit_dte": 0},
         "sizing": {"method": "fixed_contracts", "value": 2},
         "costs": {"commission_per_contract": 0.65,
-                  "slippage_half_spread_fraction": 0.5},
+                  "slippage_half_spread_fraction": 0.5, "slippage_half_spread_fraction_sell": 0.5},
         "backtest": {"start": start, "end": None, "initial_capital": 25000,
                      "seed": 42, "clock": clock},
     }

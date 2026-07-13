@@ -346,15 +346,17 @@ STRESSED_SOURCES = frozenset({"alpaca_modeled"})
 PROGRESS_EVERY_SESSIONS = 250
 
 
-def _close_slip(q: Quote, costs: Costs, stressed: bool = False) -> float:
-    """The slip a close-side price uses: base, OI-scaled when OI is known
-    and thin (fills.effective_slip). Exit triggers, exit fills and marks all
-    price through here, so open and close share one fill model. Modeled
-    quotes are always stressed — slip 1.0, both directions."""
+def _close_slip(q: Quote, costs: Costs, action: str, stressed: bool = False) -> float:
+    """The slip a close-side price uses: the SIDE-AWARE base (closing a
+    long sells, closing a short buys back — each pays its own measured
+    concession), OI-scaled when OI is known and thin (fills.effective_slip).
+    Exit triggers, exit fills and marks all price through here, so open and
+    close share one fill model. Modeled quotes are always stressed — slip
+    1.0, both directions."""
     if stressed:
         return 1.0
     return fills.effective_slip(
-        costs.slippage_half_spread_fraction, q, costs.min_open_interest
+        fills.base_slip(costs, action), q, costs.min_open_interest
     )
 
 
@@ -370,7 +372,8 @@ def _liq_value_per_share(pos: Position, view: MarketViewLike, costs: Costs) -> f
         q = view.quote(leg.key)
         if q is None:
             return None
-        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs, stressed))
+        action = fills.close_action(leg.side)
+        px = fills.fill_price(q, action, _close_slip(q, costs, action, stressed))
         if px is None:
             return None
         ratio = leg.qty // max(pos.contracts, 1)
@@ -386,7 +389,8 @@ def _refresh_marks(pos: Position, view: MarketViewLike, costs: Costs) -> None:
         q = view.quote(leg.key)
         if q is None:
             continue
-        px = fills.fill_price(q, fills.close_action(leg.side), _close_slip(q, costs, stressed))
+        action = fills.close_action(leg.side)
+        px = fills.fill_price(q, action, _close_slip(q, costs, action, stressed))
         if px is not None:
             leg.last_mark = px
 
@@ -516,7 +520,6 @@ def _try_entry(
     recalled because RSI ticked back) — everything else (quotes, liquidity
     gates, sizing) validates normally."""
     day = view.as_of
-    slip = spec.costs.slippage_half_spread_fraction
     commission = spec.costs.commission_per_contract
 
     def skip(reason: str, detail: str = "") -> None:
@@ -581,7 +584,8 @@ def _try_entry(
                 skip(gate, detail=f"{key.right} {key.strike:g} exp {key.expiration}")
                 return
             stressed = True  # stress mode: pay the full adverse quote instead
-        eff = 1.0 if stressed else fills.effective_slip(slip, q, spec.costs.min_open_interest)
+        base = fills.base_slip(spec.costs, action)
+        eff = 1.0 if stressed else fills.effective_slip(base, q, spec.costs.min_open_interest)
         px = fills.fill_price(q, action, eff)
         if px is None:  # pragma: no cover — quote_problem gates this
             skip("missing_quote")
@@ -670,9 +674,10 @@ def _try_entry(
     depth_notes: list[str] = []
     for q, eff, was_stressed, leg in zip(leg_quotes, leg_slips, leg_stressed,
                                          spec.position.legs, strict=True):
+        action = fills.open_action(leg.side.value)
         note = _record_leg_fill(
-            state, q, eff, slip, was_stressed, view.fill_source,
-            action=fills.open_action(leg.side.value),
+            state, q, eff, fills.base_slip(spec.costs, action), was_stressed,
+            view.fill_source, action=action,
             qty=leg.ratio * contracts,
         )
         if note:
@@ -743,11 +748,11 @@ def _fire_rungs(
     future bar (the intraday lookahead canary asserts this)."""
     si = spec.entry.scale_in
     assert si is not None
-    slip = spec.costs.slippage_half_spread_fraction
     commission = spec.costs.commission_per_contract
     leg = basket.legs[0]
     key = leg.key
     action = fills.open_action(leg.side)  # "buy" for a long basket
+    base = fills.base_slip(spec.costs, action)  # side-aware (D3d-earned)
     # F5 review finding #2: opening-bar rung fills fold into the OPEN event,
     # so their depth notes must travel back to _open_basket — a beyond-depth
     # FIRST rung (often the ladder's largest) is named, not just counted
@@ -776,7 +781,7 @@ def _fire_rungs(
                              detail=f"{key.right} {key.strike:g} rung {rung.value:g}")
                 continue
             stressed = True  # stress mode: pay the full adverse quote
-        eff = 1.0 if stressed else fills.effective_slip(slip, q, spec.costs.min_open_interest)
+        eff = 1.0 if stressed else fills.effective_slip(base, q, spec.costs.min_open_interest)
         px = fills.fill_price(q, action, eff)
         if px is None:  # pragma: no cover — quote_problem gates this
             _basket_skip(state, view, session_skips, "missing_quote")
@@ -803,13 +808,13 @@ def _fire_rungs(
         leg.last_mark = px
         basket.fired_rungs.add(idx)
         state.fill_log.append({
-            "pid": basket.pid, "day": view.as_of.isoformat(), "action": "buy",
+            "pid": basket.pid, "day": view.as_of.isoformat(), "action": action,
             "expiration": key.expiration.isoformat(), "right": key.right,
             "strike": key.strike, "qty": qty, "price": px,
             "source": view.fill_source,
         })
-        depth_note = _record_leg_fill(state, q, eff, slip, stressed,
-                                      view.fill_source, action="buy", qty=qty)
+        depth_note = _record_leg_fill(state, q, eff, base, stressed,
+                                      view.fill_source, action=action, qty=qty)
         state.rung_fills.append(
             RungFill(
                 basket_pid=basket.pid, day=view.as_of, bar_time=bar_time,
@@ -949,7 +954,6 @@ def _close_position(
     lacks a usable quote (the attempt is retried on later sessions).
     Exits are never liquidity-gated — a position can always pay the quoted
     price to close — but thin known OI scales the slip like everywhere else."""
-    slip = spec.costs.slippage_half_spread_fraction
     commission = spec.costs.commission_per_contract
     liq = _liq_value_per_share(pos, view, spec.costs)
     if liq is None:
@@ -961,8 +965,9 @@ def _close_position(
             continue
         q = view.quote(leg.key)
         assert q is not None
-        eff = _close_slip(q, spec.costs, stressed)
-        px = fills.fill_price(q, fills.close_action(leg.side), eff)
+        action = fills.close_action(leg.side)
+        eff = _close_slip(q, spec.costs, action, stressed)
+        px = fills.fill_price(q, action, eff)
         assert px is not None
         cash_delta = px * leg.qty * MULT if leg.side == "long" else -px * leg.qty * MULT
         cash_delta -= commission * leg.qty
@@ -971,14 +976,15 @@ def _close_position(
         leg.settled = True
         state.fill_log.append({
             "pid": pos.pid, "day": view.as_of.isoformat(),
-            "action": fills.close_action(leg.side),
+            "action": action,
             "expiration": leg.key.expiration.isoformat(), "right": leg.key.right,
             "strike": leg.key.strike, "qty": leg.qty, "price": px,
             "source": view.fill_source,
         })
         note = _record_leg_fill(
-            state, q, eff, slip, stressed=False, source=view.fill_source,
-            action=fills.close_action(leg.side), qty=leg.qty,
+            state, q, eff, fills.base_slip(spec.costs, action),
+            stressed=False, source=view.fill_source,
+            action=action, qty=leg.qty,
         )
         if note:
             depth_notes.append(note)

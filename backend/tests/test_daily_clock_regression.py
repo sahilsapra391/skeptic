@@ -45,7 +45,8 @@ def _spec(name: str, position: dict, entry: dict, exit_: dict, version: int = 1)
         "underlying": {"ticker": "SPY"},
         "position": position, "entry": entry, "exit": exit_,
         "sizing": {"method": "fixed_contracts", "value": 1},
-        "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5},
+        "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5,
+                                                   "slippage_half_spread_fraction_sell": 0.5},
         "backtest": {"start": None, "end": None, "initial_capital": 25000, "seed": 42},
     }
 

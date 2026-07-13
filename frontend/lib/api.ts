@@ -172,10 +172,11 @@ export function startBacktest(
     ...(untouched && parsedSpec ? parsedSpec : draftToSpec(draft, parsedSpec)),
   } as Record<string, unknown>;
   // cost settings apply to EVERY run — the edit in Settings is the edit here
-  const { commission, slippage } = getSettings();
+  const { commission, slippage, slippageSell } = getSettings();
   spec.costs = {
     commission_per_contract: commission,
     slippage_half_spread_fraction: slippage,
+    slippage_half_spread_fraction_sell: slippageSell,
   };
   // pre-run dials apply to EVERY run too (2026-07-06): the confirmed data
   // window (required), contracts, cadence and capital — like costs, they

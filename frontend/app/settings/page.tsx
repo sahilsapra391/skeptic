@@ -106,7 +106,8 @@ export default function SettingsPage() {
 
   const costsDefault =
     settings.commission === DEFAULT_SETTINGS.commission &&
-    settings.slippage === DEFAULT_SETTINGS.slippage;
+    settings.slippage === DEFAULT_SETTINGS.slippage &&
+    settings.slippageSell === DEFAULT_SETTINGS.slippageSell;
 
   return (
     <div>
@@ -125,7 +126,7 @@ export default function SettingsPage() {
             onCommit={(v) => updateSettings({ commission: v })}
           />
           <NumberField
-            label="Slippage"
+            label="Slippage — buys"
             suffix="× half-spread"
             value={settings.slippage}
             min={0.05}
@@ -133,11 +134,21 @@ export default function SettingsPage() {
             step={0.05}
             onCommit={(v) => updateSettings({ slippage: v })}
           />
+          <NumberField
+            label="Slippage — sells"
+            suffix="× half-spread"
+            value={settings.slippageSell}
+            min={0.05}
+            max={1}
+            step={0.05}
+            onCommit={(v) => updateSettings({ slippageSell: v })}
+          />
           <div className="flex items-center justify-between">
             <span className="text-[12.5px] leading-[1.55] text-ink-4">
-              Buys fill toward the ask, sells toward the bid, plus this fraction of the
-              half-spread. Mid fills (0) are banned by design — slippage is a floor, not a
-              knob you can zero out.
+              Buys fill toward the ask, sells toward the bid, plus these fractions of the
+              half-spread. The defaults are measured, not assumed — 233M real prints put
+              the median concession near 0.87, harsher on sells. Mid fills (0) are banned
+              by design; only 0.1% of real prints ever fill at mid or better.
             </span>
             {!costsDefault && (
               <button
@@ -145,6 +156,7 @@ export default function SettingsPage() {
                   updateSettings({
                     commission: DEFAULT_SETTINGS.commission,
                     slippage: DEFAULT_SETTINGS.slippage,
+                    slippageSell: DEFAULT_SETTINGS.slippageSell,
                   })
                 }
                 className="shrink-0 rounded-[9px] border border-line px-3 py-1.5 text-[12.5px] text-ink-3 hover:border-line-hover hover:text-ink"

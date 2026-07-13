@@ -69,7 +69,7 @@ def _spec(*, exit_conditions: list | None = None,
         "exit": exit_block,
         "sizing": {"method": "fixed_contracts", "value": 1},
         "costs": {"commission_per_contract": 0.65,
-                  "slippage_half_spread_fraction": 0.5},
+                  "slippage_half_spread_fraction": 0.5, "slippage_half_spread_fraction_sell": 0.5},
         "backtest": backtest,
     })
 

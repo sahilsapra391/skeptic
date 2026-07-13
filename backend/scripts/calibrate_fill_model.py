@@ -12,7 +12,8 @@ that daily fill land, in units of the TRUE half-spread?
     excess_buy  = (fill_daily_buy  − nbbo_mid) / nbbo_half_spread
     excess_sell = (nbbo_mid − fill_daily_sell) / nbbo_half_spread
 
-The model intends to concede half the half-spread (f = 0.5). If EOD
+The model intends each side's default (buys 0.85 / sells 0.90 since
+2026-07-13 — D3d tape-earned, side-aware). If EOD
 quotes were perfect closing NBBO, the median excess would BE f. Stale or
 wide EOD marks push it off; the measured median is the truth the default
 must answer to. Calibration targets the BASE fraction only — the OI-
@@ -134,6 +135,7 @@ def measure(ticker: str = "SPY") -> Calibration:
     from app.data.intraday import load_intraday_store
 
     f = Costs().slippage_half_spread_fraction
+    f_sell = Costs().slippage_half_spread_fraction_sell
     cal = Calibration(measured_at=datetime.now(UTC).isoformat(), f_current=f)
 
     store = load_market_store(ticker)
@@ -177,7 +179,7 @@ def measure(ticker: str = "SPY") -> Calibration:
             if half_n <= 0:
                 continue
             fill_buy = mid_e + f * half_e
-            fill_sell = mid_e - f * half_e
+            fill_sell = mid_e - f_sell * half_e
             cal.excess.append((fill_buy - mid_n) / half_n)
             cal.excess.append((mid_n - fill_sell) / half_n)
             cal.spread_ratio.append(half_e / half_n)
@@ -294,9 +296,13 @@ def evidence_markdown(cal: Calibration, decision: Decision, today: str) -> str:
 def _edit_defaults(f_new: float) -> None:
     """Anchored, exact-string edits to the REAL defaults. A missing anchor
     aborts before anything is written."""
-    spec_old = "slippage_half_spread_fraction: float = Field(default=0.5, gt=0, le=1)"
+    # anchors updated 2026-07-13 (two-field earned model). The auto-edit
+    # still proposes ONE f and moves the BUY default only — the sell field
+    # (0.90) evolves behind its own owner gate; the PR body names it as a
+    # human follow-up. A two-sided decision model is a future redesign.
+    spec_old = "slippage_half_spread_fraction: float = Field(default=0.85, gt=0, le=1)"
     spec_new = f"slippage_half_spread_fraction: float = Field(default={f_new}, gt=0, le=1)"
-    schema_old = '"exclusiveMinimum": 0,\n          "maximum": 1,\n          "default": 0.5,'
+    schema_old = '"exclusiveMinimum": 0,\n          "maximum": 1,\n          "default": 0.85,'
     schema_new = (
         f'"exclusiveMinimum": 0,\n          "maximum": 1,\n          "default": {f_new},'
     )
@@ -327,7 +333,9 @@ def open_pr(cal: Calibration, decision: Decision, today: str) -> None:
         "Edits the REAL defaults only (app/models/spec.py + docs/strategy-spec.schema.json"
         " — owner amendment 2). Human follow-ups on merge, each behind its own gate:\n"
         "- parser prompt example value (requires parser-eval re-ACCEPT)\n"
-        "- frontend Settings default (frontend/lib/settings.ts)\n\n"
+        "- frontend Settings default (frontend/lib/settings.ts)\n"
+        "- the SELL-side default (slippage_half_spread_fraction_sell) — "
+        "this loop calibrates the BUY field only\n\n"
         "Merging is the review — nothing changed until this lands.\n\n"
         "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
     )

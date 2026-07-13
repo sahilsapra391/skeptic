@@ -483,8 +483,36 @@ class Costs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     commission_per_contract: float = Field(default=0.65, ge=0)
-    # 0 (mid fills) is forbidden by the schema's exclusiveMinimum — guardrail #1
-    slippage_half_spread_fraction: float = Field(default=0.5, gt=0, le=1)
+    # 0 (mid fills) is forbidden by the schema's exclusiveMinimum — guardrail #1.
+    # Defaults are EARNED, not assumed (D3d calibration, owner 2026-07-13):
+    # 233M real tape prints put the median implied slip near 0.87 and
+    # side-asymmetric — buyers lifting offers concede ~0.85-0.87 of the
+    # half-spread; seller-aggressor prints hit harder (p50 ~0.90, 17-26%
+    # beyond the displayed bid). The PARSER sets BOTH fields when the user
+    # states a single slippage number — asymmetry only ever comes from these
+    # defaults or an explicit two-value request, never a silent guess.
+    slippage_half_spread_fraction: float = Field(default=0.85, gt=0, le=1)
+    slippage_half_spread_fraction_sell: float = Field(default=0.90, gt=0, le=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mirror_single_slippage(cls, data: Any) -> Any:
+        """A lone stated slippage number sets BOTH sides — enforced at the
+        model layer, not just the parser prompt. This also keeps every
+        pre-2026-07-13 stored spec (which pins only the buy field) on the
+        exact flat model its run used: audits and replays re-validate to
+        identical fills, never a 0.5-buy/0.90-sell hybrid no run ever
+        produced. Pure defaults (no costs / neither field) stay 0.85/0.90;
+        explicit two-value specs are untouched."""
+        if (
+            isinstance(data, dict)
+            and "slippage_half_spread_fraction" in data
+            and "slippage_half_spread_fraction_sell" not in data
+        ):
+            data["slippage_half_spread_fraction_sell"] = data[
+                "slippage_half_spread_fraction"
+            ]
+        return data
     # Liquidity floors (D1b, owner-confirmed Moderate defaults). Defaulted
     # cost knobs like commission/slippage — never entry/strike/exit params,
     # so guardrail #3 (no silent parser defaults) does not apply.

@@ -110,11 +110,17 @@ safer than bending an equity framework. Design:
 - **Fill model (guardrail #1):** buy fills at `ask + slip*(ask-bid)` beyond...
   correction: buy fills at `bid + (1 - slip) * spread` is wrong; define
   explicitly: `slip ∈ [0,1]` is the fraction of the half-spread conceded from
-  mid toward the adverse side. Default `slip = 0.5` (i.e., halfway between mid
-  and the adverse quote). Buys: `mid + slip*(ask-mid)`. Sells:
-  `mid - slip*(mid-bid)`. `slip=1.0` = full adverse quote, `0` forbidden by
-  config validation (mid fills banned). Commission per contract per side
-  (default $0.65). All configurable in `spec.costs`.
+  mid toward the adverse side. Defaults are EARNED from the D3d tape
+  calibration (233M real prints, 2026-07-13 owner decision): buys 0.85,
+  sells 0.90 — side-aware, because seller-aggressor prints measurably
+  concede more (p50 ~0.90, 17-26% beyond the displayed bid) than buyers
+  (~0.85-0.87, ~3% beyond the ask). Buys: `mid + slip*(ask-mid)`. Sells:
+  `mid - slip_sell*(mid-bid)`. `slip=1.0` = full adverse quote, `0`
+  forbidden by config validation (mid fills banned; the tape vindicates
+  this — 0.1% of real prints fill at mid or better). A single user-stated
+  slippage number sets BOTH sides at the parser; asymmetry only ever comes
+  from the defaults or an explicit two-value request. Commission per
+  contract per side (default $0.65). All configurable in `spec.costs`.
 - **Entry evaluation:** each day, if schedule matches and all entry conditions
   (indicator expressions over `MarketView`) are true and
   `open_positions < max_concurrent`, select contracts: expiration nearest

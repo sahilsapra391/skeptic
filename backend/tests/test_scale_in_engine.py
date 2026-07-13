@@ -83,6 +83,7 @@ def _ladder_spec(rungs: list[dict], exit_rules: dict, max_total: int) -> Strateg
         # real property of cheap options); the entry spread-gate is exercised
         # in test_liquidity.py — these fixtures isolate the ladder mechanics.
         "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5,
+                                                   "slippage_half_spread_fraction_sell": 0.5,
                   "max_spread_pct": 500},
         "backtest": {"start": None, "end": "2025-01-06", "initial_capital": 10_000,
                      "seed": 42, "clock": "5min"},

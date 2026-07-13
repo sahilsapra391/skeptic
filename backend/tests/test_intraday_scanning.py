@@ -100,7 +100,7 @@ def _spec(exit_rules: dict, *, scan: str | None = "every_setup",
         "exit": exit_rules,
         "sizing": {"method": "fixed_contracts", "value": 1},
         "costs": {"commission_per_contract": 0.65,
-                  "slippage_half_spread_fraction": 0.5},
+                  "slippage_half_spread_fraction": 0.5, "slippage_half_spread_fraction_sell": 0.5},
         "backtest": {"start": None, "end": SESSION, "initial_capital": 10_000,
                      "seed": 42, "clock": clock},
     })

@@ -315,7 +315,11 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
       method: draft.sizeMethod ?? "fixed_contracts",
       value: draft.sizeValue ?? 1,
     },
-    costs: { commission_per_contract: 0.65, slippage_half_spread_fraction: 0.5 },
+    costs: {
+      commission_per_contract: 0.65,
+      slippage_half_spread_fraction: 0.85,
+      slippage_half_spread_fraction_sell: 0.9,
+    },
     backtest,
   };
   spec.spec_version = computeSpecVersion(spec);
