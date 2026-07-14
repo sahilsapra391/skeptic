@@ -41,6 +41,7 @@ def _warm_lake() -> None:
 _warm_lake()
 
 from app.api import data as data_api  # noqa: E402
+from app.api import notebook as notebook_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
 from app.db import init_db  # noqa: E402
 
@@ -132,6 +133,7 @@ def health() -> dict[str, object]:
 
 app.include_router(data_api.router, prefix="/api/data", tags=["data"])
 app.include_router(runs_api.router, prefix="/api", tags=["runs"])
+app.include_router(notebook_api.router, prefix="/api", tags=["notebook"])
 
 
 @app.exception_handler(HTTPException)
