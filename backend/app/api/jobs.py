@@ -40,6 +40,19 @@ if TYPE_CHECKING:
 STALE_TAKEOVER_MINUTES = 30
 
 
+def marker_age_minutes(started_at: Any, stale_minutes: int) -> float:
+    """Minutes since an ISO start stamp. A stamp that cannot be read counts
+    as just past `stale_minutes`: a marker whose age cannot be established
+    must never wedge its slot shut. Shared by every marker staleness check
+    (job claims here, the narration release in runs.py)."""
+    try:
+        return (datetime.now(UTC)
+                - datetime.fromisoformat(str(started_at))
+                ).total_seconds() / 60
+    except ValueError:
+        return float(stale_minutes + 1)
+
+
 def claim_run_job(run_id: str, *, column: str, running_status: str,
                   verb: str) -> None:
     """Admit ONE background job for this run or raise: 404 when there is no
@@ -51,6 +64,10 @@ def claim_run_job(run_id: str, *, column: str, running_status: str,
     check was made on — the losing side of a race sees rowcount 0 and gets
     the same 409 a straight read would have produced a moment later."""
     marker_col = getattr(db.Run, column)
+    # read and swap run in SEPARATE short transactions on purpose: holding
+    # the read open across the UPDATE adds nothing (the atomicity lives in
+    # the swap's WHERE), and on SQLite it would escalate a shared read lock
+    # into the write — the classic busy-timeout deadlock shape
     with db.session() as s:
         row = s.execute(
             select(db.Run.status, db.Run.spec_json, marker_col)
@@ -67,27 +84,21 @@ def claim_run_job(run_id: str, *, column: str, running_status: str,
             marker = {}
         if not isinstance(marker, dict):
             marker = {}
-        if marker.get("status") == running_status:
-            started = marker.get("started_at", "")
-            try:
-                age_min = (datetime.now(UTC)
-                           - datetime.fromisoformat(started)
-                           ).total_seconds() / 60
-            except (TypeError, ValueError):
-                age_min = STALE_TAKEOVER_MINUTES + 1
-            if age_min < STALE_TAKEOVER_MINUTES:
-                raise HTTPException(status_code=409,
-                                    detail=f"{verb} already running")
+        if (marker.get("status") == running_status
+                and marker_age_minutes(marker.get("started_at"),
+                                       STALE_TAKEOVER_MINUTES)
+                < STALE_TAKEOVER_MINUTES):
+            raise HTTPException(status_code=409,
+                                detail=f"{verb} already running")
     claim = json.dumps({"status": running_status,
                         "started_at": datetime.now(UTC).isoformat()})
     with db.session() as s:
         # DML through Session.execute is a CursorResult at runtime; the
-        # stubs type it as Result, which hides rowcount — hence the cast
+        # stubs type it as Result, which hides rowcount — hence the cast.
+        # `marker_col == prior` renders IS NULL when prior is None.
         result = cast("CursorResult[Any]", s.execute(
             update(db.Run)
-            .where(db.Run.id == run_id,
-                   marker_col == prior if prior is not None
-                   else marker_col.is_(None))
+            .where(db.Run.id == run_id, marker_col == prior)
             .values({column: claim})
             .execution_options(synchronize_session=False)
         ))

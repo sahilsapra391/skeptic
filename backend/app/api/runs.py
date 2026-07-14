@@ -22,7 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field, ValidationError
 
 from app import db
-from app.api.jobs import claim_run_job, pinned_engine_rerun
+from app.api.jobs import claim_run_job, marker_age_minutes, pinned_engine_rerun
 from app.api.payload import build_run_payload, run_summary
 from app.api.provenance import (
     attach_mechanics,
@@ -712,12 +712,8 @@ def _release_stale_narration(run_id: str, payload: dict[str, Any]) -> dict[str, 
     later read is cheap and the pollers stop."""
     if not payload.get("narrationPending"):
         return payload
-    started = payload.get("narrationStartedAt")
-    try:
-        age_min = (datetime.now(UTC)
-                   - datetime.fromisoformat(str(started))).total_seconds() / 60
-    except (TypeError, ValueError):
-        age_min = _NARRATION_STALE_MINUTES + 1
+    age_min = marker_age_minutes(payload.get("narrationStartedAt"),
+                                 _NARRATION_STALE_MINUTES)
     if age_min < _NARRATION_STALE_MINUTES:
         return payload
     log.warning("run %s: narration attempt is stale (%.0f min) — the "
@@ -741,9 +737,6 @@ def audit_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
 
 
 def _execute_audit(run_id: str) -> None:
-    from datetime import UTC as _UTC
-    from datetime import datetime as _dt
-
     try:
         with db.session() as s:
             run = s.get(db.Run, run_id)
@@ -757,7 +750,8 @@ def _execute_audit(run_id: str) -> None:
         # window pin + lock + refresh=False stores: the shared verification
         # scaffold (app.api.jobs) — the fill-count guard below is this job's
         # own drift check on top of it
-        spec, result, _, _ = pinned_engine_rerun(spec_doc, stats)
+        rerun = pinned_engine_rerun(spec_doc, stats)
+        spec, result = rerun.spec, rerun.result
         # in-window lake drift is still possible (self-healing artifacts,
         # growing resolution maps): the regenerated run must reproduce the
         # ORIGINAL fill count or the audit refuses — attributing
@@ -775,7 +769,7 @@ def _execute_audit(run_id: str) -> None:
                             f"{result.filled} fills vs the original "
                             f"{original_filled}; the regenerated fills are "
                             f"not this run's fills"),
-                        "generated_at": _dt.now(_UTC).isoformat(),
+                        "generated_at": datetime.now(UTC).isoformat(),
                     })
                     s.commit()
             return
@@ -788,7 +782,7 @@ def _execute_audit(run_id: str) -> None:
                     f"/date={d}/bars.parquet")
 
         audit = audit_fills(result.fill_log, _load_day)
-        audit["generated_at"] = _dt.now(_UTC).isoformat()
+        audit["generated_at"] = datetime.now(UTC).isoformat()
         audit["fills_total"] = len(result.fill_log)
         with db.session() as s:
             run = s.get(db.Run, run_id)
