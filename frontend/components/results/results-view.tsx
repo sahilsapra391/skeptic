@@ -81,8 +81,8 @@ const HINT_MC: HintPair = [
 ];
 const HINT_SENS: HintPair = [
   "Each parameter nudged around its specced value (±20%, or wider absolute steps " +
-    "for small thresholds) and the backtest re-run. Brighter = better Sharpe. " +
-    "A real edge survives nudges (plateau); a fragile one collapses (cliff).",
+    "for small thresholds and small deltas) and the backtest re-run. Brighter = " +
+    "better Sharpe. A real edge survives nudges (plateau); a fragile one collapses (cliff).",
   "We nudged every setting around your values and re-ran the whole test. Brighter = " +
     "better result. A real edge survives nudges; a fragile one falls apart.",
 ];

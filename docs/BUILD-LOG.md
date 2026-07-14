@@ -2034,3 +2034,52 @@ valid' fallback → median == peak) — pre-existing classifier hole the
 floors narrow but can't close, owner call on "sweep uninformative"
 disclosure semantics. 628 tests green; canary flagged; frontend
 lint+typecheck clean.
+
+## F8 follow-up — strike-granularity floor for the delta sweep (2026-07-14)
+
+WHAT: the delta sweep retained the small-base under-probing class the
+condition floors fixed (deferred-with-disclosure in the entry above,
+CONFIRMED in that PR's independent review): ±20% of a small
+strike-selection delta steps 0.005Δ per cell at base 0.05, while one
+strike at typical chain spacing is worth more delta than that
+(|dΔ/dK| = φ(d1)/(K·σ√T) → ≈0.4–2 delta points per $1 strike at the
+5Δ wing across 45→1 DTE, 5× on a $5 grid) — adjacent cells resolve to
+the SAME contract, five near-identical Sharpes read as a FALSE
+PLATEAU, and the gauntlet blesses exactly the fragile 5Δ-tail-selling
+archetype it exists to catch; at the sweep's own 0.03 clamp floor
+three cells were literally identical.
+HOW: _DELTA_STEP_FLOOR (stages.py) + _delta_grid — below 0.25Δ the
+sweep steps an absolute 0.025Δ grid (±2 steps, shifted up whole steps
+off the 0.03 edge, specced value always ON the grid at a recorded
+base_index; the shift ceil is dust-clamped to 2 so the #99 review's
+negative-base_index class is structurally impossible). ONE grounding
+rule, shared with _COND_FAMILY_FLOORS: floor = 10% of the family's
+reference magnitude, delta's reference = the 25Δ wing (the skew_25d
+convention) — and the strike-granularity arithmetic independently
+lands on the same 0.025 (docs/HONESTY.md carries it). ≥0.25Δ keeps
+byte-identical ±20% (clamps included); base < 0.03 keeps the
+pre-floor clamped path (outside the grounded scale, _condition_grid's
+lower-edge posture). TAX UNCHANGED: same 5 cells, same classifier,
+identical engine-run count, no re-centering. Disclosed on a NEW
+Sensitivity.delta_note (additive field, None on runs saved before the
+floor) → template + retail verdict caveats ("Notes from
+stress-testing your strike choice: …"); numerals = the on-grid
+specced value + grid endpoints only (guardrail #4, validated with the
+shipping validator in tests). Frontend: sweep hint copy extended
+("small thresholds and small deltas"); no other surface claimed ±20%
+for delta post-#99. _mutations now returns (muts, conditions_note,
+delta_note) — delta discloses on its OWN channel, never inside the
+entry-rules framing.
+TESTS: 20 new hand-computed (test_delta_sensitivity.py): the 0.05
+lottery grid [0.05, 0.075, 0.1, 0.125, 0.15] base_index 0; the 0.03
+clamp collapse now 5 DISTINCT cells; one-step shift at 0.055;
+no-shift 0.10; the overfit canary's 0.15 pinned; 0.25 boundary +
+0.30 + 0.9-top-clamp byte-identical multiplicative; percent-form 5 →
+0.05; below-floor 0.02 keeps the pre-floor path; on-grid invariant
+across 14 bases; floor-exact step spacing; probe-range containment;
+note grounding via the shipping validate_numbers; integration on a
+fine-delta fixture store (0.025Δ cells pick different strikes and
+different Sharpes where the old 0.005Δ cells landed on one contract;
+the note rides both verdict registers via run_gauntlet). Suite 669 →
+689 green (before/after verified on this branch, stacked on the
+condition-floors branch); canary flagged; ruff + strict mypy clean.

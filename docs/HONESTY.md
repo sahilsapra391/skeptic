@@ -857,6 +857,39 @@ Rules (owner decisions 2026-07-08):
   floor was grounded on the family's scale, and shifting a grid past
   the specced value would take the as-specced cell off the grid
   (review finding, regression-tested).
+- **Small deltas sweep absolute 0.025Δ steps (2026-07-14, the PR #99
+  review's deferred finding).** The same under-probing class on the
+  STRIKE grid: ±20% of a 0.05Δ strike selection sweeps 0.04…0.06 in
+  0.005Δ cells, and on a discrete chain a cell that small usually
+  cannot change the selected contract — Black-Scholes puts one
+  strike's worth of delta at |dΔ/dK| = φ(d1)/(K·σ√T), which at the 5Δ
+  wing of an SPY-scale chain is ≈0.4–2 delta points per $1 of strike
+  spacing across 45→1 DTE (and 5× that on a $5 grid) — so adjacent
+  cells resolve to the SAME strike, five near-identical Sharpes read
+  as a false plateau, and the sweep blesses exactly the fragile
+  lottery-ticket archetype (5Δ tail selling) it exists to catch. At
+  the sweep's own 0.03 probe floor the collapse was literal: base 0.03
+  clamped three cells identical. Below 0.25Δ the sweep now steps an
+  absolute 0.025Δ grid (±2 steps around the specced delta, shifted up
+  whole steps off the 0.03 edge — the dte/_condition_grid pattern, the
+  specced value always ON the grid at a recorded base_index). The
+  floor obeys the SAME grounding rule as the condition floors — 10% of
+  the family's reference magnitude, delta's reference being the 25Δ
+  wing (the convention this repo already encodes as skew_25d) — and
+  the strike-granularity arithmetic above independently lands on the
+  same number: 0.025Δ per cell clears "at least one strike per cell"
+  at every realistic chain geometry, from fine $1 grids at weekly
+  tenors to $5 grids at monthlies. Deltas at or above 0.25 keep pure
+  ±20% (their multiplicative step already meets the floor, clamps
+  byte-identical); a base below the 0.03 probe floor is outside the
+  scale the floor was grounded on and keeps the pre-floor clamped
+  path. The multiple-testing tax is untouched: same 5 cells, same
+  classifier, identical engine-run count, no re-centering. Disclosed
+  in Sensitivity.delta_note ("delta 0.05 swept 0.05…0.15 — absolute
+  delta-point steps …"), riding both verdict registers; every numeral
+  is the on-grid specced value or a grid endpoint, so verdict
+  grounding (guardrail #4) always finds them in the report's sweep
+  values.
 - **Capped at the first 3 entry conditions.** Each swept condition adds
   5 engine re-runs on the serialized, OOM-sensitive engine; 3 covers
   the overfit surface of nearly every real spec (secondary filters

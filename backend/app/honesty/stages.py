@@ -278,17 +278,72 @@ Setter = Callable[[StrategySpec, float], None]
 # reference-scale threshold" equivalence the floors encode silently breaks.
 _SWEEP_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2]
 
+# Delta's floor (the PR #99 review's deferred finding, designed
+# 2026-07-14). ±20% of a small strike-selection delta probes almost
+# nothing ON A DISCRETE STRIKE GRID: 0.05Δ sweeps 0.04…0.06 in 0.005Δ
+# cells, and one strike at typical chain spacing is worth more delta
+# than a cell (Black-Scholes: |dΔ/dK| = φ(d1)/(K·σ√T) → at the 5Δ wing
+# of an SPY-scale chain, one $1 strike ≈ 0.4–2 delta points across
+# 45→1 DTE, one $5 strike ≈ 5× that) — adjacent cells resolve to the
+# SAME contract, five near-identical Sharpes read as a FALSE PLATEAU,
+# and the sweep blesses exactly the fragile lottery-ticket archetype
+# it exists to catch. At the probe floor the collapse is literal: base
+# 0.03 clamps three cells to identical values. The floor follows
+# _COND_FAMILY_FLOORS' one grounding rule — 10% of the family's
+# reference magnitude, delta's reference being the 25Δ wing (the same
+# convention this repo already encodes as skew_25d) → 0.025Δ per cell,
+# which independently clears "one strike per cell" at every realistic
+# chain geometry above. Engages below 0.25Δ; docs/HONESTY.md carries
+# the arithmetic.
+_DELTA_STEP_FLOOR = 0.025
+# The sweep's own probe range (pre-existing clamp bounds, hoisted):
+# 0.03 is the floored grid's lower edge, 0.95 the multiplicative cap.
+_DELTA_SWEEP_MIN = 0.03
+_DELTA_SWEEP_MAX = 0.95
+
+
+def _delta_grid(base: float) -> tuple[list[float], int, bool]:
+    """The 5 delta cells: (values, base index, floor-engaged flag).
+    Multiplicative ±20% wherever that moves the delta at least
+    _DELTA_STEP_FLOOR per cell (clamped to the probe range — the
+    pre-floor behavior, byte-identical); when the floor binds, an
+    absolute grid of ±2 floor-steps shifted UP by whole steps off the
+    lower edge (the dte / _condition_grid pattern — the specced value
+    always stays ON the grid). A base below the probe floor itself is
+    outside the scale the floor was grounded on and keeps the pre-floor
+    clamped path (_condition_grid's lower-edge posture). Both paths
+    produce exactly 5 cells and one classifier pass: the sweep's
+    engine-run cost and its multiple-testing arithmetic never change
+    with the grid shape."""
+    if base * 0.1 >= _DELTA_STEP_FLOOR or base < _DELTA_SWEEP_MIN:
+        vals = [min(_DELTA_SWEEP_MAX, max(_DELTA_SWEEP_MIN, base * f))
+                for f in _SWEEP_FACTORS]
+        return [round(v, 4) for v in vals], 2, False
+    vals = [base + (k - 2) * _DELTA_STEP_FLOOR for k in range(5)]
+    shift = 0
+    if vals[0] < _DELTA_SWEEP_MIN:
+        shift = math.ceil((_DELTA_SWEEP_MIN - vals[0]) / _DELTA_STEP_FLOOR)
+        # base ≥ the probe floor (guarded above) makes the exact-math
+        # shift ≤ 2; min() only absorbs float dust in the ceil — a
+        # dust-pushed 3 would take the specced value off the grid (the
+        # #99 review's negative-base_index class)
+        shift = min(shift, 2)
+        vals = [v + shift * _DELTA_STEP_FLOOR for v in vals]
+    return [round(v, 4) for v in vals], 2 - shift, True
+
 
 def _mutations(
     spec: StrategySpec,
-) -> tuple[list[tuple[str, list[float], int, Setter]], str | None]:
+) -> tuple[list[tuple[str, list[float], int, Setter]], str | None, str | None]:
     """((name, values in 5 steps — ±20%, or an absolute family-scale grid
-    for small condition thresholds, base index, setter) per numeric param
-    present, conditions-disclosure note). The base index marks the
-    as-specced value inside `values`."""
+    for small condition thresholds and small deltas, base index, setter)
+    per numeric param present, conditions-disclosure note,
+    delta-disclosure note). The base index marks the as-specced value
+    inside `values`."""
     out: list[tuple[str, list[float], int, Setter]] = []
     factors = _SWEEP_FACTORS
 
+    delta_note: str | None = None
     lead = spec.position.legs[0].strike_selection
     if lead.method is StrikeMethod.DELTA:
         base = lead.value / 100.0 if lead.value > 1 else lead.value
@@ -298,8 +353,18 @@ def _mutations(
                 if leg.strike_selection.method is StrikeMethod.DELTA:
                     leg.strike_selection.value = v
 
-        values = [round(min(0.95, max(0.03, base * f)), 4) for f in factors]
-        out.append(("delta", values, 2, set_delta))
+        values, delta_base, floor_hit = _delta_grid(base)
+        if floor_hit:
+            # grounded numerals only (guardrail #4): the on-grid specced
+            # value and the grid ENDPOINTS are report values the
+            # validator always finds; the step itself might not be
+            delta_note = (
+                f"delta {values[delta_base]:g} swept "
+                f"{values[0]:g}…{values[-1]:g} — absolute delta-point "
+                "steps (a ±20% probe of a delta this small often cannot "
+                "move one strike at the chain's spacing)"
+            )
+        out.append(("delta", values, delta_base, set_delta))
 
     dte = spec.position.expiration_selection.target_dte
 
@@ -345,7 +410,7 @@ def _mutations(
     # instead of ±20% (_COND_FAMILY_FLOORS), disclosed in the note.
     # Entry conditions only in v1 (exit/rung deferred, disclosed).
     note = _append_condition_sweeps(spec, out)
-    return out, note
+    return out, note, delta_note
 
 
 # Scale-aware sweep floors (PR #97 review follow-up, 2026-07-14). ±20% of a
@@ -570,13 +635,14 @@ def sensitivity(
     spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
 ) -> Sensitivity:
     """Perturb each numeric parameter in 5 steps (±20%, or an absolute
-    family-scale grid for small condition thresholds), re-run the engine,
-    classify the optimum (plateau/cliff). At the 5-min clock the sweep also
-    nudges the ENTRY TIME ±15/±30 minutes (D2d, per the brief): an edge that
-    only exists at exactly one minute of the day is noise — classified with
-    the same plateau/cliff rules as every parameter."""
+    family-scale grid for small condition thresholds and small deltas),
+    re-run the engine, classify the optimum (plateau/cliff). At the 5-min
+    clock the sweep also nudges the ENTRY TIME ±15/±30 minutes (D2d, per
+    the brief): an edge that only exists at exactly one minute of the day
+    is noise — classified with the same plateau/cliff rules as every
+    parameter."""
     sweep_spec, window_note = _sweep_base_spec(spec, intraday)
-    mutations, conditions_note = _mutations(sweep_spec)
+    mutations, conditions_note, delta_note = _mutations(sweep_spec)
     sweeps: list[ParamSweep] = []
     for name, values, base_index, setter in mutations:
         sharpes: list[float | None] = []
@@ -636,7 +702,7 @@ def sensitivity(
     if classified:
         verdict = "cliff" if "cliff" in classified else "plateau"
     return Sensitivity(params=sweeps, verdict=verdict, window_note=window_note,
-                       conditions_note=conditions_note)
+                       conditions_note=conditions_note, delta_note=delta_note)
 
 
 def session_split(result: RunResult) -> SessionSplit:
