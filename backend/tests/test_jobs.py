@@ -20,7 +20,7 @@ from fastapi import HTTPException
 
 from app import db
 from app.api import jobs
-from app.api.jobs import STALE_TAKEOVER_MINUTES, claim_run_job
+from app.api.jobs import STALE_TAKEOVER_MINUTES, claim_run_job, marker_age_minutes
 from app.api.payload import sweep_coverage_notes
 
 
@@ -133,6 +133,23 @@ class TestClaimRunJob:
             t.join(timeout=15)
         assert sorted(outcomes) == [200, 409]
         assert _stored_marker(run_id)["status"] == "__running__"
+
+
+class TestMarkerAgeMinutes:
+    def test_aware_stamp_reads_its_real_age(self) -> None:
+        started = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+        assert 4.9 < marker_age_minutes(started, 30) < 5.1
+
+    def test_naive_stamp_reads_as_stale_not_500(self) -> None:
+        # a tz-NAIVE stamp parses fine, then aware-minus-naive raises
+        # TypeError — persisted stamps from older writers must read as
+        # stale, never propagate out of a GET (review finding)
+        naive = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        assert marker_age_minutes(naive, 30) == 31.0
+
+    def test_garbage_and_missing_stamps_read_as_stale(self) -> None:
+        assert marker_age_minutes("not a date", 10) == 11.0
+        assert marker_age_minutes(None, 10) == 11.0
 
 
 class TestSweepCoverageNotes:

@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app import db
 from app.engine.concurrency import ENGINE_LOCK, release_memory
@@ -49,7 +49,10 @@ def marker_age_minutes(started_at: Any, stale_minutes: int) -> float:
         return (datetime.now(UTC)
                 - datetime.fromisoformat(str(started_at))
                 ).total_seconds() / 60
-    except ValueError:
+    except (TypeError, ValueError):
+        # ValueError: unparseable stamp. TypeError: a tz-NAIVE stamp parses
+        # fine and then the aware-minus-naive subtraction raises — persisted
+        # stamps from older writers must read as stale, never 500 a GET
         return float(stale_minutes + 1)
 
 
@@ -70,7 +73,10 @@ def claim_run_job(run_id: str, *, column: str, running_status: str,
     # into the write — the classic busy-timeout deadlock shape
     with db.session() as s:
         row = s.execute(
-            select(db.Run.status, db.Run.spec_json, marker_col)
+            # the spec is only checked for presence — don't ship its body
+            select(db.Run.status,
+                   func.coalesce(db.Run.spec_json, "") != "",
+                   marker_col)
             .where(db.Run.id == run_id)
         ).one_or_none()
     if row is None or row[0] != "done" or not row[1]:
