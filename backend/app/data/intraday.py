@@ -678,7 +678,7 @@ class IntradayStore:
 
     def refresh_sessions(self) -> None:
         """Relist the session→source map when stale — called ONCE per run,
-        BEFORE the engine starts (runs.py, under _ENGINE_LOCK). sessions()
+        BEFORE the engine starts (runs.py, under ENGINE_LOCK). sessions()
         itself never refreshes: a run plus its gauntlet sub-runs call it
         several times, and a mid-gauntlet relist would compute the main
         result and the honesty folds on different session sets (review

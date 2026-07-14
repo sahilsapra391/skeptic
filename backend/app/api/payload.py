@@ -195,6 +195,17 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
     return out
 
 
+def sweep_coverage_notes(sensitivity: dict[str, Any] | None) -> list[str]:
+    """The F8 sweep-coverage disclosures — what the sensitivity stage did
+    and did NOT probe — selected from a stored honesty report's sensitivity
+    dump. THE one selector for these keys: every surface that discloses
+    sweep coverage (the app, the notebook export) reads this list, so none
+    can bake its own key list and silently drift when a note is added."""
+    sens = sensitivity or {}
+    return [str(n) for n in (sens.get("conditions_note"),
+                             sens.get("window_note")) if n]
+
+
 def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
     """What would improve the strategy — computed ONLY from this run's own
     gauntlet numbers (the ±20% sweeps re-ran the real engine), never from

@@ -10,12 +10,9 @@ narrated number validated against the stats payload.
 
 from __future__ import annotations
 
-import ctypes
-import gc
 import json
 import logging
 import os
-import threading
 import time
 import uuid
 from datetime import UTC, datetime
@@ -25,6 +22,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field, ValidationError
 
 from app import db
+from app.api.jobs import claim_run_job, pinned_engine_rerun
 from app.api.payload import build_run_payload, run_summary
 from app.api.provenance import (
     attach_mechanics,
@@ -32,6 +30,7 @@ from app.api.provenance import (
     derived_record,
     mechanics_record,
 )
+from app.engine.concurrency import ENGINE_LOCK, release_memory
 from app.honesty.stages import MIN_TRADES
 from app.models.spec import StrategySpec
 
@@ -129,28 +128,6 @@ def _inherit_min_trades(parent_run_id: str | None) -> int:
     return MIN_TRADES
 
 
-# Engine + full gauntlet run in-process as background tasks (single web
-# worker). The gauntlet's sensitivity sweep re-runs the whole engine ~20×;
-# two overlapping full-history runs' transient PEAKS are what tip a small
-# container OOM (measured: no per-run reference leak — the Python heap is
-# flat run-over-run — so the risk is concurrency, not accumulation). This
-# lock serializes them: a second submission stays honestly 'queued' until
-# the first finishes.
-_ENGINE_LOCK = threading.Lock()
-
-
-def _release_memory() -> None:
-    """Hand the sweep's freed transient buffers back to the OS. glibc keeps
-    freed pandas/numpy chunks in per-thread arenas, so container RSS ratchets
-    even though nothing leaks; gc + malloc_trim return them. A no-op where
-    malloc_trim is unavailable (macOS / musl)."""
-    gc.collect()
-    try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except (OSError, AttributeError):
-        pass
-
-
 def _execute_run(run_id: str, auto_note: str | None = None,
                  min_trades: int = MIN_TRADES) -> None:
     """Background job: serialize on the engine lock, run one gauntlet, then
@@ -158,11 +135,11 @@ def _execute_run(run_id: str, auto_note: str | None = None,
     runs AFTER the lock releases — it is pure network I/O (2–5 minutes at
     worst on OpenRouter retries) and must hold neither the user's result
     nor the next queued engine run hostage."""
-    with _ENGINE_LOCK:
+    with ENGINE_LOCK:
         try:
             _run_and_store(run_id, auto_note, min_trades)
         finally:
-            _release_memory()
+            release_memory()
     _narrate_and_patch(run_id)
 
 
@@ -722,7 +699,6 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
 
 
 _AUDIT_RUNNING = "__running__"
-_AUDIT_STALE_MINUTES = 30
 
 # narration worst case is ~3 validated retries × 45s per register; a pending
 # flag older than this survived a worker death mid-attempt — the template
@@ -758,31 +734,8 @@ def audit_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
     vendor no fill price came from. Stored like a receipt; the run's
     verdict is never rewritten. Repeated POSTs while one is in flight
     are refused (each audit is a full engine re-run behind the lock)."""
-    from datetime import UTC as _UTC
-    from datetime import datetime as _dt
-
-    with db.session() as s:
-        run = s.get(db.Run, run_id)
-        if run is None or run.status != "done" or not run.spec_json:
-            raise HTTPException(status_code=404, detail="no completed run to audit")
-        if run.audit_json:
-            try:
-                marker = json.loads(run.audit_json)
-            except Exception:
-                marker = {}
-            if marker.get("status") == _AUDIT_RUNNING:
-                started = marker.get("started_at", "")
-                try:
-                    age_min = (_dt.now(_UTC)
-                               - _dt.fromisoformat(started)).total_seconds() / 60
-                except ValueError:
-                    age_min = _AUDIT_STALE_MINUTES + 1
-                if age_min < _AUDIT_STALE_MINUTES:
-                    raise HTTPException(status_code=409,
-                                        detail="audit already running")
-        run.audit_json = json.dumps({"status": _AUDIT_RUNNING,
-                                     "started_at": _dt.now(_UTC).isoformat()})
-        s.commit()
+    claim_run_job(run_id, column="audit_json",
+                  running_status=_AUDIT_RUNNING, verb="audit")
     tasks.add_task(_execute_audit, run_id)
     return {"run_id": run_id, "demo": False, "status": "auditing"}
 
@@ -798,44 +751,13 @@ def _execute_audit(run_id: str) -> None:
                 return
             spec_doc = json.loads(run.spec_json)
             stats = json.loads(run.stats_json) if run.stats_json else {}
-        # review BLOCKER #1: pin the re-run to the ORIGINAL effective
-        # window — with end=None the lake's newest sessions would extend
-        # the window and the audit would describe fills the run never
-        # made. The original window lives in the stored honesty report.
-        report = stats.get("honesty_report") or {}
-        eff_start = report.get("effective_start")
-        eff_end = report.get("effective_end")
-        if eff_start:
-            spec_doc.setdefault("backtest", {})["start"] = eff_start
-        if eff_end:
-            spec_doc.setdefault("backtest", {})["end"] = eff_end
-        spec = StrategySpec.model_validate(spec_doc)
         from app.data import r2 as _r2
-        from app.data.chains import load_market_store
         from app.data.fill_audit import audit_fills
-        from app.engine.runner import run_backtest
 
-        with _ENGINE_LOCK:  # loads AND the re-run are engine work —
-            # serialized like _execute_run (review #6: two overlapping
-            # store loads/peaks are the OOM concurrency class)
-            try:
-                # refresh=False: the audit re-runs the ORIGINAL spec and
-                # audits its fills — a TTL rebuild here would swap the lake
-                # under the re-run, and a same-count-different-prices drift
-                # would slip past the fill-count guard (review finding).
-                # The warm store the run used is the honest input; a cold
-                # container still builds once and the count guard catches
-                # any drift that build introduces.
-                store = load_market_store(spec.underlying.ticker.value,
-                                          refresh=False)
-                intraday = None
-                if spec.backtest.clock.value != "daily":
-                    from app.data.intraday import load_intraday_store
-
-                    intraday = load_intraday_store(spec.underlying.ticker.value)
-                result = run_backtest(spec, store, intraday)
-            finally:
-                _release_memory()
+        # window pin + lock + refresh=False stores: the shared verification
+        # scaffold (app.api.jobs) — the fill-count guard below is this job's
+        # own drift check on top of it
+        spec, result, _, _ = pinned_engine_rerun(spec_doc, stats)
         # in-window lake drift is still possible (self-healing artifacts,
         # growing resolution maps): the regenerated run must reproduce the
         # ORIGINAL fill count or the audit refuses — attributing
