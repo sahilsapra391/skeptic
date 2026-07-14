@@ -1799,3 +1799,58 @@ real cond_-leak check. NIT (rank-clamp duplicate cell at base 95)
 accepted — no correctness impact, base_index stays correct. 568 tests.
 Bit-identity confirmed by the reviewer: no engine/model files touched,
 setters mutate only deepcopies, daily-clock digests pass.
+
+## UX Chunk A — run provenance: the setup story persisted per run (2026-07-14)
+
+WHAT: every run row gains `provenance_json` (additive `_ensure_columns`
+migration): (1) the initial prompt verbatim + chart-pointer context (raw
+pinned bar times), (2) the full clarifying Q&A in order with client
+timestamps, (3) the confirmed draft ("the boxes") + applied costs +
+untouched flag, (4) measured mechanics appended at completion (engine/
+gauntlet/verdict seconds, sessions, resolution mix, effective window,
+build identity = deploy commit + spec_version + fill-model label — no
+hand-bumped ENGINE_VERSION constant; it would rot, owner 2026-07-14).
+KEY FINDING: the plan doc's "parser_events from D3a" never existed —
+/api/parse is stateless and the conversation lived only in composer React
+state, so capture is client-side (transcript ref accumulated across
+clarify rounds, reset on fresh compile/chart supersede) and rides the
+POST /api/backtest body, replacing the never-read top-level `draft` key.
+OLD RUNS (owner amendment): derive-don't-fabricate at READ time — NULL
+column rows get a record derived in the GET merge (prompt from
+meta.description_raw, decision grid from spec_json marked "derived",
+mechanics from perf/stats), chosen over a backfill script because it
+writes nothing to history, stays consistent with source fields, and
+improves without re-migration. The never-stored conversation is NEVER
+invented: derived records have no conversation key and say "conversation
+not captured (predates provenance recording)". Automatic runs
+(auto_unlock/receipt) store an origin record; a client blob on them is
+ignored. Oversize conversations truncate tail-first with a dropped-count
+marker, never a 422 (a run is never blocked by its own paperwork).
+TRUST BOUNDARY: provenance is display-only — size-capped, string-clamped,
+never fed to the engine, the verdict LLM, or grounded ask.
+TESTS: 11 new (614 total) — all four sections stored+served end-to-end
+over the fixture store, capture-less user run still marks recording,
+auto-run origin record ignores smuggled blobs, receipt record, tail-first
+truncation caps, null-valued optional fields never become the string
+"None", corrupt stored record never 500s the run screen, read-time
+derivation (flags, boxes, mechanics, no conversation),
+nothing-fabricated-when-sources-missing, origin/parent survival. The
+pre-column SQLite migration verified by hand (column added, old rows
+NULL, untouched). nightly-improve submits byte-identical bodies —
+regression digests unchanged.
+REVIEW (independent 8-angle pass): 5 CONFIRMED fixed — the demo-fallback
+proxy still read the removed top-level `draft` body key (422 on every
+demo backtest); the mechanics attach ran inside the run's try/except (a
+paperwork failure could error a computed verdict — now isolated, the
+verdict outranks the diary); the truncation loop was O(n²) in a
+client-supplied list (now a single-pass byte budget); _clip turned
+explicit JSON nulls into the literal "None" (or-"" guards + regression
+test); double-submit duplicated answer events (last-event guard). Plus
+2 dedup cleanups (one origin-record branch; shared PERF_MECHANICS_KEYS).
+2 PLAUSIBLE documented, not changed: transcript resets are convention
+not structure (no live leak; binding would touch untouched-detection);
+stored confirmed.draft vs derived confirmed.boxes is deliberate (owner:
+the derived grid IS the spec, marked derived — spec_to_draft would
+fabricate via delta rounding and window loss). Verdict-grounding
+guardrail traced clean: provenance never reaches the verdict LLM or
+grounded ask.

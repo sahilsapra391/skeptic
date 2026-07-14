@@ -249,6 +249,12 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
           period: TRIGGER_LOOKBACK_SESSIONS,
         },
         examples: n,
+        // provenance (Chunk A): the raw bars clicked, as ISO times — the
+        // formatted anchor above is display; this is the record
+        chartContext: {
+          ticker,
+          pins: complete.map((p) => ({ entry: p.a.t, exit: p.b?.t ?? null })),
+        },
       });
     } finally {
       setCompiling(false);

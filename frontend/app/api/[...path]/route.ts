@@ -66,9 +66,15 @@ function demoResponse(req: NextRequest, path: string[], body: string | null): Ne
     return NextResponse.json({ status: "spec", demo: true, draft: demoParse(text) });
   }
   if (path[0] === "backtest" && req.method === "POST") {
-    const { draft } = JSON.parse(body ?? "{}") as { draft?: SpecDraft };
-    if (!draft) return NextResponse.json({ detail: "missing draft" }, { status: 422 });
-    return NextResponse.json({ run_id: createDemoRun(draft), demo: true });
+    // the confirmed draft now rides inside provenance (Chunk A); the
+    // top-level key remains readable for older bodies
+    const { draft, provenance } = JSON.parse(body ?? "{}") as {
+      draft?: SpecDraft;
+      provenance?: { confirmed?: { draft?: SpecDraft } };
+    };
+    const confirmed = provenance?.confirmed?.draft ?? draft;
+    if (!confirmed) return NextResponse.json({ detail: "missing draft" }, { status: 422 });
+    return NextResponse.json({ run_id: createDemoRun(confirmed), demo: true });
   }
   if (path[0] === "runs" && path.length === 1 && req.method === "GET") {
     return NextResponse.json({ runs: listDemoRuns(), demo: true });

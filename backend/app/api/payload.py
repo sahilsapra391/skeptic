@@ -19,6 +19,10 @@ from app.models.spec import StrategySpec
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+# the fill model's product-visible label — shared by the run meta line and
+# the provenance mechanics record so the two can never drift apart
+FILL_MODEL = "liquidity-v1"
+
 # trust band geometry: level 1..5 → marker at 10/30/50/70/90%, band ±15%
 _MARKER = {1: 10, 2: 30, 3: 50, 4: 70, 5: 90}
 
@@ -610,7 +614,7 @@ def build_run_payload(
         "meta": (
             f"{result.ticker} · {structure} · clock {result.clock} · run {today} · "
             f"effective window {window} (bounded by coverage) · seed {result.seed} · "
-            f"trials {report.dsr.trials} · fill model liquidity-v1 · "
+            f"trials {report.dsr.trials} · fill model {FILL_MODEL} · "
             f"verdict: {verdict.source}"
         ),
         "spec": None,
