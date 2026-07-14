@@ -1933,3 +1933,22 @@ fixture exercising every branch: all lanes, weak volume field, stale
 recorder, open flag): first paint = five headers + coverage visual;
 every original fact confirmed present via full-page text audit; badges
 visible while collapsed; expand state survives reload.
+REVIEW (independent 5-angle pass, fact-preservation at full depth): 7
+CONFIRMED fixed — the UW 1-min line vanished when new_sources existed
+without uw_minute (the one fact-loss the audit found; old per-ticker
+"pending" announcement restored); the EOD badge scanned all tickers but
+the CHAIN QUALITY section gated on SPY only (now any-ticker, spread
+chart SPY-optional-safe); the intraday "recorder stalled" badge pointed
+at a group without the staleness detail (quote-recorder lane now names
+it); localStorage hydration accepted arrays/non-boolean values
+(first-click swallow — sanitized to boolean-valued plain objects);
+weakChainFields deref could crash the page on a malformed source entry
+(null-safe); the chain-quality warn rule (field list + <0.5) was copied
+between badge and rows (one shared constant pair now); group ids were
+stringly typed (GroupId union — a typo'd id fails the compile). Plus
+DRY: TICKERS + LANE_GRID constants, aria-controls/aria-hidden on the
+disclosure buttons. Refuted: PANEL unification (page-local values are
+deliberate, settings page precedent), table-driven signal sections
+(per-family t0/notes are honest variance), summary memoization (120s
+poll). Post-fix stub re-verify: pending line renders, staleness inside
+the badged group, persistence intact.

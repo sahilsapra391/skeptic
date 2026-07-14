@@ -33,11 +33,23 @@ const POLL_MS = 120_000;
 const PANEL = "rounded-[14px] border border-line bg-panel p-4";
 const PANEL_TITLE = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
 
+const TICKERS = ["SPY", "QQQ", "IWM"] as const;
+// the standard lane grid, shared by every group's lane section
+const LANE_GRID =
+  "grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]";
+// chain-quality warn rule — ONE definition shared by the detail rows and
+// the EOD group badge, so a threshold tune can never make them disagree
+const CHAIN_FIELDS = ["iv", "delta", "vega", "volume", "open_interest"];
+const WEAK_FIELD_SHARE = 0.5;
+
 // group expand state persists locally; "glance" is the only group open on
 // a first visit (owner plan: coverage at a glance stays at the top,
-// everything else is one click away)
+// everything else is one click away). The union type ties each <Group id>
+// to its openGroups key — a renamed/typo'd id fails the compile instead of
+// silently never persisting.
+type GroupId = "glance" | "eod" | "intraday" | "signals" | "health";
 const GROUPS_KEY = "skeptic-observatory-groups";
-const DEFAULT_OPEN: Record<string, boolean> = { glance: true };
+const DEFAULT_OPEN: Partial<Record<GroupId, boolean>> = { glance: true };
 
 // heartbeat waveform, edge to edge of the 260-wide viewBox (~372 path units)
 const HB_POINTS =
@@ -95,12 +107,12 @@ function Group({
   onToggle,
   children,
 }: {
-  id: string;
+  id: GroupId;
   title: string;
   summary: string;
   badge?: string | null;
   open: boolean;
-  onToggle: (id: string) => void;
+  onToggle: (id: GroupId) => void;
   children: React.ReactNode;
 }) {
   return (
@@ -108,9 +120,11 @@ function Group({
       <button
         onClick={() => onToggle(id)}
         aria-expanded={open}
+        aria-controls={`obs-group-${id}`}
         className="flex w-full items-baseline gap-3 px-4 py-3 text-left hover:bg-raised/40"
       >
         <span
+          aria-hidden="true"
           className={clsx(
             "inline-block font-mono text-[9px] text-ink-4 transition-transform",
             open && "rotate-90",
@@ -128,7 +142,11 @@ function Group({
           {summary}
         </span>
       </button>
-      {open && <div className="px-4 pb-4">{children}</div>}
+      {open && (
+        <div id={`obs-group-${id}`} className="px-4 pb-4">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -155,20 +173,29 @@ function Section({
 export default function DataPage() {
   const [coverage, setCoverage] = useState<CoveragePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(DEFAULT_OPEN);
+  const [openGroups, setOpenGroups] =
+    useState<Partial<Record<GroupId, boolean>>>(DEFAULT_OPEN);
 
   useEffect(() => {
     // hydrate the remembered expand state (client-only — localStorage in
-    // render would mismatch the server HTML, same pattern as the hero)
+    // render would mismatch the server HTML, same pattern as the hero).
+    // Keep only boolean values from a plain object: corrupt/legacy state
+    // (arrays, truthy non-booleans) would otherwise swallow the first
+    // toggle click and persist garbage keys back (review finding).
     try {
-      const saved = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "null");
-      if (saved && typeof saved === "object") setOpenGroups({ ...DEFAULT_OPEN, ...saved });
+      const saved: unknown = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "null");
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        const clean = Object.fromEntries(
+          Object.entries(saved).filter(([, v]) => typeof v === "boolean"),
+        );
+        setOpenGroups({ ...DEFAULT_OPEN, ...clean });
+      }
     } catch {
       /* private mode — keep defaults */
     }
   }, []);
 
-  const toggleGroup = (id: string) =>
+  const toggleGroup = (id: GroupId) =>
     setOpenGroups((g) => {
       const next = { ...g, [id]: !g[id] };
       try {
@@ -274,13 +301,14 @@ export default function DataPage() {
     ? `SPY ${spyChain.sessions.toLocaleString()} sessions since ${monthYear(spyChain.first)}` +
       (laterStart ? ` · QQQ/IWM since ${monthYear(laterStart)}` : "")
     : "no chains banked yet";
-  // any chain source with a load-bearing field under 50% populated lifts a
-  // badge — the same threshold the detail rows paint warn
-  const weakChainFields = (["SPY", "QQQ", "IWM"] as const).flatMap((t) =>
+  // any chain source with a load-bearing field under the shared threshold
+  // lifts a badge — the SAME constants the detail rows paint warn with, so
+  // the badge and the rows can never disagree. Null-safe: this runs in the
+  // component body on every payload, warn-worthy or not (review finding).
+  const weakChainFields = TICKERS.flatMap((t) =>
     Object.values(coverage.chain_quality?.[t]?.sources ?? {}).flatMap((s) =>
-      Object.entries(s.fields).filter(
-        ([f, share]) =>
-          ["iv", "delta", "vega", "volume", "open_interest"].includes(f) && share < 0.5,
+      Object.entries(s?.fields ?? {}).filter(
+        ([f, share]) => CHAIN_FIELDS.includes(f) && share < WEAK_FIELD_SHARE,
       ),
     ),
   );
@@ -446,8 +474,8 @@ export default function DataPage() {
             note="rebuilt nightly from the lake; minute bars upgrade the clock only —
             fills always quote from real NBBO (5-min iVol / recorder)"
           >
-            <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            <div className={LANE_GRID}>
+              {TICKERS.map((t) => {
                 const mix = coverage.resolution_mix?.[t];
                 if (!mix) return null;
                 const clockNote = [
@@ -510,7 +538,7 @@ export default function DataPage() {
         onToggle={toggleGroup}
       >
         <Section title="COVERAGE LANES — PER SOURCE, 2020 → NOW">
-          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+          <div className={LANE_GRID}>
             {dolthub && (
               <Lane
                 label="SPY EOD archive"
@@ -554,7 +582,7 @@ export default function DataPage() {
                 </span>
               </div>
             )}
-            {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            {TICKERS.map((t) => {
               const c = coverage.chains[t];
               return (
                 <div key={t} className="flex justify-between">
@@ -572,10 +600,15 @@ export default function DataPage() {
           </div>
         </Section>
 
-        {coverage.chain_quality?.SPY && (
+        {/* gated on ANY ticker's quality — the badge above scans all three,
+            so it must never point at a section that then fails to render
+            (review finding: SPY-only gate vs all-ticker badge) */}
+        {(coverage.chain_quality?.SPY ||
+          coverage.chain_quality?.QQQ ||
+          coverage.chain_quality?.IWM) && (
           <Section title="CHAIN QUALITY — FIELD COMPLETENESS PER SOURCE">
             <div className="flex flex-col gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+              {TICKERS.map((t) => {
                 const q = coverage.chain_quality?.[t];
                 if (!q) return null;
                 return Object.entries(q.sources).map(([source, s]) => (
@@ -585,12 +618,13 @@ export default function DataPage() {
                     </span>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-ink-4">
                       <span className="text-ink-3">{s.rows.toLocaleString()} rows</span>
-                      {Object.entries(s.fields)
-                        .filter(([f]) =>
-                          ["iv", "delta", "vega", "volume", "open_interest"].includes(f),
-                        )
+                      {Object.entries(s?.fields ?? {})
+                        .filter(([f]) => CHAIN_FIELDS.includes(f))
                         .map(([f, share]) => (
-                          <span key={f} className={share < 0.5 ? "text-warn" : undefined}>
+                          <span
+                            key={f}
+                            className={share < WEAK_FIELD_SHARE ? "text-warn" : undefined}
+                          >
                             {f.replace("open_interest", "oi")} {Math.round(share * 100)}%
                           </span>
                         ))}
@@ -599,14 +633,14 @@ export default function DataPage() {
                 ));
               })}
             </div>
-            {coverage.chain_quality.SPY.monthly_median_spread_pct && (
+            {coverage.chain_quality?.SPY?.monthly_median_spread_pct && (
               <div className="mt-3 border-t border-line-softer pt-2.5">
                 <div className={clsx(PANEL_TITLE, "mb-1.5")}>
                   SPY MEDIAN SPREAD BY MONTH — % OF MID
                 </div>
                 <svg width="100%" viewBox="0 0 860 46" className="block" preserveAspectRatio="none">
                   {(() => {
-                    const months = coverage.chain_quality.SPY.monthly_median_spread_pct!;
+                    const months = coverage.chain_quality?.SPY?.monthly_median_spread_pct ?? [];
                     const hi = Math.max(...months.map((m) => m.v), 1);
                     const w = 860 / months.length;
                     return months.map((m, i) => (
@@ -644,7 +678,7 @@ export default function DataPage() {
         onToggle={toggleGroup}
       >
         <Section title="COVERAGE LANES — PER SOURCE, 2020 → NOW">
-          <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
+          <div className={LANE_GRID}>
             {minute && (
               <Lane
                 label="alpaca minute"
@@ -675,7 +709,11 @@ export default function DataPage() {
                 last={today}
                 t0={t0}
                 t1={today}
-                note="minute quotes · best-effort uptime"
+                note={`minute quotes · best-effort uptime${
+                  recorderMins != null && !recorderFresh
+                    ? ` · last snapshot ${recorderMins} min ago — stalled`
+                    : ""
+                }`}
               />
             )}
           </div>
@@ -698,17 +736,18 @@ export default function DataPage() {
                 <span className="text-ink">{monthYear(recorder.first)} → now · gaps shown</span>
               </div>
             )}
-            {coverage.new_sources?.uw_minute && (
+            {/* gated like the old new-sources bullet: whenever new_sources
+                exists — a per-ticker "pending" is itself a fact worth
+                showing (review finding: the tighter uw_minute gate silently
+                dropped the whole line in the not-yet-flowing state) */}
+            {coverage.new_sources && (
               <div className="flex justify-between">
                 <span>UW 1-min contract bars (trade candles, clock/validation only)</span>
                 <span className="text-ink">
-                  {(["SPY", "QQQ", "IWM"] as const)
-                    .map((t) => {
-                      const w = coverage.new_sources?.uw_minute?.[t];
-                      return `${t} ${w ? w.sessions.toLocaleString() : "—"}`;
-                    })
-                    .join(" · ")}{" "}
-                  sessions
+                  {TICKERS.map((t) => {
+                    const w = coverage.new_sources?.uw_minute?.[t];
+                    return `${t} ${w ? `${w.sessions.toLocaleString()} sessions` : "pending"}`;
+                  }).join(" · ")}
                 </span>
               </div>
             )}
@@ -726,8 +765,8 @@ export default function DataPage() {
       >
         {coverage.ivol_analytics?.SPY?.ivx && (
           <Section title="IV ANALYTICS (IVOLATILITY) — IVX / HV, BANKED YEARS">
-            <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            <div className={LANE_GRID}>
+              {TICKERS.map((t) => {
                 const ivx = coverage.ivol_analytics?.[t]?.ivx;
                 if (!ivx) return null;
                 return (
@@ -755,8 +794,8 @@ export default function DataPage() {
             missing a tenor or delta bracket carry no value for that signal —
             filters read them as unavailable, never interpolated"
           >
-            <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            <div className={LANE_GRID}>
+              {TICKERS.map((t) => {
                 const sig = coverage.ivs_signals?.[t];
                 if (!sig) return null;
                 return (
@@ -785,8 +824,8 @@ export default function DataPage() {
             on this family refuse windows starting before the first banked
             session"
           >
-            <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            <div className={LANE_GRID}>
+              {TICKERS.map((t) => {
                 const dp = coverage.dealer_positioning?.[t];
                 if (!dp) return null;
                 return (
@@ -815,8 +854,8 @@ export default function DataPage() {
             runs conditioned on this family refuse windows starting before
             the first derived session"
           >
-            <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            <div className={LANE_GRID}>
+              {TICKERS.map((t) => {
                 const fs = coverage.flow_signals?.[t];
                 if (!fs) return null;
                 return (
@@ -866,8 +905,8 @@ export default function DataPage() {
               </>
             }
           >
-            <div className="grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
-              {(["SPY", "QQQ", "IWM"] as const).map((t) => {
+            <div className={LANE_GRID}>
+              {TICKERS.map((t) => {
                 const ih = coverage.inhouse_signals?.[t];
                 if (!ih?.first || !ih.last || !ih.sessions) return null;
                 return (
@@ -937,7 +976,7 @@ export default function DataPage() {
                 <span className="text-ink-4">·</span>
                 <span>
                   Massive OHLCV aggregates (coverage cross-check, never fills):{" "}
-                  {(["SPY", "QQQ", "IWM"] as const).map((t, i) => (
+                  {TICKERS.map((t, i) => (
                     <span key={t}>
                       {i > 0 && " · "}
                       {t}{" "}
