@@ -249,8 +249,13 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
         payload = build_run_payload(run_id, spec, result, report, verdict,
                                     retail_verdict, data_provenance=provenance)
         # the UI polls this flag briefly and swaps the wording in when the
-        # async narration lands; without a key there is nothing to wait for
+        # async narration lands; without a key there is nothing to wait for.
+        # The start stamp bounds the wait: a worker killed mid-narration
+        # would otherwise strand the flag true forever (review finding) —
+        # get_run clears it once the attempt is provably dead.
         payload["narrationPending"] = bool(os.environ.get("OPENROUTER_API_KEY"))
+        if payload["narrationPending"]:
+            payload["narrationStartedAt"] = datetime.now(UTC).isoformat()
         # the stats bundle is the ONLY material grounded Q&A may quote from
         stats = {
             "metrics": result.metrics,
@@ -276,6 +281,10 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             # records narration_s when its upgrade lands). The estimate adds
             # this so wall-clock predictions stay honest.
             "verdict_s": round(verdict_seconds, 2),
+            # marks the NEW verdict_s semantics — pre-change rows measured
+            # the blocking LLM narration (minutes) and must not inflate the
+            # estimate's verdict constant now that nothing blocks on it
+            "narration_off_path": True,
             "conditions": bool(spec.entry.conditions),
         }
         with db.session() as s:
@@ -348,6 +357,19 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 s.commit()
 
 
+def _patch_perf_narration(run: db.Run, narration_seconds: float | None) -> None:
+    """Record the measured narration time on the run's perf row — the ONE
+    writer for narration_s, shared by the success and fallback paths."""
+    if narration_seconds is None or not run.perf_json:
+        return
+    try:
+        perf = json.loads(run.perf_json)
+        perf["narration_s"] = round(narration_seconds, 2)
+        run.perf_json = json.dumps(perf)
+    except Exception:
+        pass
+
+
 def _clear_narration_pending(run_id: str,
                              narration_seconds: float | None = None) -> None:
     """The narration attempt is over (failed, or template stood) — stop the
@@ -360,13 +382,7 @@ def _clear_narration_pending(run_id: str,
         if payload.get("narrationPending"):
             payload["narrationPending"] = False
             run.payload_json = json.dumps(payload)
-        if narration_seconds is not None and run.perf_json:
-            try:
-                perf = json.loads(run.perf_json)
-                perf["narration_s"] = round(narration_seconds, 2)
-                run.perf_json = json.dumps(perf)
-            except Exception:
-                pass
+        _patch_perf_narration(run, narration_seconds)
         s.commit()
 
 
@@ -407,7 +423,7 @@ def _narrate_and_patch(run_id: str) -> None:
         # every attempt fell back to the template already stored
         _clear_narration_pending(run_id, narration_seconds)
         return
-    from app.api.payload import apply_verdict_text
+    from app.api.payload import apply_verdict_text, run_summary
 
     with db.session() as s:
         run = s.get(db.Run, run_id)
@@ -417,21 +433,16 @@ def _narrate_and_patch(run_id: str) -> None:
         payload = apply_verdict_text(payload, report, verdict, retail_verdict)
         payload["narrationPending"] = False
         run.payload_json = json.dumps(payload)
-        if run.perf_json:
-            try:
-                perf = json.loads(run.perf_json)
-                perf["narration_s"] = round(narration_seconds, 2)
-                run.perf_json = json.dumps(perf)
-            except Exception:
-                pass
-        # the library card quotes the headline — keep it in the narrated voice
+        _patch_perf_narration(run, narration_seconds)
+        # the library card quotes the headline — keep it in the narrated
+        # voice, formatted by the same run_summary the initial store used
+        # (only the quote fields move; upgradeOf/autoNote markers stay)
         if run.summary_json:
             try:
                 summary = json.loads(run.summary_json)
-                summary["quote"] = f"“{payload['verdict'].get('headline', '')}”"
-                retail_block = payload.get("retail") or {}
-                if retail_block.get("headline"):
-                    summary["quoteRetail"] = f"“{retail_block['headline']}”"
+                fresh = run_summary(run_id, payload, created="")
+                summary["quote"] = fresh["quote"]
+                summary["quoteRetail"] = fresh["quoteRetail"]
                 run.summary_json = json.dumps(summary)
             except Exception:
                 pass
@@ -572,6 +583,9 @@ def get_run(
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     if run.status == "done" and run.payload_json:
         payload = dict(json.loads(run.payload_json))
+        # a worker killed mid-narration must not leave the UI polling a
+        # forever-pending flag — release it once the attempt is stale
+        payload = _release_stale_narration(run_id, payload)
         # D3c: receipts arrive AFTER the payload froze — merged at read
         # time; the stored verdict/trust inside the payload is untouched
         if run.receipts_json:
@@ -622,6 +636,9 @@ def get_run(
 class AskRequest(BaseModel):
     question: str
     verbiage: str | None = None  # "institutional" (default) | "retail"
+    # the viewer's evidence bar — Q&A must describe the SAME verdict the
+    # screen shows when a stored run was re-graded at read time
+    min_trades: int | None = Field(default=None, ge=1, le=10_000)
 
 
 @router.post("/runs/{run_id}/replay")
@@ -663,6 +680,31 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
 
 _AUDIT_RUNNING = "__running__"
 _AUDIT_STALE_MINUTES = 30
+
+# narration worst case is ~3 validated retries × 45s per register; a pending
+# flag older than this survived a worker death mid-attempt — the template
+# verdict stands and the UI's upgrade poll must be released
+_NARRATION_STALE_MINUTES = 10
+
+
+def _release_stale_narration(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """A narrationPending flag whose attempt is provably dead (no start
+    stamp, or one past the stale horizon) is cleared — persisted, so every
+    later read is cheap and the pollers stop."""
+    if not payload.get("narrationPending"):
+        return payload
+    started = payload.get("narrationStartedAt")
+    try:
+        age_min = (datetime.now(UTC)
+                   - datetime.fromisoformat(str(started))).total_seconds() / 60
+    except (TypeError, ValueError):
+        age_min = _NARRATION_STALE_MINUTES + 1
+    if age_min < _NARRATION_STALE_MINUTES:
+        return payload
+    log.warning("run %s: narration attempt is stale (%.0f min) — the "
+                "template verdict stands", run_id, age_min)
+    _clear_narration_pending(run_id)
+    return {**payload, "narrationPending": False}
 
 
 @router.post("/runs/{run_id}/audit")
@@ -809,10 +851,16 @@ def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
     if run.status != "done" or not run.stats_json:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_STATS)
 
+    from app.api.payload import regrade_stats_for_min_trades
     from app.honesty.ask import answer_question
 
+    stats = json.loads(run.stats_json)
+    if req.min_trades is not None:
+        # same re-gate the displayed payload got — answers and screen agree,
+        # and the bar number itself is grounded (it rides the sample dump)
+        stats = regrade_stats_for_min_trades(stats, req.min_trades)
     answer = answer_question(
-        req.question, json.loads(run.stats_json), retail=req.verbiage == "retail"
+        req.question, stats, retail=req.verbiage == "retail"
     )
     if answer is None:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_KEY)

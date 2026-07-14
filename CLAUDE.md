@@ -69,7 +69,10 @@ class of bug in this codebase.
   `backend/tests/fixtures/overfit_strategy.json` must ALWAYS be flagged by
   the gauntlet; treat a green run on it as a failing build.
 - Determinism: all stochastic steps (Monte Carlo) take a seed, logged with
-  the run. Same spec + same data + same seed = identical output.
+  the run. Same spec + same data + same seed = identical ENGINE and gauntlet
+  output. The verdict GATE additionally reads the minimum-trades setting
+  (guardrail #5) — a view-time policy recorded on the report, never an
+  engine input.
 - Frontend implements the approved mockups in `docs/design/`; do not restyle
   by taste. P/L colors never appear on verdict components and vice versa.
 - **Typography (owner directive 2026-07-03, strict):** three voices, no

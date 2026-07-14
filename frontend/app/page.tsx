@@ -126,10 +126,8 @@ export default function NewAnalysisPage() {
   const [run, setRun] = useState<RunPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // parse in flight → the Claude-style thinking view (prompt bubble +
-  // shimmering status). A generation counter makes "‹ edit input" a real
-  // cancel: a stale response is dropped instead of yanking the UI forward.
-  const [thinking, setThinking] = useState(false);
+  // A generation counter makes "‹ edit input" a real cancel: a stale parse
+  // response is dropped instead of yanking the UI forward.
   const compileGenRef = useRef(0);
   const [earliestYear, setEarliestYear] = useState("1993");
   const [headline, setHeadline] = useState(HEADLINES[0]);
@@ -210,8 +208,10 @@ export default function NewAnalysisPage() {
     async (withAnswers?: Record<string, string>) => {
       if (!text.trim() || busy) return;
       const gen = ++compileGenRef.current;
+      // the thinking view has no mic control — a live dictation must not
+      // keep appending to the prompt behind it
+      if (speech.listening) speech.stop();
       setBusy(true);
-      setThinking(true);
       setError(null);
       try {
         const res = await parseText(text, withAnswers);
@@ -232,21 +232,23 @@ export default function NewAnalysisPage() {
         if (gen !== compileGenRef.current) return;
         setError(e instanceof Error ? e.message : "parse failed");
       } finally {
-        if (gen === compileGenRef.current) {
-          setBusy(false);
-          setThinking(false);
-        }
+        if (gen === compileGenRef.current) setBusy(false);
       }
     },
-    [text, busy],
+    [text, busy, speech],
   );
 
   const cancelCompile = useCallback(() => {
     compileGenRef.current++;
     setBusy(false);
-    setThinking(false);
     setPhase("compose");
   }, []);
+
+  // parse in flight → the Claude-style thinking view (prompt bubble +
+  // shimmering status). Derived, not stored: busy is only ever true during
+  // a parse while composing/clarifying (running uses its own phase), so a
+  // second flag could only ever drift out of sync with this.
+  const thinking = busy && (phase === "compose" || phase === "clarify");
 
   const answerQuestion = useCallback(
     (answer: string) => {
@@ -267,6 +269,9 @@ export default function NewAnalysisPage() {
   const runGauntlet = useCallback(async () => {
     // exit AND data window are required choices — never defaults
     if (!draft?.exit || !draft.window || busy) return;
+    // a narration-upgrade poll may still be armed for the PREVIOUS run —
+    // kill it so its stale closure can't overwrite the new run's state
+    if (pollRef.current) clearTimeout(pollRef.current);
     setBusy(true);
     setError(null);
     try {
@@ -321,7 +326,6 @@ export default function NewAnalysisPage() {
     setText("");
     setError(null);
     setBusy(false);
-    setThinking(false);
     setQuestions([]);
     setAnswers({});
     parsedSpecRef.current = null;

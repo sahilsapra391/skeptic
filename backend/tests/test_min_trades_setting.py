@@ -101,16 +101,23 @@ def test_bar_of_one_grades_a_single_trade(client: TestClient) -> None:
     payload = client.get(f"/api/runs/{run_id}").json()
     assert payload["status"] == "done"
     assert payload["verdict"]["refusal"] is False
-    # a graded sub-15 sample ALWAYS discloses the lowered bar, both voices
+    # a graded sub-15 sample ALWAYS discloses the lowered bar, both voices,
+    # worded run-anchored (a different viewer may be reading it) — and the
+    # structural marker reaches the library card's meta line
     assert "Below-standard sample" in payload["verdict"]["caveat"]
-    assert "lowered the bar" in payload["retail"]["caveat"]
+    assert "lowered bar" in payload["retail"]["caveat"]
+    assert payload["verdict"]["belowStandard"] is True
     # hermetic run (no key): template narration, nothing pending
     assert payload["narrationPending"] is False
     assert "verdict: template" in payload["meta"]
-    # graded → no unlock conditions stored for the nightly scan
+    assert payload["verdictSource"] == "template"
+    # graded → no unlock conditions stored for the nightly scan; the
+    # library summary carries the below-standard disclosure too
     with db.session() as s:
         run = s.get(db.Run, run_id)
         assert run is not None and run.unlock_json is None
+        assert run.summary_json is not None
+        assert "below-standard sample" in json.loads(run.summary_json)["meta"]
 
 
 def test_custom_bar_rides_the_unlock_conditions(client: TestClient) -> None:
@@ -223,3 +230,131 @@ def test_failed_narration_leaves_the_template_standing(
     assert payload["narrationPending"] is False
     assert "verdict: template" in payload["meta"]
     assert payload["verdict"]["refusal"] is True  # 1 trade at the standard bar
+
+
+def test_stale_narration_flag_is_released_on_read(client: TestClient) -> None:
+    """A worker killed mid-narration must not leave the UI polling a
+    forever-pending flag: a pending payload whose start stamp is past the
+    stale horizon is cleared (and persisted) at read time."""
+    from datetime import UTC, datetime, timedelta
+
+    run_id = client.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
+    stale = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        assert run is not None and run.payload_json is not None
+        doc = json.loads(run.payload_json)
+        doc["narrationPending"] = True
+        doc["narrationStartedAt"] = stale
+        run.payload_json = json.dumps(doc)
+        s.commit()
+
+    payload = client.get(f"/api/runs/{run_id}").json()
+    assert payload["narrationPending"] is False
+    with db.session() as s:  # persisted, not just served
+        run = s.get(db.Run, run_id)
+        assert run is not None and run.payload_json is not None
+        assert json.loads(run.payload_json)["narrationPending"] is False
+
+
+def test_regrade_rejudges_the_resolution_panel() -> None:
+    """The FX.4 resolution panel must tell the same story as a re-graded
+    verdict: a sub-window judged (and sign-flipped) at the viewer's bar
+    both refuses the run AND updates the panel it refused it for."""
+    from app.api.payload import regrade_for_min_trades
+
+    split = {
+        "meaningful": True, "note": "too thin", "judged": False,
+        "full_sharpe": 1.0,
+        "five_min": {"sessions": 20, "trades": 9, "pl": -50.0, "sharpe": -0.5,
+                     "first": "2025-01-02", "last": "2025-02-01"},
+        "minute": {"sessions": 20, "trades": 30, "pl": 900.0, "sharpe": 1.2,
+                   "first": "2025-02-02", "last": "2025-03-01"},
+        "eod_fallback_sessions": 0, "sign_flip": False,
+    }
+    report = _stats_report(trades=39, split=split)
+    stats = {"honesty_report": report}
+    payload = {
+        "meta": "x · verdict: llm", "verdict": {"refusal": False},
+        "retail": {"headline": "old"}, "mtiles": [{"v": "1", "l": "SHARPE"}],
+        "oosShadeX": 602, "recommendations": [], "resolutionSplit": split,
+    }
+    out = regrade_for_min_trades(payload, stats, 5)
+    # 9 ≥ 5 → judged, full +/five − → sign flip → hard cap
+    assert out["verdict"]["refusal"] is True
+    assert out["resolutionSplit"]["judged"] is True
+    assert out["resolutionSplit"]["sign_flip"] is True
+    assert out["regraded"] == {"bar": 5, "ranAt": 15}
+    # the input payload was never mutated (per-request view)
+    assert payload["verdict"] == {"refusal": False}
+    assert payload["resolutionSplit"]["judged"] is False
+
+
+def test_ask_stats_regrade_matches_the_displayed_verdict() -> None:
+    """Grounded Q&A re-gates its stats copy at the caller's bar, so answers
+    describe the verdict the screen shows and the bar number is grounded."""
+    from app.api.payload import regrade_stats_for_min_trades
+
+    stats = {"honesty_report": _stats_report(trades=13, split=None)}
+    stored = stats["honesty_report"]
+    assert stored["trust"]["label"] == "insufficient_evidence"
+
+    regraded = regrade_stats_for_min_trades(stats, 1)
+    rep = regraded["honesty_report"]
+    assert rep["trust"]["label"] != "insufficient_evidence"
+    assert rep["regime_sample"]["min_trades"] == 1
+    # untouched when the bar matches the stored one
+    assert regrade_stats_for_min_trades(stats, 15) is stats
+
+
+def _stats_report(trades: int, split: dict | None) -> dict:
+    """A minimal-but-valid stored honesty_report dump: refused at the
+    standard bar for thin trades, everything else healthy."""
+    from app.honesty.report import (
+        Coverage,
+        Dsr,
+        HonestyReport,
+        MonteCarlo,
+        OosSplit,
+        Sensitivity,
+        Trust,
+        WalkForward,
+    )
+    from app.honesty.report import ResolutionSplit as RS
+
+    report = HonestyReport(
+        oos=OosSplit(split_date="2025-02-01", is_sharpe=1.2, oos_sharpe=1.0,
+                     is_return=0.1, oos_return=0.05, is_trades=trades,
+                     oos_trades=5, degradation=0.8, sign_flip=False,
+                     flagged=False),
+        walk_forward=WalkForward(meaningful=False, note="short",
+                                 test_sessions=21),
+        monte_carlo=MonteCarlo(resamples=1000, block=5, seed=42, trades=trades,
+                               terminal_p5=9_000.0, terminal_p50=11_000.0,
+                               terminal_p95=13_000.0, max_drawdown_p50=0.05,
+                               max_drawdown_p95=0.15, p_loss=0.05),
+        sensitivity=Sensitivity(params=[], verdict="plateau"),
+        dsr=Dsr(trials=1, daily_sharpe=0.05, expected_max_sharpe=0.0, dsr=0.9),
+        regime_sample=RegimeSample(
+            trades=trades, days_low_vix=50, days_mid_vix=50, days_high_vix=50,
+            regimes_present=3, capped=True,
+            cap_reason=f"only {trades} closed trades — minimum is 15",
+            min_trades=15),
+        coverage=Coverage(requested_start="2025-01-01",
+                          requested_end="2025-03-01",
+                          effective_start="2025-01-02",
+                          effective_end="2025-03-01",
+                          requested_sessions=40, chain_sessions=40,
+                          coverage_ratio=1.0, materially_short=False,
+                          reason=None),
+        resolution_split=RS.model_validate(split) if split else None,
+        trust=Trust(level=None, label="insufficient_evidence",
+                    survived={"oos": True, "walk_forward": False,
+                              "monte_carlo": True, "sensitivity": True,
+                              "sample": False},
+                    survived_count=3,
+                    reasons=[f"only {trades} closed trades — minimum is 15"]),
+        metrics={},
+        effective_start="2025-01-02", effective_end="2025-03-01", seed=42,
+    )
+    return json.loads(report.model_dump_json())

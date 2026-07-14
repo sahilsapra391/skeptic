@@ -233,10 +233,13 @@ export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boo
 }
 
 export function askRun(id: string, question: string): Promise<{ answer: string; demo: boolean }> {
+  // the evidence bar rides along so grounded answers describe the SAME
+  // verdict the screen shows when a saved run was re-graded at read time
+  const { verbiage, minTrades } = getSettings();
   return request<{ answer: string; demo: boolean }>(`/api/runs/${id}/ask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question, verbiage: getSettings().verbiage }),
+    body: JSON.stringify({ question, verbiage, min_trades: minTrades }),
   });
 }
 

@@ -11,6 +11,8 @@ import Link from "next/link";
 
 import type { VerdictPayload } from "@/lib/types";
 
+import { PulsingDots } from "@/components/pulsing-dots";
+
 import { TrustBandHero } from "./trust-band";
 
 export function VerdictBlock({
@@ -42,17 +44,7 @@ export function VerdictBlock({
       </div>
       {narrationPending && (
         <div className="mt-2 flex items-center gap-2">
-          <span className="flex items-center gap-[3px]" aria-hidden>
-            <span className="h-[4px] w-[4px] animate-pin-pulse rounded-full bg-trust" />
-            <span
-              className="h-[4px] w-[4px] animate-pin-pulse rounded-full bg-trust"
-              style={{ animationDelay: "0.35s" }}
-            />
-            <span
-              className="h-[4px] w-[4px] animate-pin-pulse rounded-full bg-trust"
-              style={{ animationDelay: "0.7s" }}
-            />
-          </span>
+          <PulsingDots size={4} />
           <span className="thinking-shimmer text-[13px]">
             still writing the narration — every number here is already final
           </span>

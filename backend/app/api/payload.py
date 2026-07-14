@@ -23,6 +23,15 @@ _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
 # trust band geometry: level 1..5 → marker at 10/30/50/70/90%, band ±15%
 _MARKER = {1: 10, 2: 30, 3: 50, 4: 70, 5: 90}
 
+# the equity chart's SVG track width — the OOS shade x is computed against
+# it in BOTH the build and the read-time re-grade path
+OOS_TRACK_W = 860
+
+
+def _oos_shade_x(refusal: bool) -> int:
+    """Refusals shade the whole track (nothing was blessed to split)."""
+    return OOS_TRACK_W if refusal else round(OOS_TRACK_W * 0.7)
+
 
 def _short(d: date) -> str:
     return f"{_MONTHS[d.month - 1]} {d.day} ’{str(d.year)[2:]}"
@@ -417,7 +426,10 @@ def _ladder_depth_block(report: HonestyReport) -> dict[str, Any] | None:
 def _below_standard_note(report: HonestyReport, retail: bool = False) -> str | None:
     """The honesty rider on a lowered evidence bar: a GRADED verdict on a
     sample under the standard floor must say so, in both registers — the
-    user may lower the gate, never the disclosure (owner ask 2026-07-14)."""
+    user may lower the gate, never the disclosure (owner ask 2026-07-14).
+    Worded run-anchored ('this verdict's bar'), never viewer-anchored
+    ('your setting') — a stored payload outlives the setting that made it,
+    and a different viewer may be reading it (review finding)."""
     sample = report.regime_sample
     if (
         report.trust.label == "insufficient_evidence"
@@ -428,12 +440,12 @@ def _below_standard_note(report: HonestyReport, retail: bool = False) -> str | N
     if retail:
         return (
             f"Heads up: only {sample.trades} finished trades — under the standard "
-            f"floor of {MIN_TRADES}. Your Settings lowered the bar to "
-            f"{sample.min_trades}, so treat this verdict as a sketch, not a study."
+            f"floor of {MIN_TRADES}. This verdict was graded at a lowered bar of "
+            f"{sample.min_trades}, so treat it as a sketch, not a study."
         )
     return (
         f"Below-standard sample: {sample.trades} closed trades, graded only "
-        f"because your minimum-trades setting is {sample.min_trades} (standard "
+        f"because this verdict's evidence bar is {sample.min_trades} (standard "
         f"floor {MIN_TRADES}). Statistical power is commensurately thin."
     )
 
@@ -493,6 +505,9 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
     return {
         "kind": "graded",
         "refusal": False,
+        # guardrail #5: a graded sub-15 sample is marked structurally so
+        # every summary surface (library card) can carry the disclosure too
+        "belowStandard": bool(below),
         "headline": verdict.headline,
         "survived": f"{survived_count} OF 5 ATTACKS SURVIVED",
         "band": {"left": f"{band_left}%", "width": "30%"},
@@ -585,7 +600,7 @@ def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[st
             # the graded arm appended the institutional wording — retail
             # readers get the retail one, same facts
             block["caveat"] = " · ".join([*retail_verdict.caveats, below])
-    if block["refusal"]:
+    else:
         sample = report.regime_sample
         bar = sample.min_trades
         needs = []
@@ -622,6 +637,23 @@ def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[st
     }
 
 
+def _verdict_surfaces(
+    report: HonestyReport,
+    verdict: VerdictText,
+    retail_verdict: VerdictText | None,
+) -> dict[str, Any]:
+    """EVERY payload key derived from the trust label / verdict text, in one
+    place — the initial build, the async narration patch, and the read-time
+    re-grade all consume this, so a future verdict-dependent key cannot be
+    added to one path and silently go stale on the others."""
+    return {
+        "verdict": _verdict_block(report, verdict),
+        "verdictSource": verdict.source,
+        "recommendations": _recommendations(report),
+        "retail": _retail_block(report, retail_verdict) if retail_verdict else None,
+    }
+
+
 def build_run_payload(
     run_id: str,
     spec: StrategySpec,
@@ -653,7 +685,7 @@ def build_run_payload(
             f"verdict: {verdict.source}"
         ),
         "spec": None,
-        "verdict": _verdict_block(report, verdict),
+        **_verdict_surfaces(report, verdict, retail_verdict),
         "mtiles": [
             {"v": _pct(m.get("cagr")), "l": f"CAGR{star}"},
             {"v": _num(m.get("sharpe")), "l": f"SHARPE{star}"},
@@ -670,7 +702,7 @@ def build_run_payload(
         "drawdownPoints": "",
         "equitySeries": _downsample(result.dates, result.equity),
         "drawdownSeries": _drawdown_series(result.dates, result.equity),
-        "oosShadeX": round(860 * 0.7) if not refusal else 860,
+        "oosShadeX": _oos_shade_x(refusal),
         "oosSplitDate": report.oos.split_date,
         "honesty": _honesty_panels(report),
         "coverage": report.coverage.model_dump(),
@@ -719,8 +751,6 @@ def build_run_payload(
         "sensitivity": sens_grid,
         "sensitivityRows": sens_rows,
         "sensitivityDetail": _sensitivity_detail(report),
-        "recommendations": _recommendations(report),
-        "retail": _retail_block(report, retail_verdict) if retail_verdict else None,
         "tradeHeader": (
             f"Trade log — {result.filled} filled · {result.skipped} skipped, with reasons"
         ),
@@ -732,6 +762,10 @@ def run_summary(run_id: str, payload: dict[str, Any], created: str) -> dict[str,
     verdict = payload.get("verdict", {})
     survived = verdict.get("survived", "")
     label = "withheld" if verdict.get("refusal") else survived.split(" OF")[0] + "/5 survived"
+    # guardrail #5: the library card of a graded sub-15 sample carries the
+    # disclosure too — the headline alone would read rosier than the verdict
+    if verdict.get("belowStandard"):
+        label += " · below-standard sample"
     retail = payload.get("retail") or {}
     return {
         "id": run_id,
@@ -753,20 +787,61 @@ def apply_verdict_text(
     verdict: VerdictText,
     retail_verdict: VerdictText | None = None,
 ) -> dict[str, Any]:
-    """Swap ONLY the narration-bearing surfaces of a stored payload — the
+    """Swap ONLY the verdict-derived surfaces of a stored payload — the
     async-narration upgrade path (owner ask 2026-07-14: the verdict stage
-    stalled minutes on LLM retries). The blocks are rebuilt from the SAME
-    report, so band/marker/chips reproduce identically and only the words
-    move; every data panel is untouched."""
+    stalled minutes on LLM retries) and the re-grade path below. The blocks
+    are rebuilt from the given report via the same _verdict_surfaces the
+    initial build used; every data panel is untouched."""
     out = dict(payload)
-    out["verdict"] = _verdict_block(report, verdict)
-    if retail_verdict is not None and payload.get("retail") is not None:
-        out["retail"] = _retail_block(report, retail_verdict)
+    surfaces = _verdict_surfaces(report, verdict, retail_verdict)
+    if payload.get("retail") is None:
+        # a stored run without a retail register never grows one here
+        surfaces.pop("retail", None)
+    out.update(surfaces)
+    # keep the human-readable meta token in step with the structured
+    # verdictSource key (display only — consumers read verdictSource)
     out["meta"] = re.sub(
         r"verdict: [a-z]+", f"verdict: {verdict.source}",
         str(payload.get("meta", "")), count=1,
     )
     return out
+
+
+def _regrade_report(
+    report: HonestyReport, min_trades: int
+) -> HonestyReport | None:
+    """The stored honesty report re-gated at a different evidence bar, or
+    None when the bar leaves sample cap, resolution judgment, and trust all
+    unchanged. Shared by the payload re-grade and the Q&A re-grade so the
+    displayed verdict and the grounded answers can never disagree."""
+    from app.honesty.stages import regrade_sample, rejudge_resolution
+    from app.honesty.trust import compute_trust
+
+    sample = regrade_sample(report.regime_sample, min_trades)
+    stored_rs = report.resolution_split
+    res_split = (
+        rejudge_resolution(stored_rs, min_trades) if stored_rs is not None else None
+    )
+    trust = compute_trust(
+        report.oos, report.walk_forward, report.monte_carlo,
+        report.sensitivity, sample, report.dsr, report.coverage,
+        report.concentration, report.scale_in, res_split,
+    )
+    # trust equality already folds the sample cap (survived/label/reasons);
+    # the resolution judgment can move without touching trust and still
+    # must reach the resolution panel, so it is checked on its own
+    res_changed = (
+        res_split is not None and stored_rs is not None
+        and (res_split.judged != stored_rs.judged
+             or res_split.sign_flip != stored_rs.sign_flip)
+    )
+    if trust == report.trust and not res_changed:
+        return None
+    return report.model_copy(update={
+        "regime_sample": sample,
+        "resolution_split": res_split,
+        "trust": trust,
+    })
 
 
 def regrade_for_min_trades(
@@ -786,47 +861,23 @@ def regrade_for_min_trades(
     report_doc = (stats or {}).get("honesty_report")
     if not isinstance(report_doc, dict):
         return payload  # pre-Q&A run: no stats bundle, nothing to re-grade
+    # cheap raw-dict peek FIRST: the overwhelmingly common case (caller's
+    # bar == stored bar) must not pay a full report validation per poll
+    stored_bar = int(
+        (report_doc.get("regime_sample") or {}).get("min_trades", MIN_TRADES))
+    if min_trades == stored_bar:
+        return payload
     try:
         report = HonestyReport.model_validate(report_doc)
     except Exception:
         return payload  # pre-contract dump — the stored payload stands
 
-    from app.honesty.stages import regrade_sample, rejudge_resolution
-    from app.honesty.trust import compute_trust
     from app.honesty.verdict import retail_template_verdict, template_verdict
 
-    stored_bar = report.regime_sample.min_trades
-    if min_trades == stored_bar:
-        return payload
-    sample = regrade_sample(report.regime_sample, min_trades)
-    res_split = (
-        rejudge_resolution(report.resolution_split, min_trades)
-        if report.resolution_split is not None else None
-    )
-    trust = compute_trust(
-        report.oos, report.walk_forward, report.monte_carlo,
-        report.sensitivity, sample, report.dsr, report.coverage,
-        report.concentration, report.scale_in, res_split,
-    )
-    stored_rs = report.resolution_split
-    unchanged = (
-        trust == report.trust
-        and sample.capped == report.regime_sample.capped
-        and sample.cap_reason == report.regime_sample.cap_reason
-        and (
-            res_split is None or stored_rs is None
-            or (res_split.judged == stored_rs.judged
-                and res_split.sign_flip == stored_rs.sign_flip)
-        )
-    )
-    if unchanged:
+    report2 = _regrade_report(report, min_trades)
+    if report2 is None:
         return payload
 
-    report2 = report.model_copy(update={
-        "regime_sample": sample,
-        "resolution_split": res_split,
-        "trust": trust,
-    })
     verdict = template_verdict(report2)
     retail_verdict = retail_template_verdict(report2)
     verdict.caveats.append(
@@ -838,15 +889,45 @@ def regrade_for_min_trades(
         f"the bar was {stored_bar} when this run was saved"
     )
     out = apply_verdict_text(payload, report2, verdict, retail_verdict)
-    refusal = trust.label == "insufficient_evidence"
+    refusal = report2.trust.label == "insufficient_evidence"
     star = "*" if refusal else ""
     out["mtiles"] = [
         {**t, "l": str(t.get("l", "")).rstrip("*") + star}
         for t in payload.get("mtiles", [])
     ]
-    out["oosShadeX"] = 860 if refusal else round(860 * 0.7)
-    out["recommendations"] = _recommendations(report2)
+    out["oosShadeX"] = _oos_shade_x(refusal)
+    # the resolution panel must tell the same story as the re-graded
+    # verdict (review finding: a re-judged sign flip refused the run while
+    # the stored panel still said "too thin, not judged")
+    rs2 = report2.resolution_split
+    out["resolutionSplit"] = (
+        rs2.model_dump() if rs2 is not None and rs2.meaningful else None
+    )
     out["regraded"] = {"bar": min_trades, "ranAt": stored_bar}
     # the re-graded view is template-narrated by construction
     out["narrationPending"] = False
     return out
+
+
+def regrade_stats_for_min_trades(
+    stats: dict[str, Any], min_trades: int
+) -> dict[str, Any]:
+    """The stats bundle grounded Q&A quotes from, re-gated at the caller's
+    bar — so answers describe the SAME verdict the screen shows and the
+    bar number itself is grounded (it lives in the re-graded sample dump).
+    Returns the stats untouched when the gate outcome is unchanged."""
+    report_doc = stats.get("honesty_report")
+    if not isinstance(report_doc, dict):
+        return stats
+    stored_bar = int(
+        (report_doc.get("regime_sample") or {}).get("min_trades", MIN_TRADES))
+    if min_trades == stored_bar:
+        return stats
+    try:
+        report = HonestyReport.model_validate(report_doc)
+    except Exception:
+        return stats
+    report2 = _regrade_report(report, min_trades)
+    if report2 is None:
+        return stats
+    return {**stats, "honesty_report": report2.model_dump()}

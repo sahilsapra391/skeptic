@@ -10,6 +10,8 @@
 
 import { useEffect, useState } from "react";
 
+import { PulsingDots } from "@/components/pulsing-dots";
+
 /** Statuses advance with elapsed time and never loop back — each one is
  * TRUE of the parse in flight (read → disambiguate → compile → validate);
  * nothing here claims progress the backend can't confirm. */
@@ -22,6 +24,8 @@ const STATUSES: { at: number; text: string }[] = [
   { at: 26, text: "Double-checking — no field gets a silent default…" },
   { at: 38, text: "Still working. A slow answer beats a wrong one…" },
 ];
+// newest-threshold-first, computed once — the per-render lookup just scans
+const STATUSES_DESC = [...STATUSES].reverse();
 
 export function ThinkingIndicator() {
   const [elapsed, setElapsed] = useState(0);
@@ -33,22 +37,12 @@ export function ThinkingIndicator() {
     );
     return () => clearInterval(id);
   }, []);
-  const status = [...STATUSES].reverse().find((s) => elapsed >= s.at) ?? STATUSES[0];
+  const status = STATUSES_DESC.find((s) => elapsed >= s.at) ?? STATUSES[0];
 
   return (
     <div className="animate-fade-rise rounded-[14px] border border-line bg-panel px-5 py-4">
       <div className="flex items-center gap-3">
-        <span className="flex items-center gap-[3px]" aria-hidden>
-          <span className="h-[5px] w-[5px] animate-pin-pulse rounded-full bg-trust" />
-          <span
-            className="h-[5px] w-[5px] animate-pin-pulse rounded-full bg-trust"
-            style={{ animationDelay: "0.35s" }}
-          />
-          <span
-            className="h-[5px] w-[5px] animate-pin-pulse rounded-full bg-trust"
-            style={{ animationDelay: "0.7s" }}
-          />
-        </span>
+        <PulsingDots />
         {/* key remounts the wrapper per status so fade-rise replays on
             advance; the shimmer lives on the inner span — both animate,
             neither clobbers the other's `animation` shorthand */}

@@ -1829,3 +1829,26 @@ shimmering status line narrates the parser's REAL stages (read →
 disambiguate → compile → validate) with honest elapsed seconds and a
 working "‹ edit input" cancel (generation counter drops stale
 responses). Statuses are time-advanced, never fabricated progress.
+
+REVIEW ROUND (independent 8-angle agent review, same session): 6 fixed
+correctness findings — (1) a worker killed mid-narration stranded
+narrationPending forever (UI polls indefinitely) → narrationStartedAt
+stamp + read-time stale release at 10 min, template stands; (2) the
+re-graded verdict could contradict the stored FX.4 resolution panel →
+the panel re-judges with the verdict; (3) grounded Q&A answered from the
+STORED bar and contradicted a re-graded view → ask takes min_trades and
+re-gates its stats copy via the same _regrade_report; (4) the
+below-standard note was viewer-anchored ("your setting") and could name
+a bar the viewer never set → run-anchored wording; (5) /estimate mixed
+old blocking-narration verdict_s rows into its median (over-promised
+until 50 new runs) → narration_off_path marker filter; (6) live
+dictation kept appending behind the thinking view + a stale narration
+poll could clobber a freshly started run → speech stopped on submit,
+timer cleared in runGauntlet. Cleanups: one _verdict_surfaces builder
+shared by build/patch/re-grade (drift-proof), structured verdictSource
+key, OOS_TRACK_W constant, _patch_perf_narration single writer,
+run_summary reuse for narrated quotes, derived thinking state, shared
+PulsingDots, library cards mark below-standard samples (guardrail #5),
+raw-dict bar peek before report validation on the hot read path, and a
+CLAUDE.md determinism note (engine deterministic; the verdict gate is a
+view-time policy). 618 tests.
