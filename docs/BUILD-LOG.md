@@ -1799,3 +1799,33 @@ real cond_-leak check. NIT (rank-clamp duplicate cell at base 95)
 accepted — no correctness impact, base_index stays correct. 568 tests.
 Bit-identity confirmed by the reviewer: no engine/model files touched,
 setters mutate only deepcopies, daily-clock digests pass.
+
+## 2026-07-14 — verdict latency, the evidence-bar setting, and the thinking state
+
+THREE owner asks, one session. (1) LATENCY: the "honest verdict" stage
+stalled 2–5 min because run completion blocked on the LLM narration
+(2 parallel OpenRouter calls × up to 3 × 45 s validated retries). Runs now
+store `done` with the deterministic template verdicts the moment the
+gauntlet ends; `_narrate_and_patch` upgrades the WORDING off the critical
+path (after the engine lock releases), patching only the narration
+surfaces + library quotes via `payload.apply_verdict_text`. UI polls
+`narrationPending` at 3 s and shimmer-discloses "still writing the
+narration — every number here is already final". `perf.verdict_s` = the
+blocking cost (keeps pre-run estimates honest); `perf.narration_s`
+recorded when the upgrade lands. (2) EVIDENCE BAR: minimum trades for a
+verdict is now a USER SETTING (Settings → Evidence bar, between Verbiage
+Complexity and System Status): default 15, floor 1, never 0, clamped
+1–10,000 client+server. Rides `BacktestRequest.min_trades` → gauntlet;
+stored on `RegimeSample.min_trades`; saved runs RE-GRADE at read time
+(`GET /runs/{id}?min_trades=N` → `regrade_for_min_trades`, both
+directions, template-narrated, re-grade caveat + chip, stored row never
+mutated); auto-unlock/receipt re-runs inherit the parent's bar; graded
+sub-15 samples always carry the below-standard disclosure (appended at
+payload build so the LLM can't drop it). CLAUDE.md guardrail #5 reworded
+accordingly (owner decision). (3) HERO THINKING STATE: submitting a
+strategy used to show a dull pulsing dot for the parser's 10–30 s
+round-trip; now the prompt becomes a chat bubble and a Claude-style
+shimmering status line narrates the parser's REAL stages (read →
+disambiguate → compile → validate) with honest elapsed seconds and a
+working "‹ edit input" cancel (generation counter drops stale
+responses). Statuses are time-advanced, never fabricated progress.

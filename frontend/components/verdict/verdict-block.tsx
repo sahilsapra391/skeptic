@@ -13,7 +13,18 @@ import type { VerdictPayload } from "@/lib/types";
 
 import { TrustBandHero } from "./trust-band";
 
-export function VerdictBlock({ verdict }: { verdict: VerdictPayload }) {
+export function VerdictBlock({
+  verdict,
+  narrationPending,
+  regraded,
+}: {
+  verdict: VerdictPayload;
+  /** the async narration upgrade hasn't landed — numbers are final,
+   * only the wording may still improve */
+  narrationPending?: boolean;
+  /** re-decided at the viewer's minimum-trades setting, not the run's */
+  regraded?: { bar: number; ranAt: number } | null;
+}) {
   return (
     <div
       className={`rounded-2xl px-7 py-7 ${
@@ -29,6 +40,30 @@ export function VerdictBlock({ verdict }: { verdict: VerdictPayload }) {
       <div className="max-w-[860px] font-serif text-[32px] font-medium leading-[1.25]">
         {verdict.headline}
       </div>
+      {narrationPending && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="flex items-center gap-[3px]" aria-hidden>
+            <span className="h-[4px] w-[4px] animate-pin-pulse rounded-full bg-trust" />
+            <span
+              className="h-[4px] w-[4px] animate-pin-pulse rounded-full bg-trust"
+              style={{ animationDelay: "0.35s" }}
+            />
+            <span
+              className="h-[4px] w-[4px] animate-pin-pulse rounded-full bg-trust"
+              style={{ animationDelay: "0.7s" }}
+            />
+          </span>
+          <span className="thinking-shimmer text-[13px]">
+            still writing the narration — every number here is already final
+          </span>
+        </div>
+      )}
+      {regraded && (
+        <div className="mt-2.5 inline-flex rounded-full border border-dashed border-trust-border px-3 py-1 font-mono text-[11.5px] text-trust">
+          re-judged at your evidence bar: {regraded.bar} trade{regraded.bar !== 1 && "s"} (this
+          run was scored at {regraded.ranAt})
+        </div>
+      )}
 
       {!verdict.refusal && (
         <div>

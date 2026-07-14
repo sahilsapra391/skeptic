@@ -25,6 +25,9 @@ export interface AppSettings {
   slippage: number;
   /** fraction conceded on SELLS — defaults harsher (D3d: sellers measurably concede more) */
   slippageSell: number;
+  /** evidence bar for a graded verdict (owner 2026-07-14): floor 1, never 0.
+   * Applies to every new run AND re-grades saved runs at view time. */
+  minTrades: number;
   verbiage: Verbiage;
   theme: Theme;
   accent: Accent;
@@ -36,6 +39,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // sells 0.90 — replacing the assumed flat 0.5
   slippage: 0.85,
   slippageSell: 0.9,
+  minTrades: 15, // the standard evidence floor; below it verdicts disclose
   verbiage: "institutional",
   // Market Hours is the default for everyone: light through the trading day,
   // dark after the close (owner directive 2026-07-04).
@@ -53,6 +57,11 @@ function clampSettings(s: AppSettings): AppSettings {
     slippageSell: Math.min(
       1,
       Math.max(0.05, Number.isFinite(s.slippageSell) ? s.slippageSell : 0.9),
+    ),
+    // whole trades only, floor 1 — zero would grade an untraded strategy
+    minTrades: Math.min(
+      10_000,
+      Math.max(1, Math.round(Number.isFinite(s.minTrades) ? s.minTrades : 15)),
     ),
     verbiage: s.verbiage === "retail" ? "retail" : "institutional",
     theme: s.theme === "light" ? "light" : s.theme === "dark" ? "dark" : "market",

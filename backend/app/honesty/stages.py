@@ -52,8 +52,11 @@ log = logging.getLogger("skeptic.honesty")
 _N = NormalDist()
 ANNUAL = math.sqrt(252)
 
-# Owner-set floor (2026-07-02, was 30): below this many closed trades the
-# verdict is withheld as insufficient evidence (CLAUDE.md guardrail #5).
+# The STANDARD evidence floor (owner-set 2026-07-02, was 30): below this
+# many closed trades the verdict is withheld as insufficient evidence
+# (CLAUDE.md guardrail #5). Since 2026-07-14 the bar is a per-user SETTING
+# (floor 1, never 0) — this constant is its default AND the line under
+# which a graded verdict must carry the below-standard-floor disclosure.
 MIN_TRADES = 15
 
 # Below this share of the REQUESTED window carrying a usable options chain,
@@ -543,11 +546,40 @@ def session_split(result: RunResult) -> SessionSplit:
 RESOLUTION_MIN_SESSIONS = 15  # each subset needs this many covered sessions
 
 
-def resolution_split(result: RunResult) -> ResolutionSplit:
+def rejudge_resolution(split: ResolutionSplit, min_trades: int) -> ResolutionSplit:
+    """judged / sign_flip / note recomputed from the stored buckets at the
+    given evidence bar. Shared by the build path below and the read-time
+    re-grade (payload.regrade_for_min_trades) so the "same evidentiary bar
+    as any main result" rule can never drift between the two."""
+    if not split.meaningful:
+        return split
+    five, minute = split.five_min, split.minute
+    full = split.full_sharpe
+    judged = (
+        five.sessions >= RESOLUTION_MIN_SESSIONS
+        and minute.sessions >= RESOLUTION_MIN_SESSIONS
+        and five.trades >= min_trades
+    )
+    sign_flip = bool(
+        judged
+        and full is not None and full > 0
+        and five.sharpe is not None and five.sharpe < 0
+    )
+    note = None
+    if not judged:
+        note = ("mixed resolution, but the sub-windows are too thin to "
+                "cross-check (5-min: "
+                f"{five.sessions} sessions / {five.trades} trades; minute: "
+                f"{minute.sessions} sessions) — disclosed, not judged")
+    return split.model_copy(update={
+        "judged": judged, "sign_flip": sign_flip, "note": note})
+
+
+def resolution_split(result: RunResult, min_trades: int = MIN_TRADES) -> ResolutionSplit:
     """The headline recomputed on the 5-MIN-ONLY sub-window from recorded
     per-session returns and closed trades — cheap, no re-run. Judged only
     at real-evidence floors (both subsets ≥ 15 sessions AND the 5-min
-    subset ≥ MIN_TRADES closed trades — the SAME evidentiary bar any main
+    subset ≥ `min_trades` closed trades — the SAME evidentiary bar any main
     result must clear); a sign flip then caps trust hard: a resolution
     flip is a data-VALIDITY finding, not a robustness signal. Only the
     optimistic direction caps (full-run edge positive, 5-min-only
@@ -618,26 +650,12 @@ def resolution_split(result: RunResult) -> ResolutionSplit:
     five = bucket("five_min")
     minute = bucket("minute")
     full = _sharpe(_returns(result.equity))
-    judged = (
-        five.sessions >= RESOLUTION_MIN_SESSIONS
-        and minute.sessions >= RESOLUTION_MIN_SESSIONS
-        and five.trades >= MIN_TRADES
-    )
-    sign_flip = bool(
-        judged
-        and full is not None and full > 0
-        and five.sharpe is not None and five.sharpe < 0
-    )
-    note = None
-    if not judged:
-        note = ("mixed resolution, but the sub-windows are too thin to "
-                "cross-check (5-min: "
-                f"{five.sessions} sessions / {five.trades} trades; minute: "
-                f"{minute.sessions} sessions) — disclosed, not judged")
-    return ResolutionSplit(
-        meaningful=True, note=note, judged=judged, full_sharpe=full,
-        five_min=five, minute=minute, eod_fallback_sessions=eod_fallback,
-        sign_flip=sign_flip,
+    return rejudge_resolution(
+        ResolutionSplit(
+            meaningful=True, full_sharpe=full,
+            five_min=five, minute=minute, eod_fallback_sessions=eod_fallback,
+        ),
+        min_trades,
     )
 
 
@@ -916,9 +934,29 @@ def deflated_sharpe(result: RunResult, trials: int) -> Dsr:
 
 
 # ------------------------------------------- stage 6: regime & sample guard
-def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
-    """Guardrail #5: below MIN_TRADES trades or a single VIX regime, trust is
-    capped at insufficient evidence no matter how good the numbers look."""
+def regrade_sample(sample: RegimeSample, min_trades: int) -> RegimeSample:
+    """The cap re-decided from a sample's stored counts at a new evidence
+    bar. Shared by the build path below and the read-time re-grade so the
+    gate rule lives in exactly one place."""
+    if sample.trades < min_trades:
+        capped = True
+        reason: str | None = (
+            f"only {sample.trades} closed trades — minimum is {min_trades}")
+    elif sample.regimes_present < 2:
+        capped = True
+        reason = "history spans a single volatility regime"
+    else:
+        capped, reason = False, None
+    return sample.model_copy(update={
+        "capped": capped, "cap_reason": reason, "min_trades": min_trades})
+
+
+def regime_sample(
+    result: RunResult, store: MarketStore, min_trades: int = MIN_TRADES
+) -> RegimeSample:
+    """Guardrail #5: below `min_trades` trades (user setting, standard 15)
+    or a single VIX regime, trust is capped at insufficient evidence no
+    matter how good the numbers look."""
     low = mid = high = 0
     vd = store.vix_dates
     vc = store.vix_close
@@ -940,22 +978,17 @@ def regime_sample(result: RunResult, store: MarketStore) -> RegimeSample:
     present = sum(1 for c in (low, mid, high) if c / total >= 0.10)
 
     trades = sum(1 for t in result.trades if t.pl is not None)
-    capped = False
-    reason: str | None = None
-    if trades < MIN_TRADES:
-        capped = True
-        reason = f"only {trades} closed trades — minimum is {MIN_TRADES}"
-    elif present < 2:
-        capped = True
-        reason = "history spans a single volatility regime"
-    return RegimeSample(
-        trades=trades,
-        days_low_vix=low,
-        days_mid_vix=mid,
-        days_high_vix=high,
-        regimes_present=present,
-        capped=capped,
-        cap_reason=reason,
+    return regrade_sample(
+        RegimeSample(
+            trades=trades,
+            days_low_vix=low,
+            days_mid_vix=mid,
+            days_high_vix=high,
+            regimes_present=present,
+            capped=False,
+            cap_reason=None,
+        ),
+        min_trades,
     )
 
 
@@ -1199,12 +1232,15 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
         return None
     cov = report.coverage
     sample = report.regime_sample
+    # needs compare against the bar THIS run was scored at — the user
+    # setting rides the report, never a module constant read later
+    bar = sample.min_trades
     # A refusal that no amount of DATA can lift — e.g. the D5a scale-in
     # interlock (defenses pending, not sample/coverage) — must not enter the
     # auto-unlock scan (D3b), or it would re-run and re-refuse forever.
     if not (
         cov.materially_short
-        or sample.trades < MIN_TRADES
+        or sample.trades < bar
         or sample.regimes_present < 2
     ):
         return None
@@ -1218,8 +1254,8 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
             if cov.materially_short else None
         ),
         trades=(
-            UnlockNeed(has=float(sample.trades), needs=float(MIN_TRADES))
-            if sample.trades < MIN_TRADES else None
+            UnlockNeed(has=float(sample.trades), needs=float(bar))
+            if sample.trades < bar else None
         ),
         regimes=(
             UnlockNeed(has=float(sample.regimes_present), needs=2.0)

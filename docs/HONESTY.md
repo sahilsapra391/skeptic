@@ -834,3 +834,55 @@ Rules (owner decisions 2026-07-08):
 
 Bit-identity holds: the sweep is a gauntlet stage, not the engine run —
 the daily-clock regression digests (which pin the RUN) are unchanged.
+
+## The evidence bar is the user's dial; the disclosure is not (2026-07-14)
+
+The minimum-trades floor for a graded verdict (guardrail #5) became a user
+setting: **default 15, floor 1, never 0** (`Settings → Evidence bar`,
+`BacktestRequest.min_trades`, clamped 1–10,000 both ends). Three rules keep
+it honest:
+
+- **The gate moves, the honesty doesn't.** A bar under 15 lets thin samples
+  grade, but `payload._below_standard_note` rides EVERY graded verdict on a
+  sub-15 sample, in both registers, appended at payload-build time so the
+  LLM narration can never drop it. The single-volatility-regime cap is not
+  configurable — it never was about trade count.
+- **Saved runs re-grade at read time, both directions.** `GET
+  /api/runs/{id}?min_trades=N` re-decides ONLY the evidence gate from the
+  stored honesty report (`regrade_sample` + `rejudge_resolution` +
+  `compute_trust` — the same functions the gauntlet ran, so the rule cannot
+  fork): a 13-trade refusal unlocks when the viewer's bar drops to 1; a
+  20-trade "graded" re-caps when the bar rises to 300. The re-graded view is
+  template-narrated (the stored LLM words argued a different grade), carries
+  a re-grade caveat + UI chip, and never mutates the stored row. When the
+  gate outcome is unchanged the stored payload — LLM narration included —
+  passes through untouched.
+- **Automatic re-runs inherit their parent's bar.** Auto-unlock and receipt
+  runs score at the bar the parent was refused at (`_inherit_min_trades`),
+  so an unlock promise can't move its own goalposts; `UnlockConditions.
+  trades.needs` records the run's own bar for the nightly scan.
+
+The 5-min sub-window's evidentiary floor in the mixed-resolution defense
+follows the same bar (the "same bar as any main result" coherence rule
+above), recomputable at read time from the stored buckets.
+
+## The verdict narration is an upgrade, not a gate (2026-07-14)
+
+The "honest verdict" stage used to block run completion on the LLM
+narration — two OpenRouter calls with up to 3 × 45 s validated retries, i.e.
+2–5 minutes of a finished gauntlet staring at the user. Now:
+
+- `_run_and_store` ships the run `done` with the **deterministic template
+  verdicts** (grounded by construction, same numbers) the moment the
+  gauntlet ends; `payload.narrationPending` is true only when a narration
+  key exists.
+- `_narrate_and_patch` runs AFTER the engine lock releases (pure network
+  I/O never holds the next queued run hostage), calls the same validated
+  `write_verdicts`, and swaps ONLY the wording surfaces
+  (`apply_verdict_text`) plus the library-card quotes. Numbers, trust
+  geometry, and every data panel are byte-identical before and after.
+- Any narration failure clears the flag and leaves the template standing —
+  the same fallback contract as before, minus the wait.
+- `perf.verdict_s` now records the BLOCKING verdict cost the user actually
+  waits on (the pre-run time estimates stay honest); the measured narration
+  time lands separately as `perf.narration_s`.

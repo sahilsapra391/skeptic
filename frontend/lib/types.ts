@@ -384,6 +384,13 @@ export interface RunPayload {
     notes: [string, string, string, string];
     recommendations: string[];
   } | null;
+  /** the LLM narration is still being written off the critical path —
+   * the template verdict below is final in every NUMBER; only the
+   * wording may improve. Poll briefly while true. */
+  narrationPending?: boolean;
+  /** the verdict was re-decided at the viewer's minimum-trades setting
+   * (`bar`) instead of the bar the run was scored at (`ranAt`) */
+  regraded?: { bar: number; ranAt: number } | null;
   tradeHeader: string;
   trades: TradeRow[];
   askAnswer?: string;

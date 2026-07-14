@@ -207,12 +207,15 @@ export function startBacktest(
   return request<{ run_id: string; demo: boolean }>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ spec, draft }),
+    // the evidence bar (Settings) gates this run's verdict server-side
+    body: JSON.stringify({ spec, draft, min_trades: getSettings().minTrades }),
   });
 }
 
 export function getRun(id: string): Promise<RunPayload> {
-  return request<RunPayload>(`/api/runs/${id}`);
+  // the current evidence bar rides every read — saved runs re-grade
+  // server-side when the bar moved since they ran (both directions)
+  return request<RunPayload>(`/api/runs/${id}?min_trades=${getSettings().minTrades}`);
 }
 
 // the sidebar requests the library on every navigation — cache briefly so
