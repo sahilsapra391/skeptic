@@ -1,0 +1,15 @@
+[Unit]
+Description=Skeptic collector self-update (pull main + restart recorder, outside market hours)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/skeptic/collector
+# root: git/chown/systemctl need it; the uv steps drop to the skeptic user
+ExecStart=/usr/bin/bash /opt/skeptic/collector/deploy/autoupdate.sh
+# MUST stay under the guard's 30-min session lookahead: the script checks the
+# window once at start, so bounding the whole run at 25 min guarantees a
+# stalled fetch/sync can never reach the recorder restart inside a session
+# (a killed run is safe — the deployed code is untouched, retry is tomorrow)
+TimeoutStartSec=1500

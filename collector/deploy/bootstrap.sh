@@ -62,9 +62,13 @@ echo "== systemd units =="
 install -m644 deploy/skeptic-intraday.service /etc/systemd/system/
 install -m644 deploy/skeptic-heartbeat.service /etc/systemd/system/
 install -m644 deploy/skeptic-heartbeat.timer   /etc/systemd/system/
+install -m644 deploy/skeptic-autoupdate.service /etc/systemd/system/
+install -m644 deploy/skeptic-autoupdate.timer   /etc/systemd/system/
+chmod +x deploy/autoupdate.sh
 systemctl daemon-reload
 systemctl enable --now skeptic-intraday.service
 systemctl enable --now skeptic-heartbeat.timer
+systemctl enable --now skeptic-autoupdate.timer
 
 echo
 echo "== recorder status =="

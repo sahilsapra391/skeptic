@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly skeptic collector self-update (3 AM ET; the script re-guards the session window)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 America/New_York
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target
