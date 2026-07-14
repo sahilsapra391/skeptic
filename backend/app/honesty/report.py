@@ -108,6 +108,10 @@ class RegimeSample(BaseModel):
     regimes_present: int  # buckets holding ≥ 10% of days
     capped: bool
     cap_reason: str | None
+    # the evidence bar this run was scored at — a user setting since
+    # 2026-07-14 (floor 1, standard 15). Stored so a read-time re-grade
+    # knows the original bar; defaulted so pre-setting dumps still parse.
+    min_trades: int = 15
 
 
 class Coverage(BaseModel):

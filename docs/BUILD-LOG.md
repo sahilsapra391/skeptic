@@ -1907,3 +1907,56 @@ not self-judged. Refuted with citations: exit phrasing (matches the
 canonical spec_to_draft projection); guardrail #6 (the meta line's
 effective window persists above both tabs); wire-contract audit clean
 end to end. All four scenarios re-verified in the browser post-fix.
+
+## 2026-07-14 — verdict latency, the evidence-bar setting, and the thinking state
+
+THREE owner asks, one session. (1) LATENCY: the "honest verdict" stage
+stalled 2–5 min because run completion blocked on the LLM narration
+(2 parallel OpenRouter calls × up to 3 × 45 s validated retries). Runs now
+store `done` with the deterministic template verdicts the moment the
+gauntlet ends; `_narrate_and_patch` upgrades the WORDING off the critical
+path (after the engine lock releases), patching only the narration
+surfaces + library quotes via `payload.apply_verdict_text`. UI polls
+`narrationPending` at 3 s and shimmer-discloses "still writing the
+narration — every number here is already final". `perf.verdict_s` = the
+blocking cost (keeps pre-run estimates honest); `perf.narration_s`
+recorded when the upgrade lands. (2) EVIDENCE BAR: minimum trades for a
+verdict is now a USER SETTING (Settings → Evidence bar, between Verbiage
+Complexity and System Status): default 15, floor 1, never 0, clamped
+1–10,000 client+server. Rides `BacktestRequest.min_trades` → gauntlet;
+stored on `RegimeSample.min_trades`; saved runs RE-GRADE at read time
+(`GET /runs/{id}?min_trades=N` → `regrade_for_min_trades`, both
+directions, template-narrated, re-grade caveat + chip, stored row never
+mutated); auto-unlock/receipt re-runs inherit the parent's bar; graded
+sub-15 samples always carry the below-standard disclosure (appended at
+payload build so the LLM can't drop it). CLAUDE.md guardrail #5 reworded
+accordingly (owner decision). (3) HERO THINKING STATE: submitting a
+strategy used to show a dull pulsing dot for the parser's 10–30 s
+round-trip; now the prompt becomes a chat bubble and a Claude-style
+shimmering status line narrates the parser's REAL stages (read →
+disambiguate → compile → validate) with honest elapsed seconds and a
+working "‹ edit input" cancel (generation counter drops stale
+responses). Statuses are time-advanced, never fabricated progress.
+
+REVIEW ROUND (independent 8-angle agent review, same session): 6 fixed
+correctness findings — (1) a worker killed mid-narration stranded
+narrationPending forever (UI polls indefinitely) → narrationStartedAt
+stamp + read-time stale release at 10 min, template stands; (2) the
+re-graded verdict could contradict the stored FX.4 resolution panel →
+the panel re-judges with the verdict; (3) grounded Q&A answered from the
+STORED bar and contradicted a re-graded view → ask takes min_trades and
+re-gates its stats copy via the same _regrade_report; (4) the
+below-standard note was viewer-anchored ("your setting") and could name
+a bar the viewer never set → run-anchored wording; (5) /estimate mixed
+old blocking-narration verdict_s rows into its median (over-promised
+until 50 new runs) → narration_off_path marker filter; (6) live
+dictation kept appending behind the thinking view + a stale narration
+poll could clobber a freshly started run → speech stopped on submit,
+timer cleared in runGauntlet. Cleanups: one _verdict_surfaces builder
+shared by build/patch/re-grade (drift-proof), structured verdictSource
+key, OOS_TRACK_W constant, _patch_perf_narration single writer,
+run_summary reuse for narrated quotes, derived thinking state, shared
+PulsingDots, library cards mark below-standard samples (guardrail #5),
+raw-dict bar peek before report validation on the hot read path, and a
+CLAUDE.md determinism note (engine deterministic; the verdict gate is a
+view-time policy). 618 tests.

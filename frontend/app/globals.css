@@ -260,3 +260,30 @@ summary {
 .animate-fade-rise {
   animation: fade-rise 0.25s ease-out both;
 }
+
+/* Claude-chat-style thinking treatment: a soft highlight sweeps the
+   status text while the parser (or the narration writer) works. Animates
+   background-position only; the gradient is clipped to the glyphs. */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}
+
+.thinking-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--ink-4) 42%,
+    var(--ink) 50%,
+    var(--ink-4) 58%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer-sweep 2.2s linear infinite;
+}

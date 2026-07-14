@@ -1126,7 +1126,11 @@ export function ResultsView({
         </>
       ) : (
         <>
-          <VerdictBlock verdict={verdict} />
+          <VerdictBlock
+            verdict={verdict}
+            narrationPending={run.narrationPending}
+            regraded={run.regraded}
+          />
           <ReceiptBanner run={run} />
 
           {run.verdict.refusal && (

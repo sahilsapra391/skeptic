@@ -21,6 +21,7 @@ import { STRUCTURE_LABEL } from "@/lib/types";
 import { useSpeechToText } from "@/lib/use-speech";
 
 import { ChartTeach } from "@/components/composer/chart-teach";
+import { ThinkingIndicator } from "@/components/composer/thinking";
 import { GauntletProgress } from "@/components/gauntlet-progress";
 import { ResultsView } from "@/components/results/results-view";
 import { SpecScreen } from "@/components/spec/spec-screen";
@@ -131,6 +132,9 @@ export default function NewAnalysisPage() {
   const [run, setRun] = useState<RunPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A generation counter makes "‹ edit input" a real cancel: a stale parse
+  // response is dropped instead of yanking the UI forward.
+  const compileGenRef = useRef(0);
   const [earliestYear, setEarliestYear] = useState("1993");
   const [headline, setHeadline] = useState(HEADLINES[0]);
   const [presets, setPresets] = useState(PRESETS);
@@ -214,6 +218,10 @@ export default function NewAnalysisPage() {
   const compileText = useCallback(
     async (withAnswers?: Record<string, string>) => {
       if (!text.trim() || busy) return;
+      const gen = ++compileGenRef.current;
+      // the thinking view has no mic control — a live dictation must not
+      // keep appending to the prompt behind it
+      if (speech.listening) speech.stop();
       setBusy(true);
       setError(null);
       try {
@@ -222,6 +230,7 @@ export default function NewAnalysisPage() {
         // a re-compile with answers is the same conversation continuing
         if (!withAnswers) transcriptRef.current = [];
         const res = await parseText(text, withAnswers);
+        if (gen !== compileGenRef.current) return; // cancelled — drop it
         if (res.status === "questions") {
           const asked = new Date().toISOString();
           transcriptRef.current.push(
@@ -245,13 +254,26 @@ export default function NewAnalysisPage() {
           setPhase("spec");
         }
       } catch (e) {
+        if (gen !== compileGenRef.current) return;
         setError(e instanceof Error ? e.message : "parse failed");
       } finally {
-        setBusy(false);
+        if (gen === compileGenRef.current) setBusy(false);
       }
     },
-    [text, busy],
+    [text, busy, speech],
   );
+
+  const cancelCompile = useCallback(() => {
+    compileGenRef.current++;
+    setBusy(false);
+    setPhase("compose");
+  }, []);
+
+  // parse in flight → the Claude-style thinking view (prompt bubble +
+  // shimmering status). Derived, not stored: busy is only ever true during
+  // a parse while composing/clarifying (running uses its own phase), so a
+  // second flag could only ever drift out of sync with this.
+  const thinking = busy && (phase === "compose" || phase === "clarify");
 
   const answerQuestion = useCallback(
     (answer: string) => {
@@ -283,6 +305,9 @@ export default function NewAnalysisPage() {
   const runGauntlet = useCallback(async () => {
     // exit AND data window are required choices — never defaults
     if (!draft?.exit || !draft.window || busy) return;
+    // a narration-upgrade poll may still be armed for the PREVIOUS run —
+    // kill it so its stale closure can't overwrite the new run's state
+    if (pollRef.current) clearTimeout(pollRef.current);
     setBusy(true);
     setError(null);
     try {
@@ -304,6 +329,11 @@ export default function NewAnalysisPage() {
           setRun(payload);
           if (payload.status === "done") {
             setPhase("results");
+            // numbers are final; the narration upgrade is being written
+            // off the critical path — keep a slow poll until it lands
+            if (payload.narrationPending) {
+              pollRef.current = setTimeout(poll, 3000);
+            }
             return;
           }
           if (payload.status === "error") {
@@ -327,11 +357,13 @@ export default function NewAnalysisPage() {
   const reset = useCallback(() => {
     pollCancelledRef.current = true;
     if (pollRef.current) clearTimeout(pollRef.current);
+    compileGenRef.current++;
     setPhase("compose");
     setRun(null);
     setDraft(null);
     setText("");
     setError(null);
+    setBusy(false);
     setQuestions([]);
     setAnswers({});
     parsedSpecRef.current = null;
@@ -350,6 +382,27 @@ export default function NewAnalysisPage() {
         name={run?.name ?? draft?.quote ?? ""}
         previews={run?.previews}
       />
+    );
+  }
+
+  // parse in flight (from compose OR the last clarify answer): the prompt
+  // becomes a chat message and the parser thinks out loud under it
+  if (thinking) {
+    return (
+      <div className="mx-auto max-w-[684px]">
+        <button
+          onClick={cancelCompile}
+          className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3"
+        >
+          ‹ edit input
+        </button>
+        <div className="mb-4 flex justify-end">
+          <div className="max-w-[75%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-ink-2">
+            “{text}”
+          </div>
+        </div>
+        <ThinkingIndicator />
+      </div>
     );
   }
 
