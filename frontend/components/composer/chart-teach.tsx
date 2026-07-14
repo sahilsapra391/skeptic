@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { getBars, prefetchBars } from "@/lib/api";
+import { pinLabel } from "@/lib/format";
 import type { Bar, SpecDraft, Structure, Ticker } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
@@ -46,16 +47,11 @@ const DEFAULT_DELTA: Record<string, number> = {
   iron_condor: 20,
 };
 
-function fmtPin(iso: string): string {
-  const d = new Date(iso);
-  const hasTime = iso.includes("T") && !iso.startsWith(iso.slice(0, 10) + "T00:00");
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(hasTime ? { hour: "2-digit", minute: "2-digit", hour12: false } : { year: "2-digit" }),
-    timeZone: "America/New_York",
-  }).format(d);
-}
+// shared with the provenance story view (lib/format.pinLabel) so teach-time
+// labels and the "How this was built" record can never disagree — and the
+// shared version formats date-only bars as plain dates instead of sliding
+// them back a day through the UTC-midnight → ET conversion
+const fmtPin = pinLabel;
 
 interface Inference {
   structure: Structure;

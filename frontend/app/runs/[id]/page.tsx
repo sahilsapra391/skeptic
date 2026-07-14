@@ -74,5 +74,16 @@ export default function RunPage({ params }: { params: { id: string } }) {
     );
   }
 
-  return <ResultsView run={run} onNew={() => router.push("/")} onBack={() => router.push("/library")} backLabel="Library" />;
+  // no onNew here: the saved-run screen's New analysis button was redundant
+  // with the left nav's — its slot now holds the "How this was built" toggle.
+  // key remounts per run: sidebar run-to-run navigation must not carry over
+  // the story/results tab choice or a previous run's grounded answer.
+  return (
+    <ResultsView
+      key={run.id}
+      run={run}
+      onBack={() => router.push("/library")}
+      backLabel="Library"
+    />
+  );
 }
