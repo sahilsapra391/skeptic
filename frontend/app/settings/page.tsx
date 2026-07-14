@@ -251,6 +251,46 @@ export default function SettingsPage() {
       </div>
 
       <div className={PANEL}>
+        <div className={PANEL_TITLE}>EVIDENCE BAR — WHEN A VERDICT UNLOCKS</div>
+        <div className="flex flex-col gap-3.5 text-[14.5px]">
+          <NumberField
+            label="Minimum trades for a verdict"
+            suffix="closed trades"
+            value={settings.minTrades}
+            min={1}
+            max={10000}
+            step={1}
+            onCommit={(v) => updateSettings({ minTrades: Math.round(v) })}
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[12.5px] leading-[1.55] text-ink-4">
+              Below this many finished trades a verdict is withheld as insufficient
+              evidence. It applies to every new run and re-judges saved runs when you
+              open them — lower it and an old 13-trade refusal unlocks; raise it and a
+              thin graded run goes back to withheld. 15 is the standard floor; it can
+              never be zero.
+            </span>
+            {settings.minTrades !== DEFAULT_SETTINGS.minTrades && (
+              <button
+                onClick={() => updateSettings({ minTrades: DEFAULT_SETTINGS.minTrades })}
+                className="shrink-0 rounded-[9px] border border-line px-3 py-1.5 text-[12.5px] text-ink-3 hover:border-line-hover hover:text-ink"
+              >
+                reset default
+              </button>
+            )}
+          </div>
+          {settings.minTrades < DEFAULT_SETTINGS.minTrades && (
+            <p className="rounded-[10px] border border-dashed border-line-hover px-3.5 py-2.5 text-[12.5px] leading-[1.55] text-ink-3">
+              You&apos;ve set the bar below the standard {DEFAULT_SETTINGS.minTrades}.
+              Verdicts on samples this thin are statistically weak — they&apos;ll grade,
+              but each one carries a below-standard-sample disclosure. The honesty
+              stays; only the gate moves.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className={PANEL}>
         <div className={PANEL_TITLE}>SYSTEM STATUS</div>
         <div className="flex flex-col gap-2.5 text-[14.5px]">
           <Row
@@ -273,11 +313,6 @@ export default function SettingsPage() {
           <Row label="Verdict narration" value={health?.verdict_llm ?? "—"} />
           <Row label="Grounded Q&A" value={health?.ask ?? "—"} />
           <Row label="Model" value={health?.model ?? "—"} dim />
-          <Row
-            label="Minimum trades for a verdict"
-            value={health?.min_trades != null ? String(health.min_trades) : "—"}
-            dim
-          />
           <Row label="Numeric validation" value="on — no un-computed numbers" />
           <Row label="Seeds" value="fixed & logged per run" />
         </div>

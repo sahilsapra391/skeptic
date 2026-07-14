@@ -98,6 +98,50 @@ export interface ProvenanceEvent {
   answered_at?: string;
 }
 
+/** The run's setup story (Chunk A), served on RunPayload.provenance. Two
+ * shapes behind one key: STORED records (fresh runs) carry confirmed.draft
+ * — the SpecDraft exactly as confirmed — plus source and mechanics.build;
+ * DERIVED records (runs predating the column, derived at read time) carry
+ * confirmed.boxes (a spec_json projection), no source/build, and NEVER a
+ * conversation — it was never stored and is never invented. */
+export interface RunProvenance {
+  v: number;
+  origin?: string;
+  recorded_at?: string;
+  source?: "text" | "chart";
+  derived?: boolean;
+  note?: string;
+  parent_run_id?: string | null;
+  prompt?: {
+    text?: string;
+    chart?: {
+      ticker?: string;
+      pins?: { entry: string; exit: string | null }[];
+    };
+  };
+  conversation?: ProvenanceEvent[];
+  confirmed?: {
+    draft?: SpecDraft;
+    boxes?: Record<string, unknown>;
+    costs?: Record<string, number>;
+    untouched?: boolean;
+    derived?: boolean;
+    omitted?: string;
+  };
+  truncated?: { dropped_events: number };
+  mechanics?: {
+    engine_s?: number;
+    gauntlet_s?: number;
+    verdict_s?: number;
+    sessions?: number;
+    clock?: string;
+    resolution_mix?: Record<string, number> | null;
+    effective_start?: string;
+    effective_end?: string;
+    build?: { commit?: string | null; spec_version?: number; fill_model?: string };
+  };
+}
+
 /** /api/data/estimate — window options with real session counts and time
  * estimates measured from completed runs (null until the first run at a
  * clock calibrates; never an invented number). */
@@ -128,6 +172,8 @@ export type VerdictKind = "fades-oos" | "survives" | "refusal" | "graded";
 export interface VerdictPayload {
   kind: VerdictKind;
   refusal: boolean;
+  /** graded on a sample under the standard 15-trade floor (lowered bar) */
+  belowStandard?: boolean;
   headline: string;
   survived: string;
   band?: { left: string; width: string };
@@ -296,6 +342,10 @@ export interface RunPayload {
   /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
+  /** Chunk A: the setup story — stored verbatim for fresh runs, derived at
+   * read time for runs predating the column. Absent only when the stored
+   * record is unreadable. */
+  provenance?: RunProvenance;
   /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
    * time like receipts; the stored verdict is never rewritten. */
   fillAudit?: {
@@ -404,6 +454,17 @@ export interface RunPayload {
     notes: [string, string, string, string];
     recommendations: string[];
   } | null;
+  /** the LLM narration is still being written off the critical path —
+   * the template verdict below is final in every NUMBER; only the
+   * wording may improve. Poll briefly while true. */
+  narrationPending?: boolean;
+  /** when the narration attempt started (bounds the pending poll server-side) */
+  narrationStartedAt?: string;
+  /** which writer produced the stored verdict text: "template" | "llm" */
+  verdictSource?: string;
+  /** the verdict was re-decided at the viewer's minimum-trades setting
+   * (`bar`) instead of the bar the run was scored at (`ranAt`) */
+  regraded?: { bar: number; ranAt: number } | null;
   tradeHeader: string;
   trades: TradeRow[];
   askAnswer?: string;

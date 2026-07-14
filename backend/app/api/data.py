@@ -119,8 +119,15 @@ def get_estimate(
         n = int(p.get("sessions") or 0)
         if p.get("clock") == clock and n > 0:
             rates.append((float(p["engine_s"]) + float(p["gauntlet_s"])) / n)
-            # verdict narration is ~constant per run, not per session
-            verdict_costs.append(float(p.get("verdict_s") or 0.0))
+            # the blocking verdict cost, ~constant per run. Rows from before
+            # narration moved off the critical path (no narration_off_path
+            # marker) measured the LLM wait the user no longer pays —
+            # counting them would over-promise every estimate until they
+            # age out of the window, so they contribute the new cost: ~0.
+            verdict_costs.append(
+                float(p.get("verdict_s") or 0.0)
+                if p.get("narration_off_path") else 0.0
+            )
         if len(rates) >= _ESTIMATE_SAMPLE:
             break
     rate = statistics.median(rates) if rates else None
