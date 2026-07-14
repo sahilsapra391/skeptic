@@ -103,7 +103,7 @@
               },
               "period": { "type": "integer", "minimum": 2, "maximum": 400 },
               "params": { "type": "object", "description": "Indicator-specific, e.g. {\"fast\": 9, \"slow\": 20} for ema_cross_state." },
-              "operator": { "enum": ["<", "<=", ">", ">=", "above", "below", "crosses_above", "crosses_below"] },
+              "operator": { "enum": ["<", "<=", ">", ">=", "above", "below", "crosses_above", "crosses_below"], "description": "crosses_above/crosses_below are SERIES operators - valid ONLY on the bar-series indicators (rsi, sma, ema, price_vs_sma_pct, price_vs_ema_pct, ema_cross_state, drawdown_from_high_pct), where yesterday's value exists in the evaluation pair. Every other indicator is read as a single point-in-time observation per bar; a cross has no previous value there and validation refuses the combination (use above/below for a level comparison). The parser must ASK whether the level form is acceptable rather than substitute it - crosses and level comparisons fire on different bars." },
               "value": { "type": "number" },
               "timeframe": {
                 "enum": ["daily", "5min"],

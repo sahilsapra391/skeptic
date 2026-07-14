@@ -1423,6 +1423,12 @@
    "text": "Sell a 30 delta put on SPY weekly when IV is stretched way above normal. Close at 50% profit or 21 DTE.",
    "kind": "questions",
    "comment": "Parity Tier 3: vague magnitude ('stretched way above normal') with NO number -> ask for the threshold (offer e.g. z 1.5 or 2, or a rank), never default one in."
+  },
+  {
+   "case": 49,
+   "text": "Sell a 30-delta put on SPY when VIX crosses above 20. Close at 50% profit or 21 DTE.",
+   "kind": "questions",
+   "comment": "Cross-detection is not supported on vix_level (a point-in-time read; only the bar-series indicators carry yesterday's value). The parser must ASK whether the level form ('VIX above 20') is acceptable — never silently swap crosses for above (they fire on different bars; the substitution changes the strategy). This combination used to validate and then 500 at the first evaluated session."
   }
  ]
 }
