@@ -102,12 +102,25 @@ MAX_TEXT_CHARS = 1200
 # [...path]/route.ts) — the WHOLE attempt loop must answer inside it, or a
 # healthy engine gets reported as a 504 mid-retry. The budget bounds both
 # attempts together: each upstream call gets what's left of it, and a retry
-# that can't get a useful slice is refused honestly instead.
+# that can't get a useful slice is refused honestly instead. requests applies
+# its timeout PER PHASE (connect, then read), so each phase is bounded
+# separately — a single float would let one attempt run ~2x its nominal
+# bound on a connect stall and blow the leash anyway.
 PARSE_BUDGET_SECONDS = 90.0
 _ATTEMPT_TIMEOUT_SECONDS = 60.0
-_MIN_RETRY_SECONDS = 5.0
+_CONNECT_TIMEOUT_SECONDS = 10.0
+# clarify re-parses regularly pass 30s — a thinner read slice than this is a
+# retry that almost certainly times out, burning the budget to say less
+_MIN_RETRY_SECONDS = 20.0
 
 _monotonic = time.monotonic  # patchable in tests — the budget clock
+
+
+def _attempt_timeout(remaining: float) -> tuple[float, float]:
+    """(connect, read) bounds that keep the whole attempt inside what's left
+    of the budget."""
+    read = min(_ATTEMPT_TIMEOUT_SECONDS, max(1.0, remaining - _CONNECT_TIMEOUT_SECONDS))
+    return (_CONNECT_TIMEOUT_SECONDS, read)
 
 
 class ParserUnavailableError(Exception):
@@ -115,6 +128,12 @@ class ParserUnavailableError(Exception):
     maps this to an honest 503 — it must never masquerade as a clarifying
     question (a fake question polluted the run's provenance record and put
     words in the product's mouth: "I don't guess")."""
+
+
+class _UpstreamHTTPError(Exception):
+    """Non-200 from the LLM gateway — transient, worth ONE retry within the
+    budget; a second one is an outage, not a parsing problem, and must
+    become the 503 (never the could-not-compile question)."""
 
 
 class Question(BaseModel):
@@ -445,7 +464,7 @@ still genuinely missing."""
 
 
 def _call_llm(
-    messages: list[dict[str, str]], api_key: str, timeout: float = _ATTEMPT_TIMEOUT_SECONDS
+    messages: list[dict[str, str]], api_key: str, timeout: tuple[float, float]
 ) -> dict[str, Any] | None:
     import requests
 
@@ -465,7 +484,7 @@ def _call_llm(
     )
     if resp.status_code != 200:
         log.warning("parser LLM HTTP %s", resp.status_code)
-        return None
+        raise _UpstreamHTTPError(f"HTTP {resp.status_code}")
     content = str(resp.json()["choices"][0]["message"]["content"])
     return _extract_json(content)
 
@@ -495,25 +514,29 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
 
     deadline = _monotonic() + PARSE_BUDGET_SECONDS
     retry_note: str | None = None
-    for _attempt in range(2):
+    for attempt in range(2):
+        remaining = deadline - _monotonic()  # one snapshot per iteration
+        if attempt and remaining - _CONNECT_TIMEOUT_SECONDS < _MIN_RETRY_SECONDS:
+            # the earned retry can't get a useful read slice inside the
+            # proxy's leash — refuse it here, while we can still say so
+            raise ParserUnavailableError(
+                "The parser ran out of time before it could finish — "
+                "try again, or rephrase the strategy in one sentence."
+            )
         if retry_note:
-            if deadline - _monotonic() < _MIN_RETRY_SECONDS:
-                # the retry the contract violation earned can't finish inside
-                # the proxy's leash — refuse it here, while we can still say so
-                raise ParserUnavailableError(
-                    "The parser ran out of time before it could finish — "
-                    "try again, or rephrase the strategy in one sentence."
-                )
             messages = [
                 messages[0],
                 {"role": "user", "content": _user_message(text, answers) + retry_note},
             ]
         try:
-            data = _call_llm(
-                messages,
-                api_key,
-                timeout=min(_ATTEMPT_TIMEOUT_SECONDS, deadline - _monotonic()),
-            )
+            data = _call_llm(messages, api_key, timeout=_attempt_timeout(remaining))
+        except _UpstreamHTTPError as exc:
+            if attempt:
+                raise ParserUnavailableError(
+                    "The parser hit an upstream error — try again, or "
+                    "rephrase the strategy in one sentence."
+                ) from exc
+            continue  # transient gateway error — one plain retry within budget
         except Exception as exc:
             log.exception("parser LLM failed")
             raise ParserUnavailableError(

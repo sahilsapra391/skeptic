@@ -124,15 +124,18 @@ export function triggerLabel(t: TriggerSpec): string {
   return `${name}${period} ${op?.sym ?? t.operator} ${t.value}`;
 }
 
-/** Tile header: the dial's name plus its tooltip in the chosen register. */
+/** Tile header: the dial's name plus its tooltip in the chosen register.
+ * A tile with no SPEC_HINTS entry renders NO hint — echoing the name back
+ * as its own tooltip is the bug, not a fallback (SCANNING/RESOLUTION
+ * shipped that way once). */
 function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
   const { verbiage } = useSettings();
   const pair = SPEC_HINTS[name.replace(/ [▾✎⌖]$/, "")];
-  const text = pair ? (verbiage === "retail" ? pair[1] : pair[0]) : name;
+  const text = pair ? (verbiage === "retail" ? pair[1] : pair[0]) : null;
   return (
     <div className={clsx(TILE_LABEL, "flex items-center justify-between gap-1", warn && "!text-warn")}>
       <span>{name}</span>
-      <Hint text={text} align="right" />
+      {text && <Hint text={text} align="right" />}
     </div>
   );
 }
