@@ -80,9 +80,10 @@ const HINT_MC: HintPair = [
     "If lots of shuffles lose money, the original run got lucky.",
 ];
 const HINT_SENS: HintPair = [
-  "Each parameter nudged ±20% and the backtest re-run. Brighter = better Sharpe. " +
+  "Each parameter nudged around its specced value (±20%, or wider absolute steps " +
+    "for small thresholds) and the backtest re-run. Brighter = better Sharpe. " +
     "A real edge survives nudges (plateau); a fragile one collapses (cliff).",
-  "We nudged every setting up and down 20% and re-ran the whole test. Brighter = " +
+  "We nudged every setting around your values and re-ran the whole test. Brighter = " +
     "better result. A real edge survives nudges; a fragile one falls apart.",
 ];
 /** Retail register: same tiles, everyday names. */
@@ -103,7 +104,7 @@ const HINT_TRADES: HintPair = [
 ];
 
 const HINT_RECS: HintPair = [
-  "Each suggestion comes from this run's own gauntlet numbers — the ±20% sweeps " +
+  "Each suggestion comes from this run's own gauntlet numbers — the sensitivity sweeps " +
     "really re-ran the engine. Nothing here is opinion, and acting on one starts " +
     "a new trial that the deflated Sharpe will count against you.",
   "Every suggestion comes from tests we actually ran on this exact strategy — " +
@@ -801,9 +802,9 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
       <div className={clsx(PANEL, "px-5 py-4")}>
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode
-            ? "NUDGE TEST — SETTINGS ±20%"
+            ? "NUDGE TEST — NEARBY SETTINGS"
             : run.sensitivityRows?.length
-              ? "SENSITIVITY — ±20% PER PARAMETER"
+              ? "SENSITIVITY — PER-PARAMETER SWEEP"
               : run.sensitivity.length
                 ? "SENSITIVITY — Δ 15 → 45"
                 : "SENSITIVITY"}
@@ -843,10 +844,13 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
                 </div>
               </div>
             ))}
+            {/* endpoints are "lower/higher", not "±20%": floored condition
+                rows sweep absolute family-scale grids and shifted grids can
+                ring off-center — the cells carry the real values */}
             <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
-              <span>−20%</span>
+              <span>lower</span>
               <span>as specced (ringed)</span>
-              <span>+20%</span>
+              <span>higher</span>
             </div>
           </div>
         ) : run.sensitivityRows?.length ? (
@@ -872,9 +876,9 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
               </div>
             ))}
             <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
-              <span>−20%</span>
+              <span>lower</span>
               <span>as specced</span>
-              <span>+20%</span>
+              <span>higher</span>
             </div>
           </div>
         ) : (
@@ -1126,7 +1130,11 @@ export function ResultsView({
         </>
       ) : (
         <>
-          <VerdictBlock verdict={verdict} />
+          <VerdictBlock
+            verdict={verdict}
+            narrationPending={run.narrationPending}
+            regraded={run.regraded}
+          />
           <ReceiptBanner run={run} />
 
           {run.verdict.refusal && (

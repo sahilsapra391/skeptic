@@ -820,6 +820,43 @@ Rules (owner decisions 2026-07-08):
   so absence is never misread as a free pass. The RANK forms
   (gex_rank_1y etc.) ARE real 0-100 thresholds and sweep normally once
   they clear the 126-observation floor.
+- **Small thresholds sweep an absolute family-scale grid (2026-07-14,
+  PR #97 review follow-up).** ±20% of a small threshold on a wide
+  natural scale probes almost nothing — "ivx_zscore_1y > 0.3" would
+  sweep a 0.12σ band of a ±3σ scale, and five near-identical Sharpes
+  read as a FALSE PLATEAU: the classifier blessing exactly the fragile
+  threshold the sweep exists to catch. When the multiplicative step
+  (10% of |threshold| per cell) falls under the indicator family's
+  floor, the sweep switches to an absolute grid of ±2 floor-steps
+  around the specced value, shifted up by whole steps at a bounded
+  family's lower edge (the dte whole-day guard's pattern — the specced
+  value always stays ON the grid). ONE rule grounds every floor:
+  floor = 10% of the family's stated reference magnitude, so a small
+  threshold is probed exactly as widely as a reference-scale one
+  already is — never finer. References: 0-100 ranks/oscillators → 20
+  (the bottom-quintile edge); z-scores → 2.5σ (outer edge of the ±3σ
+  usable band); vol points → 5 (this doc's own "skew > 5" example);
+  percent-of-price → 2.5%; drawdown → 10%; VIX-style levels → 20 (the
+  regime line regime_sample already draws); flow ratio → 1.0 (parity).
+  SMA/EMA keep pure ±20% (percent-of-price IS the scale of an absolute
+  price level), and the vendor-unit *_level families get NO invented
+  floor — their raw thresholds are parser-refused, and fabricating an
+  absolute step for units we refused to let users state would be the
+  invented-convention sin ourselves. The multiple-testing tax is
+  untouched: same 5 cells, same classifier, identical engine-run
+  count, and the sweep never re-centers on a better neighbor — a
+  better neighbor stays a recommendation that re-enters the gauntlet
+  as a NEW trial. Disclosed per condition in conditions_note
+  ("skew_25d > 0.5 swept -0.5…1.5 — absolute family-scale steps …"):
+  the operator + specced value attribute the grid when one indicator
+  appears twice (the max-pain band pair), and every numeral is the
+  specced value or a grid ENDPOINT, so verdict grounding (guardrail
+  #4) always finds them in the report. A threshold AT or BELOW a
+  bounded family's lower edge (e.g. a negative RSI — schema-legal,
+  scale-nonsensical) keeps the pre-floor multiplicative sweep: the
+  floor was grounded on the family's scale, and shifting a grid past
+  the specced value would take the as-specced cell off the grid
+  (review finding, regression-tested).
 - **Capped at the first 3 entry conditions.** Each swept condition adds
   5 engine re-runs on the serialized, OOM-sensitive engine; 3 covers
   the overfit surface of nearly every real spec (secondary filters
@@ -834,3 +871,55 @@ Rules (owner decisions 2026-07-08):
 
 Bit-identity holds: the sweep is a gauntlet stage, not the engine run —
 the daily-clock regression digests (which pin the RUN) are unchanged.
+
+## The evidence bar is the user's dial; the disclosure is not (2026-07-14)
+
+The minimum-trades floor for a graded verdict (guardrail #5) became a user
+setting: **default 15, floor 1, never 0** (`Settings → Evidence bar`,
+`BacktestRequest.min_trades`, clamped 1–10,000 both ends). Three rules keep
+it honest:
+
+- **The gate moves, the honesty doesn't.** A bar under 15 lets thin samples
+  grade, but `payload._below_standard_note` rides EVERY graded verdict on a
+  sub-15 sample, in both registers, appended at payload-build time so the
+  LLM narration can never drop it. The single-volatility-regime cap is not
+  configurable — it never was about trade count.
+- **Saved runs re-grade at read time, both directions.** `GET
+  /api/runs/{id}?min_trades=N` re-decides ONLY the evidence gate from the
+  stored honesty report (`regrade_sample` + `rejudge_resolution` +
+  `compute_trust` — the same functions the gauntlet ran, so the rule cannot
+  fork): a 13-trade refusal unlocks when the viewer's bar drops to 1; a
+  20-trade "graded" re-caps when the bar rises to 300. The re-graded view is
+  template-narrated (the stored LLM words argued a different grade), carries
+  a re-grade caveat + UI chip, and never mutates the stored row. When the
+  gate outcome is unchanged the stored payload — LLM narration included —
+  passes through untouched.
+- **Automatic re-runs inherit their parent's bar.** Auto-unlock and receipt
+  runs score at the bar the parent was refused at (`_inherit_min_trades`),
+  so an unlock promise can't move its own goalposts; `UnlockConditions.
+  trades.needs` records the run's own bar for the nightly scan.
+
+The 5-min sub-window's evidentiary floor in the mixed-resolution defense
+follows the same bar (the "same bar as any main result" coherence rule
+above), recomputable at read time from the stored buckets.
+
+## The verdict narration is an upgrade, not a gate (2026-07-14)
+
+The "honest verdict" stage used to block run completion on the LLM
+narration — two OpenRouter calls with up to 3 × 45 s validated retries, i.e.
+2–5 minutes of a finished gauntlet staring at the user. Now:
+
+- `_run_and_store` ships the run `done` with the **deterministic template
+  verdicts** (grounded by construction, same numbers) the moment the
+  gauntlet ends; `payload.narrationPending` is true only when a narration
+  key exists.
+- `_narrate_and_patch` runs AFTER the engine lock releases (pure network
+  I/O never holds the next queued run hostage), calls the same validated
+  `write_verdicts`, and swaps ONLY the wording surfaces
+  (`apply_verdict_text`) plus the library-card quotes. Numbers, trust
+  geometry, and every data panel are byte-identical before and after.
+- Any narration failure clears the flag and leaves the template standing —
+  the same fallback contract as before, minus the wait.
+- `perf.verdict_s` now records the BLOCKING verdict cost the user actually
+  waits on (the pre-run time estimates stay honest); the measured narration
+  time lands separately as `perf.narration_s`.

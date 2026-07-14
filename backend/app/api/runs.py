@@ -14,14 +14,15 @@ import ctypes
 import gc
 import json
 import logging
+import os
 import threading
 import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel, ValidationError
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import BaseModel, Field, ValidationError
 
 from app import db
 from app.api.payload import build_run_payload, run_summary
@@ -31,6 +32,7 @@ from app.api.provenance import (
     derived_record,
     mechanics_record,
 )
+from app.honesty.stages import MIN_TRADES
 from app.models.spec import StrategySpec
 
 log = logging.getLogger("runs")
@@ -50,7 +52,7 @@ _PENDING_ASK_STATS = (
 )
 _PENDING_SWEEP = (
     "standalone sweeps arrive with the compare/sweep UI — the gauntlet already "
-    "runs a ±20% sensitivity sweep on every backtest."
+    "runs a sensitivity sweep on every backtest."
 )
 
 
@@ -80,6 +82,10 @@ class BacktestRequest(BaseModel):
     origin: str = "user"
     parent_run_id: str | None = None
     auto_note: str | None = None  # e.g. "62 new sessions" (server-truncated)
+    # the evidence bar for a graded verdict (user setting, 2026-07-14).
+    # Floor 1 — zero would grade an untraded strategy, which is nonsense;
+    # None = the standard bar (or the parent's, for automatic re-runs)
+    min_trades: int | None = Field(default=None, ge=1, le=10_000)
     # UX Chunk A: the client-captured setup story (prompt, clarifying Q&A,
     # confirmed draft) — display-only, size-capped in creation_record;
     # ignored on automatic runs, which have no conversation
@@ -105,6 +111,24 @@ def _inherit_trials(parent_run_id: str | None, family: str) -> int:
         return max(row.trials if row else 1, 1)
 
 
+def _inherit_min_trades(parent_run_id: str | None) -> int:
+    """Evidence bar for an AUTOMATIC re-run (auto-unlock / receipt): the
+    bar its parent was scored at — an unlock promised at the parent's bar
+    must not silently re-refuse (or over-bless) at a different one. Falls
+    back to the standard bar when the parent predates the setting."""
+    if parent_run_id:
+        with db.session() as s:
+            parent = s.get(db.Run, parent_run_id)
+            if parent is not None and parent.stats_json:
+                try:
+                    sample = json.loads(parent.stats_json)[
+                        "honesty_report"]["regime_sample"]
+                    return max(int(sample.get("min_trades", MIN_TRADES)), 1)
+                except Exception:
+                    pass
+    return MIN_TRADES
+
+
 # Engine + full gauntlet run in-process as background tasks (single web
 # worker). The gauntlet's sensitivity sweep re-runs the whole engine ~20×;
 # two overlapping full-history runs' transient PEAKS are what tip a small
@@ -127,17 +151,23 @@ def _release_memory() -> None:
         pass
 
 
-def _execute_run(run_id: str, auto_note: str | None = None) -> None:
+def _execute_run(run_id: str, auto_note: str | None = None,
+                 min_trades: int = MIN_TRADES) -> None:
     """Background job: serialize on the engine lock, run one gauntlet, then
-    return freed memory to the OS regardless of outcome."""
+    return freed memory to the OS regardless of outcome. The LLM narration
+    runs AFTER the lock releases — it is pure network I/O (2–5 minutes at
+    worst on OpenRouter retries) and must hold neither the user's result
+    nor the next queued engine run hostage."""
     with _ENGINE_LOCK:
         try:
-            _run_and_store(run_id, auto_note)
+            _run_and_store(run_id, auto_note, min_trades)
         finally:
             _release_memory()
+    _narrate_and_patch(run_id)
 
 
-def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
+def _run_and_store(run_id: str, auto_note: str | None = None,
+                   min_trades: int = MIN_TRADES) -> None:
     """Load the lake, run the engine + gauntlet, store the payload."""
     with db.session() as s:
         run = s.get(db.Run, run_id)
@@ -156,7 +186,7 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
         from app.data.chains import load_market_store
         from app.engine.runner import run_backtest
         from app.honesty.gauntlet import run_gauntlet
-        from app.honesty.verdict import write_verdicts
+        from app.honesty.verdict import retail_template_verdict, template_verdict
 
         store = load_market_store(spec.underlying.ticker.value)
         intraday = None
@@ -206,15 +236,20 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
 
         gauntlet_t0 = time.monotonic()
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage,
-                              intraday=intraday)
+                              intraday=intraday, min_trades=min_trades)
         gauntlet_seconds = time.monotonic() - gauntlet_t0
         # D3a: refused verdicts store their unlock needs structured — the
         # nightly auto-unlock scan reasons from these
         from app.honesty.stages import unlock_conditions
 
         unlock = unlock_conditions(report, spec)
+        # Deterministic templates ship the run NOW — grounded by
+        # construction, same numbers the LLM would narrate. The narration
+        # upgrade happens in _narrate_and_patch, off the critical path
+        # (owner ask 2026-07-14: this stage stalled 2–5 min on LLM retries).
         verdict_t0 = time.monotonic()
-        verdict, retail_verdict = write_verdicts(report)
+        verdict = template_verdict(report)
+        retail_verdict = retail_template_verdict(report)
         verdict_seconds = time.monotonic() - verdict_t0
         # forward-record disclosure: convention seams the window crossed
         from app.engine.engine import data_provenance
@@ -223,6 +258,14 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
             spec, store, result.effective_start, result.effective_end)
         payload = build_run_payload(run_id, spec, result, report, verdict,
                                     retail_verdict, data_provenance=provenance)
+        # the UI polls this flag briefly and swaps the wording in when the
+        # async narration lands; without a key there is nothing to wait for.
+        # The start stamp bounds the wait: a worker killed mid-narration
+        # would otherwise strand the flag true forever (review finding) —
+        # get_run clears it once the attempt is provably dead.
+        payload["narrationPending"] = bool(os.environ.get("OPENROUTER_API_KEY"))
+        if payload["narrationPending"]:
+            payload["narrationStartedAt"] = datetime.now(UTC).isoformat()
         # the stats bundle is the ONLY material grounded Q&A may quote from
         stats = {
             "metrics": result.metrics,
@@ -243,9 +286,15 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
             "sessions": report.coverage.chain_sessions,
             "engine_s": round(engine_seconds, 2),
             "gauntlet_s": round(gauntlet_seconds, 2),
-            # ~constant per run regardless of window (LLM narration) — the
-            # estimate adds it so wall-clock predictions stay honest
+            # the BLOCKING verdict cost the user actually waits on (template
+            # assembly — the LLM narration moved off the critical path and
+            # records narration_s when its upgrade lands). The estimate adds
+            # this so wall-clock predictions stay honest.
             "verdict_s": round(verdict_seconds, 2),
+            # marks the NEW verdict_s semantics — pre-change rows measured
+            # the blocking LLM narration (minutes) and must not inflate the
+            # estimate's verdict constant now that nothing blocks on it
+            "narration_off_path": True,
             "conditions": bool(spec.entry.conditions),
         }
         with db.session() as s:
@@ -329,6 +378,98 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
                 s.commit()
 
 
+def _patch_perf_narration(run: db.Run, narration_seconds: float | None) -> None:
+    """Record the measured narration time on the run's perf row — the ONE
+    writer for narration_s, shared by the success and fallback paths."""
+    if narration_seconds is None or not run.perf_json:
+        return
+    try:
+        perf = json.loads(run.perf_json)
+        perf["narration_s"] = round(narration_seconds, 2)
+        run.perf_json = json.dumps(perf)
+    except Exception:
+        pass
+
+
+def _clear_narration_pending(run_id: str,
+                             narration_seconds: float | None = None) -> None:
+    """The narration attempt is over (failed, or template stood) — stop the
+    UI's brief upgrade poll and record the measured narration time."""
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or not run.payload_json:
+            return
+        payload = json.loads(run.payload_json)
+        if payload.get("narrationPending"):
+            payload["narrationPending"] = False
+            run.payload_json = json.dumps(payload)
+        _patch_perf_narration(run, narration_seconds)
+        s.commit()
+
+
+def _narrate_and_patch(run_id: str) -> None:
+    """LLM narration OFF the run's critical path (owner ask 2026-07-14: the
+    'honest verdict' stage stalled 2–5 minutes on OpenRouter retries). The
+    run is already stored done with grounded template verdicts; when the
+    narration clears the numeric + English validators it swaps the WORDING
+    in place — same numbers, same trust, better words. Any failure leaves
+    the template standing, exactly like the old inline fallback."""
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or run.status != "done" or not run.payload_json:
+            return
+        payload = json.loads(run.payload_json)
+        if not payload.get("narrationPending"):
+            return  # keyless run, or a pre-async payload
+        stats_json = run.stats_json
+    stats = json.loads(stats_json) if stats_json else {}
+    report_doc = stats.get("honesty_report")
+    if not isinstance(report_doc, dict):
+        _clear_narration_pending(run_id)
+        return
+    narration_t0 = time.monotonic()
+    try:
+        from app.honesty.report import HonestyReport
+        from app.honesty.verdict import write_verdicts
+
+        report = HonestyReport.model_validate(report_doc)
+        verdict, retail_verdict = write_verdicts(report)
+    except Exception:
+        log.exception("narration failed for %s — the template verdict stands",
+                      run_id)
+        _clear_narration_pending(run_id)
+        return
+    narration_seconds = time.monotonic() - narration_t0
+    if verdict.source != "llm" and retail_verdict.source != "llm":
+        # every attempt fell back to the template already stored
+        _clear_narration_pending(run_id, narration_seconds)
+        return
+    from app.api.payload import apply_verdict_text, run_summary
+
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or run.status != "done" or not run.payload_json:
+            return
+        payload = json.loads(run.payload_json)
+        payload = apply_verdict_text(payload, report, verdict, retail_verdict)
+        payload["narrationPending"] = False
+        run.payload_json = json.dumps(payload)
+        _patch_perf_narration(run, narration_seconds)
+        # the library card quotes the headline — keep it in the narrated
+        # voice, formatted by the same run_summary the initial store used
+        # (only the quote fields move; upgradeOf/autoNote markers stay)
+        if run.summary_json:
+            try:
+                summary = json.loads(run.summary_json)
+                fresh = run_summary(run_id, payload, created="")
+                summary["quote"] = fresh["quote"]
+                summary["quoteRetail"] = fresh["quoteRetail"]
+                run.summary_json = json.dumps(summary)
+            except Exception:
+                pass
+        s.commit()
+
+
 @router.post("/parse")
 def parse(req: ParseRequest) -> dict[str, Any]:
     if not req.text.strip():
@@ -367,6 +508,15 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
     if req.origin not in VALID_ORIGINS:
         raise HTTPException(status_code=422, detail=f"unknown origin {req.origin!r}")
 
+    # the evidence bar: the caller's setting; automatic re-runs without one
+    # inherit their parent's so an unlock never moves its own goalposts
+    if req.min_trades is not None:
+        min_trades = req.min_trades
+    elif req.origin in ("auto_unlock", "receipt"):
+        min_trades = _inherit_min_trades(req.parent_run_id)
+    else:
+        min_trades = MIN_TRADES
+
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
     with db.session() as s:
@@ -385,7 +535,7 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
             )
         )
         s.commit()
-    tasks.add_task(_execute_run, run_id, note)
+    tasks.add_task(_execute_run, run_id, note, min_trades)
     return {"run_id": run_id, "demo": False, "status": "queued"}
 
 
@@ -447,13 +597,19 @@ def list_runs() -> dict[str, Any]:
 
 
 @router.get("/runs/{run_id}")
-def get_run(run_id: str) -> dict[str, Any]:
+def get_run(
+    run_id: str,
+    min_trades: int | None = Query(default=None, ge=1, le=10_000),
+) -> dict[str, Any]:
     with db.session() as s:
         run = s.get(db.Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     if run.status == "done" and run.payload_json:
         payload = dict(json.loads(run.payload_json))
+        # a worker killed mid-narration must not leave the UI polling a
+        # forever-pending flag — release it once the attempt is stale
+        payload = _release_stale_narration(run_id, payload)
         # D3c: receipts arrive AFTER the payload froze — merged at read
         # time; the stored verdict/trust inside the payload is untouched
         if run.receipts_json:
@@ -467,6 +623,18 @@ def get_run(run_id: str) -> dict[str, Any]:
                 payload["fillAudit"] = json.loads(run.audit_json)
             except Exception:
                 pass
+        # 2026-07-14: the evidence bar is a user setting — a stored run
+        # re-grades at read time against the caller's bar (both ways:
+        # a 13-trade refusal unlocks at bar 1, a graded run re-caps at
+        # 300). Per-request view; the stored row is never mutated.
+        if min_trades is not None and run.stats_json:
+            from app.api.payload import regrade_for_min_trades
+
+            try:
+                stats = json.loads(run.stats_json)
+            except Exception:
+                stats = None
+            payload = regrade_for_min_trades(payload, stats, min_trades)
         spec_dict = json.loads(run.spec_json) if run.spec_json else {}
         # UX Chunk A: the setup story. Stored records merge verbatim; rows
         # predating the column get a READ-TIME derivation from stored fields
@@ -510,6 +678,9 @@ def get_run(run_id: str) -> dict[str, Any]:
 class AskRequest(BaseModel):
     question: str
     verbiage: str | None = None  # "institutional" (default) | "retail"
+    # the viewer's evidence bar — Q&A must describe the SAME verdict the
+    # screen shows when a stored run was re-graded at read time
+    min_trades: int | None = Field(default=None, ge=1, le=10_000)
 
 
 @router.post("/runs/{run_id}/replay")
@@ -545,12 +716,38 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
                      origin="receipt", parent_run_id=run_id,
                      provenance_json=creation_record(None, "receipt", run_id)))
         s.commit()
-    tasks.add_task(_execute_run, new_id, None)
+    # the receipt faces the same evidence bar its parent was scored at
+    tasks.add_task(_execute_run, new_id, None, _inherit_min_trades(run_id))
     return {"run_id": new_id, "demo": False, "status": "queued", "parent": run_id}
 
 
 _AUDIT_RUNNING = "__running__"
 _AUDIT_STALE_MINUTES = 30
+
+# narration worst case is ~3 validated retries × 45s per register; a pending
+# flag older than this survived a worker death mid-attempt — the template
+# verdict stands and the UI's upgrade poll must be released
+_NARRATION_STALE_MINUTES = 10
+
+
+def _release_stale_narration(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """A narrationPending flag whose attempt is provably dead (no start
+    stamp, or one past the stale horizon) is cleared — persisted, so every
+    later read is cheap and the pollers stop."""
+    if not payload.get("narrationPending"):
+        return payload
+    started = payload.get("narrationStartedAt")
+    try:
+        age_min = (datetime.now(UTC)
+                   - datetime.fromisoformat(str(started))).total_seconds() / 60
+    except (TypeError, ValueError):
+        age_min = _NARRATION_STALE_MINUTES + 1
+    if age_min < _NARRATION_STALE_MINUTES:
+        return payload
+    log.warning("run %s: narration attempt is stale (%.0f min) — the "
+                "template verdict stands", run_id, age_min)
+    _clear_narration_pending(run_id)
+    return {**payload, "narrationPending": False}
 
 
 @router.post("/runs/{run_id}/audit")
@@ -697,10 +894,16 @@ def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
     if run.status != "done" or not run.stats_json:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_STATS)
 
+    from app.api.payload import regrade_stats_for_min_trades
     from app.honesty.ask import answer_question
 
+    stats = json.loads(run.stats_json)
+    if req.min_trades is not None:
+        # same re-gate the displayed payload got — answers and screen agree,
+        # and the bar number itself is grounded (it rides the sample dump)
+        stats = regrade_stats_for_min_trades(stats, req.min_trades)
     answer = answer_question(
-        req.question, json.loads(run.stats_json), retail=req.verbiage == "retail"
+        req.question, stats, retail=req.verbiage == "retail"
     )
     if answer is None:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_KEY)

@@ -172,6 +172,8 @@ export type VerdictKind = "fades-oos" | "survives" | "refusal" | "graded";
 export interface VerdictPayload {
   kind: VerdictKind;
   refusal: boolean;
+  /** graded on a sample under the standard 15-trade floor (lowered bar) */
+  belowStandard?: boolean;
   headline: string;
   survived: string;
   band?: { left: string; width: string };
@@ -452,6 +454,17 @@ export interface RunPayload {
     notes: [string, string, string, string];
     recommendations: string[];
   } | null;
+  /** the LLM narration is still being written off the critical path —
+   * the template verdict below is final in every NUMBER; only the
+   * wording may improve. Poll briefly while true. */
+  narrationPending?: boolean;
+  /** when the narration attempt started (bounds the pending poll server-side) */
+  narrationStartedAt?: string;
+  /** which writer produced the stored verdict text: "template" | "llm" */
+  verdictSource?: string;
+  /** the verdict was re-decided at the viewer's minimum-trades setting
+   * (`bar`) instead of the bar the run was scored at (`ranAt`) */
+  regraded?: { bar: number; ranAt: number } | null;
   tradeHeader: string;
   trades: TradeRow[];
   askAnswer?: string;

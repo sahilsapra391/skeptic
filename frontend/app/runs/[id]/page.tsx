@@ -30,6 +30,10 @@ export default function RunPage({ params }: { params: { id: string } }) {
           setError(payload.error ?? "run failed");
         } else if (payload.status !== "done") {
           timer = setTimeout(tick, 1200);
+        } else if (payload.narrationPending) {
+          // numbers are final; the narration upgrade is being written off
+          // the critical path — poll slowly until the wording lands
+          timer = setTimeout(tick, 3000);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "run not found");

@@ -18,7 +18,7 @@ const RETAIL_STAGES: { t: string; n: string }[] = [
   { t: "Test on data it never saw", n: "last 30% of history kept hidden" },
   { t: "Test each time period", n: "rolling ~2-month windows" },
   { t: "Reshuffle the trades 1,000×", n: "how much was luck?" },
-  { t: "Nudge the settings ±20%", n: "does it survive small changes?" },
+  { t: "Nudge the settings", n: "does it survive small changes?" },
   { t: "The honest verdict", n: "grounded in the numbers above" },
 ];
 
@@ -50,7 +50,7 @@ const HEADINGS = [
 const TIPS = [
   "One stated exit rule is enough — the parser never invents the ones you didn't give.",
   "Chart mode: pin up to 10 examples. More examples make the test stricter, not easier.",
-  "Below 15 finished trades the verdict is withheld — good-looking numbers don't override it.",
+  "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld — good-looking numbers don't override it.",
   "Every re-run of the same strategy family counts as a trial — the deflated Sharpe gets harder to impress each time.",
   "On the results screen, ask questions — answers use only this run's computed stats.",
   "Commission and slippage are editable in Settings and apply to every new run.",
@@ -105,7 +105,7 @@ const TIPS = [
 const TIPS_RETAIL = [
   "One stated exit rule is enough — the parser never invents the ones you didn't give.",
   "Chart mode: pin up to 10 examples. More examples make the test stricter, not easier.",
-  "Below 15 finished trades the verdict is withheld — good-looking numbers don't override it.",
+  "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld — good-looking numbers don't override it.",
   "Every re-run of a similar strategy raises the bar — retrying until something works gets caught.",
   "On the results screen, ask questions — answers use only this run's computed numbers.",
   "Commission and slippage are editable in Settings and apply to every new run.",
