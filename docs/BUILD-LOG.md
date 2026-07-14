@@ -1907,3 +1907,29 @@ not self-judged. Refuted with citations: exit phrasing (matches the
 canonical spec_to_draft projection); guardrail #6 (the meta line's
 effective window persists above both tabs); wire-contract audit clean
 end to end. All four scenarios re-verified in the browser post-fix.
+
+## UX Chunk C — Data Observatory regroup: keep everything, declutter (2026-07-14)
+
+WHAT: the Observatory's ~14-panel wall regrouped into five collapsible
+groups, NO data removed — every fact reachable within one expand:
+(1) COVERAGE AT A GLANCE (open by default): days-on-record, heartbeat,
+source chips + the per-ticker resolution-mix visual; (2) EOD CHAINS &
+HISTORY: dolthub/yahoo/close-chain lanes, underlying + per-ticker chain
+windows, chain-quality field completeness + spread chart; (3) INTRADAY &
+MINUTE LAKES: alpaca/5-min-NBBO/recorder lanes + rows, UW 1-min (moved
+from new-sources); (4) SIGNAL SOURCES: IVX/HV, vol surfaces, dealer
+positioning, flow/pin, in-house continuations (seam disclosure now points
+to the health group for x-val), remaining new-sources rows; (5) DATA
+HEALTH & INCIDENTS: cross-validation pairs, open quality flags +
+quarantined count, named blind spots, collection wants. Group headers
+carry one-line headline-number summaries; anything flagged lifts a warn
+badge onto its collapsed header (weak chain fields → 2, stalled recorder
+→ 3, open flags / stale collector → 5). Expand state persists in
+localStorage (skeptic-observatory-groups); groups collapsed by default
+except (1). Lane/PANEL patterns reused; typography rails untouched; the
+page-level collector-stale banner stays above the groups.
+VERIFIED IN BROWSER against a synthetic coverage stub (layout-only dev
+fixture exercising every branch: all lanes, weak volume field, stale
+recorder, open flag): first paint = five headers + coverage visual;
+every original fact confirmed present via full-page text audit; badges
+visible while collapsed; expand state survives reload.
