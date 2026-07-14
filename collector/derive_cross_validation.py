@@ -74,6 +74,7 @@ from app.data.cross_validation import (  # noqa: E402
     merge_records,
     recorder_tape_window,
 )
+from app.data.flow_inhouse import FLOW_INHOUSE_KEY  # noqa: E402
 from app.data.flow_signals import FLOW_KEY  # noqa: E402
 from app.data.gex_signals import load_dealer_exposure  # noqa: E402
 from app.data.inhouse_signals import CHAIN_SIGNALS_KEY, HV_KEY  # noqa: E402
@@ -554,6 +555,27 @@ def run_positioning_cboe_vs_uw(s3, ticker: str) -> int:
     )
 
 
+def run_flow_inhouse_vs_uw(s3, ticker: str) -> int:
+    """In-house classified flow vs the frozen UW flow artifact: net
+    premium and NOPE agree on SIGN (different captures, own conventions);
+    the flow-volume ratio within the loose PCR band (Alpaca minute volume
+    vs UW per-print volume)."""
+    return _run_signal_pair(
+        s3, "flow_inhouse_vs_uw", ticker,
+        ours_loader=lambda: _artifact_cols(
+            s3, FLOW_INHOUSE_KEY.format(ticker=ticker),
+            ("net_premium", "put_call_flow_ratio", "nope_eod")),
+        vendor_loader=lambda: _artifact_cols(
+            s3, FLOW_KEY.format(ticker=ticker),
+            ("net_premium", "put_call_ratio", "nope_eod")),
+        fields=[
+            ("net_premium", "net_premium", "sign", 0.0, 0.0),
+            ("put_call_flow_ratio", "put_call_ratio", "band", 0.0, PCR_REL_TOL),
+            ("nope_eod", "nope_eod", "sign", 0.0, 0.0),
+        ],
+    )
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -564,7 +586,7 @@ def main() -> int:
             else {"dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
                   "massive_vs_ivol5m", "hv_inhouse_vs_ivol",
                   "ivs_cboe_vs_ivol", "positioning_cboe_vs_uw",
-                  "recorder_vs_uw_tape"})
+                  "recorder_vs_uw_tape", "flow_inhouse_vs_uw"})
     s3 = r2_client()
     n = 0
     if "dolthub_vs_alpaca" in want:
@@ -589,6 +611,9 @@ def main() -> int:
     if "recorder_vs_uw_tape" in want:
         for t in ("SPY", "QQQ", "IWM"):
             n += run_recorder_vs_uw_tape(s3, t)
+    if "flow_inhouse_vs_uw" in want:
+        for t in ("SPY", "QQQ", "IWM"):
+            n += run_flow_inhouse_vs_uw(s3, t)
     log.info("done: %d units derived", n)
     return 0
 

@@ -53,7 +53,11 @@ PAIRS = ("dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
          # recorder displayed quotes vs the UW full option tape (the
          # 2026-07-09 trial-endgame bank): real prints checked against the
          # delayed NBBO record the engine quotes intraday fills from
-         "recorder_vs_uw_tape")
+         "recorder_vs_uw_tape",
+         # the in-house forward flow family (Alpaca×recorder classification)
+         # vs the frozen UW flow artifact on their overlap — the numbers a
+         # future unfreeze/substitution decision must cite
+         "flow_inhouse_vs_uw")
 
 # The CBOE delayed feed's quotes lag its own publish stamp by the OPRA
 # delayed-data standard. MEASURED, not assumed (probe 2026-07-09: SPY
@@ -134,6 +138,13 @@ def recorder_tape_window(
         nb = pd.Timestamp(not_before)
         if nb > start:
             start = nb
+        if nb > end:
+            # an out-of-order source_ts (feed hiccup / the recorder's
+            # timestamp-field fallback) must never REWIND the clamp — a
+            # rewound not_before would let the next normal snap re-slice
+            # rows already consumed (review 2026-07-13: double-counted
+            # volume banked forever under set-difference incrementality)
+            end = nb
     if start >= end:
         return 0, 0, end
     lo = int(ts.searchsorted(start, side="left"))
