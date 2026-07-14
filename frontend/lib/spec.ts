@@ -170,12 +170,16 @@ function computeSpecVersion(spec: Json): number {
     "market_tide_rank_1y", "nope_level", "nope_rank_1y",
     "put_call_flow_ratio", "max_pain_distance_pct",
   ]);
+  // Parity Tier 3: the standardized IVX form lifts to 8 — checked before
+  // v7, the version is the MAX the vocabulary needs
+  const V8_INDICATORS = new Set(["ivx_zscore_1y"]);
   const scaleIn = (entry.scale_in ?? {}) as Json;
   const ladderConds = [
     ...((scaleIn.rungs as Json[] | undefined) ?? []),
     ...(scaleIn.rearm ? [scaleIn.rearm as Json] : []),
   ];
   const allConds = [...conds, ...ladderConds];
+  if (allConds.some((c) => V8_INDICATORS.has(String(c.indicator)))) return 8;
   if (allConds.some((c) => V7_INDICATORS.has(String(c.indicator)))) return 7;
   if (allConds.some((c) => V6_INDICATORS.has(String(c.indicator)))) return 6;
   if (allConds.some((c) => V5_INDICATORS.has(String(c.indicator)))) return 5;

@@ -21,12 +21,20 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.honesty.verdict import OPENROUTER_URL, PARSER_MODEL, _extract_json
-from app.models.spec import V2_INDICATORS, V5_INDICATORS, V6_INDICATORS, V7_INDICATORS, StrategySpec
+from app.models.spec import (
+    V2_INDICATORS,
+    V5_INDICATORS,
+    V6_INDICATORS,
+    V7_INDICATORS,
+    V8_INDICATORS,
+    StrategySpec,
+)
 
 _V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
 _V5_INDICATOR_NAMES = {i.value for i in V5_INDICATORS}
 _V6_INDICATOR_NAMES = {i.value for i in V6_INDICATORS}
 _V7_INDICATOR_NAMES = {i.value for i in V7_INDICATORS}
+_V8_INDICATOR_NAMES = {i.value for i in V8_INDICATORS}
 
 
 def _required_spec_version(raw_spec: dict[str, Any]) -> int:
@@ -47,7 +55,11 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     if isinstance(scale_in.get("rearm"), dict):
         ladder_conds.append(scale_in["rearm"])
     all_conds = conds + ladder_conds
-    # v7 (F2/F3): flow/sentiment/pin — checked first, max wins
+    # v8 (parity Tier 3): the standardized IVX form — checked first, max wins
+    if any(isinstance(c, dict) and c.get("indicator") in _V8_INDICATOR_NAMES
+           for c in all_conds):
+        return 8
+    # v7 (F2/F3): flow/sentiment/pin
     if any(isinstance(c, dict) and c.get("indicator") in _V7_INDICATOR_NAMES
            for c in all_conds):
         return 7
@@ -140,7 +152,7 @@ THE SPEC (all fields required unless noted):
                           |"net_premium_level"|"net_premium_rank_1y"
                           |"market_tide_level"|"market_tide_rank_1y"
                           |"nope_level"|"nope_rank_1y"|"put_call_flow_ratio"
-                          |"max_pain_distance_pct",
+                          |"max_pain_distance_pct"|"ivx_zscore_1y",
                            "period": <int, optional>, "params": {..optional..},
                            "timeframe": "daily" (default) | "5min" (intraday bars;
                                         price-series indicators only),
@@ -242,6 +254,14 @@ CONVENTIONS:
   "operator": ">", "value": 50} (a percentile, 0-100). "IVX above 25" (a
   LEVEL) → ivx_level_30d with value 25 (percentage points, like vix_level).
   "IV rich vs realized by 4 points" → hv_iv_spread_30d with value 4.
+- IV Z-SCORE (the SAME 30d IVX series as ivx_rank_1y, standardized over the
+  trailing year — σ units, raw thresholds LEGAL): "IV z-score above 1.5" /
+  "IV 2 sigma above its 1-year mean" / "IV two standard deviations rich" →
+  {"indicator": "ivx_zscore_1y", "operator": ">", "value": 1.5 (or 2)};
+  "z-score below -1" / "IV a sigma cheap" → "<" with value -1. PERCENTILE
+  phrasing (rank/IVR/percentile) stays ivx_rank_1y — never convert between
+  the two forms. Vague "IV stretched/extreme" with NO number → ask for the
+  threshold (offer e.g. 1.5, 2).
 - VARIANCE/VOL RISK PREMIUM is the SAME quantity: "VRP above 4", "variance risk
   premium positive", "vol premium rich vs realized" → hv_iv_spread_30d (IV minus
   realized, percentage points). NEVER invent a separate "vrp" indicator.
@@ -359,8 +379,9 @@ CONVENTIONS:
   "5min"). This is a DATA POLICY, never inferred from strategy shape: a plain 0DTE
   request WITHOUT this phrasing gets NO resolution field — never guess it.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
-  spec_version: always emit 1 — the server recomputes it (flow/tide/NOPE/
-  put-call/max-pain vocabulary lifts it to 7; gex/dex vocabulary
+  spec_version: always emit 1 — the server recomputes it (ivx_zscore_1y
+  lifts it to 8; flow/tide/NOPE/put-call/max-pain vocabulary lifts it to 7;
+  gex/dex vocabulary
   lifts it to 6; skew_25d or term_structure_slope lifts it to 5; intraday_scan
   or backtest.resolution lifts it to 4; a scale_in ladder or a close_at_time
   lifts it to 3; v2 vocabulary lifts it to 2).

@@ -28,6 +28,24 @@ def _trailing_rank(history: list[float], min_obs: int) -> float | None:
     return sum(1 for v in window if v <= current) / len(window) * 100.0
 
 
+def _trailing_zscore(history: list[float], min_obs: int) -> float | None:
+    """Standardized latest observation within its trailing 252-observation
+    window: (x − mean) / population σ — the σ-unit sibling of
+    _trailing_rank, ONE implementation for the same reason. None below
+    min_obs trailing observations (the D1 floor), and None on a
+    zero-variance window — a flat series has no σ to standardize by,
+    unevaluable beats a fabricated ±∞."""
+    if len(history) < min_obs:
+        return None
+    window = history[-252:]
+    n = len(window)
+    mean = sum(window) / n
+    var = sum((v - mean) ** 2 for v in window) / n
+    if var <= 0.0:
+        return None
+    return (window[-1] - mean) / math.sqrt(var)
+
+
 def _compare(value: float, op: Operator, threshold: float) -> bool:
     if op in (Operator.LT,):
         return value < threshold
@@ -223,6 +241,14 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         if rank is None:
             return False
         return _compare(rank, cond.operator, cond.value)
+    if ind_name is Indicator.IVX_ZSCORE_1Y:
+        # v8 (parity Tier 3): the SAME 30d IVX series as ivx_rank_1y,
+        # standardized instead of ranked — σ units, raw thresholds legal
+        # ("IV two sigma rich" → > 2). Same 126-observation floor.
+        z = _trailing_zscore(view.ivx_30d_history(), min_obs=126)
+        if z is None:
+            return False
+        return _compare(z, cond.operator, cond.value)
     if ind_name is Indicator.IVX_LEVEL_30D:
         # stored as a decimal; compared in percentage points (vix_level
         # ergonomics: "IVX above 25" → value 25)

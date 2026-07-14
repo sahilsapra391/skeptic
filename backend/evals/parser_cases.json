@@ -1337,6 +1337,92 @@
    "text": "Sell a put credit spread on SPY weekly when net options premium is above 50 million dollars, short leg 25 delta, $5 wide, 45 DTE. Take profit at 50%.",
    "kind": "questions",
    "comment": "F2: raw DOLLAR flow thresholds refused (vendor magnitudes) — ask offering the sign form or a percentile rank."
+  },
+  {
+   "case": 46,
+   "text": "Short put on QQQ at 30 delta, 45 DTE, weekly entries, 50% profit target, but only when IV's z-score is above 1.5.",
+   "kind": "spec",
+   "comment": "Parity Tier 3: sigma phrasing -> ivx_zscore_1y (raw thresholds legal, sigma units). Percentile phrasing stays ivx_rank_1y - the two forms never convert.",
+   "expect": {
+    "spec_version": 8,
+    "ticker": "QQQ",
+    "structure": "short_put",
+    "legs": [
+     {
+      "right": "put",
+      "side": "short",
+      "method": "delta",
+      "value": 0.3
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "weekly"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "ivx_zscore_1y",
+      "operator": [
+       ">",
+       ">=",
+       "above"
+      ],
+      "value": 1.5
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 50
+    }
+   }
+  },
+  {
+   "case": 47,
+   "text": "Buy a 45 DTE ATM call on SPY when IV is two standard deviations below its one-year mean. Sell at 30% profit or get out at 21 DTE.",
+   "kind": "spec",
+   "comment": "Parity Tier 3: 'two standard deviations below its one-year mean' -> ivx_zscore_1y < -2 (signed sigma), NOT a rank and NOT ivx_level.",
+   "expect": {
+    "spec_version": 8,
+    "ticker": "SPY",
+    "structure": "long_call",
+    "legs": [
+     {
+      "right": "call",
+      "side": "long",
+      "method": "delta",
+      "value": 0.5
+     }
+    ],
+    "target_dte": 45,
+    "schedule": {
+     "frequency": [
+      "daily",
+      "signal_only"
+     ]
+    },
+    "conditions": [
+     {
+      "indicator": "ivx_zscore_1y",
+      "operator": [
+       "<",
+       "<=",
+       "below"
+      ],
+      "value": -2
+     }
+    ],
+    "exit": {
+     "profit_target_pct": 30,
+     "time_exit_dte": 21
+    }
+   }
+  },
+  {
+   "case": 48,
+   "text": "Sell a 30 delta put on SPY weekly when IV is stretched way above normal. Close at 50% profit or 21 DTE.",
+   "kind": "questions",
+   "comment": "Parity Tier 3: vague magnitude ('stretched way above normal') with NO number -> ask for the threshold (offer e.g. z 1.5 or 2, or a rank), never default one in."
   }
  ]
 }

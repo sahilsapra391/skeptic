@@ -4,11 +4,11 @@ strike — never ON it, never on the wrong side — and within a width tolerance
 not a silently wider spread. Also: the 50Δ strike IS the ATM strike, so it
 stays selectable on sessions whose source carries no greeks."""
 
-from datetime import date
+from datetime import date, timedelta
 
-from app.engine.selection import select_legs
+from app.engine.selection import select_expiration, select_legs
 from app.engine.types import ContractKey, Quote
-from app.models.spec import Leg
+from app.models.spec import ExpirationSelection, Leg
 
 EXP = date(2026, 3, 20)
 
@@ -123,3 +123,82 @@ def test_non_50_delta_still_skips_without_greeks() -> None:
     resolved, reason = select_legs(chain, EXP, legs, spot=501.0)
     assert resolved is None
     assert reason == "no_delta_data"
+
+
+# ─────────────────────────── expiration selection ──────────────────────────
+# select_expiration: nearest listed expiry to target_dte WITHIN the user's
+# [min_dte, max_dte] bounds; earlier expiry wins ties; nothing in bounds is
+# an honest None (→ no_expiration_in_window skip), never a bridge past the
+# window the user asked for. Chain shapes mirror the Tier-0 audit's real
+# deep-history probes (docs/AUDIT.md).
+
+AS_OF = date(2026, 6, 15)  # a Monday
+
+
+def _exp_chain(dtes: list[int]) -> dict[ContractKey, Quote]:
+    """select_expiration reads only the keys — one dummy contract per expiry."""
+    return {
+        ContractKey(expiration=AS_OF + timedelta(days=d), right="put", strike=100.0):
+            Quote(bid=1.0, ask=1.2, delta=-0.30)
+        for d in dtes
+    }
+
+
+def _sel(target: int, lo: int, hi: int) -> ExpirationSelection:
+    return ExpirationSelection(target_dte=target, min_dte=lo, max_dte=hi)
+
+
+def test_expiration_nearest_to_target_within_bounds() -> None:
+    chain = _exp_chain([30, 44, 52])
+    picked = select_expiration(chain, AS_OF, _sel(45, 30, 60))
+    assert picked == AS_OF + timedelta(days=44)
+
+
+def test_expiration_tie_breaks_to_the_earlier_expiry() -> None:
+    # 40 and 50 DTE sit 5 days either side of target 45 — earlier wins
+    chain = _exp_chain([40, 50])
+    picked = select_expiration(chain, AS_OF, _sel(45, 30, 60))
+    assert picked == AS_OF + timedelta(days=40)
+
+
+def test_bounds_exclude_even_the_nearest_expiry() -> None:
+    # the audit's dolthub SPY 2021-06-15 shape: 13/27/66 DTE. Target 45
+    # within [30, 60] finds nothing — 27 and 66 are both out of bounds and
+    # must NOT be bridged to, however near: the user's window is the law.
+    chain = _exp_chain([13, 27, 66])
+    assert select_expiration(chain, AS_OF, _sel(45, 30, 60)) is None
+
+
+def test_sparse_monthlies_bridge_inside_the_window_only() -> None:
+    # the audit's QQQ 2010-06-15 shape: 4/15/32/67/95 DTE. Target 45 within
+    # [30, 60] has exactly one candidate — effective 32, a disclosed
+    # deviation bounded by the user's own min/max
+    chain = _exp_chain([4, 15, 32, 67, 95])
+    picked = select_expiration(chain, AS_OF, _sel(45, 30, 60))
+    assert picked == AS_OF + timedelta(days=32)
+
+
+def test_empty_chain_returns_none() -> None:
+    assert select_expiration({}, AS_OF, _sel(45, 30, 60)) is None
+
+
+def test_trading_day_dte_fn_overrides_calendar() -> None:
+    # Friday "1DTE" selects Monday's expiry at the 5-min clock: calendar
+    # DTE is 3 (out of a [0, 1] window) but the trading-day counter says 1
+    friday = date(2026, 6, 12)
+    monday = friday + timedelta(days=3)
+    chain = {
+        ContractKey(expiration=monday, right="put", strike=100.0):
+            Quote(bid=1.0, ask=1.2, delta=-0.30)
+    }
+    sel = _sel(1, 0, 1)
+    assert select_expiration(chain, friday, sel) is None  # calendar default
+
+    def trading_dte(e: date) -> int:
+        # weekend-free counter for this two-expiry fixture
+        return sum(
+            1 for i in range(1, (e - friday).days + 1)
+            if (friday + timedelta(days=i)).weekday() < 5
+        )
+
+    assert select_expiration(chain, friday, sel, trading_dte) == monday

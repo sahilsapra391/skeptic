@@ -103,6 +103,9 @@ class Indicator(StrEnum):
     NOPE_RANK_1Y = "nope_rank_1y"
     PUT_CALL_FLOW_RATIO = "put_call_flow_ratio"
     MAX_PAIN_DISTANCE_PCT = "max_pain_distance_pct"
+    # spec v8 (parity Tier 3): standardized 30d IVX — the same series as
+    # ivx_rank_1y, in σ units instead of percentile (raw thresholds legal)
+    IVX_ZSCORE_1Y = "ivx_zscore_1y"
 
 
 class Timeframe(StrEnum):
@@ -150,6 +153,12 @@ V7_INDICATORS = {
     Indicator.NOPE_RANK_1Y,
     Indicator.PUT_CALL_FLOW_RATIO,
     Indicator.MAX_PAIN_DISTANCE_PCT,
+}
+
+# Parity Tier 3: the standardized IVX form requires spec_version 8 — a
+# versioned migration like every vocabulary addition, never silent.
+V8_INDICATORS = {
+    Indicator.IVX_ZSCORE_1Y,
 }
 
 # Price-series indicators that can read the 5-minute timeframe; everything
@@ -584,8 +593,29 @@ class StrategySpec(BaseModel):
 
     @model_validator(mode="after")
     def _version_supported(self) -> StrategySpec:
-        if self.spec_version not in (1, 2, 3, 4, 5, 6, 7):
-            raise ValueError("spec_version must be 1, 2, 3, 4, 5, 6, or 7")
+        if self.spec_version not in (1, 2, 3, 4, 5, 6, 7, 8):
+            raise ValueError("spec_version must be 1, 2, 3, 4, 5, 6, 7, or 8")
+        return self
+
+    @model_validator(mode="after")
+    def _v8_vocabulary_needs_v8(self) -> StrategySpec:
+        """v8 vocabulary on an older spec is a loud error, never silent
+        (module contract: every change is a versioned migration)."""
+        if self.spec_version >= 8:
+            return self
+        all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
+        # ladder rungs and the rearm are conditions too (F4 review lesson)
+        if self.entry.scale_in is not None:
+            all_conditions += list(self.entry.scale_in.rungs)
+            if self.entry.scale_in.rearm is not None:
+                all_conditions.append(self.entry.scale_in.rearm)
+        used = sorted({c.indicator.value for c in all_conditions
+                       if c.indicator in V8_INDICATORS})
+        if used:
+            raise ValueError(
+                f"spec_version {self.spec_version} cannot use v8 vocabulary: "
+                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 8"
+            )
         return self
 
     @model_validator(mode="after")

@@ -193,6 +193,18 @@ def test_required_spec_version_detects_v7() -> None:
     assert rsv({"entry": {"scale_in": {"rungs": [flow]}}}) == 7
 
 
+def test_required_spec_version_detects_v8() -> None:
+    """Parity Tier 3: the standardized IVX form lifts to 8 — MAX wins over
+    v7/v6, and ladder conditions count."""
+    rsv = parser_module._required_spec_version
+    z = {"indicator": "ivx_zscore_1y", "operator": ">", "value": 1.5}
+    flow = {"indicator": "net_premium_level", "operator": ">", "value": 0}
+    assert rsv({"entry": {"conditions": [z]}}) == 8
+    assert rsv({"exit": {"conditions": [z]}}) == 8
+    assert rsv({"entry": {"conditions": [z, flow]}}) == 8
+    assert rsv({"entry": {"scale_in": {"rungs": [z]}}}) == 8
+
+
 def _ladder_spec_raw() -> dict:
     # what the LLM emits (spec_version 1, ATM on the leg) — the server
     # normalizes and recomputes the version
