@@ -91,6 +91,7 @@ def run_gauntlet(
     trials: int,
     on_stage: StageHook = _noop,
     intraday: IntradayProvider | None = None,
+    min_trades: int = stages.MIN_TRADES,
 ) -> HonestyReport:
     on_stage(
         1,
@@ -128,12 +129,12 @@ def run_gauntlet(
         )
     on_stage(5, "deflated Sharpe + regime guardrail + verdict", sens_preview)
     dsr = stages.deflated_sharpe(result, trials)
-    sample = stages.regime_sample(result, store)
+    sample = stages.regime_sample(result, store, min_trades)
     cov = stages.coverage(result)
     liq = stages.liquidity_profile(result, spec)
     conc = stages.concentration(result)
     split = stages.session_split(result)
-    res_split = stages.resolution_split(result)
+    res_split = stages.resolution_split(result, min_trades)
     ladder = stages.ladder_depth_attribution(result, spec)
     confidence = stages.data_confidence(result, spec)
     scale_in = stages.scale_in_honesty(result, spec, spec.backtest.initial_capital)

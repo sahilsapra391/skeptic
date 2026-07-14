@@ -223,12 +223,15 @@ export function startBacktest(
   return request<{ run_id: string; demo: boolean }>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ spec, provenance }),
+    // the evidence bar (Settings) gates this run's verdict server-side
+    body: JSON.stringify({ spec, provenance, min_trades: getSettings().minTrades }),
   });
 }
 
 export function getRun(id: string): Promise<RunPayload> {
-  return request<RunPayload>(`/api/runs/${id}`);
+  // the current evidence bar rides every read — saved runs re-grade
+  // server-side when the bar moved since they ran (both directions)
+  return request<RunPayload>(`/api/runs/${id}?min_trades=${getSettings().minTrades}`);
 }
 
 // the sidebar requests the library on every navigation — cache briefly so
@@ -246,10 +249,13 @@ export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boo
 }
 
 export function askRun(id: string, question: string): Promise<{ answer: string; demo: boolean }> {
+  // the evidence bar rides along so grounded answers describe the SAME
+  // verdict the screen shows when a saved run was re-graded at read time
+  const { verbiage, minTrades } = getSettings();
   return request<{ answer: string; demo: boolean }>(`/api/runs/${id}/ask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question, verbiage: getSettings().verbiage }),
+    body: JSON.stringify({ question, verbiage, min_trades: minTrades }),
   });
 }
 
