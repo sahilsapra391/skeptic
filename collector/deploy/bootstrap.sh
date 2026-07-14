@@ -4,7 +4,10 @@
 # Idempotent: safe to re-run to redeploy after a `git pull`.
 set -euo pipefail
 
-REPO="${SKEPTIC_REPO:-https://github.com/sahilsapra391/skeptic.git}"
+# The repo is private, so an unauthenticated https clone fails. Default to SSH,
+# which needs a read-only deploy key for root on this VM (bootstrap runs git as
+# root) — see deploy/README.md "Provision" for the setup.
+REPO="${SKEPTIC_REPO:-git@github.com:sahilsapra391/skeptic.git}"
 BRANCH="${SKEPTIC_BRANCH:-main}"
 DEST=/opt/skeptic
 SVC_USER=skeptic
@@ -32,7 +35,20 @@ if [ ! -x /usr/local/bin/uv ]; then
 fi
 
 echo "== code ($BRANCH) =="
+# git runs here as root, but the tree gets chowned to $SVC_USER below, so
+# without this every re-run dies on "detected dubious ownership".
+git config --global --get-all safe.directory 2>/dev/null | grep -qx "$DEST" \
+    || git config --global --add safe.directory "$DEST"
+# Trust github.com's host key so the SSH clone doesn't stall on an interactive
+# prompt (the deploy key itself is created manually — see deploy/README.md).
+if ! ssh-keygen -F github.com -f /root/.ssh/known_hosts >/dev/null 2>&1; then
+    mkdir -p /root/.ssh && chmod 700 /root/.ssh
+    ssh-keyscan github.com >> /root/.ssh/known_hosts
+fi
 if [ -d "$DEST/.git" ]; then
+    # Keep the remote in sync with $REPO so a clone made before the SSH default
+    # (or with a different SKEPTIC_REPO) doesn't keep fetching from a dead URL.
+    git -C "$DEST" remote set-url origin "$REPO"
     git -C "$DEST" fetch origin "$BRANCH" && git -C "$DEST" checkout "$BRANCH" && git -C "$DEST" pull --ff-only
 else
     git clone --branch "$BRANCH" "$REPO" "$DEST"
