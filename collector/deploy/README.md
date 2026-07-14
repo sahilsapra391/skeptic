@@ -17,6 +17,7 @@ never sleeps, restarts on any crash, and pages you if a session goes quiet.
 | `skeptic-intraday.service` | systemd unit for `intraday.py`, `Restart=always`. |
 | `heartbeat.py` | alerts if no fresh snapshot lands during a session. |
 | `skeptic-heartbeat.service` / `.timer` | run the heartbeat every 5 min. |
+| `autoupdate.sh` + `skeptic-autoupdate.service` / `.timer` | nightly self-update: pull main, sync deps, restart the recorder — never inside/near the session. |
 | `bootstrap.sh` | provision a fresh Ubuntu VM end to end (idempotent). |
 
 ## Provision (Oracle Cloud always-free — $0)
@@ -80,6 +81,29 @@ Set `ALERT_WEBHOOK` in `collector/.env` to page on a stalled session. Any of:
 
 Without it, the heartbeat still logs to the journal (`journalctl -u
 skeptic-heartbeat`), but nothing pushes to your phone.
+
+## Self-update (how merged code reaches the VM)
+
+`skeptic-autoupdate.timer` runs `autoupdate.sh` daily at 3 AM ET: fetch the
+checked-out branch (whatever `SKEPTIC_BRANCH` the VM was bootstrapped onto);
+if nothing changed, exit; otherwise ff-only merge, `uv sync`, reinstall units,
+restart the recorder. Two safety properties:
+
+- **Session-safe.** The script re-checks the XNYS session window with a
+  30-min lookahead and skips inside it, because `Persistent=true` replays a
+  missed run at boot — which can be any hour. The unit's
+  `TimeoutStartSec=1500` then bounds the whole run at 25 min, so even a
+  stalled fetch can never carry the recorder restart into the session.
+- **Fail-safe.** Any failure (non-ff merge after a force-push, dep
+  resolution, the 25-min kill) exits non-zero and leaves the running
+  deployment untouched. Check `/var/log/skeptic/autoupdate.log` or
+  `systemctl status skeptic-autoupdate`.
+
+What it can never do: deliver secrets. A new data source's API key still has
+to be added to `/opt/skeptic/collector/.env` by hand.
+
+Manual redeploy right now (don't wait for 3 AM): `sudo systemctl start
+skeptic-autoupdate.service` — same script, same session guard.
 
 ## Verify
 

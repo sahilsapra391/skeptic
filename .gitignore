@@ -8,6 +8,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# collector lockfile stays untracked (standing decision) — the VM always has
+# one from `uv sync`, so if it were ever committed upstream, the nightly
+# ff-merge would refuse over the untracked copy; ignoring it lets git
+# overwrite it instead of bricking self-update
+collector/uv.lock
 
 # Node / Next.js
 node_modules/
