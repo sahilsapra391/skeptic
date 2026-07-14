@@ -32,16 +32,24 @@ def _trailing_zscore(history: list[float], min_obs: int) -> float | None:
     """Standardized latest observation within its trailing 252-observation
     window: (x − mean) / population σ — the σ-unit sibling of
     _trailing_rank, ONE implementation for the same reason. None below
-    min_obs trailing observations (the D1 floor), and None on a
-    zero-variance window — a flat series has no σ to standardize by,
-    unevaluable beats a fabricated ±∞."""
+    min_obs trailing observations (the D1 floor), None on a flat window
+    (a dead feed forward-filling one value has no σ to standardize by),
+    and None when any observation is non-finite — unevaluable beats a
+    fabricated signal."""
     if len(history) < min_obs:
         return None
     window = history[-252:]
+    if min(window) == max(window):
+        # exactly flat — checked on the values, NOT via var <= 0: float
+        # residue in sum(window)/n leaves var > 0 for most flat decimals
+        # and the residual z comes out as exactly ±1.0 (review finding,
+        # reproduced: [0.229]*144 → 1.0). NaNs make this compare False
+        # and fall through to the finite guard below.
+        return None
     n = len(window)
     mean = sum(window) / n
     var = sum((v - mean) ** 2 for v in window) / n
-    if var <= 0.0:
+    if not (var > 0.0 and math.isfinite(var)):
         return None
     return (window[-1] - mean) / math.sqrt(var)
 

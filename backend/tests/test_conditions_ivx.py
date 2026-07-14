@@ -12,13 +12,16 @@ percentage points, like vix_level.
 
 from __future__ import annotations
 
+import copy
 from datetime import date, timedelta
 
 import pytest
+from pydantic import ValidationError
 
-from app.engine.conditions import evaluate_condition
+from app.engine.conditions import _trailing_zscore, evaluate_condition
 from app.engine.market import MarketView, build_fixture_store
-from app.models.spec import Condition, Indicator, Operator
+from app.models.spec import Condition, Indicator, Operator, StrategySpec
+from tests.test_spec_roundtrip import CANONICAL
 
 
 def _weekdays(start: date, n: int) -> list[date]:
@@ -125,16 +128,12 @@ class TestHvIvSpread30d:
 
 class TestTrailingZscoreKernel:
     def test_linear_ramp_closed_form(self) -> None:
-        from app.engine.conditions import _trailing_zscore
-
         history = [0.100 + 0.001 * i for i in range(126)]
         # √(3·125/127) = 1.7183585…
         assert _trailing_zscore(history, min_obs=126) == pytest.approx(
             1.7183585, abs=1e-6)
 
     def test_window_caps_at_252_observations(self) -> None:
-        from app.engine.conditions import _trailing_zscore
-
         history = [0.100 + 0.001 * i for i in range(300)]
         # last 252 only: √(3·251/253) = 1.7251912 — NOT the 300-obs value
         # √(3·299/301) = 1.7262368
@@ -142,20 +141,34 @@ class TestTrailingZscoreKernel:
         assert z == pytest.approx(1.7251912, abs=1e-6)
 
     def test_below_min_obs_is_none(self) -> None:
-        from app.engine.conditions import _trailing_zscore
-
         history = [0.100 + 0.001 * i for i in range(125)]
         assert _trailing_zscore(history, min_obs=126) is None
 
-    def test_zero_variance_window_is_none(self) -> None:
-        from app.engine.conditions import _trailing_zscore
+    @pytest.mark.parametrize(("value", "n"), [
+        (0.2, 126),      # variance lands on exactly 0.0
+        (0.229, 144),    # float residue: var > 0, z would be exactly +1.0
+        (0.1834, 175),   # +1.0
+        (0.1567, 211),   # −1.0
+        (1 / 3, 200),    # +1.0
+    ])
+    def test_flat_window_is_none(self, value: float, n: int) -> None:
+        # a flat series has no σ to standardize by — and the guard must be
+        # on the VALUES, not on var <= 0: sum(window)/n leaves a residual
+        # for most flat decimals and the residual z is exactly ±1.0
+        # (review finding, reproduced) — a dead forward-filling feed must
+        # never manufacture a signal
+        assert _trailing_zscore([value] * n, min_obs=126) is None
 
-        # a flat series has no σ to standardize by — unevaluable beats ±∞
-        assert _trailing_zscore([0.2] * 126, min_obs=126) is None
+    def test_non_finite_observation_is_none(self) -> None:
+        # one bad vendor row must refuse, not silently poison the window
+        # into a NaN that every comparison reads as False
+        history = [0.100 + 0.001 * i for i in range(126)]
+        history[50] = float("nan")
+        assert _trailing_zscore(history, min_obs=126) is None
+        history[50] = float("inf")
+        assert _trailing_zscore(history, min_obs=126) is None
 
     def test_single_dip_is_negative_sqrt_n_minus_1(self) -> None:
-        from app.engine.conditions import _trailing_zscore
-
         history = [0.200] * 125 + [0.190]
         # −√125 = −11.1803399
         assert _trailing_zscore(history, min_obs=126) == pytest.approx(
@@ -196,8 +209,11 @@ class TestIvxZscore1y:
             late, _cond(Indicator.IVX_ZSCORE_1Y, Operator.GT, -100))
 
     def test_flat_series_is_unevaluable(self) -> None:
-        days = _weekdays(date(2024, 1, 1), 126)
-        ivx = {d.isoformat(): 0.200 for d in days}
+        # 0.229 × 144 is a residual-variance shape: var <= 0 would MISS it
+        # and fabricate z = +1.0 (kernel test above) — prove the refusal
+        # holds through the full evaluate_condition path too
+        days = _weekdays(date(2024, 1, 1), 144)
+        ivx = {d.isoformat(): 0.229 for d in days}
         underlying = {d.isoformat(): (100.0, 100.0) for d in days}
         store = build_fixture_store("SPY", {}, underlying, ivx_30d=ivx)
         view = MarketView(store, days[-1])
@@ -207,15 +223,25 @@ class TestIvxZscore1y:
             view, _cond(Indicator.IVX_ZSCORE_1Y, Operator.LT, 100))
 
 
+def test_ivx_family_registries_stay_in_sync() -> None:
+    # the three IVX-family indicators ride one series, and the engine's
+    # dead-feed (staleness) and splice-disclosure registries read them via
+    # .get(indicator, ()) — a missing member is a SILENT empty default, so
+    # membership is pinned here (review finding: no enumeration test
+    # guarded these registries)
+    from app.engine.engine import _PROVENANCE_SERIES, _STALENESS_ONLY_SERIES
+
+    family = {Indicator.IVX_LEVEL_30D, Indicator.IVX_RANK_1Y,
+              Indicator.IVX_ZSCORE_1Y}
+    assert family <= set(_STALENESS_ONLY_SERIES)
+    assert family <= set(_PROVENANCE_SERIES)
+    for ind in family:
+        assert ("30d IVX", "ivx_dates") in _STALENESS_ONLY_SERIES[ind]
+        assert "ivx_30d" in _PROVENANCE_SERIES[ind]
+
+
 class TestSpecV8Gating:
     def test_v8_vocabulary_on_v7_is_loud(self) -> None:
-        import copy
-
-        from pydantic import ValidationError
-
-        from app.models.spec import StrategySpec
-        from tests.test_spec_roundtrip import CANONICAL
-
         doc = copy.deepcopy(CANONICAL)
         doc["spec_version"] = 7
         doc["entry"]["conditions"] = [
@@ -224,13 +250,6 @@ class TestSpecV8Gating:
             StrategySpec.model_validate(doc)
 
     def test_ladder_rung_cannot_smuggle_v8(self) -> None:
-        import copy
-
-        from pydantic import ValidationError
-
-        from app.models.spec import StrategySpec
-        from tests.test_spec_roundtrip import CANONICAL
-
         # a Rung IS a Condition — the gate must see the ladder's vocabulary
         doc = copy.deepcopy(CANONICAL)
         doc["spec_version"] = 7
@@ -246,14 +265,10 @@ class TestSpecV8Gating:
             StrategySpec.model_validate(doc)
 
     def test_v8_spec_validates_and_matches_schema(self) -> None:
-        import copy
         import json
         from pathlib import Path
 
         import jsonschema
-
-        from app.models.spec import StrategySpec
-        from tests.test_spec_roundtrip import CANONICAL
 
         doc = copy.deepcopy(CANONICAL)
         doc["spec_version"] = 8
