@@ -2034,3 +2034,47 @@ valid' fallback → median == peak) — pre-existing classifier hole the
 floors narrow but can't close, owner call on "sweep uninformative"
 disclosure semantics. 628 tests green; canary flagged; frontend
 lint+typecheck clean.
+## UX Chunk C — Data Observatory regroup: keep everything, declutter (2026-07-14)
+
+WHAT: the Observatory's ~14-panel wall regrouped into five collapsible
+groups, NO data removed — every fact reachable within one expand:
+(1) COVERAGE AT A GLANCE (open by default): days-on-record, heartbeat,
+source chips + the per-ticker resolution-mix visual; (2) EOD CHAINS &
+HISTORY: dolthub/yahoo/close-chain lanes, underlying + per-ticker chain
+windows, chain-quality field completeness + spread chart; (3) INTRADAY &
+MINUTE LAKES: alpaca/5-min-NBBO/recorder lanes + rows, UW 1-min (moved
+from new-sources); (4) SIGNAL SOURCES: IVX/HV, vol surfaces, dealer
+positioning, flow/pin, in-house continuations (seam disclosure now points
+to the health group for x-val), remaining new-sources rows; (5) DATA
+HEALTH & INCIDENTS: cross-validation pairs, open quality flags +
+quarantined count, named blind spots, collection wants. Group headers
+carry one-line headline-number summaries; anything flagged lifts a warn
+badge onto its collapsed header (weak chain fields → 2, stalled recorder
+→ 3, open flags / stale collector → 5). Expand state persists in
+localStorage (skeptic-observatory-groups); groups collapsed by default
+except (1). Lane/PANEL patterns reused; typography rails untouched; the
+page-level collector-stale banner stays above the groups.
+VERIFIED IN BROWSER against a synthetic coverage stub (layout-only dev
+fixture exercising every branch: all lanes, weak volume field, stale
+recorder, open flag): first paint = five headers + coverage visual;
+every original fact confirmed present via full-page text audit; badges
+visible while collapsed; expand state survives reload.
+REVIEW (independent 5-angle pass, fact-preservation at full depth): 7
+CONFIRMED fixed — the UW 1-min line vanished when new_sources existed
+without uw_minute (the one fact-loss the audit found; old per-ticker
+"pending" announcement restored); the EOD badge scanned all tickers but
+the CHAIN QUALITY section gated on SPY only (now any-ticker, spread
+chart SPY-optional-safe); the intraday "recorder stalled" badge pointed
+at a group without the staleness detail (quote-recorder lane now names
+it); localStorage hydration accepted arrays/non-boolean values
+(first-click swallow — sanitized to boolean-valued plain objects);
+weakChainFields deref could crash the page on a malformed source entry
+(null-safe); the chain-quality warn rule (field list + <0.5) was copied
+between badge and rows (one shared constant pair now); group ids were
+stringly typed (GroupId union — a typo'd id fails the compile). Plus
+DRY: TICKERS + LANE_GRID constants, aria-controls/aria-hidden on the
+disclosure buttons. Refuted: PANEL unification (page-local values are
+deliberate, settings page precedent), table-driven signal sections
+(per-family t0/notes are honest variance), summary memoization (120s
+poll). Post-fix stub re-verify: pending line renders, staleness inside
+the badged group, persistence intact.
