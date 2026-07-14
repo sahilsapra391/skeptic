@@ -59,7 +59,12 @@ def export_notebook(run_id: str) -> JSONResponse:
     from app.api.runs import get_run
     from app.notebook.builder import build_notebook
 
-    payload = get_run(run_id)  # 404s for us; merges receipts + provenance
+    # direct call, not HTTP — FastAPI won't resolve get_run's Query-typed
+    # min_trades default, so pass None explicitly (= the omitted-param
+    # behavior: the user's stored evidence-bar setting re-grades the read,
+    # #98). The notebook then shows exactly what the app shows.
+    payload = get_run(run_id, min_trades=None)  # 404s for us; merges
+    # receipts + provenance
     if payload.get("status") != "done":
         raise HTTPException(status_code=409,
                             detail="run not finished — nothing to export yet")
