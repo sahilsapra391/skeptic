@@ -76,6 +76,9 @@ class Run(Base):
     # ask. NULL on runs predating the column — their record is DERIVED at
     # read time (app/api/provenance.py); the conversation is never invented.
     provenance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Tier 1 (notebook): pinned deterministic re-execution outcome — stored
+    # like receipts/audit; the run's verdict is never rewritten
+    reproduce_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class RunEvent(Base):
@@ -158,7 +161,8 @@ def _ensure_columns() -> None:
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
         for column in ("stats_json", "previews_json", "summary_json", "unlock_json",
-                       "receipts_json", "perf_json", "audit_json", "provenance_json"):
+                       "receipts_json", "perf_json", "audit_json", "provenance_json",
+                       "reproduce_json"):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
         for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)")):

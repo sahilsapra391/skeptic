@@ -212,7 +212,7 @@ def attach_mechanics(
     return json.dumps(record)
 
 
-def _derived_boxes(spec_doc: dict[str, Any]) -> dict[str, Any]:
+def derived_boxes(spec_doc: dict[str, Any]) -> dict[str, Any]:
     """The decision grid from the stored spec — the spec IS the confirmed
     truth for old runs, just not the draft object the user clicked through
     (hence the "derived" flag on the section)."""
@@ -267,7 +267,7 @@ def derived_record(
     if isinstance(raw, str) and raw.strip():
         record["prompt"] = {"text": raw}
 
-    record["confirmed"] = {"derived": True, "boxes": _derived_boxes(spec_doc)}
+    record["confirmed"] = {"derived": True, "boxes": derived_boxes(spec_doc)}
 
     mech: dict[str, Any] = {}
     if isinstance(perf_doc, dict):

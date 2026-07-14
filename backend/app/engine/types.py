@@ -122,6 +122,14 @@ class RungFill:
     cap_clamped: bool = False  # this rung was clamped to the remaining capacity
 
 
+# The per-session bar-resolution vocabulary (FX.1 recording, the Tier 1
+# reproduce pin, and the payload's resolutionRuns all speak it). ONE
+# spelling — the pin decision, the recording, and the divergence compare
+# must move in lockstep or a replay silently re-resolves (review finding).
+RES_MINUTE = "minute"
+RES_FIVE_MIN = "five_min"
+
+
 @dataclass
 class RunResult:
     ticker: str

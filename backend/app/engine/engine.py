@@ -44,6 +44,8 @@ from app.engine.market import (
 from app.engine.selection import select_expiration, select_legs
 from app.engine.types import (
     MULT,
+    RES_FIVE_MIN,
+    RES_MINUTE,
     ContractKey,
     OpenLeg,
     Position,
@@ -1504,6 +1506,7 @@ def run_engine(
     intraday: IntradayProvider | None = None,
     entry_shift_bars: int = 0,
     progress: Callable[[int, int], None] | None = None,
+    pinned_resolutions: dict[date, str] | None = None,
 ) -> RunResult:
     """`entry_shift_bars` is the honesty layer's entry-time-nudge lever
     (D2d): shifts the session's entry WINDOW by N 5-minute bars. Positive
@@ -1514,7 +1517,17 @@ def run_engine(
     `progress(done_sessions, total_sessions)` fires every
     PROGRESS_EVERY_SESSIONS covered 5-min sessions — a full-history
     intraday run takes minutes and a silent stage is indistinguishable
-    from a dead one (incident 2026-07-06). Gauntlet probes pass None."""
+    from a dead one (incident 2026-07-06). Gauntlet probes pass None.
+
+    `pinned_resolutions` (Tier 1 notebook reproduce): the RECORDED
+    per-session bar resolution of an earlier run — {session: "minute" |
+    "five_min"}. A pinned session serves exactly the recorded grid even
+    when the lake has since upgraded it (D3 receipts semantics: a fresh
+    run may resolve finer, a REPLAY never silently re-resolves). Sessions
+    absent from the map (none, when the window is pinned too) resolve
+    live. A "minute" pin whose grid can no longer be built falls back to
+    5-min and is RECORDED as five_min — the caller compares recorded maps
+    and discloses the divergence rather than trusting the pin blindly."""
     five_min = spec.backtest.clock is Clock.FIVE_MIN
 
     if five_min:
@@ -1614,7 +1627,15 @@ def run_engine(
 
         slc = None
         if five_min and intraday is not None:
-            if finest and day in minute_days:
+            pin = pinned_resolutions.get(day) if pinned_resolutions else None
+            if pin is not None:
+                # replay: the recorded resolution wins over live "finest"
+                # in BOTH directions — a since-upgraded session stays on
+                # its recorded 5-min grid (never silently re-resolve)
+                want_minute = pin == RES_MINUTE
+            else:
+                want_minute = finest and day in minute_days
+            if want_minute:
                 # minute grid if the provider can actually build it; a
                 # missing grid falls back to 5-min and is RECORDED as such
                 slc = intraday.minute_slice_for(day)
@@ -1624,7 +1645,8 @@ def run_engine(
             # -------------------- intraday bar loop (the declared clock;
             # bar size is a PER-SESSION value under resolution="finest")
             is_minute = slc.bar_resolution == "1min"
-            session_resolutions.append((day, "minute" if is_minute else "five_min"))
+            session_resolutions.append(
+                (day, RES_MINUTE if is_minute else RES_FIVE_MIN))
             covered_sessions += 1
             if progress is not None and covered_sessions % PROGRESS_EVERY_SESSIONS == 0:
                 progress(covered_sessions, len(clock))

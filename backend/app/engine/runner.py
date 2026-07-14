@@ -5,6 +5,7 @@ is recorded with the run so M3's Monte Carlo inherits the contract."""
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 
 from app.engine.engine import run_engine
 from app.engine.market import IntradayProvider, MarketStore
@@ -18,7 +19,9 @@ def run_backtest(
     store: MarketStore,
     intraday: IntradayProvider | None = None,
     progress: Callable[[int, int], None] | None = None,
+    pinned_resolutions: dict[date, str] | None = None,
 ) -> RunResult:
-    result = run_engine(spec, store, intraday, progress=progress)
+    result = run_engine(spec, store, intraday, progress=progress,
+                        pinned_resolutions=pinned_resolutions)
     result.metrics = compute_metrics(result)
     return result
