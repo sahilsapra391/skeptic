@@ -55,10 +55,10 @@ class TestDeltaGrid:
         # ceil((0.03-0)/0.025)=2 steps (+0.05) → [0.05, 0.075, 0.1,
         # 0.125, 0.15], specced value ON the grid at index 0
         values, base_index, floored = _delta_grid(0.05)
+        # exactly these 5 cells — never more: the tax is unchanged
         assert values == [0.05, 0.075, 0.1, 0.125, 0.15]
         assert base_index == 0 and values[base_index] == 0.05
         assert floored
-        assert len(values) == 5  # never more cells — the tax is unchanged
 
     def test_probe_floor_base_no_longer_collapses(self) -> None:
         # the literal clamp collapse the old code produced at base 0.03:
@@ -66,10 +66,10 @@ class TestDeltaGrid:
         # Floored: 0.03 + [-2..2]·0.025 → min -0.02 → shift 2 (+0.05) →
         # [0.03, 0.055, 0.08, 0.105, 0.13] — five DISTINCT cells
         values, base_index, floored = _delta_grid(0.03)
+        # five DISTINCT cells (the exact-list assertion pins that too)
         assert values == [0.03, 0.055, 0.08, 0.105, 0.13]
         assert base_index == 0 and values[base_index] == 0.03
         assert floored
-        assert len(set(values)) == 5
 
     def test_one_step_shift(self) -> None:
         # base 0.055: raw min 0.005 < 0.03 → shift exactly 1 (+0.025) →
@@ -200,14 +200,53 @@ class TestDeltaMutations:
         setter(mutated, values[-1])
         assert mutated.position.legs[0].strike_selection.value == 0.15
 
+    def test_below_probe_floor_is_disclosed(self) -> None:
+        # review finding (three angles): a 2-delta spec kept the fully
+        # degenerate [0.03]×5 grid SILENTLY — one engine run graded as a
+        # plateau one epsilon below where disclosure kicked in. The grid
+        # stays pre-floor (outside the floor's grounded scale) but the
+        # note now names the collapse.
+        muts, cond_note, delta_note = _mutations(_delta_spec(0.02))
+        _, values, base_index, _ = next(m for m in muts if m[0] == "delta")
+        assert values == [0.03, 0.03, 0.03, 0.03, 0.03]  # grid unchanged
+        assert base_index == 2
+        assert cond_note is None
+        assert delta_note is not None
+        assert "probe floor" in delta_note
+        assert "0.03" in delta_note
+
     def test_note_numerals_are_grounded(self) -> None:
         # guardrail #4: the note rides into verdict caveats — validated
         # with the SHIPPING validator against an allowed set built the
         # way production builds it (the sweep values the report carries)
-        muts, _, delta_note = _mutations(_delta_spec(0.05))
-        assert delta_note is not None
-        allowed = grounding_set({"params": [{"values": m[1]} for m in muts]})
-        assert validate_numbers(delta_note, allowed) == []
+        for spec_value in (0.05, 0.02):  # floored note + below-floor note
+            muts, _, delta_note = _mutations(_delta_spec(spec_value))
+            assert delta_note is not None
+            allowed = grounding_set(
+                {"params": [{"values": m[1]} for m in muts]})
+            assert validate_numbers(delta_note, allowed) == []
+
+
+class TestDeltaLabels:
+    def test_sub_point_cells_label_exactly(self) -> None:
+        # review finding (three angles): the floored grid makes
+        # half-point cells routine, and the old 2-digit label rounded
+        # them to values the sweep never ran (.08Δ for 0.075) — a
+        # recommendation would tell the user to re-run at an untested
+        # delta. Labels must name the EXACT tested value.
+        from app.api.payload import _param_label
+
+        assert _param_label("delta", 0.075) == ".075Δ"
+        assert _param_label("delta", 0.125) == ".125Δ"
+        assert _param_label("delta", 0.0317) == ".0317Δ"
+
+    def test_whole_point_labels_unchanged(self) -> None:
+        from app.api.payload import _param_label
+
+        assert _param_label("delta", 0.05) == ".05Δ"
+        assert _param_label("delta", 0.1) == ".10Δ"
+        assert _param_label("delta", 0.5) == ".50Δ"
+        assert _param_label("delta", 0.95) == ".95Δ"
 
 
 def _weekdays(start: date, n: int) -> list[date]:
@@ -292,10 +331,11 @@ class TestDeltaSweepIntegration:
         assert row.values == [0.05, 0.075, 0.1, 0.125, 0.15]
         assert row.base_index == 0
         # the sweep RE-RAN the engine at deltas far enough apart to pick
-        # different contracts — the cells genuinely differ (on the old
+        # different contracts — every cell ran (this fixture quotes the
+        # full grid) and the cells genuinely differ (on the old
         # 0.04…0.06 grid every cell landed on the same strike)
         valid = [s for s in row.sharpes if s is not None]
-        assert len(valid) >= 3
+        assert len(valid) == 5
         assert len({round(s, 6) for s in valid}) > 1
         assert sens.delta_note is not None
         assert "delta 0.05 swept 0.05…0.15" in sens.delta_note

@@ -273,10 +273,34 @@ def monte_carlo(
 Setter = Callable[[StrategySpec, float], None]
 
 # The sweep's multiplicative grid: 0.1-spaced, 5 cells, specced value at
-# index 2. _condition_grid's floor guard and additive shape are built on
-# these three facts — change them TOGETHER or the "probed as widely as a
-# reference-scale threshold" equivalence the floors encode silently breaks.
+# index 2. The floor guards in BOTH _condition_grid and _delta_grid
+# hardcode the 0.1 per-cell spacing (their "10%·|base| vs floor"
+# engagement test), and _absolute_grid's shape assumes 5 cells around
+# index 2 — change any of these facts TOGETHER or the "probed as widely
+# as a reference-scale threshold" equivalence the floors encode silently
+# breaks.
 _SWEEP_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2]
+
+
+def _absolute_grid(
+    base: float, step: float, lo: float | None
+) -> tuple[list[float], int]:
+    """The floored grids' one shared core: ±2 step-sized cells around
+    `base`, shifted UP by whole steps if the grid would cross `lo`
+    (None = unbounded scale) — the specced value always stays ON the
+    grid, at the returned base index. Callers guarantee base ≥ lo, so
+    the exact-arithmetic shift is ≤ 2; the min() is structural defense
+    only (measured across the reachable range, float dust never pushes
+    the ceil past the exact value — but a dust-pushed 3 would take the
+    specced value off the grid, the #99 review's negative-base_index
+    class, so the bound is pinned in code rather than argued in a
+    comment)."""
+    vals = [base + (k - 2) * step for k in range(5)]
+    shift = 0
+    if lo is not None and vals[0] < lo:
+        shift = min(math.ceil((lo - vals[0]) / step), 2)
+        vals = [v + shift * step for v in vals]
+    return [round(v, 4) for v in vals], 2 - shift
 
 # Delta's floor (the PR #99 review's deferred finding, designed
 # 2026-07-14). ±20% of a small strike-selection delta probes almost
@@ -307,29 +331,21 @@ def _delta_grid(base: float) -> tuple[list[float], int, bool]:
     Multiplicative ±20% wherever that moves the delta at least
     _DELTA_STEP_FLOOR per cell (clamped to the probe range — the
     pre-floor behavior, byte-identical); when the floor binds, an
-    absolute grid of ±2 floor-steps shifted UP by whole steps off the
-    lower edge (the dte / _condition_grid pattern — the specced value
-    always stays ON the grid). A base below the probe floor itself is
-    outside the scale the floor was grounded on and keeps the pre-floor
-    clamped path (_condition_grid's lower-edge posture). Both paths
-    produce exactly 5 cells and one classifier pass: the sweep's
-    engine-run cost and its multiple-testing arithmetic never change
-    with the grid shape."""
+    absolute grid of ±2 floor-steps via _absolute_grid (the specced
+    value always stays ON the grid). A base below the probe floor
+    itself is outside the scale the floor was grounded on and keeps the
+    pre-floor clamped path — disclosed by _mutations, never silent.
+    Both paths produce exactly 5 cells and one classifier pass, so the
+    multiple-testing arithmetic never changes; the engine-RUN count can
+    rise by up to 2, because the old clamped grid's duplicate cells
+    deduped into fewer runs — that dedup WAS the under-probing being
+    fixed."""
     if base * 0.1 >= _DELTA_STEP_FLOOR or base < _DELTA_SWEEP_MIN:
         vals = [min(_DELTA_SWEEP_MAX, max(_DELTA_SWEEP_MIN, base * f))
                 for f in _SWEEP_FACTORS]
         return [round(v, 4) for v in vals], 2, False
-    vals = [base + (k - 2) * _DELTA_STEP_FLOOR for k in range(5)]
-    shift = 0
-    if vals[0] < _DELTA_SWEEP_MIN:
-        shift = math.ceil((_DELTA_SWEEP_MIN - vals[0]) / _DELTA_STEP_FLOOR)
-        # base ≥ the probe floor (guarded above) makes the exact-math
-        # shift ≤ 2; min() only absorbs float dust in the ceil — a
-        # dust-pushed 3 would take the specced value off the grid (the
-        # #99 review's negative-base_index class)
-        shift = min(shift, 2)
-        vals = [v + shift * _DELTA_STEP_FLOOR for v in vals]
-    return [round(v, 4) for v in vals], 2 - shift, True
+    vals, base_index = _absolute_grid(base, _DELTA_STEP_FLOOR, _DELTA_SWEEP_MIN)
+    return vals, base_index, True
 
 
 def _mutations(
@@ -354,15 +370,27 @@ def _mutations(
                     leg.strike_selection.value = v
 
         values, delta_base, floor_hit = _delta_grid(base)
+        # grounded numerals only (guardrail #4): the on-grid specced
+        # value, the grid ENDPOINTS, and the probe floor (itself the
+        # first grid cell on the below-floor path) are report values
+        # the validator always finds; the step itself might not be
         if floor_hit:
-            # grounded numerals only (guardrail #4): the on-grid specced
-            # value and the grid ENDPOINTS are report values the
-            # validator always finds; the step itself might not be
             delta_note = (
                 f"delta {values[delta_base]:g} swept "
                 f"{values[0]:g}…{values[-1]:g} — absolute delta-point "
                 "steps (a ±20% probe of a delta this small often cannot "
                 "move one strike at the chain's spacing)"
+            )
+        elif base < _DELTA_SWEEP_MIN:
+            # below the probe floor the clamp collapses cells onto it.
+            # The degenerate grid is kept (the floor's grounding stops
+            # at the probe range) but never silently — a sweep this
+            # thin blessed without a word is the guardrail-#5 failure
+            delta_note = (
+                f"specced delta sits below the sweep's "
+                f"{_DELTA_SWEEP_MIN:g} probe floor — swept cells clamp "
+                f"at {_DELTA_SWEEP_MIN:g}, so smaller strikes were not "
+                "probed"
             )
         out.append(("delta", values, delta_base, set_delta))
 
@@ -483,11 +511,11 @@ def _condition_grid(
     """The 5 threshold cells for one condition: (values, base index,
     floor-engaged flag). ±20% multiplicative wherever that moves the
     threshold by at least the family floor per cell; when the floor binds,
-    an absolute grid of ±2 floor-steps, shifted UP by whole steps if it
-    would cross the family's lower bound (mirroring the dte guard — the
-    specced value always stays ON the grid). Both paths produce exactly 5
-    cells and one classifier pass: the sweep's engine-run cost and its
-    multiple-testing arithmetic never change with the grid shape."""
+    an absolute grid of ±2 floor-steps via _absolute_grid, shifted UP by
+    whole steps if it would cross the family's lower bound (the specced
+    value always stays ON the grid). Both paths produce exactly 5 cells
+    and one classifier pass: the sweep's multiple-testing arithmetic
+    never changes with the grid shape."""
     floor, lo = _COND_FAMILY_FLOORS.get(indicator, (0.0, None))
     is_rank = indicator.endswith("_rank_1y") or indicator == "iv_percentile_1y"
     # _SWEEP_FACTORS are 0.1-spaced, so the multiplicative per-cell step
@@ -503,14 +531,8 @@ def _condition_grid(
         if is_rank:
             vals = [min(100.0, max(0.0, v)) for v in vals]
         return [round(v, 4) for v in vals], 2, False
-    vals = [base + (k - 2) * floor for k in range(5)]
-    shift = 0
-    if lo is not None and vals[0] < lo:
-        shift = math.ceil((lo - vals[0]) / floor)
-        vals = [v + shift * floor for v in vals]
-    # base > lo (guarded above) and value == 0 is sign-skipped, so
-    # shift ≤ 2 and the specced value sits at index 2 - shift ≥ 0
-    return [round(v, 4) for v in vals], 2 - shift, True
+    vals, base_index = _absolute_grid(base, floor, lo)
+    return vals, base_index, True
 
 
 def _append_condition_sweeps(

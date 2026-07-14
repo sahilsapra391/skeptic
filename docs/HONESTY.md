@@ -883,13 +883,18 @@ Rules (owner decisions 2026-07-08):
   ±20% (their multiplicative step already meets the floor, clamps
   byte-identical); a base below the 0.03 probe floor is outside the
   scale the floor was grounded on and keeps the pre-floor clamped
-  path. The multiple-testing tax is untouched: same 5 cells, same
-  classifier, identical engine-run count, no re-centering. Disclosed
-  in Sensitivity.delta_note ("delta 0.05 swept 0.05…0.15 — absolute
-  delta-point steps …"), riding both verdict registers; every numeral
-  is the on-grid specced value or a grid endpoint, so verdict
-  grounding (guardrail #4) always finds them in the report's sweep
-  values.
+  path — DISCLOSED, never silent: its cells collapse onto the floor,
+  and delta_note says so ("swept cells clamp at 0.03, so smaller
+  strikes were not probed"). The multiple-testing tax is untouched:
+  same 5 cells, same classifier, no re-centering. (The engine-RUN
+  count can rise by up to 2 on small deltas: the old clamped grid's
+  duplicate cells deduped into fewer runs, and that dedup WAS the
+  under-probing being fixed.) Disclosed in Sensitivity.delta_note
+  ("delta 0.05 swept 0.05…0.15 — absolute delta-point steps …"),
+  riding both verdict registers; every numeral is the on-grid specced
+  value, a grid endpoint, or the probe floor (itself a grid cell on
+  the below-floor path), so verdict grounding (guardrail #4) always
+  finds them in the report's sweep values.
 - **Capped at the first 3 entry conditions.** Each swept condition adds
   5 engine re-runs on the serialized, OOM-sensitive engine; 3 covers
   the overfit surface of nearly every real spec (secondary filters

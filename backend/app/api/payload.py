@@ -157,7 +157,14 @@ def _sweep_display_name(name: str) -> str:
 
 def _param_label(name: str, v: float) -> str:
     if name == "delta":
-        return f".{int(round(v * 100)):02d}Δ"
+        pct = v * 100
+        if abs(pct - round(pct)) < 1e-9:
+            return f".{int(round(pct)):02d}Δ"
+        # the floored delta grid makes sub-point cells (0.075, 0.0317)
+        # routine, and rounding them to two digits would label a value
+        # the sweep never ran — recommendations must name the EXACT
+        # tested delta (review finding on the strike-floor pass)
+        return "." + f"{v:.4f}".rstrip("0")[2:] + "Δ"
     if name == "dte":
         return f"{int(v)}d"
     if name == "entry_time":
