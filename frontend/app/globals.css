@@ -287,3 +287,22 @@ summary {
   color: transparent;
   animation: shimmer-sweep 2.2s linear infinite;
 }
+
+/* ============================================================ PRINT
+   Save PDF prints the run screen itself. Charts, heat cells and the
+   walk-forward bars are painted with backgrounds the printer strips by
+   default — keep them, or the honesty panels print as empty boxes.
+   (App chrome is hidden per-element with print:hidden; the scroll cage
+   is opened in layout.tsx so the full run paginates.) */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* the root's height:100% (above) would constrain pagination in WebKit —
+     body/main get their print overrides in layout.tsx; html has no class
+     hook, so it's released here */
+  html {
+    height: auto;
+  }
+}

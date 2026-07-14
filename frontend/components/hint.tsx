@@ -10,7 +10,7 @@ import clsx from "clsx";
 
 export function Hint({ text, align = "center" }: { text: string; align?: "center" | "right" }) {
   return (
-    <span className="group/hint relative inline-flex shrink-0">
+    <span className="group/hint relative inline-flex shrink-0 print:hidden">
       <span
         className="flex h-[15px] w-[15px] cursor-help select-none items-center justify-center rounded-full border border-line text-[9.5px] font-semibold leading-none text-ink-4 group-hover/hint:border-line-hover group-hover/hint:text-ink-2"
         aria-label={text}
