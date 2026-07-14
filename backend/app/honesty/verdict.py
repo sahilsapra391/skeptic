@@ -362,6 +362,10 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     # or reshaped threshold sweep is never misread as a free pass
     if report.sensitivity.conditions_note:
         caveats.append(report.sensitivity.conditions_note.capitalize() + ".")
+    # a small delta swept on absolute strike-scale steps — same
+    # reshaped-grid disclosure duty as the condition floors
+    if report.sensitivity.delta_note:
+        caveats.append(report.sensitivity.delta_note.capitalize() + ".")
     # F7: cross-source agreement over THIS run's window — reported, never
     # scored; every number quoted exists as a numeric report field
     if report.data_confidence is not None and report.data_confidence.note:
@@ -504,6 +508,13 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         caveats.append(
             "Notes from stress-testing your entry rules: "
             + report.sensitivity.conditions_note + "."
+        )
+    # same duty for the strike choice: a small delta WAS stress-tested,
+    # on wider absolute steps — say so in the same grounded words
+    if report.sensitivity.delta_note:
+        caveats.append(
+            "Notes from stress-testing your strike choice: "
+            + report.sensitivity.delta_note + "."
         )
     cov = report.coverage
     if cov.coverage_ratio < 1.0:

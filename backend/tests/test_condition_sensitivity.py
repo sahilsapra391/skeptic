@@ -37,7 +37,7 @@ def _spec_with(conditions: list[dict], version: int = 2) -> StrategySpec:
 
 
 def _names(spec: StrategySpec) -> tuple[list[str], str | None]:
-    muts, note = _mutations(spec)
+    muts, note, _ = _mutations(spec)
     return [m[0] for m in muts], note
 
 
@@ -45,7 +45,7 @@ class TestConditionMutations:
     def test_rsi_threshold_is_swept_pm20(self) -> None:
         spec = _spec_with([{"indicator": "rsi", "operator": "<", "value": 30,
                             "period": 14}])
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         rsi = next(m for m in muts if m[0] == "cond_rsi")
         name, values, base_index, setter = rsi
         assert values == [24.0, 27.0, 30.0, 33.0, 36.0]
@@ -69,7 +69,7 @@ class TestConditionMutations:
     def test_rank_threshold_clamps_to_100(self) -> None:
         spec = _spec_with([{"indicator": "ivx_rank_1y", "operator": ">",
                             "value": 90}])
-        muts, _ = _mutations(spec)
+        muts, _, _ = _mutations(spec)
         vals = next(m[1] for m in muts if m[0] == "cond_ivx_rank_1y")
         # 90 × [.8,.9,1,1.1,1.2] = [72,81,90,99,108] → clamp 108→100
         assert vals == [72.0, 81.0, 90.0, 99.0, 100.0]
@@ -161,7 +161,7 @@ class TestScaleAwareFloors:
         # 0.5 + [-2,-1,0,1,2]·0.5 = [-0.5, 0, 0.5, 1.0, 1.5], base idx 2
         spec = _spec_with([{"indicator": "skew_25d", "operator": ">",
                             "value": 0.5}], version=5)
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         name, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_skew_25d")
         assert values == [-0.5, 0.0, 0.5, 1.0, 1.5]
@@ -176,7 +176,7 @@ class TestScaleAwareFloors:
         # base 10 → 10%·10 = 1.0 ≥ 0.5 floor → plain ±20%: [8, 9, 10, 11, 12]
         spec = _spec_with([{"indicator": "skew_25d", "operator": ">",
                             "value": 10}], version=5)
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         _, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_skew_25d")
         assert values == [8.0, 9.0, 10.0, 11.0, 12.0]
@@ -188,7 +188,7 @@ class TestScaleAwareFloors:
         # (floor binds on STRICTLY smaller steps): [4, 4.5, 5, 5.5, 6]
         spec = _spec_with([{"indicator": "skew_25d", "operator": ">",
                             "value": 5}], version=5)
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         _, values, _, _ = next(m for m in muts if m[0] == "cond_skew_25d")
         assert values == [4.0, 4.5, 5.0, 5.5, 6.0]
         assert note is None
@@ -198,7 +198,7 @@ class TestScaleAwareFloors:
         # 1 + [-2..2]·0.25 = [0.5, 0.75, 1.0, 1.25, 1.5]
         spec = _spec_with([{"indicator": "max_pain_distance_pct",
                             "operator": "<", "value": 1}], version=7)
-        muts, _ = _mutations(spec)
+        muts, _, _ = _mutations(spec)
         _, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_max_pain_distance_pct")
         assert values == [0.5, 0.75, 1.0, 1.25, 1.5]
@@ -210,7 +210,7 @@ class TestScaleAwareFloors:
         # no shift — the grid is symmetric around the specced value
         spec = _spec_with([{"indicator": "max_pain_distance_pct",
                             "operator": ">", "value": -1}], version=7)
-        muts, _ = _mutations(spec)
+        muts, _, _ = _mutations(spec)
         _, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_max_pain_distance_pct")
         assert values == [-1.5, -1.25, -1.0, -0.75, -0.5]
@@ -222,7 +222,7 @@ class TestScaleAwareFloors:
         # specced value stays ON the grid at index 1 (dte-guard pattern)
         spec = _spec_with([{"indicator": "gex_rank_1y", "operator": "<",
                             "value": 2}], version=6)
-        muts, _ = _mutations(spec)
+        muts, _, _ = _mutations(spec)
         _, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_gex_rank_1y")
         assert values == [0.0, 2.0, 4.0, 6.0, 8.0]
@@ -233,7 +233,7 @@ class TestScaleAwareFloors:
         # ceil(1/2)=1 step (+2) → [1, 3, 5, 7, 9], base at index 1
         spec = _spec_with([{"indicator": "rsi", "operator": "<", "value": 3,
                             "period": 14}])
-        muts, _ = _mutations(spec)
+        muts, _, _ = _mutations(spec)
         _, values, base_index, _ = next(m for m in muts if m[0] == "cond_rsi")
         assert values == [1.0, 3.0, 5.0, 7.0, 9.0]
         assert base_index == 1 and values[base_index] == 3.0
@@ -242,7 +242,7 @@ class TestScaleAwareFloors:
         # base 10 → step 1 < 2 → [6, 8, 10, 12, 14]; min ≥ 0, no shift
         spec = _spec_with([{"indicator": "ivx_rank_1y", "operator": "<",
                             "value": 10}])
-        muts, _ = _mutations(spec)
+        muts, _, _ = _mutations(spec)
         _, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_ivx_rank_1y")
         assert values == [6.0, 8.0, 10.0, 12.0, 14.0]
@@ -256,7 +256,7 @@ class TestScaleAwareFloors:
         # the string-keyed floor engaged with zero changes here.
         spec = _spec_with([{"indicator": "ivx_zscore_1y", "operator": ">",
                             "value": 0.3}], version=8)
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         _, values, base_index, _ = next(
             m for m in muts if m[0] == "cond_ivx_zscore_1y")
         assert values == [-0.2, 0.05, 0.3, 0.55, 0.8]
@@ -290,7 +290,7 @@ class TestScaleAwareFloors:
             {"indicator": "max_pain_distance_pct", "operator": "<",
              "value": 1},
         ], version=7)
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         assert note is not None
         allowed = grounding_set(
             {"params": [{"values": m[1]} for m in muts]})
@@ -307,7 +307,7 @@ class TestScaleAwareFloors:
         # -5 × [.8,.9,1,1.1,1.2] = [-4, -4.5, -5, -5.5, -6], base idx 2
         spec = _spec_with([{"indicator": "rsi", "operator": "<",
                             "value": -5, "period": 14}])
-        muts, note = _mutations(spec)
+        muts, note, _ = _mutations(spec)
         _, values, base_index, _ = next(m for m in muts if m[0] == "cond_rsi")
         assert values == [-4.0, -4.5, -5.0, -5.5, -6.0]
         assert base_index == 2 and values[base_index] == -5.0
@@ -332,7 +332,7 @@ class TestScaleAwareFloors:
             {"indicator": "max_pain_distance_pct", "operator": "<", "value": 1},
             {"indicator": "max_pain_distance_pct", "operator": ">", "value": -1},
         ], version=7)
-        _, note = _mutations(spec)
+        _, note, _ = _mutations(spec)
         assert note is not None
         assert "max_pain_distance_pct < 1 swept 0.5…1.5" in note
         assert "max_pain_distance_pct > -1 swept -1.5…-0.5" in note

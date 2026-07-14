@@ -89,6 +89,11 @@ class Sensitivity(BaseModel):
     # of ±20% — surfaced so absence or a reshaped grid is never misread
     # as an oversight.
     conditions_note: str | None = None
+    # Small strike-selection deltas sweep absolute 0.025Δ steps instead
+    # of ±20% (stages._DELTA_STEP_FLOOR — a ±20% cell often cannot move
+    # one strike on a discrete chain). Disclosed like conditions_note;
+    # None on multiplicative sweeps and on runs saved before the floor.
+    delta_note: str | None = None
 
 
 class Dsr(BaseModel):

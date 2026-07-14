@@ -2078,3 +2078,90 @@ deliberate, settings page precedent), table-driven signal sections
 (per-family t0/notes are honest variance), summary memoization (120s
 poll). Post-fix stub re-verify: pending line renders, staleness inside
 the badged group, persistence intact.
+
+## F8 follow-up — strike-granularity floor for the delta sweep (2026-07-14)
+
+WHAT: the delta sweep retained the small-base under-probing class the
+condition floors fixed (deferred-with-disclosure in the entry above,
+CONFIRMED in that PR's independent review): ±20% of a small
+strike-selection delta steps 0.005Δ per cell at base 0.05, while one
+strike at typical chain spacing is worth more delta than that
+(|dΔ/dK| = φ(d1)/(K·σ√T) → ≈0.4–2 delta points per $1 strike at the
+5Δ wing across 45→1 DTE, 5× on a $5 grid) — adjacent cells resolve to
+the SAME contract, five near-identical Sharpes read as a FALSE
+PLATEAU, and the gauntlet blesses exactly the fragile 5Δ-tail-selling
+archetype it exists to catch; at the sweep's own 0.03 clamp floor
+three cells were literally identical.
+HOW: _DELTA_STEP_FLOOR (stages.py) + _delta_grid — below 0.25Δ the
+sweep steps an absolute 0.025Δ grid (±2 steps, shifted up whole steps
+off the 0.03 edge, specced value always ON the grid at a recorded
+base_index; the shift ceil is dust-clamped to 2 so the #99 review's
+negative-base_index class is structurally impossible). ONE grounding
+rule, shared with _COND_FAMILY_FLOORS: floor = 10% of the family's
+reference magnitude, delta's reference = the 25Δ wing (the skew_25d
+convention) — and the strike-granularity arithmetic independently
+lands on the same 0.025 (docs/HONESTY.md carries it). ≥0.25Δ keeps
+byte-identical ±20% (clamps included); base < 0.03 keeps the
+pre-floor clamped path (outside the grounded scale, _condition_grid's
+lower-edge posture). TAX UNCHANGED: same 5 cells, same classifier, no
+re-centering — engine-RUN count can rise by up to 2 on small deltas
+(the old clamped grid's duplicate cells deduped into fewer runs; that
+dedup WAS the under-probing being fixed). Disclosed on a NEW
+Sensitivity.delta_note (additive field, None on runs saved before the
+floor) → template + retail verdict caveats ("Notes from
+stress-testing your strike choice: …"); numerals = the on-grid
+specced value + grid endpoints only (guardrail #4, validated with the
+shipping validator in tests). Frontend: sweep hint copy extended
+("small thresholds and small deltas"); no other surface claimed ±20%
+for delta post-#99. _mutations now returns (muts, conditions_note,
+delta_note) — delta discloses on its OWN channel, never inside the
+entry-rules framing.
+TESTS: 20 new hand-computed (test_delta_sensitivity.py): the 0.05
+lottery grid [0.05, 0.075, 0.1, 0.125, 0.15] base_index 0; the 0.03
+clamp collapse now 5 DISTINCT cells; one-step shift at 0.055;
+no-shift 0.10; the overfit canary's 0.15 pinned; 0.25 boundary +
+0.30 + 0.9-top-clamp byte-identical multiplicative; percent-form 5 →
+0.05; below-floor 0.02 keeps the pre-floor path; on-grid invariant
+across 14 bases; floor-exact step spacing; probe-range containment;
+note grounding via the shipping validate_numbers; integration on a
+fine-delta fixture store (0.025Δ cells pick different strikes and
+different Sharpes where the old 0.005Δ cells landed on one contract;
+the note rides both verdict registers via run_gauntlet). Suite 669 →
+689 green (before/after verified on this branch — authored stacked on
+the condition-floors branch, which merged to main mid-flight; union
+after the main merge: 703, and 706 with the review-pass tests below);
+canary flagged; ruff + strict mypy clean.
+REVIEW (independent 8-angle pass + 1-vote verify, this PR): 3
+CONFIRMED classes fixed — (1) _param_label rounded the floored grid's
+now-routine sub-point cells to deltas the sweep never ran (.08Δ for
+0.075; three angles hit it) → exact sub-point labels (".075Δ",
+".0317Δ"), whole-point labels byte-identical, pinned by tests; (2) a
+base BELOW the 0.03 probe floor kept the fully degenerate [0.03]×5
+grid with NO disclosure — one engine run blessed as a plateau one
+epsilon below where disclosure kicked in (three angles) → below-floor
+delta_note ("swept cells clamp at 0.03, so smaller strikes were not
+probed"), grid itself unchanged, grounded + tested; (3) the floored
+±2-step/shift-up core was line-for-line duplicated between
+_condition_grid and _delta_grid with DIVERGENT hardening (the dust
+clamp existed only in one) → extracted _absolute_grid, one accurate
+comment (measured: the ceil never exceeds exact math; the min() is
+structural defense, byte-identical both callers). Docs corrected:
+"identical engine-run count" was false at the clamp edge (up to +2
+runs vs the old accidentally-deduped degenerate grid) — HONESTY.md,
+this entry, and the _delta_grid docstring now say so; _SWEEP_FACTORS'
+coupling comment names both floor guards. REFUTED with cited
+precedent (verifier agreed on all five): note-composed-pre-run
+("swept" describes the probe grid; per-cell None/"—" cells disclose
+failures — the #99 posture), value==1 percent-form boundary (the
+sweep mirrors selection.py's own convention; diverging would be the
+bug), retail verbatim-note jargon (#99's owner-approved prefix
+pattern), verdict-hook loop (file idiom is explicit if-appends),
+rollback extra="forbid" one-way property (universal to every additive
+report field; systemic versioning question, not a per-field duty).
+DEFERRED, disclosed: profit_target/stop_loss are the last swept
+params with neither a floor nor a documented decision — plausibly the
+same class with TIME as the discretizer (daily marks quantize exit
+triggers); needs its own reference-magnitude design (candidate: the
+canonical 50% take-profit → 5pp), spun off as a follow-up chip.
+Suite 706 green post-fixes; canary flagged; frontend lint+typecheck
+clean.
