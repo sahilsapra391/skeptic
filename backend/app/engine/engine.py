@@ -1322,6 +1322,7 @@ STALE_TAIL_GRACE_SESSIONS = 5
 _STALENESS_ONLY_SERIES: dict[Indicator, tuple[tuple[str, str], ...]] = {
     Indicator.IVX_LEVEL_30D: (("30d IVX", "ivx_dates"),),
     Indicator.IVX_RANK_1Y: (("30d IVX", "ivx_dates"),),
+    Indicator.IVX_ZSCORE_1Y: (("30d IVX", "ivx_dates"),),
     Indicator.HV_IV_SPREAD_30D: (("30d IVX", "ivx_dates"), ("30d HV", "hv_dates")),
     Indicator.SKEW_25D: (("25Δ skew", "skew_dates"),),
     Indicator.TERM_STRUCTURE_SLOPE: (("term-structure slope", "term_dates"),),
@@ -1434,6 +1435,7 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
 _PROVENANCE_SERIES: dict[Indicator, tuple[str, ...]] = {
     Indicator.IVX_RANK_1Y: ("ivx_30d",),
     Indicator.IVX_LEVEL_30D: ("ivx_30d",),
+    Indicator.IVX_ZSCORE_1Y: ("ivx_30d",),
     Indicator.HV_IV_SPREAD_30D: ("ivx_30d", "hv_30d"),
     Indicator.SKEW_25D: ("skew_25d",),
     Indicator.TERM_STRUCTURE_SLOPE: ("term_structure_slope",),
