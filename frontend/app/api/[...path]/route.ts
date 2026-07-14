@@ -54,6 +54,9 @@ function demoEligible(path: string[]): boolean {
   // ask on a REAL run must surface the backend's honest 501 (missing key or
   // stats bundle), never a canned demo answer
   if (path[0] === "runs" && path[2] === "ask" && !path[1]?.startsWith("demo-")) return false;
+  // a notebook export exists only on the backend — the demo fallback would
+  // mask "backend down" as "not built yet"
+  if (path[0] === "runs" && path[2] === "notebook") return false;
   return true;
 }
 

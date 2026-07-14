@@ -20,6 +20,7 @@ import type { NullableSeriesPoint, RunPayload, SeriesPoint } from "@/lib/types";
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { Hint } from "@/components/hint";
 import { HowBuilt } from "@/components/results/how-built";
+import { NotebookExport } from "@/components/results/notebook-export";
 import { PANEL, PANEL_TITLE } from "@/components/results/panel";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
 
@@ -1104,6 +1105,9 @@ export function ResultsView({
               {view === "story" ? "Results" : "How this was built"}
             </button>
           )}
+          {/* parity Tier 1: the run as an executable notebook — real runs
+              only; a demo id has no stored run to export */}
+          {!run.demo && <NotebookExport runId={run.id} />}
           {onNew && (
             <button
               onClick={onNew}

@@ -273,6 +273,18 @@ export function replayRun(id: string): Promise<{ run_id: string; parent: string 
   });
 }
 
+/** Parity Tier 1: the completed run as an executable .ipynb. Returns the
+ * exact text the backend built — parsing and re-stringifying it here would
+ * reformat the notebook, so the caller saves the raw bytes. */
+export async function fetchNotebook(id: string): Promise<string> {
+  const res = await fetch(`/api/runs/${id}/notebook`, { cache: "no-store" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+    throw new ApiError(res.status, formatDetail(body.detail ?? body));
+  }
+  return res.text();
+}
+
 export function getHealth(): Promise<{
   status: string;
   r2_configured: boolean;
