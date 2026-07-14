@@ -17,8 +17,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import db
-from app.api.notebook import _expand_resolution_runs
-from app.api.provenance import _derived_boxes
+from app.api.notebook import (
+    _compare_row,
+    _divergence_report,
+    _expand_resolution_runs,
+)
+from app.api.provenance import derived_boxes
 from app.engine.market import build_fixture_slice, build_fixture_store
 from app.engine.runner import run_backtest
 from app.main import app
@@ -113,6 +117,58 @@ def test_expand_resolution_runs() -> None:
     assert _expand_resolution_runs(None) == {}
 
 
+def test_compare_row_one_policy_for_every_stat() -> None:
+    # both-None is a match; stored-None is UNEVALUABLE (a legacy stats
+    # bundle is a shape gap, not a drift — review finding: None == 0 was
+    # a spurious permanent mismatch); fresh-None is a real failure
+    assert _compare_row("sharpe", None, None)["ok"] is True
+    row = _compare_row("filled", None, 0, exact=True)
+    assert row["ok"] is None and "not recorded" in row["note"]
+    assert _compare_row("final_equity", 100.0, None)["ok"] is False
+    assert _compare_row("filled", 3, 3, exact=True)["ok"] is True
+    assert _compare_row("filled", 3, 4, exact=True)["ok"] is False
+    # symmetric relative scale, same policy as the metrics
+    assert _compare_row("cagr", 1.0, 1.0 + 1e-9)["ok"] is True
+    assert _compare_row("cagr", 1.0, 1.1)["ok"] is False
+
+
+def test_divergence_report_catches_the_gap_day_backfill() -> None:
+    # the review's scenario: the compressed run spans an uncovered gap
+    # day; the lake later backfills it; the replay covers one MORE
+    # session inside the range — per-day pin-vs-actual alone is blind,
+    # the recorded session COUNT is not
+    from datetime import date
+
+    recorded = [{"first": "2025-01-06", "last": "2025-01-08",
+                 "sessions": 2, "resolution": "five_min"}]
+    actual = {date(2025, 1, 6): "five_min", date(2025, 1, 7): "five_min",
+              date(2025, 1, 8): "five_min"}  # gap day 01-07 now covered
+    report = _divergence_report(recorded, actual)
+    assert len(report) == 1
+    assert "recorded 2 covered session(s), replay covered 3" in report[0]["issue"]
+
+
+def test_divergence_report_catches_flips_drops_and_strays() -> None:
+    from datetime import date
+
+    recorded = [{"first": "2025-01-06", "last": "2025-01-07",
+                 "sessions": 2, "resolution": "minute"}]
+    # 01-06 flipped to five_min; 01-07 no longer covered; 01-09 is a
+    # session the original never covered at all
+    actual = {date(2025, 1, 6): "five_min", date(2025, 1, 9): "minute"}
+    report = _divergence_report(recorded, actual)
+    assert any("resolution flipped on 2025-01-06" in i["issue"] for i in report)
+    assert any("recorded 2 covered session(s), replay covered 1" in i["issue"]
+               for i in report)
+    assert any(i.get("session") == "2025-01-09" for i in report)
+
+    # perfect replay → empty report
+    good = {date(2025, 1, 6): "minute", date(2025, 1, 7): "minute"}
+    assert _divergence_report(recorded, good) == []
+    # nothing recorded (daily / pre-FX.1) → never invents divergence
+    assert _divergence_report(None, actual) == []
+
+
 # ─────────────────────────────── the builder ───────────────────────────────
 _PROVENANCE = {
     "v": 1, "origin": "user", "recorded_at": "2026-07-14T00:00:00+00:00",
@@ -147,7 +203,7 @@ _PAYLOAD = {
 
 
 def _grid() -> dict:
-    return _derived_boxes(json.loads(json.dumps(R_SPEC)))
+    return derived_boxes(json.loads(json.dumps(R_SPEC)))
 
 
 class TestBuilder:

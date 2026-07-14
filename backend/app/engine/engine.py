@@ -44,6 +44,8 @@ from app.engine.market import (
 from app.engine.selection import select_expiration, select_legs
 from app.engine.types import (
     MULT,
+    RES_FIVE_MIN,
+    RES_MINUTE,
     ContractKey,
     OpenLeg,
     Position,
@@ -1630,7 +1632,7 @@ def run_engine(
                 # replay: the recorded resolution wins over live "finest"
                 # in BOTH directions — a since-upgraded session stays on
                 # its recorded 5-min grid (never silently re-resolve)
-                want_minute = pin == "minute"
+                want_minute = pin == RES_MINUTE
             else:
                 want_minute = finest and day in minute_days
             if want_minute:
@@ -1643,7 +1645,8 @@ def run_engine(
             # -------------------- intraday bar loop (the declared clock;
             # bar size is a PER-SESSION value under resolution="finest")
             is_minute = slc.bar_resolution == "1min"
-            session_resolutions.append((day, "minute" if is_minute else "five_min"))
+            session_resolutions.append(
+                (day, RES_MINUTE if is_minute else RES_FIVE_MIN))
             covered_sessions += 1
             if progress is not None and covered_sessions % PROGRESS_EVERY_SESSIONS == 0:
                 progress(covered_sessions, len(clock))

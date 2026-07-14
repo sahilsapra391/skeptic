@@ -25,9 +25,10 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from app import db
-from app.api.provenance import _derived_boxes
+from app.api.provenance import derived_boxes
 from app.models.spec import StrategySpec
 
 log = logging.getLogger("notebook")
@@ -63,11 +64,17 @@ def export_notebook(run_id: str) -> JSONResponse:
         raise HTTPException(status_code=409,
                             detail="run not finished — nothing to export yet")
     with db.session() as s:
-        run = s.get(db.Run, run_id)
-        if run is None or not run.spec_json:
-            raise HTTPException(status_code=404, detail="run not found")
-        spec_doc = json.loads(run.spec_json)
-        stats = json.loads(run.stats_json) if run.stats_json else {}
+        # column-scoped: get_run already hydrated the full row (multi-MB
+        # payload_json included) — pull only the two small columns it
+        # doesn't expose rather than re-fetching everything (review finding)
+        row = s.execute(
+            select(db.Run.spec_json, db.Run.stats_json)
+            .where(db.Run.id == run_id)
+        ).one_or_none()
+    if row is None or not row.spec_json:
+        raise HTTPException(status_code=404, detail="run not found")
+    spec_doc = json.loads(row.spec_json)
+    stats = json.loads(row.stats_json) if row.stats_json else {}
 
     # the F8 sweep-coverage disclosure lives on the stored honesty report
     # (frozen at completion), not in the display payload — baked into the
@@ -81,7 +88,7 @@ def export_notebook(run_id: str) -> JSONResponse:
         name=payload.get("name") or "Skeptic run",
         payload=payload,
         provenance=payload.get("provenance") or {},
-        grid=_derived_boxes(spec_doc),
+        grid=derived_boxes(spec_doc),
         api_base=_api_base(),
         sweep_notes=sweep_notes or None,
     )
@@ -159,14 +166,86 @@ def _write_reproduce(run_id: str, record: dict[str, Any]) -> None:
     with db.session() as s:
         run = s.get(db.Run, run_id)
         if run is not None:
-            run.reproduce_json = json.dumps(record)
+            run.reproduce_json = json.dumps(
+                {**record, "finished_at": datetime.now(UTC).isoformat()})
             s.commit()
+
+
+def _compare_row(key: str, stored: Any, fresh: Any,
+                 exact: bool = False) -> dict[str, Any]:
+    """ONE comparison policy for every stat (review finding: two adjacent
+    loops had drifted on None handling and scale). Both-None is a match;
+    a stat the STORED run never recorded is unevaluable (ok=None, excluded
+    from `match` — an old stats bundle is a shape gap, not a drift); a
+    stat the fresh run failed to produce IS a mismatch."""
+    row: dict[str, Any] = {"stat": key, "stored": stored, "fresh": fresh}
+    if stored is None and fresh is None:
+        row["ok"] = True
+    elif stored is None:
+        row["ok"] = None
+        row["note"] = "not recorded on the stored run — not comparable"
+    elif fresh is None:
+        row["ok"] = False
+    elif exact:
+        row["ok"] = stored == fresh
+    else:
+        scale = max(abs(float(stored)), abs(float(fresh)), 1e-12)
+        row["ok"] = abs(float(stored) - float(fresh)) / scale <= _REL_TOL
+    return row
+
+
+def _divergence_report(
+    recorded_runs: list[dict[str, Any]] | None,
+    actual: dict[date, str],
+) -> list[dict[str, Any]]:
+    """Recorded compressed resolution runs vs the replay's per-session
+    record. Per-day pin-vs-actual alone is blind in two ways the review
+    caught: a compressed run spans uncovered gap days, so a day the lake
+    backfilled AFTER the original run replays inside the range unnoticed
+    (count check catches it — each recorded run carries its session
+    count), and a session the replay no longer covers never appears in
+    the replay map at all (same count check). Sessions outside every
+    recorded range are named individually."""
+    if not recorded_runs:
+        # nothing recorded (daily clock, or a pre-FX.1 intraday run whose
+        # notebook already discloses "window and seed only") — there is no
+        # map to diverge FROM; the stat comparison still stands guard
+        return []
+    out: list[dict[str, Any]] = []
+    ranges: list[tuple[date, date]] = []
+    for r in recorded_runs:
+        try:
+            first = date.fromisoformat(str(r["first"]))
+            last = date.fromisoformat(str(r["last"]))
+            resolution = str(r["resolution"])
+            sessions = int(r["sessions"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        ranges.append((first, last))
+        replayed = {d: res for d, res in actual.items() if first <= d <= last}
+        flipped = sorted(d.isoformat() for d, res in replayed.items()
+                         if res != resolution)
+        if flipped:
+            out.append({"range": f"{first} → {last}", "pinned": resolution,
+                        "issue": f"resolution flipped on {', '.join(flipped)}"})
+        if len(replayed) != sessions:
+            out.append({
+                "range": f"{first} → {last}", "pinned": resolution,
+                "issue": (f"recorded {sessions} covered session(s), replay "
+                          f"covered {len(replayed)} — the lake changed "
+                          "inside this range since the original run"),
+            })
+    for day in sorted(actual):
+        if not any(first <= day <= last for first, last in ranges):
+            out.append({"session": day.isoformat(),
+                        "issue": "covered by the replay but not by the "
+                                 "original run's record"})
+    return out
 
 
 def _execute_reproduce(run_id: str) -> None:
     import os
 
-    finished = {"finished_at": datetime.now(UTC).isoformat()}
     try:
         with db.session() as s:
             run = s.get(db.Run, run_id)
@@ -174,7 +253,14 @@ def _execute_reproduce(run_id: str) -> None:
                 return
             spec_doc = json.loads(run.spec_json)
             stats = json.loads(run.stats_json) if run.stats_json else {}
-            payload = json.loads(run.payload_json) if run.payload_json else {}
+            # extract ONLY the compressed resolution runs — the parsed
+            # payload can be MBs (equity series, full trade log) and must
+            # not stay pinned across the engine run (OOM-guard directive;
+            # review finding — the audit baseline never loads it at all)
+            recorded_runs = None
+            if run.payload_json:
+                recorded_runs = (json.loads(run.payload_json) or {}
+                                 ).get("resolutionRuns")
             # provenance is merged into the payload at READ time, not
             # stored inside payload_json — read the column directly
             try:
@@ -193,7 +279,7 @@ def _execute_reproduce(run_id: str) -> None:
             spec_doc.setdefault("backtest", {})["end"] = eff_end
         spec = StrategySpec.model_validate(spec_doc)
 
-        pinned = _expand_resolution_runs(payload.get("resolutionRuns"))
+        pinned = _expand_resolution_runs(recorded_runs)
 
         from app.api.runs import _ENGINE_LOCK, _release_memory
         from app.data.chains import load_market_store
@@ -217,52 +303,29 @@ def _execute_reproduce(run_id: str) -> None:
             finally:
                 _release_memory()
 
-        compared: list[dict[str, Any]] = []
-        mismatches: list[str] = []
         stored_metrics = stats.get("metrics") or {}
         fresh_metrics = result.metrics or {}
-        for key in _COMPARE_METRICS:
-            stored_v, fresh_v = stored_metrics.get(key), fresh_metrics.get(key)
-            row: dict[str, Any] = {"stat": key, "stored": stored_v, "fresh": fresh_v}
-            if stored_v is None and fresh_v is None:
-                row["ok"] = True
-            elif stored_v is None or fresh_v is None:
-                row["ok"] = False
-            else:
-                scale = max(abs(float(stored_v)), abs(float(fresh_v)), 1e-12)
-                row["ok"] = abs(float(stored_v) - float(fresh_v)) / scale <= _REL_TOL
-            if not row["ok"]:
-                mismatches.append(key)
-            compared.append(row)
-        for key, stored_v, fresh_v in (
-            ("filled", stats.get("filled"), result.filled),
-            ("final_equity", stats.get("final_equity"),
-             result.equity[-1] if result.equity else None),
-        ):
-            ok = stored_v == fresh_v if key == "filled" else (
-                stored_v is not None and fresh_v is not None
-                and abs(float(stored_v) - float(fresh_v))
-                / max(abs(float(stored_v)), 1e-12) <= _REL_TOL
-            )
-            if not ok:
-                mismatches.append(key)
-            compared.append({"stat": key, "stored": stored_v,
-                             "fresh": fresh_v, "ok": ok})
+        compared = [
+            _compare_row(key, stored_metrics.get(key), fresh_metrics.get(key))
+            for key in _COMPARE_METRICS
+        ]
+        compared.append(_compare_row("filled", stats.get("filled"),
+                                     result.filled, exact=True))
+        compared.append(_compare_row(
+            "final_equity", stats.get("final_equity"),
+            result.equity[-1] if result.equity else None))
+        mismatches = [row["stat"] for row in compared if row["ok"] is False]
+        unevaluable = [row["stat"] for row in compared if row["ok"] is None]
 
-        # a pinned-minute session that fell back to 5-min is a divergence
-        # the caller must see (never trust the pin blindly)
-        divergence: list[dict[str, str]] = []
-        for day, res in (result.resolution_by_session or {}).items():
-            want = pinned.get(day)
-            if want is not None and want != res:
-                divergence.append({"session": day.isoformat(),
-                                   "pinned": want, "actual": res})
+        divergence = _divergence_report(
+            recorded_runs, result.resolution_by_session or {})
 
         build_then = (prov.get("mechanics") or {}).get("build", {}).get("commit")
         _write_reproduce(run_id, {
             "status": "done",
             "match": not mismatches and not divergence,
             "mismatched": mismatches or None,
+            "unevaluable": unevaluable or None,
             "tolerance": f"relative {_REL_TOL:g} on metrics; counts exact",
             "compared": compared,
             "resolution_divergence": divergence or None,
@@ -271,12 +334,10 @@ def _execute_reproduce(run_id: str) -> None:
             "seed": spec.backtest.seed,
             "build_then": build_then,
             "build_now": os.environ.get("RAILWAY_GIT_COMMIT_SHA"),
-            **finished,
         })
     except Exception as exc:
         log.exception("reproduce failed for %s", run_id)
         _write_reproduce(run_id, {
             "status": "error",
             "error": f"reproduce failed: {str(exc).strip().splitlines()[0][:300]}",
-            **finished,
         })

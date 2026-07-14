@@ -26,6 +26,7 @@ Design stances, all owner-visible in the output:
 from __future__ import annotations
 
 import json
+from itertools import count
 from typing import Any
 
 # nbformat 4.5 written directly — the schema is tiny and stable, and a
@@ -301,13 +302,14 @@ import time
 
 kick = api(f"/api/runs/{RUN_ID}/reproduce", method="POST")
 print(kick)
-report = None
-for _ in range(200):
-    report = api(f"/api/runs/{RUN_ID}/reproduce")
-    if report.get("status") != "reproducing":
-        break
+# poll until the server's own 30-minute staleness window would declare
+# the job dead anyway — the two deadlines deliberately agree
+deadline = time.time() + 30 * 60
+report = api(f"/api/runs/{RUN_ID}/reproduce")
+while report.get("status") == "reproducing" and time.time() < deadline:
     time.sleep(6)
-if report is None or report.get("status") == "reproducing":
+    report = api(f"/api/runs/{RUN_ID}/reproduce")
+if report.get("status") == "reproducing":
     raise SystemExit("reproduce still running — re-run this cell in a minute")
 if report.get("error"):
     print("REPRODUCE REFUSED / FAILED:")
@@ -317,6 +319,9 @@ else:
     print(pd.DataFrame(rows))
     print()
     print("match within tolerance:", report.get("match"))
+    if report.get("unevaluable"):
+        print("not comparable (never recorded on the stored run):",
+              report["unevaluable"])
     if report.get("resolution_divergence"):
         print("resolution divergence (disclosed, never silent):",
               report["resolution_divergence"])
@@ -336,16 +341,18 @@ def build_notebook(
     sweep_notes: list[str] | None = None,
 ) -> dict[str, Any]:
     """Assemble the .ipynb dict. `grid` is the decision grid derived from
-    the VALIDATED spec (app.api.provenance._derived_boxes) — the spec is
+    the VALIDATED spec (app.api.provenance.derived_boxes) — the spec is
     what ran, so the table can never disagree with the engine."""
     cells: list[dict[str, Any]] = []
-    n = iter(range(1000))
+    counter = count()  # one flat sequence — the id carries no type info,
+    # cell_type already does (review finding: a typed prefix over a shared
+    # counter reads as per-type numbering and its gaps look like bugs)
 
     def md(source: str) -> None:
-        cells.append(_cell("markdown", source, f"md-{next(n)}"))
+        cells.append(_cell("markdown", source, f"cell-{next(counter)}"))
 
     def code(source: str) -> None:
-        cells.append(_cell("code", source, f"code-{next(n)}"))
+        cells.append(_cell("code", source, f"cell-{next(counter)}"))
 
     md(f"# {name}\n\n"
        f"Skeptic research notebook · run `{run_id}`\n\n{DISCLAIMER}")
