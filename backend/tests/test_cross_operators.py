@@ -16,7 +16,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.engine.conditions import evaluate_condition
-from app.engine.market import MarketStore, MarketView
+from app.engine.market import MarketView, build_fixture_store
 from app.models.spec import (
     CROSS_CAPABLE_INDICATORS,
     Condition,
@@ -94,19 +94,15 @@ class TestValidation:
 def _view(with_vix: bool = False) -> MarketView:
     d0 = date(2026, 1, 5)
     n = 60
-    sessions = [d0 + timedelta(days=i) for i in range(n)]
+    days = [(d0 + timedelta(days=i)).isoformat() for i in range(n)]
     closes = [100.0 + (i % 7) - 3.0 for i in range(n)]  # wiggles → crosses exist
-    store = MarketStore(
-        ticker="SPY",
-        sessions=sessions,
-        underlying_open=dict(zip(sessions, closes, strict=True)),
-        underlying_close=dict(zip(sessions, closes, strict=True)),
+    store = build_fixture_store(
+        "SPY",
         chains={},
-        chain_dates=[],
-        vix_dates=sessions if with_vix else [],
-        vix_close={d: 21.0 for d in sessions} if with_vix else {},
+        underlying={d: (c, c) for d, c in zip(days, closes, strict=True)},
+        vix={d: 21.0 for d in days} if with_vix else None,
     )
-    return MarketView(store, sessions[-1])
+    return MarketView(store, store.sessions[-1])
 
 
 class TestEngineLockstep:

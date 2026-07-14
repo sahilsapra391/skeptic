@@ -182,6 +182,9 @@ INTRADAY_CAPABLE_INDICATORS = {
 # "cross" has no previous value there, and the engine's _compare refuses
 # it, so validation must refuse it first: a spec that cannot run must
 # never validate (it used to 500 at the first evaluated session).
+# Deliberately NOT the same set as INTRADAY_CAPABLE_INDICATORS above:
+# price_vs_vwap_pct reads the 5-min clock but as a single observation;
+# drawdown_from_high_pct is daily-only but series-evaluated.
 CROSS_CAPABLE_INDICATORS = {
     Indicator.RSI,
     Indicator.SMA,
@@ -322,13 +325,12 @@ class Condition(BaseModel):
             self.operator in (Operator.CROSSES_ABOVE, Operator.CROSSES_BELOW)
             and self.indicator not in CROSS_CAPABLE_INDICATORS
         ):
+            supported = ", ".join(sorted(i.value for i in CROSS_CAPABLE_INDICATORS))
             raise ValueError(
                 f"indicator {self.indicator.value} is read as a single "
                 f"point-in-time observation — '{self.operator.value}' needs a "
                 "bar series to detect a cross. Use 'above'/'below' for a level "
-                "comparison; crosses are supported on rsi, sma, ema, "
-                "price_vs_sma_pct, price_vs_ema_pct, ema_cross_state and "
-                "drawdown_from_high_pct."
+                f"comparison; crosses are supported on {supported}."
             )
         return self
 

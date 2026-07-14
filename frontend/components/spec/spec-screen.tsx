@@ -691,8 +691,12 @@ export function SpecScreen({
             className={SELECT_CLS}
           >
             {OPERATORS.filter(
+              // hide crosses for point-in-time indicators, but never hide
+              // the operator a loaded draft actually carries — the dial
+              // shows the stored truth; the run's 422 names the fix
               (o) =>
                 !o.id.startsWith("crosses_") ||
+                o.id === trig?.operator ||
                 CROSS_CAPABLE.has(trig?.indicator ?? "drawdown_from_high_pct"),
             ).map((o) => (
               <option key={o.id} value={o.id}>
