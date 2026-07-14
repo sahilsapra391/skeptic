@@ -8,6 +8,11 @@ operator asks.
 
 Levels are decimals in the lake (0.229 = 22.9%); conditions compare in
 percentage points, like vix_level.
+
+Non-finite observations (poisoned vendor rows) are UNEVALUABLE, never a
+number: window-wide for ranks (an unguarded NaN current obs reads as rank
+0.0 — every "rank < X" fabricated), per-read for levels (±inf would
+fabricate a threshold cross; NaN silently compares False).
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from datetime import date, timedelta
 import pytest
 from pydantic import ValidationError
 
-from app.engine.conditions import _trailing_zscore, evaluate_condition
+from app.engine.conditions import _trailing_rank, _trailing_zscore, evaluate_condition
 from app.engine.market import MarketView, build_fixture_store
 from app.models.spec import Condition, Indicator, Operator, StrategySpec
 from tests.test_spec_roundtrip import CANONICAL
@@ -85,6 +90,50 @@ class TestIvxRank1y:
         future_value = 0.100 + 0.001 * 129
         assert future_value not in history
         assert view.ivx_30d() == pytest.approx(0.100 + 0.001 * 99)
+
+    def test_poisoned_current_observation_refuses(self) -> None:
+        # the fabricated-signal shape the kernel guard exists for: an
+        # unguarded NaN current observation counts nothing and reads as
+        # rank 0.0 — every "rank < X" passed on the poisoned day
+        store, days = _store(126, ivx_override=float("nan"))
+        view = MarketView(store, days[-1])
+        assert not evaluate_condition(view, _cond(Indicator.IVX_RANK_1Y, Operator.LT, 5))
+        assert not evaluate_condition(view, _cond(Indicator.IVX_RANK_1Y, Operator.GT, 0))
+
+
+class TestTrailingRankKernel:
+    """_trailing_rank shared by every *_rank/percentile indicator — the
+    gex/dex/nope/net_premium/market_tide ranks and iv_percentile inherit
+    each refusal proven here."""
+
+    def test_midpoint_rank_hand_computed(self) -> None:
+        # 125 ramp values 0.100..0.224 plus a current of 0.1625: the 63
+        # ramp values ≤ 0.1625 plus the current itself → 64/126 → 50.79365
+        history = [0.100 + 0.001 * i for i in range(125)] + [0.1625]
+        assert _trailing_rank(history, min_obs=126) == pytest.approx(64 / 126 * 100.0)
+
+    def test_non_finite_observation_is_none(self) -> None:
+        # one bad vendor row must refuse, not read as rank 0.0: "v <= nan"
+        # is False for every v, so a NaN CURRENT observation counted
+        # nothing and any "rank < X" fabricated a signal
+        history = [0.100 + 0.001 * i for i in range(126)]
+        history[-1] = float("nan")
+        assert _trailing_rank(history, min_obs=126) is None
+        history[-1] = float("inf")
+        assert _trailing_rank(history, min_obs=126) is None
+
+    def test_mid_window_nan_is_none(self) -> None:
+        # a mid-window NaN is subtler: out of the ≤-count but still in the
+        # denominator, silently deflating every rank — refuse instead
+        history = [0.100 + 0.001 * i for i in range(126)]
+        history[50] = float("nan")
+        assert _trailing_rank(history, min_obs=126) is None
+
+    def test_non_finite_outside_window_is_ignored(self) -> None:
+        # only the trailing 252 observations are evaluated; ancient poison
+        # must not refuse today's rank
+        history = [float("nan")] + [0.100 + 0.001 * i for i in range(252)]
+        assert _trailing_rank(history, min_obs=126) == 100.0
 
 
 class TestIvxLevel30d:
@@ -279,3 +328,28 @@ class TestSpecV8Gating:
         schema = json.loads((Path(__file__).resolve().parents[2]
                              / "docs" / "strategy-spec.schema.json").read_text())
         jsonschema.validate(spec.model_dump(mode="json", exclude_none=True), schema)
+
+
+class TestNonFiniteLevelReads:
+    """The _finite gate on scalar vendor reads, proven through the ivx
+    branches — every *_level/spread/ratio branch reads through the same
+    gate."""
+
+    def test_nan_level_is_unevaluable_both_directions(self) -> None:
+        store, days = _store(10, ivx_override=float("nan"))
+        view = MarketView(store, days[-1])
+        assert not evaluate_condition(view, _cond(Indicator.IVX_LEVEL_30D, Operator.GT, 0))
+        assert not evaluate_condition(view, _cond(Indicator.IVX_LEVEL_30D, Operator.LT, 100))
+
+    def test_inf_level_must_not_fabricate_a_cross(self) -> None:
+        # +inf compares greater than any threshold: unguarded, a poisoned
+        # row read "IVX above 25" as True — a fabricated level signal
+        store, days = _store(10, ivx_override=float("inf"))
+        view = MarketView(store, days[-1])
+        assert not evaluate_condition(view, _cond(Indicator.IVX_LEVEL_30D, Operator.GT, 25))
+
+    def test_nan_spread_leg_is_unevaluable(self) -> None:
+        store, days = _store(10, hv=float("nan"), ivx_override=0.25)
+        view = MarketView(store, days[-1])
+        assert not evaluate_condition(view, _cond(Indicator.HV_IV_SPREAD_30D, Operator.GT, 0))
+        assert not evaluate_condition(view, _cond(Indicator.HV_IV_SPREAD_30D, Operator.LT, 99))

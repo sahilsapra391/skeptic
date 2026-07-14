@@ -28,6 +28,16 @@ def _dd_cond(value: float, period: int | None = None) -> Condition:
     )
 
 
+def test_inf_high_is_unevaluable_not_a_100pct_drawdown() -> None:
+    # a poisoned inf close would launder into a FINITE drawdown of
+    # exactly 100% and fire every threshold, forever — refuse instead
+    closes = [100.0, float("inf")] + [100.0] * 10 + [98.0]
+    view = MarketView(_store(closes), _store(closes).sessions[-1])
+    assert not all_conditions_pass(view, [_dd_cond(20.0)])
+    # a bounded period whose window excludes the poison stays evaluable
+    assert all_conditions_pass(view, [_dd_cond(2.0, period=5)])
+
+
 def test_period_bounds_the_reference_high() -> None:
     # spike to 200 long ago, then a flat 100 stretch ending at 98:
     # vs the all-time 200 high that's a 51% drawdown; vs the 5-session

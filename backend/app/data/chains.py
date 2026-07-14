@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import threading
 import time
@@ -252,6 +253,17 @@ def warm_store(ticker: str = "SPY") -> None:
         pass
 
 
+def _finite_series(series: dict[date, float]) -> dict[date, float]:
+    """A non-finite row is an HONEST ABSENCE: dropped here, before any
+    *_dates list is built. Every evaluability surface — the staleness and
+    signal-coverage refusals, the composer's rank unlock dates — reasons
+    from those date lists, so a date must never point at a value the
+    engine refuses. The loaders drop NaN already, but pandas' NaN-only
+    filters (dropna/notna/isna) all keep ±inf, and in-house derived
+    arithmetic can emit either."""
+    return {d: v for d, v in series.items() if math.isfinite(v)}
+
+
 def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> MarketStore:
     daily, vix, rates = _underlying_frames(ticker)
     if daily is None or daily.empty:
@@ -384,6 +396,25 @@ def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> M
     pcr = _splice(pcr, "put_call_ratio", inhouse.get("put_call_ratio", {}))
     mpd = _splice(mpd, "max_pain_distance_pct",
                   inhouse.get("max_pain_dist_pct", {}))
+
+    # every analytic series through the finite gate BEFORE its date list
+    # exists (see _finite_series); vix_dates is rebuilt because the pair
+    # was constructed together above. underlying open/close stay raw —
+    # sessions drive bar iteration and must not silently lose days.
+    vix_close = _finite_series(vix_close)
+    vix_dates = sorted(vix_close)
+    atm_iv = _finite_series(atm_iv)
+    ivx_30d = _finite_series(ivx_30d)
+    hv_30d = _finite_series(hv_30d)
+    skew_25d = _finite_series(skew_25d)
+    term_slope = _finite_series(term_slope)
+    net_gex = _finite_series(net_gex)
+    net_dex = _finite_series(net_dex)
+    net_premium = _finite_series(net_premium)
+    pcr = _finite_series(pcr)
+    nope_eod = _finite_series(nope_eod)
+    mpd = _finite_series(mpd)
+    tide = _finite_series(tide)
 
     return MarketStore(
         ticker=ticker,
