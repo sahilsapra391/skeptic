@@ -1886,3 +1886,24 @@ derived pre-column run, auto re-run with parent link. Browser pass
 caught 2 real bugs pre-review: date-only chart pins slid back a day
 (UTC-midnight parse formatted in ET — now plain-date formatting) and the
 auto-run wording; plus sub-second runs now say "<1s" not "0s".
+REVIEW (independent 8-angle pass): 6 CONFIRMED fixed — Q→A pairing
+reversed on empty/duplicate event ids (latest-first match → earliest
+unanswered, correct in both real shapes); sticky story tab + stale
+grounded answer across sidebar run-to-run navigation (key={run.id}
+remount); demo runs got a dead story tab with false "predates recording"
+copy (toggle now renders only when a provenance record exists; fallback
+copy neutralized); derived AUTO runs double-printed the disclosure
+(derived rows now render a bare lineage link) and masked the
+automatic-origin reason (origin outranks derived); a mechanics object
+with no renderable field drew an empty titled panel (honest fallback
+line); an all-zero duration record dropped the "ran in" headline while
+showing component times (any recorded duration → "<1s"). Plus reuse
+dedups: shortDate/pinLabel now live in lib/format (shared with
+chart-teach — fixing ITS day-early date-only pin labels too), PANEL
+chrome shared via components/results/panel.ts, Intl formatters hoisted,
+results-branch JSX re-indented. 2 typography calls surfaced to owner at
+PR review (serif h2; mono on prose mirroring the composer bubble idiom),
+not self-judged. Refuted with citations: exit phrasing (matches the
+canonical spec_to_draft projection); guardrail #6 (the meta line's
+effective window persists above both tabs); wire-contract audit clean
+end to end. All four scenarios re-verified in the browser post-fix.

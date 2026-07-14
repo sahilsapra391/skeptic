@@ -20,10 +20,8 @@ import type { NullableSeriesPoint, RunPayload, SeriesPoint } from "@/lib/types";
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { Hint } from "@/components/hint";
 import { HowBuilt } from "@/components/results/how-built";
+import { PANEL, PANEL_TITLE } from "@/components/results/panel";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
-
-const PANEL = "rounded-[14px] border border-line bg-panel";
-const PANEL_TITLE = "font-mono text-[11.5px] font-medium tracking-[.12em] text-ink-4";
 
 /** Plain-English one-liners for every stat surface (* = unblessed);
  * [institutional, retail] — the verbiage setting picks the register. */
@@ -1088,21 +1086,24 @@ export function ResultsView({
               Edit spec
             </button>
           )}
-          <button
-            onClick={() => setView(view === "story" ? "results" : "story")}
-            className={clsx(
-              "flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border px-4 py-2 text-[13px] font-semibold",
-              view === "story"
-                ? "border-trust-border bg-trust-dim text-trust hover:bg-trust/15"
-                : "border-line bg-raised-2 text-ink-2 hover:border-trust-border hover:bg-raised-3 hover:text-ink",
-            )}
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 2.5h10v11H3z" />
-              <path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" />
-            </svg>
-            {view === "story" ? "Results" : "How this was built"}
-          </button>
+          {/* demo runs carry no provenance record — no dead story tab */}
+          {run.provenance && (
+            <button
+              onClick={() => setView(view === "story" ? "results" : "story")}
+              className={clsx(
+                "flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border px-4 py-2 text-[13px] font-semibold",
+                view === "story"
+                  ? "border-trust-border bg-trust-dim text-trust hover:bg-trust/15"
+                  : "border-line bg-raised-2 text-ink-2 hover:border-trust-border hover:bg-raised-3 hover:text-ink",
+              )}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 2.5h10v11H3z" />
+                <path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" />
+              </svg>
+              {view === "story" ? "Results" : "How this was built"}
+            </button>
+          )}
           {onNew && (
             <button
               onClick={onNew}
@@ -1125,58 +1126,58 @@ export function ResultsView({
         </>
       ) : (
         <>
-      <VerdictBlock verdict={verdict} />
-      <ReceiptBanner run={run} />
+          <VerdictBlock verdict={verdict} />
+          <ReceiptBanner run={run} />
 
-      {run.verdict.refusal && (
-        <div className="mb-1 mt-[18px] text-center font-mono text-[10.5px] font-medium tracking-[.18em] text-ink-4">
-          — UNBLESSED OUTPUT · MACHINERY CHECK ONLY —
-        </div>
-      )}
-
-      <div className={clsx(run.verdict.refusal && "opacity-[.38]")}>
-        <MetricTiles run={run} retailMode={retailMode} />
-        <EquityChart run={run} retailMode={retailMode} />
-        <LadderDepthPanel run={run} retailMode={retailMode} />
-        <GreeksPanel run={run} retailMode={retailMode} />
-        <HonestyPanels run={run} retailMode={retailMode} />
-        <Recommendations run={run} retailMode={retailMode} />
-        <TradeLog run={run} retailMode={retailMode} />
-      </div>
-
-      {answer && (
-        <div className={clsx(PANEL, "mt-3.5 rounded-xl px-4 py-3")}>
-          <div className="mb-1.5 font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
-            GROUNDED ANSWER
-          </div>
-          <div className="text-[13.5px] leading-[1.6] text-ink-2">{answer}</div>
-        </div>
-      )}
-
-      <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
-        <input
-          className="flex-1 font-mono text-[15px]"
-          placeholder='Ask about this result… "is this just 2020?" · "widen the spread" · "worst month"'
-          value={askText}
-          onChange={(e) => setAskText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submitAsk();
-          }}
-        />
-        <button
-          onClick={submitAsk}
-          disabled={asking}
-          className={clsx(
-            "rounded-[9px] border px-[13px] py-1.5 text-[13px] font-semibold",
-            asking
-              ? "cursor-wait border-line text-ink-4"
-              : "border-trust-border bg-trust-dim text-trust",
+          {run.verdict.refusal && (
+            <div className="mb-1 mt-[18px] text-center font-mono text-[10.5px] font-medium tracking-[.18em] text-ink-4">
+              — UNBLESSED OUTPUT · MACHINERY CHECK ONLY —
+            </div>
           )}
-        >
-          {asking ? "thinking…" : "↵"}
-        </button>
-      </div>
-      <Disclaimer />
+
+          <div className={clsx(run.verdict.refusal && "opacity-[.38]")}>
+            <MetricTiles run={run} retailMode={retailMode} />
+            <EquityChart run={run} retailMode={retailMode} />
+            <LadderDepthPanel run={run} retailMode={retailMode} />
+            <GreeksPanel run={run} retailMode={retailMode} />
+            <HonestyPanels run={run} retailMode={retailMode} />
+            <Recommendations run={run} retailMode={retailMode} />
+            <TradeLog run={run} retailMode={retailMode} />
+          </div>
+
+          {answer && (
+            <div className={clsx(PANEL, "mt-3.5 rounded-xl px-4 py-3")}>
+              <div className="mb-1.5 font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
+                GROUNDED ANSWER
+              </div>
+              <div className="text-[13.5px] leading-[1.6] text-ink-2">{answer}</div>
+            </div>
+          )}
+
+          <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
+            <input
+              className="flex-1 font-mono text-[15px]"
+              placeholder='Ask about this result… "is this just 2020?" · "widen the spread" · "worst month"'
+              value={askText}
+              onChange={(e) => setAskText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitAsk();
+              }}
+            />
+            <button
+              onClick={submitAsk}
+              disabled={asking}
+              className={clsx(
+                "rounded-[9px] border px-[13px] py-1.5 text-[13px] font-semibold",
+                asking
+                  ? "cursor-wait border-line text-ink-4"
+                  : "border-trust-border bg-trust-dim text-trust",
+              )}
+            >
+              {asking ? "thinking…" : "↵"}
+            </button>
+          </div>
+          <Disclaimer />
         </>
       )}
     </div>

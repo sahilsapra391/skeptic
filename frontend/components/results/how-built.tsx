@@ -20,48 +20,26 @@
 
 import Link from "next/link";
 
+import { pinLabel, shortDate } from "@/lib/format";
 import type { ProvenanceEvent, RunPayload, RunProvenance, SpecDraft } from "@/lib/types";
 import { STRUCTURE_LABEL, type Structure } from "@/lib/types";
 
-const PANEL = "rounded-[14px] border border-line bg-panel";
+import { PANEL } from "@/components/results/panel";
+
+// grid cell labels — smaller than the shared PANEL_TITLE by design
 const LABEL = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2018-01-03" → "Jan 3 ’18" (the run meta's date style). */
-function shortDate(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return `${MONTHS[m - 1]} ${d} ’${String(y).slice(2)}`;
-}
-
-/** Pinned-bar time → date, with the bar time when the pin is intraday.
- * Date-only pins format as plain dates — running them through a timezone
- * conversion would parse them as UTC midnight and slide the label back a
- * day in ET. */
-function pinLabel(iso: string): string {
-  const hasTime = iso.includes("T") && !iso.startsWith(iso.slice(0, 10) + "T00:00");
-  if (!hasTime) return shortDate(iso);
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "America/New_York",
-  }).format(d);
-}
+// module-level: formatter construction is expensive and this renders once
+// per exchange card
+const CLOCK_FMT = new Intl.DateTimeFormat("en-US", {
+  hour: "2-digit", minute: "2-digit", hour12: false,
+});
 
 function clockTime(iso?: string): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(d);
+  return CLOCK_FMT.format(d);
 }
 
 function duration(seconds: number): string {
@@ -78,8 +56,12 @@ interface Exchange {
 
 /** Pair answers to questions by event id, preserving chronology. A round's
  * questions arrive together (one asked_at) and the answers follow — each
- * answer attaches to the latest unanswered question sharing its id; an
- * answer with no matching question still renders (the record is the truth). */
+ * answer attaches to the EARLIEST unanswered question sharing its id, which
+ * is right in both real shapes: within one round answers arrive in question
+ * order (a latest-first match would reverse them when ids collide or are
+ * empty), and a re-asked id in a later round finds its own round's question
+ * because the earlier one is already answered. An answer with no matching
+ * question still renders — the record is the truth. */
 function pairConversation(events: ProvenanceEvent[]): Exchange[] {
   const out: Exchange[] = [];
   for (const ev of events) {
@@ -87,9 +69,7 @@ function pairConversation(events: ProvenanceEvent[]): Exchange[] {
       out.push({ question: ev });
       continue;
     }
-    const open = [...out].reverse().find(
-      (x) => x.question?.id === ev.id && !x.answer,
-    );
+    const open = out.find((x) => x.question?.id === ev.id && !x.answer);
     if (open) open.answer = ev;
     else out.push({ answer: ev });
   }
@@ -156,8 +136,8 @@ interface Box {
   value: string;
 }
 
-function fmtMoney(v: unknown): string | null {
-  return typeof v === "number" ? `$${v.toLocaleString("en-US")}` : null;
+function fmtMoney(v: number): string {
+  return `$${v.toLocaleString("en-US")}`;
 }
 
 function windowLabel(start?: string | null, end?: string | null): string {
@@ -174,7 +154,7 @@ function boxesFromDraft(draft: SpecDraft, costs?: Record<string, number>): Box[]
     { label: "TENOR", value: draft.dte === 0 ? "0 DTE" : `${draft.dte} DTE` },
     { label: "CADENCE", value: draft.cadence },
     { label: "SIZE", value: draft.size },
-    draft.capital != null ? { label: "CAPITAL", value: fmtMoney(draft.capital)! } : null,
+    draft.capital != null ? { label: "CAPITAL", value: fmtMoney(draft.capital) } : null,
     {
       label: "CLOCK",
       value: (draft.clock ?? "daily") + (draft.resolution === "finest" ? " · finest" : ""),
@@ -239,12 +219,19 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
   };
 
   const sel = b.legs?.[0]?.strike_selection;
-  const strike =
+  // multi-leg structures: the lead leg's strike is the dial the user chose
+  // (same convention as the spec screen); a width leg is named beside it so
+  // a spread never reads as a single-strike position
+  const width = b.legs?.find(
+    (l) => l.strike_selection?.method === "width_from_leg",
+  )?.strike_selection?.value;
+  const lead =
     sel?.method === "delta" && sel.value != null
       ? `.${Math.round(Math.abs(sel.value) * 100)}Δ`
       : sel?.method === "offset_pct" && sel.value != null
         ? `${Math.abs(sel.value * 100).toLocaleString("en-US")}% ${sel.value < 0 ? "below" : "above"} spot`
         : null;
+  const strike = lead && width != null ? `${lead} · $${width} wide` : lead;
 
   const exitParts: string[] = [];
   const ex = b.exit ?? {};
@@ -289,7 +276,7 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
         }
       : null,
     b.initial_capital != null
-      ? { label: "CAPITAL", value: fmtMoney(b.initial_capital)! }
+      ? { label: "CAPITAL", value: fmtMoney(b.initial_capital) }
       : null,
     {
       label: "CLOCK",
@@ -388,7 +375,11 @@ function MechanicsLine({ prov }: { prov: RunProvenance }) {
   }
   const total = (m.engine_s ?? 0) + (m.gauntlet_s ?? 0) + (m.verdict_s ?? 0);
   const parts: string[] = [];
-  if (total > 0) parts.push(`ran in ${duration(total)}`);
+  // any recorded duration gets the headline — a measured 0s is "<1s", not
+  // "no total" (the falsy-zero trap)
+  if (m.engine_s != null || m.gauntlet_s != null || m.verdict_s != null) {
+    parts.push(`ran in ${duration(total)}`);
+  }
   if (m.engine_s != null && m.gauntlet_s != null) {
     parts.push(`engine ${duration(m.engine_s)} · gauntlet ${duration(m.gauntlet_s)}`);
   }
@@ -416,9 +407,17 @@ function MechanicsLine({ prov }: { prov: RunProvenance }) {
   return (
     <div className={`${PANEL} px-5 py-4`}>
       <div className={`${LABEL} mb-1.5`}>RUN MECHANICS</div>
-      <div className="font-mono text-[12.5px] leading-[1.7] text-ink-2">
-        {parts.join(" · ")}
-      </div>
+      {parts.length ? (
+        <div className="font-mono text-[12.5px] leading-[1.7] text-ink-2">
+          {parts.join(" · ")}
+        </div>
+      ) : (
+        // a mechanics object whose fields are all unrenderable (partial old
+        // perf rows) still gets the honest line, never an empty panel
+        <div className="font-mono text-[12px] text-ink-4">
+          mechanics not recorded — the run predates measurement or did not complete
+        </div>
+      )}
     </div>
   );
 }
@@ -427,11 +426,12 @@ function MechanicsLine({ prov }: { prov: RunProvenance }) {
 export function HowBuilt({ run }: { run: RunPayload }) {
   const prov = run.provenance;
   if (!prov) {
+    // real runs always carry a record (stored or derived) — this is the
+    // safety net for demo runs and unreadable rows, so it claims nothing
     return (
       <div className={`${PANEL} mt-2 px-5 py-8 text-center`}>
         <div className="font-mono text-[12.5px] text-ink-4">
-          provenance not recorded for this run — it predates provenance
-          recording, or the stored record could not be read
+          no setup story is available for this run
         </div>
       </div>
     );
@@ -447,9 +447,11 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         How this was built
       </h2>
 
-      {/* origin/lineage note — for a plain derived record the in-place
-          conversation line below already discloses the same fact once */}
-      {prov.note && (!prov.derived || prov.parent_run_id) && (
+      {/* origin note — STORED records only. A derived record's note repeats
+          the disclosure the conversation slot below already owns (the exact
+          double-print a review caught), so derived rows render only their
+          lineage link, wording-free. */}
+      {prov.note && !prov.derived && (
         <div className={`${PANEL} px-5 py-3.5`}>
           <div className="font-mono text-[12.5px] leading-[1.6] text-ink-2">
             {prov.note}
@@ -465,6 +467,16 @@ export function HowBuilt({ run }: { run: RunPayload }) {
               </>
             )}
           </div>
+        </div>
+      )}
+      {prov.derived && prov.parent_run_id && (
+        <div className={`${PANEL} px-5 py-3.5`}>
+          <Link
+            href={`/runs/${prov.parent_run_id}`}
+            className="font-mono text-[12.5px] text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
+          >
+            view the original run ›
+          </Link>
         </div>
       )}
 
@@ -495,10 +507,13 @@ export function HowBuilt({ run }: { run: RunPayload }) {
       {exchanges === null ? (
         <div className="rounded-[14px] border border-dashed border-line px-5 py-4 text-center">
           <span className="font-mono text-[12px] text-ink-4">
-            {prov.derived
-              ? "conversation not captured (predates provenance recording)"
-              : prov.origin && prov.origin !== "user"
-                ? "no conversation — this run was started automatically"
+            {/* automatic origin outranks derived: an old auto run has no
+                conversation BECAUSE it was automatic, not because of when
+                it ran */}
+            {prov.origin && prov.origin !== "user"
+              ? "no conversation — this run was started automatically"
+              : prov.derived
+                ? "conversation not captured (predates provenance recording)"
                 : "no conversation was captured for this run"}
           </span>
         </div>
