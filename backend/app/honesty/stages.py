@@ -272,15 +272,22 @@ def monte_carlo(
 # ----------------------------------------------------- stage 4: sensitivity
 Setter = Callable[[StrategySpec, float], None]
 
+# The sweep's multiplicative grid: 0.1-spaced, 5 cells, specced value at
+# index 2. _condition_grid's floor guard and additive shape are built on
+# these three facts — change them TOGETHER or the "probed as widely as a
+# reference-scale threshold" equivalence the floors encode silently breaks.
+_SWEEP_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2]
+
 
 def _mutations(
     spec: StrategySpec,
 ) -> tuple[list[tuple[str, list[float], int, Setter]], str | None]:
-    """((name, values ±20% in 5 steps, base index, setter) per numeric
-    param present, conditions-disclosure note). The base index marks the
+    """((name, values in 5 steps — ±20%, or an absolute family-scale grid
+    for small condition thresholds, base index, setter) per numeric param
+    present, conditions-disclosure note). The base index marks the
     as-specced value inside `values`."""
     out: list[tuple[str, list[float], int, Setter]] = []
-    factors = [0.8, 0.9, 1.0, 1.1, 1.2]
+    factors = _SWEEP_FACTORS
 
     lead = spec.position.legs[0].strike_selection
     if lead.method is StrikeMethod.DELTA:
@@ -334,21 +341,124 @@ def _mutations(
     # (owner decisions 2026-07-08). Cap at the first 3 conditions (cost on
     # the serialized engine); SKIP sign-at-zero conditions (the sign IS the
     # signal — nothing to perturb, opaque units); rank forms sweep as 0-100.
+    # Small thresholds on wide scales sweep an absolute family-scale grid
+    # instead of ±20% (_COND_FAMILY_FLOORS), disclosed in the note.
     # Entry conditions only in v1 (exit/rung deferred, disclosed).
-    note = _append_condition_sweeps(spec, out, factors)
+    note = _append_condition_sweeps(spec, out)
     return out, note
+
+
+# Scale-aware sweep floors (PR #97 review follow-up, 2026-07-14). ±20% of a
+# SMALL threshold on a WIDE natural scale probes almost nothing: "skew_25d
+# > 0.3" would sweep 0.24…0.36 of a vol-point scale whose specced examples
+# run to 5+, and five near-identical cells read as a FALSE PLATEAU — the
+# honesty layer blessing exactly the fragile threshold it exists to catch.
+# Same collapse-guard idea as the dte whole-day fallback in _mutations:
+# when the multiplicative step (10% of |threshold| per cell) falls under
+# the family's floor, sweep an ABSOLUTE grid of floor-sized steps instead.
+# ONE rule grounds every floor: floor = 10% of the family's stated
+# reference magnitude, so a small threshold is probed exactly as widely as
+# a reference-scale threshold already is by ±20% — never finer. Keyed by
+# STRING so vocabulary that lands in a different merge order (ivx_zscore_1y,
+# spec v8 on PR #97) picks its floor up the moment it exists. The second
+# tuple slot is the family's lower bound (None = signed scale).
+_COND_FAMILY_FLOORS: dict[str, tuple[float, float | None]] = {
+    # 0-100 oscillators / percentiles / ranks — reference 20, the
+    # bottom-quintile edge (the canonical oversold / low-rank threshold)
+    "rsi": (2.0, 0.0),
+    "iv_percentile_1y": (2.0, 0.0),
+    "ivx_rank_1y": (2.0, 0.0),
+    "gex_rank_1y": (2.0, 0.0),
+    "dex_rank_1y": (2.0, 0.0),
+    "net_premium_rank_1y": (2.0, 0.0),
+    "market_tide_rank_1y": (2.0, 0.0),
+    "nope_rank_1y": (2.0, 0.0),
+    # z-scores — reference 2.5σ, the outer edge of the ±3σ usable band
+    "ivx_zscore_1y": (0.25, None),
+    # vol points (IV/HV units) — reference 5, the repo's own "skew > 5"
+    # F8 example (docs/HONESTY.md); signed scales, no bound
+    "skew_25d": (0.5, None),
+    "term_structure_slope": (0.5, None),
+    "hv_iv_spread_30d": (0.5, None),
+    # percent-of-price — reference 2.5% (a large intraday/pin distance)
+    "price_vs_sma_pct": (0.25, None),
+    "price_vs_ema_pct": (0.25, None),
+    "price_vs_vwap_pct": (0.25, None),
+    "max_pain_distance_pct": (0.25, None),
+    # drawdown % — reference 10, a correction's textbook definition
+    "drawdown_from_high_pct": (1.0, 0.0),
+    # vol levels (VIX/IVX/HV points) — reference 20, the same high-VIX
+    # regime line regime_sample already draws
+    "vix_level": (2.0, 0.0),
+    "ivx_level_30d": (2.0, 0.0),
+    "realized_vol_20d": (2.0, 0.0),
+    # flow ratio — reference 1.0, put/call parity
+    "put_call_flow_ratio": (0.1, 0.0),
+    # DELIBERATELY absent: sma/ema (absolute price — % of price IS the
+    # scale) and the *_level vendor-unit families (nonzero thresholds are
+    # parser-refused; inventing an absolute step for units we refused to
+    # let users state would be the invented-convention sin ourselves).
+}
+
+# Every indicator must appear in the floors table OR here, on purpose —
+# a test enforces the partition so new vocabulary can't silently fall
+# back to ±20% without someone deciding it should (review finding: the
+# typo guard alone only checked the table→enum direction).
+_COND_FLOOR_EXEMPT: frozenset[str] = frozenset({
+    "sma", "ema",              # absolute price — % of price IS the scale
+    "ema_cross_state",         # categorical state, not a threshold scale
+    "gex_level", "dex_level",  # vendor units, raw thresholds parser-refused
+    "net_premium_level", "market_tide_level", "nope_level",
+})
+
+
+def _condition_grid(
+    base: float, indicator: str
+) -> tuple[list[float], int, bool]:
+    """The 5 threshold cells for one condition: (values, base index,
+    floor-engaged flag). ±20% multiplicative wherever that moves the
+    threshold by at least the family floor per cell; when the floor binds,
+    an absolute grid of ±2 floor-steps, shifted UP by whole steps if it
+    would cross the family's lower bound (mirroring the dte guard — the
+    specced value always stays ON the grid). Both paths produce exactly 5
+    cells and one classifier pass: the sweep's engine-run cost and its
+    multiple-testing arithmetic never change with the grid shape."""
+    floor, lo = _COND_FAMILY_FLOORS.get(indicator, (0.0, None))
+    is_rank = indicator.endswith("_rank_1y") or indicator == "iv_percentile_1y"
+    # _SWEEP_FACTORS are 0.1-spaced, so the multiplicative per-cell step
+    # is 10% of |base| (0.1 literal: deriving it from float subtraction
+    # of the factors makes 5×0.1 land just under a 0.5 floor).
+    # A threshold AT or BELOW a bounded family's lower edge is outside
+    # the scale the floor was grounded on (e.g. a negative RSI) — keep
+    # the pre-floor multiplicative behavior rather than shift the grid
+    # past the specced value (review finding: shift > 2 would push
+    # base_index negative and mislabel the as-specced cell downstream).
+    if abs(base) * 0.1 >= floor or (lo is not None and base <= lo):
+        vals = [base * f for f in _SWEEP_FACTORS]
+        if is_rank:
+            vals = [min(100.0, max(0.0, v)) for v in vals]
+        return [round(v, 4) for v in vals], 2, False
+    vals = [base + (k - 2) * floor for k in range(5)]
+    shift = 0
+    if lo is not None and vals[0] < lo:
+        shift = math.ceil((lo - vals[0]) / floor)
+        vals = [v + shift * floor for v in vals]
+    # base > lo (guarded above) and value == 0 is sign-skipped, so
+    # shift ≤ 2 and the specced value sits at index 2 - shift ≥ 0
+    return [round(v, 4) for v in vals], 2 - shift, True
 
 
 def _append_condition_sweeps(
     spec: StrategySpec, out: list[tuple[str, list[float], int, Setter]],
-    factors: list[float],
 ) -> str | None:
     """Add up to 3 entry-condition threshold sweeps to `out`; return a
-    disclosure note for the conditions that were skipped or capped."""
+    disclosure note for the conditions that were skipped or capped, and
+    for any swept on an absolute family-scale grid instead of ±20%."""
     conds = spec.entry.conditions
     swept = 0
     capped = 0  # eligible conditions left unswept by the 3-cap
     skipped_sign: list[str] = []
+    floored: list[str] = []  # swept on an absolute family-scale grid
     used_names: set[str] = set()
     # examine EVERY condition — a sign test past the cap must still be
     # disclosed (review finding F8 #1: silently omitting an untested gate
@@ -362,17 +472,22 @@ def _append_condition_sweeps(
         if swept >= 3:
             capped += 1
             continue
-        is_rank = cond.indicator.value.endswith("_rank_1y") or \
-            cond.indicator.value == "iv_percentile_1y"
-        base = cond.value
-        vals = [round(base * f, 4) for f in factors]
-        if is_rank:
-            vals = [round(min(100.0, max(0.0, x)), 4) for x in vals]
+        name = cond.indicator.value
+        vals, base_index, floor_hit = _condition_grid(cond.value, name)
+        if floor_hit:
+            # disclosure numerals must stay grounded (guardrail #4): the
+            # specced value and the grid ENDPOINTS are report values the
+            # validator can find; the step itself might not be. The
+            # operator + specced value attribute the grid when a spec
+            # carries the same indicator twice (the max-pain band pair).
+            floored.append(
+                f"{name} {cond.operator.value} {cond.value:g} swept "
+                f"{vals[0]:g}…{vals[-1]:g}"
+            )
 
         # unique sweep name: indicator, else +operator, else +index — two
         # conditions can share an indicator (the max-pain band pair) and a
         # degenerate spec can share both (review #2)
-        name = cond.indicator.value
         sweep_name = f"cond_{name}"
         if sweep_name in used_names:
             sweep_name = f"cond_{name}_{cond.operator.value}"
@@ -385,10 +500,16 @@ def _append_condition_sweeps(
                 s.entry.conditions[idx].value = v
             return _set
 
-        out.append((sweep_name, vals, 2, _make_setter(i)))
+        out.append((sweep_name, vals, base_index, _make_setter(i)))
         swept += 1
 
     parts: list[str] = []
+    if floored:
+        parts.append(
+            f"{', '.join(floored)} — absolute family-scale steps (a ±20% "
+            "probe of a threshold this small spans too little of the "
+            "indicator's range to test it)"
+        )
     if skipped_sign:
         uniq = sorted(set(skipped_sign))
         parts.append(
@@ -448,7 +569,8 @@ def _sweep_base_spec(
 def sensitivity(
     spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
 ) -> Sensitivity:
-    """Perturb each numeric parameter ±20% in 5 steps, re-run the engine,
+    """Perturb each numeric parameter in 5 steps (±20%, or an absolute
+    family-scale grid for small condition thresholds), re-run the engine,
     classify the optimum (plateau/cliff). At the 5-min clock the sweep also
     nudges the ENTRY TIME ±15/±30 minutes (D2d, per the brief): an edge that
     only exists at exactly one minute of the day is noise — classified with
@@ -458,7 +580,14 @@ def sensitivity(
     sweeps: list[ParamSweep] = []
     for name, values, base_index, setter in mutations:
         sharpes: list[float | None] = []
+        # a clamped grid can repeat a cell (rank base ≥ ~91 pins two cells
+        # at 100) — same spec + same data + same seed is deterministic, so
+        # reuse the result instead of re-running the serialized engine
+        seen: dict[float, float | None] = {}
         for v in values:
+            if v in seen:
+                sharpes.append(seen[v])
+                continue
             mutated = copy.deepcopy(sweep_spec)
             setter(mutated, v)
             try:
@@ -466,6 +595,7 @@ def sensitivity(
                 sharpes.append(_sharpe(_returns(r.equity)))
             except Exception:
                 sharpes.append(None)
+            seen[v] = sharpes[-1]
         sweeps.append(
             ParamSweep(
                 name=name,
