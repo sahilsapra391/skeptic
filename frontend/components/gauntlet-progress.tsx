@@ -18,7 +18,7 @@ const RETAIL_STAGES: { t: string; n: string }[] = [
   { t: "Test on data it never saw", n: "last 30% of history kept hidden" },
   { t: "Test each time period", n: "rolling ~2-month windows" },
   { t: "Reshuffle the trades 1,000×", n: "how much was luck?" },
-  { t: "Nudge the settings ±20%", n: "does it survive small changes?" },
+  { t: "Nudge the settings", n: "does it survive small changes?" },
   { t: "The honest verdict", n: "grounded in the numbers above" },
 ];
 

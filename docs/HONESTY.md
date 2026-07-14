@@ -820,6 +820,43 @@ Rules (owner decisions 2026-07-08):
   so absence is never misread as a free pass. The RANK forms
   (gex_rank_1y etc.) ARE real 0-100 thresholds and sweep normally once
   they clear the 126-observation floor.
+- **Small thresholds sweep an absolute family-scale grid (2026-07-14,
+  PR #97 review follow-up).** ±20% of a small threshold on a wide
+  natural scale probes almost nothing — "ivx_zscore_1y > 0.3" would
+  sweep a 0.12σ band of a ±3σ scale, and five near-identical Sharpes
+  read as a FALSE PLATEAU: the classifier blessing exactly the fragile
+  threshold the sweep exists to catch. When the multiplicative step
+  (10% of |threshold| per cell) falls under the indicator family's
+  floor, the sweep switches to an absolute grid of ±2 floor-steps
+  around the specced value, shifted up by whole steps at a bounded
+  family's lower edge (the dte whole-day guard's pattern — the specced
+  value always stays ON the grid). ONE rule grounds every floor:
+  floor = 10% of the family's stated reference magnitude, so a small
+  threshold is probed exactly as widely as a reference-scale one
+  already is — never finer. References: 0-100 ranks/oscillators → 20
+  (the bottom-quintile edge); z-scores → 2.5σ (outer edge of the ±3σ
+  usable band); vol points → 5 (this doc's own "skew > 5" example);
+  percent-of-price → 2.5%; drawdown → 10%; VIX-style levels → 20 (the
+  regime line regime_sample already draws); flow ratio → 1.0 (parity).
+  SMA/EMA keep pure ±20% (percent-of-price IS the scale of an absolute
+  price level), and the vendor-unit *_level families get NO invented
+  floor — their raw thresholds are parser-refused, and fabricating an
+  absolute step for units we refused to let users state would be the
+  invented-convention sin ourselves. The multiple-testing tax is
+  untouched: same 5 cells, same classifier, identical engine-run
+  count, and the sweep never re-centers on a better neighbor — a
+  better neighbor stays a recommendation that re-enters the gauntlet
+  as a NEW trial. Disclosed per condition in conditions_note
+  ("skew_25d > 0.5 swept -0.5…1.5 — absolute family-scale steps …"):
+  the operator + specced value attribute the grid when one indicator
+  appears twice (the max-pain band pair), and every numeral is the
+  specced value or a grid ENDPOINT, so verdict grounding (guardrail
+  #4) always finds them in the report. A threshold AT or BELOW a
+  bounded family's lower edge (e.g. a negative RSI — schema-legal,
+  scale-nonsensical) keeps the pre-floor multiplicative sweep: the
+  floor was grounded on the family's scale, and shifting a grid past
+  the specced value would take the as-specced cell off the grid
+  (review finding, regression-tested).
 - **Capped at the first 3 entry conditions.** Each swept condition adds
   5 engine re-runs on the serialized, OOM-sensitive engine; 3 covers
   the overfit surface of nearly every real spec (secondary filters

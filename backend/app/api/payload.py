@@ -197,9 +197,9 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
 
 def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
     """What would improve the strategy — computed ONLY from this run's own
-    gauntlet numbers (the ±20% sweeps re-ran the real engine), never from
-    opinion. Guardrail #4 applies: every number below exists in the report.
-    `retail` swaps the register, never the numbers."""
+    gauntlet numbers (the sensitivity sweeps re-ran the real engine), never
+    from opinion. Guardrail #4 applies: every number below exists in the
+    report. `retail` swaps the register, never the numbers."""
     sample = report.regime_sample
     if report.trust.label == "insufficient_evidence":
         plural = "s" if sample.trades != 1 else ""
@@ -238,7 +238,7 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
                 )
             else:
                 recs.append(
-                    f"In this run's ±20% sweep, {name} {_param_label(sweep.name, best_v)} "
+                    f"In this run's sensitivity sweep, {name} {_param_label(sweep.name, best_v)} "
                     f"beat the specced {_param_label(sweep.name, base_v)}: backtest Sharpe "
                     f"{base_s:.2f} → {best_s:.2f}. Re-run with it — the change re-enters "
                     "the gauntlet as a new trial."
@@ -318,7 +318,7 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
             )
             if retail
             else (
-                "No parameter in the ±20% sweep beat the specced values by a meaningful "
+                "No parameter in the sensitivity sweep beat the specced values by a meaningful "
                 "margin — the configuration already sits on its local plateau. The "
                 "highest-value improvement is more history, not more tuning."
             )

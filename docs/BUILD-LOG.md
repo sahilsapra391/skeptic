@@ -1960,3 +1960,121 @@ PulsingDots, library cards mark below-standard samples (guardrail #5),
 raw-dict bar peek before report validation on the hot read path, and a
 CLAUDE.md determinism note (engine deterministic; the verdict gate is a
 view-time policy). 618 tests.
+
+## F8 follow-up — scale-aware condition-sweep floors (2026-07-14)
+
+WHAT: the F8 threshold sweep perturbed every entry-condition threshold
+±20% multiplicatively — for a SMALL threshold on a WIDE natural scale
+that probes almost nothing ("ivx_zscore_1y > 0.3" sweeps a 0.12σ band
+of a ±3σ scale; same for small skew_25d or max_pain_distance_pct), and
+five near-identical Sharpes read as a FALSE PLATEAU — the classifier
+blessing exactly the fragile threshold it exists to catch. Raised in
+the PR #97 review (ivx_zscore_1y); pre-existing class, fixed here.
+HOW: _COND_FAMILY_FLOORS (stages.py) + _condition_grid — when
+10%·|threshold| per cell falls under the family floor, the sweep
+switches to an absolute grid of ±2 floor-steps around the specced
+value, shifted up whole steps at a bounded family's lower edge (the
+dte whole-day guard's pattern; base always stays ON the grid, at a
+recorded base_index). One grounding rule, not N invented constants:
+floor = 10% of the family's stated reference magnitude (ranks → 20,
+z-scores → 2.5σ, vol points → 5, percent-of-price → 2.5%, drawdown →
+10%, vol levels → 20 = the regime line, ratio → 1.0). Table keyed by
+STRING so ivx_zscore_1y (spec v8, PR #97) picks its floor up whichever
+branch merges first. SMA/EMA keep pure ±20%; vendor-unit *_level
+families get NO invented floor (raw thresholds are parser-refused).
+Disclosed per condition in conditions_note with the grid ENDPOINTS as
+the only numerals (verdict grounding, guardrail #4, always finds them
+in the report's sweep values). TAX UNCHANGED: same 5 cells, same
+plateau/cliff classifier, identical engine-run count, never re-centers
+on a better neighbor (a better neighbor stays a NEW-trial
+recommendation). No engine/model files touched — daily digests
+bit-identical (the sweep is a gauntlet stage).
+TESTS: 11 new hand-computed (test_condition_sensitivity.py) — floored
+grids for small skew (−0.5…1.5) / max-pain (0.5…1.5) / negative base
+(−1.5…−0.5), boundary threshold (10%·5 = the 0.5 floor exactly) stays
+multiplicative, bounded shift for rank 2 → [0,2,4,6,8] base_index 1
+and rsi 3 → [1,3,5,7,9], low rank in-bounds no-shift, floor-table
+typo guard (every key a real Indicator, ivx_zscore_1y excepted until
+v8 lands, opaque levels absent), note-numeral grounding against the
+verdict validator's own regex, three-part note composition. All 13
+pre-existing sweep tests pass byte-identical (rsi 30 → [24,27,30,33,36],
+rank 90 clamp) — floors bind only where ±20% was degenerate.
+REVIEW (independent 8-angle pass, this PR): 1 BLOCKER + 3 MAJOR fixed,
+2 altitude findings deferred-with-disclosure. BLOCKER (two angles
+executed it live): a negative threshold on a bounded family (schema
+allows it — Condition.value is unconstrained) drove the lower-edge
+shift past the specced value → negative base_index → payload's
+negative indexing reported a FABRICATED as-specced value, no ring on
+the grid, IndexError/500 at large negatives → thresholds at/below the
+family's lower edge now keep the pre-floor multiplicative path,
+regression-tested. MAJORS: retail verdict caveat framed the whole
+note as "We couldn't stress-test every entry rule:" — false for
+floored parts (rules that WERE swept, wider) → reworded "Notes from
+stress-testing your entry rules:"; "±20%" methodology claims went
+stale on every describing surface (recommendations, empty-recs line,
+gauntlet previews, runs.py pending-sweep copy, frontend hint/titles/
+axis captions) → neutral accurate wording ("sensitivity sweep",
+"nudged around your values", axis "lower/higher"); floored
+disclosures were keyed by bare indicator name — unattributable for
+the max-pain band pair → operator + specced value in each entry
+(numerals still grounded: specced value ∈ values). CLEANUPS: dead
+floor<=0 disjunct dropped; _SWEEP_FACTORS hoisted module-level (the
+0.1-step/5-cell coupling documented at the constant, drift risk
+named); duplicate clamped cells (rank base ≥ ~91 pins two cells at
+100) now reuse the deterministic result instead of re-running the
+serialized engine; grounding test now calls the SHIPPING
+validate_numbers/grounding_set instead of a hand-rolled set; floor
+table completeness enforced — every Indicator must hold a floor or an
+explicit _COND_FLOOR_EXEMPT listing (typo guard alone was
+one-directional). DEFERRED, disclosed: the delta sweep retains the
+same small-base under-probing class (0.05Δ sweeps ±0.01 with
+clamp-collapse at 0.03) — own pass, needs strike-granularity design;
+_classify blesses an all-identical-Sharpe sweep as plateau ('or
+valid' fallback → median == peak) — pre-existing classifier hole the
+floors narrow but can't close, owner call on "sweep uninformative"
+disclosure semantics. 628 tests green; canary flagged; frontend
+lint+typecheck clean.
+## UX Chunk C — Data Observatory regroup: keep everything, declutter (2026-07-14)
+
+WHAT: the Observatory's ~14-panel wall regrouped into five collapsible
+groups, NO data removed — every fact reachable within one expand:
+(1) COVERAGE AT A GLANCE (open by default): days-on-record, heartbeat,
+source chips + the per-ticker resolution-mix visual; (2) EOD CHAINS &
+HISTORY: dolthub/yahoo/close-chain lanes, underlying + per-ticker chain
+windows, chain-quality field completeness + spread chart; (3) INTRADAY &
+MINUTE LAKES: alpaca/5-min-NBBO/recorder lanes + rows, UW 1-min (moved
+from new-sources); (4) SIGNAL SOURCES: IVX/HV, vol surfaces, dealer
+positioning, flow/pin, in-house continuations (seam disclosure now points
+to the health group for x-val), remaining new-sources rows; (5) DATA
+HEALTH & INCIDENTS: cross-validation pairs, open quality flags +
+quarantined count, named blind spots, collection wants. Group headers
+carry one-line headline-number summaries; anything flagged lifts a warn
+badge onto its collapsed header (weak chain fields → 2, stalled recorder
+→ 3, open flags / stale collector → 5). Expand state persists in
+localStorage (skeptic-observatory-groups); groups collapsed by default
+except (1). Lane/PANEL patterns reused; typography rails untouched; the
+page-level collector-stale banner stays above the groups.
+VERIFIED IN BROWSER against a synthetic coverage stub (layout-only dev
+fixture exercising every branch: all lanes, weak volume field, stale
+recorder, open flag): first paint = five headers + coverage visual;
+every original fact confirmed present via full-page text audit; badges
+visible while collapsed; expand state survives reload.
+REVIEW (independent 5-angle pass, fact-preservation at full depth): 7
+CONFIRMED fixed — the UW 1-min line vanished when new_sources existed
+without uw_minute (the one fact-loss the audit found; old per-ticker
+"pending" announcement restored); the EOD badge scanned all tickers but
+the CHAIN QUALITY section gated on SPY only (now any-ticker, spread
+chart SPY-optional-safe); the intraday "recorder stalled" badge pointed
+at a group without the staleness detail (quote-recorder lane now names
+it); localStorage hydration accepted arrays/non-boolean values
+(first-click swallow — sanitized to boolean-valued plain objects);
+weakChainFields deref could crash the page on a malformed source entry
+(null-safe); the chain-quality warn rule (field list + <0.5) was copied
+between badge and rows (one shared constant pair now); group ids were
+stringly typed (GroupId union — a typo'd id fails the compile). Plus
+DRY: TICKERS + LANE_GRID constants, aria-controls/aria-hidden on the
+disclosure buttons. Refuted: PANEL unification (page-local values are
+deliberate, settings page precedent), table-driven signal sections
+(per-family t0/notes are honest variance), summary memoization (120s
+poll). Post-fix stub re-verify: pending line renders, staleness inside
+the badged group, persistence intact.

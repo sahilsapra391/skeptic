@@ -109,20 +109,23 @@ def run_gauntlet(
     on_stage(4, "parameter sensitivity sweep", _mc_preview(mc))
     sens = stages.sensitivity(spec, store, intraday)
 
+    # "nudged around your values", not "±20%": small condition thresholds
+    # sweep an absolute family-scale grid wider than ±20% (stages.py
+    # _COND_FAMILY_FLOORS) — the preview must not misstate the probe
     if sens.verdict == "plateau":
         sens_preview = _both(
-            "±20% nudges: the optimum is a plateau",
-            "settings nudged ±20%: stable — small changes don't wreck it",
+            "parameter nudges: the optimum is a plateau",
+            "settings nudged around your values: stable — small changes don't wreck it",
         )
     elif sens.verdict == "cliff":
         sens_preview = _both(
-            "±20% nudges: the optimum is a cliff",
-            "settings nudged ±20%: fragile — only works at exactly your settings",
+            "parameter nudges: the optimum is a cliff",
+            "settings nudged around your values: fragile — only works at exactly your settings",
         )
     else:
         sens_preview = _both(
-            "±20% nudges: not classifiable",
-            "settings nudged ±20%: not enough data to judge",
+            "parameter nudges: not classifiable",
+            "settings nudged around your values: not enough data to judge",
         )
     on_stage(5, "deflated Sharpe + regime guardrail + verdict", sens_preview)
     dsr = stages.deflated_sharpe(result, trials)
