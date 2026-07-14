@@ -20,7 +20,7 @@ import type { NullableSeriesPoint, RunPayload, SeriesPoint } from "@/lib/types";
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { Hint } from "@/components/hint";
 import { HowBuilt } from "@/components/results/how-built";
-import { NotebookExport } from "@/components/results/notebook-export";
+import { ExportActions } from "@/components/results/export-actions";
 import { PANEL, PANEL_TITLE } from "@/components/results/panel";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
 
@@ -1062,7 +1062,7 @@ export function ResultsView({
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-[18px] text-[13px] text-ink-4 hover:text-ink-3"
+          className="mb-[18px] text-[13px] text-ink-4 hover:text-ink-3 print:hidden"
         >
           ‹ {backLabel ?? "back"}
         </button>
@@ -1075,7 +1075,7 @@ export function ResultsView({
             {run.demo && <DemoBadge />}
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 gap-2">
+        <div className="ml-auto flex shrink-0 gap-2 print:hidden">
           {onEditSpec && (
             <button
               onClick={onEditSpec}
@@ -1105,9 +1105,9 @@ export function ResultsView({
               {view === "story" ? "Results" : "How this was built"}
             </button>
           )}
-          {/* parity Tier 1: the run as an executable notebook — real runs
-              only; a demo id has no stored run to export */}
-          {!run.demo && <NotebookExport runId={run.id} />}
+          {/* parity Tier 1 exports: Save PDF prints this screen; the
+              executable notebook lives behind the menu (real runs only) */}
+          <ExportActions runId={run.id} demo={run.demo} />
           {onNew && (
             <button
               onClick={onNew}
@@ -1162,7 +1162,7 @@ export function ResultsView({
             </div>
           )}
 
-          <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
+          <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg print:hidden">
             <input
               className="flex-1 font-mono text-[15px]"
               placeholder='Ask about this result… "is this just 2020?" · "widen the spread" · "worst month"'

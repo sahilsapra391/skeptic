@@ -153,7 +153,7 @@ export function NavRail() {
     <nav
       style={{ width }}
       className={clsx(
-        "relative flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5",
+        "relative flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5 print:hidden",
         !dragging && "transition-[width] duration-150",
         open ? "px-2.5" : "items-center",
         dragging && "select-none",

@@ -275,12 +275,19 @@ export function replayRun(id: string): Promise<{ run_id: string; parent: string 
 
 /** Parity Tier 1: the completed run as an executable .ipynb. Returns the
  * exact text the backend built — parsing and re-stringifying it here would
- * reformat the notebook, so the caller saves the raw bytes. */
+ * reformat the notebook, so the caller saves the raw bytes. (Raw text is
+ * why this can't ride request<T>, which always json()s the body.) */
 export async function fetchNotebook(id: string): Promise<string> {
   const res = await fetch(`/api/runs/${id}/notebook`, { cache: "no-store" });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
-    throw new ApiError(res.status, formatDetail(body.detail ?? body));
+    const detail = formatDetail(body.detail ?? body);
+    // an HTML or empty error body (edge proxy 502) formats to "{}" —
+    // name the status instead of showing the user a brace pair
+    throw new ApiError(
+      res.status,
+      detail === "{}" ? `export failed (HTTP ${res.status})` : detail,
+    );
   }
   return res.text();
 }
