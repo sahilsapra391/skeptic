@@ -54,9 +54,9 @@ function demoEligible(path: string[]): boolean {
   // ask on a REAL run must surface the backend's honest 501 (missing key or
   // stats bundle), never a canned demo answer
   if (path[0] === "runs" && path[2] === "ask" && !path[1]?.startsWith("demo-")) return false;
-  // a notebook export exists only on the backend — the demo fallback would
-  // mask "backend down" as "not built yet"
-  if (path[0] === "runs" && path[2] === "notebook") return false;
+  // run exports (notebook/report) exist only on the backend — the demo
+  // fallback would mask "backend down" as "not built yet"
+  if (path[0] === "runs" && (path[2] === "notebook" || path[2] === "report")) return false;
   return true;
 }
 
@@ -110,9 +110,18 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
       return demoResponse(req, path, body);
     }
     const payload = await upstream.text();
+    const headers: Record<string, string> = {
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+    };
+    // run exports ride on these: the filename for saves, and the report's
+    // locked-down CSP (defense-in-depth the proxy must not strip)
+    for (const h of ["content-disposition", "content-security-policy"]) {
+      const v = upstream.headers.get(h);
+      if (v) headers[h] = v;
+    }
     return new NextResponse(payload, {
       status: upstream.status,
-      headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
+      headers,
     });
   } catch (err) {
     // backend unreachable — run pipeline may demo; data routes stay honest

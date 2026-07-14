@@ -7,8 +7,10 @@
  * is applied for the duration of the dialog, and the document title is
  * set to a filename shape (browsers default the saved PDF's name to it).
  *
- * Behind the menu: the executable .ipynb download — the run's story with
- * a pinned reproduce, for people who want to re-run the numbers. Demo
+ * Behind the menu, the two stored-run exports (both #100 endpoints):
+ * Report (HTML) — the run's story as a standalone page anyone can open,
+ * served inline and opened in a new tab; and Notebook (.ipynb) — the
+ * same story with a pinned reproduce, for re-running the numbers. Demo
  * runs get no menu: there is no stored run to export, while Save PDF
  * still works (it prints whatever the screen honestly shows).
  *
@@ -156,6 +158,50 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
             role="menu"
             className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-[240px] rounded-[10px] border border-line bg-raised-2 p-1.5 shadow-[var(--shadow-pop)]"
           >
+            {/* a plain anchor, deliberately: the proxy owns the bearer token
+                server-side and the endpoint serves inline, so target=_blank
+                navigation renders the report with zero popup-blocker
+                exposure — no fetch, no blob, no busy state */}
+            <a
+              role="menuitem"
+              href={`/api/runs/${runId}/report`}
+              target="_blank"
+              rel="noopener noreferrer"
+              // the navigation proceeds either way; the menu honors the same
+              // busy pin as every other close path, and auxclick covers a
+              // middle-click's background-tab open
+              onClick={() => {
+                if (!busy) setOpen(false);
+              }}
+              onAuxClick={() => {
+                if (!busy) setOpen(false);
+              }}
+              // menuitem semantics: Space activates like the sibling button
+              onKeyDown={(e) => {
+                if (e.key === " ") {
+                  e.preventDefault();
+                  e.currentTarget.click();
+                }
+              }}
+              className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[12.5px] font-medium text-ink-2 hover:bg-raised-3 hover:text-ink"
+              title="the run's story as a standalone page — opens in a new tab, prints clean, needs no app"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3.5 2h6l3 3v9h-9z" />
+                <path d="M9.5 2v3h3" />
+                <path d="M5.5 8.5h5M5.5 11h5" />
+              </svg>
+              Report (HTML)
+            </a>
             <button
               role="menuitem"
               onClick={downloadNotebook}

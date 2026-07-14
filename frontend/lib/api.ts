@@ -275,8 +275,9 @@ export function replayRun(id: string): Promise<{ run_id: string; parent: string 
 
 /** Parity Tier 1: the completed run as an executable .ipynb. Returns the
  * exact text the backend built — parsing and re-stringifying it here would
- * reformat the notebook, so the caller saves the raw bytes. (Raw text is
- * why this can't ride request<T>, which always json()s the body.) */
+ * reformat the notebook, which is why this can't ride request<T> (it
+ * always json()s the body). The HTML report needs no fetch helper: it's
+ * served inline and the menu links straight at the proxy path. */
 export async function fetchNotebook(id: string): Promise<string> {
   const res = await fetch(`/api/runs/${id}/notebook`, { cache: "no-store" });
   if (!res.ok) {
