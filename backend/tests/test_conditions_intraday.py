@@ -66,6 +66,20 @@ class TestVwapUnit:
                          value=-1, timeframe=Timeframe.FIVE_MIN)
         assert not evaluate_condition(_FakeBar([100.0, 99.0, 98.0], None), cond)
 
+    def test_non_finite_vwap_is_unevaluable(self) -> None:
+        # an inf vwap launders into pct of exactly -100.0 — "below VWAP"
+        # must refuse on a poisoned session anchor, never fire
+        cond = Condition(indicator=Indicator.PRICE_VS_VWAP_PCT, operator=Operator.LT,
+                         value=-1, timeframe=Timeframe.FIVE_MIN)
+        assert not evaluate_condition(_FakeBar([100.0, 99.0, 98.0], float("inf")), cond)
+        assert not evaluate_condition(_FakeBar([100.0, 99.0, 98.0], float("nan")), cond)
+
+    def test_non_finite_price_is_unevaluable(self) -> None:
+        # an inf sampled last makes pct +inf: "above VWAP" must refuse
+        cond = Condition(indicator=Indicator.PRICE_VS_VWAP_PCT, operator=Operator.GT,
+                         value=1, timeframe=Timeframe.FIVE_MIN)
+        assert not evaluate_condition(_FakeBar([100.0, 99.0, float("inf")], 99.0), cond)
+
 
 class TestValidation:
     BASE = {

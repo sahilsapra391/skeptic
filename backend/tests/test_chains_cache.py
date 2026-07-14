@@ -67,6 +67,41 @@ def test_cache_hit_and_stale_schema_rebuild(loader_env: dict[str, Any], tmp_path
     assert third.loc[0, "greeks_source"] == "computed"
 
 
+def test_non_finite_rows_are_honest_absences(loader_env: dict[str, Any],
+                                             monkeypatch: pytest.MonkeyPatch) -> None:
+    # every evaluability surface (the staleness/coverage refusals, the
+    # composer's rank unlock dates) reasons from the store's *_dates
+    # lists — a date must never point at a value the engine refuses.
+    # Loaders drop NaN, but pandas' NaN-only filters keep ±inf.
+    daily = pd.DataFrame({
+        "date": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
+        "open": [99.5, 100.5, 101.0], "close": [100.0, 101.0, 102.0],
+    })
+    vix = pd.DataFrame({
+        "date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+        "close": [14.5, float("inf")],
+    })
+    monkeypatch.setattr(chains, "_underlying_frames", lambda _t: (daily, vix, None))
+    d2, d3, d4 = (pd.Timestamp(f"2024-01-0{n}").date() for n in (2, 3, 4))
+    # ivx and hv load inside ONE guard — stub both or the except zeroes both
+    monkeypatch.setattr(chains.ivol_analytics, "load_ivx_30d",
+                        lambda _s3, _t: {d2: 0.20, d3: float("inf"), d4: float("nan")})
+    monkeypatch.setattr(chains.ivol_analytics, "load_hv_30d", lambda _s3, _t: {})
+    monkeypatch.setattr(chains.gex_signals, "load_dealer_exposure",
+                        lambda _s3, _t: ({d2: 1.5e9, d3: float("-inf")}, {d2: -2.0e9}))
+
+    store = chains._build_market_store("SPY")
+    assert store.ivx_dates == [d2]
+    assert store.ivx_30d == {d2: 0.20}
+    assert store.gex_dates == [d2]
+    assert store.net_gex == {d2: 1.5e9}
+    assert store.dex_dates == [d2]
+    # vix_dates is rebuilt WITH its filtered values — a poisoned session
+    # must not leave a date pointing at a missing key
+    assert store.vix_dates == [d2]
+    assert store.vix_close == {d2: 14.5}
+
+
 def test_store_carries_widened_quote(loader_env: dict[str, Any],
                                      monkeypatch: pytest.MonkeyPatch) -> None:
     daily = pd.DataFrame({

@@ -64,9 +64,9 @@ def _trailing_zscore(history: list[float], min_obs: int) -> float | None:
 def _finite(value: float | None) -> float | None:
     """Gate for scalar vendor reads (the *_level/spread/ratio branches):
     a non-finite read becomes None. NaN would fall through _compare as a
-    silent False on every operator, and ±inf FABRICATES a threshold cross
-    ("IVX above 25" is True at +inf). A poisoned row is unevaluable, never
-    a signal — the same refusal _trailing_rank applies window-wide."""
+    silent False on the scalar operators, and ±inf FABRICATES a threshold
+    cross ("IVX above 25" is True at +inf). A poisoned row is unevaluable,
+    never a signal — the same refusal _trailing_rank applies window-wide."""
     if value is None or not math.isfinite(value):
         return None
     return value
@@ -102,7 +102,10 @@ def _series_pair(values: list[float], op: Operator, threshold: float) -> bool:
 
 
 def _tail_values(series: pd.Series, n: int = 2) -> list[float]:
-    vals = [float(v) for v in series.tail(n).tolist() if not math.isnan(float(v))]
+    # non-finite, not just NaN: an inf indicator value surviving into the
+    # pair fabricates every GT/crosses_above signal (warmup NaNs and
+    # poisoned infs drop the same way — the pair is the last real values)
+    vals = [float(v) for v in series.tail(n).tolist() if math.isfinite(float(v))]
     return vals
 
 
@@ -144,10 +147,15 @@ def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
         off_stamp_live = False
         px = closes[-1]
     if cond.indicator is Indicator.PRICE_VS_VWAP_PCT:
-        vwap = view.intraday_vwap()
+        # _finite, not just <= 0: an inf vwap launders into a FINITE
+        # pct of exactly -100.0 ("below VWAP" fabricated); an inf px
+        # makes pct +inf — the second gate refuses that side
+        vwap = _finite(view.intraday_vwap())
         if vwap is None or vwap <= 0:
             return False
         pct = (px / vwap - 1.0) * 100.0
+        if not math.isfinite(pct):
+            return False
         return _compare(pct, cond.operator, cond.value)
 
     s = pd.Series(closes, dtype=float)
@@ -195,7 +203,7 @@ def _live_price_tail(
         return _tail_values(pct_series)
     last_pct = float(pct_series.iloc[-1])
     ma_last = float(ma.iloc[-1])
-    if math.isnan(last_pct) or math.isnan(ma_last) or ma_last == 0.0:
+    if not (math.isfinite(last_pct) and math.isfinite(ma_last)) or ma_last == 0.0:
         return _tail_values(pct_series)
     return [last_pct, (px / ma_last - 1.0) * 100.0]
 
@@ -235,8 +243,15 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.REALIZED_VOL_20D:
         if len(closes) < 22:
             return False
+        # an inf close doesn't just make vol inf — the NEXT return
+        # launders into a finite -1.0 and fabricates a vol spike, so the
+        # contributing closes are gated, not the output alone
+        if any(math.isinf(float(v)) for v in s.tail(22).tolist()):
+            return False
         rets = s.pct_change().dropna().tail(20)
         vol = float(rets.std(ddof=1)) * math.sqrt(252) * 100.0
+        if not math.isfinite(vol):
+            return False
         return _compare(vol, cond.operator, cond.value)
     if ind_name is Indicator.DRAWDOWN_FROM_HIGH_PCT:
         # period bounds the reference high: "2% below its 20-day high" is a
@@ -244,10 +259,17 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         # No period keeps the historical since-inception behavior.
         def _dd(series: pd.Series) -> float:
             window = series.tail(cond.period) if cond.period else series
-            return (1.0 - float(series.iloc[-1]) / float(window.max())) * 100.0
+            hi = float(window.max())
+            if not math.isfinite(hi):
+                # an inf high launders into a FINITE 100% drawdown lie —
+                # unevaluable must surface as NaN, caught below
+                return math.nan
+            return (1.0 - float(series.iloc[-1]) / hi) * 100.0
 
         dd_now = _dd(s)
         dd_prev = _dd(s.iloc[:-1]) if len(closes) >= 2 else dd_now
+        if not (math.isfinite(dd_now) and math.isfinite(dd_prev)):
+            return False
         return _series_pair([dd_prev, dd_now], cond.operator, cond.value)
     if ind_name is Indicator.VIX_LEVEL:
         vix = _finite(view.vix())
