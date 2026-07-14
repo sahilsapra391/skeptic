@@ -256,12 +256,16 @@ def _run_and_store(run_id: str, auto_note: str | None = None) -> None:
             run.stage = 6
             run.perf_json = json.dumps(perf)
             # UX Chunk A section 4: measured mechanics complete the setup
-            # story written at creation
-            run.provenance_json = attach_mechanics(
-                run.provenance_json,
-                mechanics_record(perf, result, spec.spec_version),
-                origin, parent_run_id,
-            )
+            # story written at creation. Isolated: a paperwork failure must
+            # never error a computed run — the verdict outranks the diary.
+            try:
+                run.provenance_json = attach_mechanics(
+                    run.provenance_json,
+                    mechanics_record(perf, result, spec.spec_version),
+                    origin, parent_run_id,
+                )
+            except Exception:
+                log.exception("provenance mechanics attach failed for %s", run_id)
             if origin == "auto_unlock":
                 payload["meta"] += " · auto-upgraded" + (f" ({auto_note})" if auto_note else "")
             run.payload_json = json.dumps(payload)

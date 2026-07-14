@@ -143,6 +143,19 @@ class TestCapsAndCorruption:
         assert kept[0]["id"] == "q0"
         assert record["truncated"]["dropped_events"] == 120 - len(kept)
 
+    def test_null_optional_fields_never_become_the_string_none(self) -> None:
+        # dict.get defaults don't fire on present-but-null keys — str(None)
+        # would store the literal text "None" as a bar time or ticker
+        record = json.loads(creation_record({
+            "prompt": {"text": "x", "chart": {
+                "ticker": None, "pins": [{"entry": None, "exit": None}]}},
+            "conversation": [{"kind": "answer", "id": None, "answer": "ok"}],
+        }, "user"))
+        assert record["prompt"]["chart"]["ticker"] == ""
+        assert record["prompt"]["chart"]["pins"][0] == {"entry": "", "exit": None}
+        assert record["conversation"][0]["id"] == ""
+        assert '"None"' not in json.dumps(record)
+
     def test_event_cap_counts_dropped(self) -> None:
         conversation = [
             {"kind": "answer", "id": f"q{i}", "answer": "ok"} for i in range(250)

@@ -64,15 +64,18 @@ def _clean_prompt(prompt: Any) -> dict[str, Any] | None:
     chart = prompt.get("chart")
     if isinstance(chart, dict):
         raw_pins = chart.get("pins")
+        # `or ""` everywhere a field could be an explicit JSON null — dict.get
+        # defaults don't fire on present-but-null keys, and str(None) would
+        # store the literal text "None" as a bar time
         pins = [
             {
-                "entry": _clip(p.get("entry", ""), 40),
+                "entry": _clip(p.get("entry") or "", 40),
                 "exit": _clip(p["exit"], 40) if p.get("exit") else None,
             }
             for p in (raw_pins[:MAX_PINS] if isinstance(raw_pins, list) else [])
             if isinstance(p, dict)
         ]
-        out["chart"] = {"ticker": _clip(chart.get("ticker", ""), 8), "pins": pins}
+        out["chart"] = {"ticker": _clip(chart.get("ticker") or "", 8), "pins": pins}
     return out or None
 
 
@@ -85,9 +88,9 @@ def _clean_conversation(conversation: Any) -> tuple[list[dict[str, Any]], int]:
     for ev in conversation[:MAX_EVENTS]:
         if not isinstance(ev, dict) or ev.get("kind") not in ("question", "answer"):
             continue
-        clean: dict[str, Any] = {"kind": ev["kind"], "id": _clip(ev.get("id", ""), 80)}
+        clean: dict[str, Any] = {"kind": ev["kind"], "id": _clip(ev.get("id") or "", 80)}
         if ev["kind"] == "question":
-            clean["question"] = _clip(ev.get("question", ""), MAX_EVENT_CHARS)
+            clean["question"] = _clip(ev.get("question") or "", MAX_EVENT_CHARS)
             opts = ev.get("options")
             clean["options"] = (
                 [_clip(o, 200) for o in opts[:MAX_OPTIONS]] if isinstance(opts, list) else []
@@ -95,7 +98,7 @@ def _clean_conversation(conversation: Any) -> tuple[list[dict[str, Any]], int]:
             if ev.get("asked_at"):
                 clean["asked_at"] = _clip(ev["asked_at"], 40)
         else:
-            clean["answer"] = _clip(ev.get("answer", ""), MAX_EVENT_CHARS)
+            clean["answer"] = _clip(ev.get("answer") or "", MAX_EVENT_CHARS)
             if ev.get("answered_at"):
                 clean["answered_at"] = _clip(ev["answered_at"], 40)
         events.append(clean)
@@ -110,17 +113,16 @@ def creation_record(
     auto_note: str | None = None,
 ) -> str:
     """The provenance JSON written when a run row is created."""
-    if origin == "auto_unlock":
+    if origin in ("auto_unlock", "receipt"):
+        # automatic runs have no conversation — one origin record, note only
+        note = (
+            "re-ran automatically — " + (auto_note or "new data")
+            if origin == "auto_unlock"
+            else "5-minute replay of the original run (verdict receipt)"
+        )
         return json.dumps({
             "v": 1, "origin": origin, "recorded_at": _now(),
-            "parent_run_id": parent_run_id,
-            "note": "re-ran automatically — " + (auto_note or "new data"),
-        })
-    if origin == "receipt":
-        return json.dumps({
-            "v": 1, "origin": origin, "recorded_at": _now(),
-            "parent_run_id": parent_run_id,
-            "note": "5-minute replay of the original run (verdict receipt)",
+            "parent_run_id": parent_run_id, "note": note,
         })
 
     record: dict[str, Any] = {"v": 1, "origin": "user", "recorded_at": _now()}
@@ -135,7 +137,6 @@ def creation_record(
     if prompt:
         record["prompt"] = prompt
     events, dropped = _clean_conversation(client.get("conversation"))
-    record["conversation"] = events
 
     confirmed = client.get("confirmed")
     if isinstance(confirmed, dict):
@@ -144,24 +145,38 @@ def creation_record(
         else:
             record["confirmed"] = {"omitted": "confirmed draft exceeded the size cap"}
 
-    # size cap: drop conversation TAIL until the record fits — the head
-    # (first questions, pairing with the prompt) is the story's spine
-    while len(json.dumps(record).encode()) > MAX_RECORD_BYTES and events:
-        events.pop()
-        dropped += 1
+    # size cap in ONE pass (never re-serialize the whole record per event —
+    # that loop is quadratic in a client-supplied list): measure the envelope
+    # once with a worst-case truncation marker, then keep events head-first
+    # within the remaining byte budget. The head (the first questions, which
+    # pair with the prompt) is the story's spine. Never a refusal.
+    envelope = {**record, "conversation": [],
+                "truncated": {"dropped_events": len(events) + dropped}}
+    budget = MAX_RECORD_BYTES - len(json.dumps(envelope).encode())
+    kept: list[dict[str, Any]] = []
+    used = 0
+    for ev in events:
+        cost = len(json.dumps(ev).encode()) + 2  # ", " separator slack
+        if used + cost > budget:
+            break
+        kept.append(ev)
+        used += cost
+    dropped += len(events) - len(kept)
+    record["conversation"] = kept
     if dropped:
         record["truncated"] = {"dropped_events": dropped}
     return json.dumps(record)
 
 
+# the perf_json fields mirrored into mechanics — one tuple shared by the
+# completion writer and the read-time deriver so the two can't drift
+PERF_MECHANICS_KEYS = ("engine_s", "gauntlet_s", "verdict_s", "sessions", "clock")
+
+
 def mechanics_record(perf: dict[str, Any], result: RunResult, spec_version: int) -> dict[str, Any]:
     """Section 4, computed at completion from measured values only."""
     return {
-        "engine_s": perf["engine_s"],
-        "gauntlet_s": perf["gauntlet_s"],
-        "verdict_s": perf["verdict_s"],
-        "sessions": perf["sessions"],
-        "clock": perf["clock"],
+        **{key: perf[key] for key in PERF_MECHANICS_KEYS},
         "resolution_mix": result.resolution_mix or None,
         "effective_start": result.effective_start.isoformat(),
         "effective_end": result.effective_end.isoformat(),
@@ -256,7 +271,7 @@ def derived_record(
 
     mech: dict[str, Any] = {}
     if isinstance(perf_doc, dict):
-        for key in ("engine_s", "gauntlet_s", "verdict_s", "sessions", "clock"):
+        for key in PERF_MECHANICS_KEYS:
             if perf_doc.get(key) is not None:
                 mech[key] = perf_doc[key]
     stats = stats_doc if isinstance(stats_doc, dict) else {}

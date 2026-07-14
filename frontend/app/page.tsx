@@ -257,12 +257,17 @@ export default function NewAnalysisPage() {
     (answer: string) => {
       const q = questions[qIndex];
       if (!q || !answer.trim()) return;
-      transcriptRef.current.push({
-        kind: "answer",
-        id: q.id,
-        answer: answer.trim(),
-        answered_at: new Date().toISOString(),
-      });
+      // a double-submit (chip double-click / repeated Enter) re-invokes with
+      // a stale qIndex before re-render — never record the same answer twice
+      const last = transcriptRef.current[transcriptRef.current.length - 1];
+      if (!(last?.kind === "answer" && last.id === q.id)) {
+        transcriptRef.current.push({
+          kind: "answer",
+          id: q.id,
+          answer: answer.trim(),
+          answered_at: new Date().toISOString(),
+        });
+      }
       const next = { ...answers, [q.id]: answer.trim() };
       setAnswers(next);
       setQInput("");
