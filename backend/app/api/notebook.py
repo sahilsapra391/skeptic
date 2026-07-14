@@ -1,10 +1,11 @@
 """Notebook export + pinned reproduce (parity Tier 1).
 
-Lives in its own module ON PURPOSE (2026-07-14): two parallel sessions
-own runs.py/payload.py right now, and nothing here needs to edit them —
-the run's merged payload comes from get_run (receipts + provenance merge
-included), and the engine lock is SHARED by import so a reproduce can
-never overlap a normal run or an audit.
+The machinery this module first duplicated while runs.py was owned by a
+parallel session is consolidated now (2026-07-14): single-flight admission
+and the pinned-window engine re-run live in app.api.jobs, the OOM lock in
+app.engine.concurrency — a reproduce holds the same ENGINE_LOCK as runs
+and audits, so it can never overlap them. The run's merged payload still
+comes from get_run (receipts + provenance merge included).
 
 Reproduce contract (the plan's Tier 1 item 2, D3 receipts semantics):
 same spec, same seed, the ORIGINAL effective window pinned, and — at the
@@ -28,15 +29,15 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from app import db
+from app.api.jobs import claim_run_job, pinned_engine_rerun
+from app.api.payload import sweep_coverage_notes
 from app.api.provenance import derived_boxes
-from app.models.spec import StrategySpec
 
 log = logging.getLogger("notebook")
 
 router = APIRouter()
 
 _RUNNING = "reproducing"
-_STALE_MINUTES = 30  # a reproduce is one engine re-run; past this it's dead
 
 # metrics compared within tolerance; counts compared exactly. Relative
 # 1e-6 absorbs float noise across platforms while catching any real
@@ -82,9 +83,10 @@ def _export_inputs(run_id: str) -> tuple[dict[str, Any], dict[str, Any],
         raise HTTPException(status_code=404, detail="run not found")
     spec_doc = json.loads(row.spec_json)
     stats = json.loads(row.stats_json) if row.stats_json else {}
-    sens = (stats.get("honesty_report") or {}).get("sensitivity") or {}
-    sweep_notes = [n for n in (sens.get("conditions_note"),
-                               sens.get("window_note")) if n]
+    # WHICH keys constitute the F8 sweep-coverage disclosure is
+    # payload.py's call (the one selector), never a list baked here
+    sweep_notes = sweep_coverage_notes(
+        (stats.get("honesty_report") or {}).get("sensitivity"))
     return payload, spec_doc, sweep_notes or None
 
 
@@ -168,29 +170,8 @@ def _expand_resolution_runs(runs: list[dict[str, Any]] | None) -> dict[date, str
 
 @router.post("/runs/{run_id}/reproduce")
 def reproduce_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
-    with db.session() as s:
-        run = s.get(db.Run, run_id)
-        if run is None or run.status != "done" or not run.spec_json:
-            raise HTTPException(status_code=404,
-                                detail="no completed run to reproduce")
-        if run.reproduce_json:
-            try:
-                marker = json.loads(run.reproduce_json)
-            except ValueError:
-                marker = {}
-            if marker.get("status") == _RUNNING:
-                started = marker.get("started_at", "")
-                try:
-                    age_min = (datetime.now(UTC)
-                               - datetime.fromisoformat(started)).total_seconds() / 60
-                except ValueError:
-                    age_min = _STALE_MINUTES + 1
-                if age_min < _STALE_MINUTES:
-                    raise HTTPException(status_code=409,
-                                        detail="reproduce already running")
-        run.reproduce_json = json.dumps({
-            "status": _RUNNING, "started_at": datetime.now(UTC).isoformat()})
-        s.commit()
+    claim_run_job(run_id, column="reproduce_json",
+                  running_status=_RUNNING, verb="reproduce")
     tasks.add_task(_execute_reproduce, run_id)
     return {"run_id": run_id, "status": _RUNNING}
 
@@ -315,40 +296,13 @@ def _execute_reproduce(run_id: str) -> None:
             except ValueError:
                 prov = {}
 
-        # pin the ORIGINAL effective window (the audit's review BLOCKER #1
-        # lesson: an open end would let the lake's newest sessions extend
-        # the sim and the comparison would describe a different run)
-        report = stats.get("honesty_report") or {}
-        eff_start, eff_end = report.get("effective_start"), report.get("effective_end")
-        if eff_start:
-            spec_doc.setdefault("backtest", {})["start"] = eff_start
-        if eff_end:
-            spec_doc.setdefault("backtest", {})["end"] = eff_end
-        spec = StrategySpec.model_validate(spec_doc)
-
         pinned = _expand_resolution_runs(recorded_runs)
 
-        from app.api.runs import _ENGINE_LOCK, _release_memory
-        from app.data.chains import load_market_store
-        from app.engine.runner import run_backtest
-
-        with _ENGINE_LOCK:  # serialized with runs and audits — the OOM
-            # concurrency class is two engine loads at once
-            try:
-                # refresh=False: reproduce compares against the stored run;
-                # a TTL rebuild mid-comparison would swap the lake under it
-                # (the audit endpoint's reasoning, shared)
-                store = load_market_store(spec.underlying.ticker.value,
-                                          refresh=False)
-                intraday = None
-                if spec.backtest.clock.value != "daily":
-                    from app.data.intraday import load_intraday_store
-
-                    intraday = load_intraday_store(spec.underlying.ticker.value)
-                result = run_backtest(spec, store, intraday,
-                                      pinned_resolutions=pinned or None)
-            finally:
-                _release_memory()
+        # window pin + lock + refresh=False stores: the shared verification
+        # scaffold (app.api.jobs); reproduce additionally pins the RECORDED
+        # per-session resolution map — a replay never silently re-resolves
+        spec, result, eff_start, eff_end = pinned_engine_rerun(
+            spec_doc, stats, pinned_resolutions=pinned or None)
 
         stored_metrics = stats.get("metrics") or {}
         fresh_metrics = result.metrics or {}

@@ -194,7 +194,7 @@ def _underlying_frames(
 # nightly collections must reach a long-lived container's NEXT run without
 # a redeploy). Freshness rules, all review-hardened:
 #   * refresh=True is for the ENGINE path only (serialized behind
-#     _ENGINE_LOCK by its callers) — a rebuild can never overlap a run
+#     ENGINE_LOCK by its callers) — a rebuild can never overlap a run
 #     holding the old store. Request-path callers (estimate, fill audit,
 #     warm_store) pass refresh=False: they serve the cached store as-is
 #     and only ever pay the ONE cold build (pre-TTL behavior, unchanged).

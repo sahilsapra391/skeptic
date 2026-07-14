@@ -202,6 +202,20 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
     return out
 
 
+def sweep_coverage_notes(sensitivity: dict[str, Any] | None) -> list[str]:
+    """The F8 sweep-coverage disclosures — what the sensitivity stage did
+    and did NOT probe — selected from a stored honesty report's sensitivity
+    dump. The one selector for these keys on the API layer: the notebook
+    export reads this list today, and any future api-side surface that
+    discloses sweep coverage must too, so none bakes its own key list.
+    (The verdict caveats in app/honesty/verdict.py read the same fields
+    off the TYPED Sensitivity model — honesty cannot import api — so a
+    new disclosure field must be added there too, not only here.)"""
+    sens = sensitivity or {}
+    return [str(n) for n in (sens.get("conditions_note"),
+                             sens.get("window_note")) if n]
+
+
 def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
     """What would improve the strategy — computed ONLY from this run's own
     gauntlet numbers (the sensitivity sweeps re-ran the real engine), never
