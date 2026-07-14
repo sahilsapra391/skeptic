@@ -10,6 +10,7 @@ import type {
   CoveragePayload,
   EstimatePayload,
   ParseResult,
+  ProvenanceEvent,
   RunPayload,
   RunSummary,
   SpecDraft,
@@ -163,6 +164,7 @@ export function startBacktest(
   draft: SpecDraft,
   parsedSpec?: Record<string, unknown> | null,
   untouched = true,
+  conversation: ProvenanceEvent[] = [],
 ): Promise<{ run_id: string; demo: boolean }> {
   // an unedited parser spec runs verbatim — dial edits rebuild from the
   // dials WITH the parsed spec as base, so parser-only vocabulary
@@ -204,10 +206,24 @@ export function startBacktest(
     };
     spec.entry = entry;
   }
+  // Chunk A: the setup story rides the run request and is stored on the run
+  // row (display-only server-side — never fed to the engine or the verdict).
+  // `confirmed.draft` replaces the old top-level `draft` key, which no
+  // backend code ever read.
+  const provenance = {
+    v: 1,
+    source: draft.fromChart ? "chart" : "text",
+    prompt: {
+      text: draft.quote,
+      ...(draft.chartContext ? { chart: draft.chartContext } : {}),
+    },
+    conversation,
+    confirmed: { draft, costs: spec.costs, untouched },
+  };
   return request<{ run_id: string; demo: boolean }>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ spec, draft }),
+    body: JSON.stringify({ spec, provenance }),
   });
 }
 

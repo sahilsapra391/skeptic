@@ -10,7 +10,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage, getRun, listRuns, parseText, prefetchBars, startBacktest } from "@/lib/api";
-import type { ParseQuestion, RunPayload, SpecDraft, Structure } from "@/lib/types";
+import type {
+  ParseQuestion,
+  ProvenanceEvent,
+  RunPayload,
+  SpecDraft,
+  Structure,
+} from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 import { useSpeechToText } from "@/lib/use-speech";
 
@@ -136,6 +142,11 @@ export default function NewAnalysisPage() {
   // runs the parser spec verbatim, dial edits rebuild from the dials
   const parsedSpecRef = useRef<Record<string, unknown> | null>(null);
   const parsedDraftRef = useRef<string | null>(null);
+  // Chunk A: the clarifying conversation, chronological with timestamps —
+  // `questions`/`answers` above are working state (each round REPLACES
+  // `questions`); this ref is the accumulated record that rides the run
+  // request into provenance_json. Reset alongside `answers`.
+  const transcriptRef = useRef<ProvenanceEvent[]>([]);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -206,8 +217,22 @@ export default function NewAnalysisPage() {
       setBusy(true);
       setError(null);
       try {
+        // a fresh compile starts a fresh story — even when it goes straight
+        // to a spec, an earlier attempt's conversation must not ride along;
+        // a re-compile with answers is the same conversation continuing
+        if (!withAnswers) transcriptRef.current = [];
         const res = await parseText(text, withAnswers);
         if (res.status === "questions") {
+          const asked = new Date().toISOString();
+          transcriptRef.current.push(
+            ...res.questions.map((q) => ({
+              kind: "question" as const,
+              id: q.id,
+              question: q.question,
+              options: q.options,
+              asked_at: asked,
+            })),
+          );
           setQuestions(res.questions);
           setQIndex(0);
           setQInput("");
@@ -232,6 +257,12 @@ export default function NewAnalysisPage() {
     (answer: string) => {
       const q = questions[qIndex];
       if (!q || !answer.trim()) return;
+      transcriptRef.current.push({
+        kind: "answer",
+        id: q.id,
+        answer: answer.trim(),
+        answered_at: new Date().toISOString(),
+      });
       const next = { ...answers, [q.id]: answer.trim() };
       setAnswers(next);
       setQInput("");
@@ -251,7 +282,9 @@ export default function NewAnalysisPage() {
     setError(null);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
-      const { run_id } = await startBacktest(draft, parsedSpecRef.current, untouched);
+      const { run_id } = await startBacktest(
+        draft, parsedSpecRef.current, untouched, transcriptRef.current,
+      );
       setPhase("running");
       setRun(null);
       // self-scheduling poll: each tick AWAITS the prior response before
@@ -298,6 +331,7 @@ export default function NewAnalysisPage() {
     setAnswers({});
     parsedSpecRef.current = null;
     parsedDraftRef.current = null;
+    transcriptRef.current = [];
   }, []);
 
   if (phase === "results" && run) {
@@ -559,8 +593,11 @@ export default function NewAnalysisPage() {
             onCompile={(d) => {
               // a chart draft supersedes any earlier chat parse — clear the
               // verbatim-spec refs so a stale spec can never ride along
+              // (and the abandoned conversation, so it can't enter the
+              // chart run's provenance)
               parsedSpecRef.current = null;
               parsedDraftRef.current = null;
+              transcriptRef.current = [];
               setDraft(d);
               setPhase("spec");
             }}
