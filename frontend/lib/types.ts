@@ -76,6 +76,26 @@ export interface SpecDraft {
     rearm: TriggerSpec;
   } | null;
   conditionList?: TriggerSpec[];
+  /** Chart mode: the raw pointer context (pinned bar times as ISO strings) —
+   * recorded into the run's provenance, never read by the engine. */
+  chartContext?: {
+    ticker: Ticker;
+    pins: { entry: string; exit: string | null }[];
+  } | null;
+}
+
+/** One event in a run's provenance conversation — a question the parser
+ * asked or the answer the user gave, chronological, client-timestamped.
+ * Captured on the composer and stored on the run row (Chunk A); rendered
+ * by the "How this was built" view (Chunk B). */
+export interface ProvenanceEvent {
+  kind: "question" | "answer";
+  id: string;
+  question?: string;
+  options?: string[];
+  asked_at?: string;
+  answer?: string;
+  answered_at?: string;
 }
 
 /** /api/data/estimate — window options with real session counts and time

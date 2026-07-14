@@ -26,6 +26,12 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app import db
 from app.api.payload import build_run_payload, run_summary
+from app.api.provenance import (
+    attach_mechanics,
+    creation_record,
+    derived_record,
+    mechanics_record,
+)
 from app.honesty.stages import MIN_TRADES
 from app.models.spec import StrategySpec
 
@@ -80,6 +86,10 @@ class BacktestRequest(BaseModel):
     # Floor 1 — zero would grade an untraded strategy, which is nonsense;
     # None = the standard bar (or the parent's, for automatic re-runs)
     min_trades: int | None = Field(default=None, ge=1, le=10_000)
+    # UX Chunk A: the client-captured setup story (prompt, clarifying Q&A,
+    # confirmed draft) — display-only, size-capped in creation_record;
+    # ignored on automatic runs, which have no conversation
+    provenance: dict[str, Any] | None = None
 
 
 def _inherit_trials(parent_run_id: str | None, family: str) -> int:
@@ -294,6 +304,17 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             run.status = "done"
             run.stage = 6
             run.perf_json = json.dumps(perf)
+            # UX Chunk A section 4: measured mechanics complete the setup
+            # story written at creation. Isolated: a paperwork failure must
+            # never error a computed run — the verdict outranks the diary.
+            try:
+                run.provenance_json = attach_mechanics(
+                    run.provenance_json,
+                    mechanics_record(perf, result, spec.spec_version),
+                    origin, parent_run_id,
+                )
+            except Exception:
+                log.exception("provenance mechanics attach failed for %s", run_id)
             if origin == "auto_unlock":
                 payload["meta"] += " · auto-upgraded" + (f" ({auto_note})" if auto_note else "")
             run.payload_json = json.dumps(payload)
@@ -497,6 +518,7 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
         min_trades = MIN_TRADES
 
     run_id = uuid.uuid4().hex[:12]
+    note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
     with db.session() as s:
         s.add(
             db.Run(
@@ -507,10 +529,12 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
                 spec_json=spec.model_dump_json(),
                 origin=req.origin,
                 parent_run_id=req.parent_run_id,
+                provenance_json=creation_record(
+                    req.provenance, req.origin, req.parent_run_id, note
+                ),
             )
         )
         s.commit()
-    note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
     tasks.add_task(_execute_run, run_id, note, min_trades)
     return {"run_id": run_id, "demo": False, "status": "queued"}
 
@@ -612,6 +636,24 @@ def get_run(
                 stats = None
             payload = regrade_for_min_trades(payload, stats, min_trades)
         spec_dict = json.loads(run.spec_json) if run.spec_json else {}
+        # UX Chunk A: the setup story. Stored records merge verbatim; rows
+        # predating the column get a READ-TIME derivation from stored fields
+        # (owner amendment 2026-07-14) — nothing is written back, and the
+        # never-stored conversation is never invented. A corrupt record must
+        # not take the run screen down: degrade to no key.
+        try:
+            if run.provenance_json:
+                payload["provenance"] = json.loads(run.provenance_json)
+            else:
+                payload["provenance"] = derived_record(
+                    spec_dict,
+                    json.loads(run.perf_json) if run.perf_json else None,
+                    json.loads(run.stats_json) if run.stats_json else None,
+                    run.origin,
+                    run.parent_run_id,
+                )
+        except Exception:
+            log.exception("provenance merge failed for %s", run_id)
         from app.api.replay import replay_eligible_spec
 
         payload["replayEligible"] = (
@@ -671,7 +713,8 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
         s.add(db.Run(id=new_id, status="queued", stage=0,
                      seed=replay_spec.backtest.seed,
                      spec_json=replay_spec.model_dump_json(),
-                     origin="receipt", parent_run_id=run_id))
+                     origin="receipt", parent_run_id=run_id,
+                     provenance_json=creation_record(None, "receipt", run_id)))
         s.commit()
     # the receipt faces the same evidence bar its parent was scored at
     tasks.add_task(_execute_run, new_id, None, _inherit_min_trades(run_id))
