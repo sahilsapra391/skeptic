@@ -21,6 +21,18 @@ class _FakeResp:
         return {"choices": [{"message": {"content": self._content}}]}
 
 
+class _RawResp:
+    """A 200 whose content is NOT the contract's JSON — earns a retry."""
+
+    status_code = 200
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+
+    def json(self) -> dict:
+        return {"choices": [{"message": {"content": self._content}}]}
+
+
 def _valid_spec() -> dict:
     spec = _spec(0.30, 30, 50.0, 200.0)
     # the model "paraphrases" — the server must overwrite it verbatim
@@ -119,6 +131,67 @@ def test_malformed_position_falls_back_to_questions(
     )
     out = parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
     assert out is not None and out.status == "questions"
+
+
+# ------------------------------------------------ upstream failure honesty
+def test_upstream_failure_raises_not_a_fake_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An upstream LLM failure is an ERROR the route reports as a 503 — it
+    must never come back as a fake clarifying question (it rendered as
+    "QUESTION 1 OF 1 — I DON'T GUESS" and entered the provenance record)."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    def _boom(*a: object, **k: object) -> None:
+        raise requests.Timeout("upstream took too long")
+
+    monkeypatch.setattr(requests, "post", _boom)
+    with pytest.raises(parser_module.ParserUnavailableError, match="upstream error"):
+        parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
+
+
+def test_budget_exhausted_retry_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The attempt loop answers inside PARSE_BUDGET_SECONDS: when a contract
+    violation earns a retry the budget can't fund, the parser refuses while
+    it can still say so — the proxy must never 504 a healthy engine."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    # deadline calc → attempt-1 timeout calc → retry budget check
+    clock = iter([0.0, 0.5, 88.0])
+    monkeypatch.setattr(parser_module, "_monotonic", lambda: next(clock))
+    calls: list[dict] = []
+
+    def _garbage(*a: object, **k: object) -> _RawResp:
+        calls.append(dict(k))
+        return _RawResp("no json here")
+
+    monkeypatch.setattr(requests, "post", _garbage)
+    with pytest.raises(parser_module.ParserUnavailableError, match="ran out of time"):
+        parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
+    assert len(calls) == 1  # the doomed retry was never launched
+
+
+def test_attempt_timeout_shrinks_to_the_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each upstream call gets only what's left of the budget, so two
+    attempts can never add up past the proxy's leash."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    # deadline calc → attempt-1 timeout → retry check → attempt-2 timeout
+    clock = iter([0.0, 0.0, 50.0, 50.0])
+    monkeypatch.setattr(parser_module, "_monotonic", lambda: next(clock))
+    timeouts: list[float] = []
+    replies = iter(
+        [_RawResp("no json here"), _FakeResp({"result": "spec", "spec": _valid_spec()})]
+    )
+
+    def _post(*a: object, **k: object) -> object:
+        timeouts.append(k["timeout"])
+        return next(replies)
+
+    monkeypatch.setattr(requests, "post", _post)
+    out = parser_module.parse_strategy("sell a 30 delta put on SPY, close at 50%")
+    assert out is not None and out.status == "spec"
+    assert timeouts == [60.0, 40.0]
 
 
 # --------------------------------------------------------- D5d: scale-in

@@ -30,10 +30,11 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   if (contentType) headers["content-type"] = contentType;
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
   if (token) headers.authorization = `Bearer ${token}`;
-  // LLM round-trips get long leashes: the parser's upstream call is allowed
-  // 60s backend-side (clarify-loop re-parses on DeepSeek regularly pass 30s)
-  // and grounded Q&A runs a validation retry — a proxy that aborts under the
-  // backend's own budget reports a healthy engine as "unreachable"
+  // LLM round-trips get long leashes: the parser bounds its whole attempt
+  // loop to 90s wall-clock (PARSE_BUDGET_SECONDS, backend parse.py — clarify
+  // -loop re-parses on DeepSeek regularly pass 30s) and grounded Q&A runs a
+  // validation retry — the proxy's leash must stay ABOVE those budgets, or it
+  // aborts a healthy engine mid-work and reports it as a 504
   const llmRoute = path[0] === "parse" || path[2] === "ask";
   const timeout = llmRoute ? 100_000 : 30_000;
   return fetch(url, {
@@ -112,12 +113,10 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
       headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
     });
   } catch (err) {
-    // backend unreachable — run pipeline may demo; data routes stay honest
-    if (demoEligible(path) && demoEnabled()) {
-      return demoResponse(req, path, body);
-    }
     // a timed-out request is NOT an unreachable backend — the engine was
-    // healthy and still working when the proxy gave up; say that honestly
+    // healthy and still working when the proxy gave up; say that honestly,
+    // checked BEFORE the demo fallback so a slow engine is never papered
+    // over with demo fixtures
     const timedOut =
       err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     if (timedOut) {
@@ -125,6 +124,10 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
         { detail: "the engine took too long to answer — it's still up; try again" },
         { status: 504 },
       );
+    }
+    // backend unreachable — run pipeline may demo; data routes stay honest
+    if (demoEligible(path) && demoEnabled()) {
+      return demoResponse(req, path, body);
     }
     // the dev hint only makes sense against a local backend; in prod the
     // usual cause is a redeploy window — say so instead of leaking dev docs

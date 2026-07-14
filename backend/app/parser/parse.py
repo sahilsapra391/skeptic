@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -96,6 +97,24 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
 log = logging.getLogger("parser")
 
 MAX_TEXT_CHARS = 1200
+
+# The frontend proxy gives LLM routes a 100s leash (frontend/app/api/
+# [...path]/route.ts) — the WHOLE attempt loop must answer inside it, or a
+# healthy engine gets reported as a 504 mid-retry. The budget bounds both
+# attempts together: each upstream call gets what's left of it, and a retry
+# that can't get a useful slice is refused honestly instead.
+PARSE_BUDGET_SECONDS = 90.0
+_ATTEMPT_TIMEOUT_SECONDS = 60.0
+_MIN_RETRY_SECONDS = 5.0
+
+_monotonic = time.monotonic  # patchable in tests — the budget clock
+
+
+class ParserUnavailableError(Exception):
+    """The upstream LLM failed or the parse budget ran out. The /parse route
+    maps this to an honest 503 — it must never masquerade as a clarifying
+    question (a fake question polluted the run's provenance record and put
+    words in the product's mouth: "I don't guess")."""
 
 
 class Question(BaseModel):
@@ -425,7 +444,9 @@ text and re-evaluate: emit the spec if now unambiguous, or ask ONLY what is
 still genuinely missing."""
 
 
-def _call_llm(messages: list[dict[str, str]], api_key: str) -> dict[str, Any] | None:
+def _call_llm(
+    messages: list[dict[str, str]], api_key: str, timeout: float = _ATTEMPT_TIMEOUT_SECONDS
+) -> dict[str, Any] | None:
     import requests
 
     body: dict[str, Any] = {
@@ -440,7 +461,7 @@ def _call_llm(messages: list[dict[str, str]], api_key: str) -> dict[str, Any] | 
         OPENROUTER_URL,
         headers={"Authorization": f"Bearer {api_key}"},
         json=body,
-        timeout=60,
+        timeout=timeout,
     )
     if resp.status_code != 200:
         log.warning("parser LLM HTTP %s", resp.status_code)
@@ -457,7 +478,11 @@ def _user_message(text: str, answers: dict[str, str] | None) -> str:
 
 
 def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOutcome | None:
-    """Parse NL → spec or questions. None when no LLM key is configured."""
+    """Parse NL → spec or questions. None when no LLM key is configured.
+
+    Raises ParserUnavailableError when the upstream LLM fails or the parse
+    budget runs out — an error the route reports as a retryable 503, never
+    dressed up as a clarifying question."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         return None
@@ -468,29 +493,33 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
         {"role": "user", "content": _user_message(text, answers)},
     ]
 
+    deadline = _monotonic() + PARSE_BUDGET_SECONDS
     retry_note: str | None = None
     for _attempt in range(2):
         if retry_note:
+            if deadline - _monotonic() < _MIN_RETRY_SECONDS:
+                # the retry the contract violation earned can't finish inside
+                # the proxy's leash — refuse it here, while we can still say so
+                raise ParserUnavailableError(
+                    "The parser ran out of time before it could finish — "
+                    "try again, or rephrase the strategy in one sentence."
+                )
             messages = [
                 messages[0],
                 {"role": "user", "content": _user_message(text, answers) + retry_note},
             ]
         try:
-            data = _call_llm(messages, api_key)
-        except Exception:
-            log.exception("parser LLM failed")
-            return ParseOutcome(
-                status="questions",
-                questions=[
-                    Question(
-                        id="parser-unavailable",
-                        question=(
-                            "The parser hit an upstream error — try again, or "
-                            "rephrase the strategy in one sentence."
-                        ),
-                    )
-                ],
+            data = _call_llm(
+                messages,
+                api_key,
+                timeout=min(_ATTEMPT_TIMEOUT_SECONDS, deadline - _monotonic()),
             )
+        except Exception as exc:
+            log.exception("parser LLM failed")
+            raise ParserUnavailableError(
+                "The parser hit an upstream error — try again, or "
+                "rephrase the strategy in one sentence."
+            ) from exc
         if data is None:
             retry_note = "\n\nRespond with the JSON object ONLY — no prose, no code fences."
             continue
