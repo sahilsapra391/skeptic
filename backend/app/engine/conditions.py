@@ -20,10 +20,17 @@ def _trailing_rank(history: list[float], min_obs: int) -> float | None:
     252-observation window — ONE implementation for every *_rank/percentile
     indicator (review finding F1 #3: four inline copies WILL drift). None
     below min_obs trailing observations — unevaluable, never a thin-window
-    guess (the D1 floor; each indicator declares its own min_obs)."""
+    guess (the D1 floor; each indicator declares its own min_obs), and None
+    when any window observation is non-finite: a NaN CURRENT observation
+    counts nothing ("v <= nan" is False for every v) and would read as rank
+    0.0 — every "rank < X" passes on the poisoned day, a fabricated signal —
+    while a mid-window NaN silently deflates every rank (out of the count,
+    still in the denominator). Unevaluable beats a fabricated signal."""
     if len(history) < min_obs:
         return None
     window = history[-252:]
+    if not all(math.isfinite(v) for v in window):
+        return None
     current = window[-1]
     return sum(1 for v in window if v <= current) / len(window) * 100.0
 
@@ -52,6 +59,17 @@ def _trailing_zscore(history: list[float], min_obs: int) -> float | None:
     if not (var > 0.0 and math.isfinite(var)):
         return None
     return (window[-1] - mean) / math.sqrt(var)
+
+
+def _finite(value: float | None) -> float | None:
+    """Gate for scalar vendor reads (the *_level/spread/ratio branches):
+    a non-finite read becomes None. NaN would fall through _compare as a
+    silent False on every operator, and ±inf FABRICATES a threshold cross
+    ("IVX above 25" is True at +inf). A poisoned row is unevaluable, never
+    a signal — the same refusal _trailing_rank applies window-wide."""
+    if value is None or not math.isfinite(value):
+        return None
+    return value
 
 
 def _compare(value: float, op: Operator, threshold: float) -> bool:
@@ -232,7 +250,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         dd_prev = _dd(s.iloc[:-1]) if len(closes) >= 2 else dd_now
         return _series_pair([dd_prev, dd_now], cond.operator, cond.value)
     if ind_name is Indicator.VIX_LEVEL:
-        vix = view.vix()
+        vix = _finite(view.vix())
         if vix is None:
             return False
         return _compare(vix, cond.operator, cond.value)
@@ -260,20 +278,20 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.IVX_LEVEL_30D:
         # stored as a decimal; compared in percentage points (vix_level
         # ergonomics: "IVX above 25" → value 25)
-        ivx = view.ivx_30d()
+        ivx = _finite(view.ivx_30d())
         if ivx is None:
             return False
         return _compare(ivx * 100.0, cond.operator, cond.value)
     if ind_name is Indicator.HV_IV_SPREAD_30D:
-        ivx = view.ivx_30d()
-        hv = view.hv_30d()
+        ivx = _finite(view.ivx_30d())
+        hv = _finite(view.hv_30d())
         if ivx is None or hv is None:
             return False
         return _compare((ivx - hv) * 100.0, cond.operator, cond.value)
     if ind_name is Indicator.SKEW_25D:
         # F4: 25Δ risk reversal @30d, VOL POINTS ("skew above 5" → value 5).
         # Derived from the previous session's EOD surface at intraday bars.
-        skew = view.skew_25d()
+        skew = _finite(view.skew_25d())
         if skew is None:
             return False
         return _compare(skew, cond.operator, cond.value)
@@ -281,7 +299,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         # F1: net dealer gamma, VENDOR UNITS — vocabulary is sign-only
         # ("dealers long gamma" → > 0); the compare itself is unit-free at
         # threshold 0, and the parser refuses raw-unit thresholds
-        gex = view.gex_level()
+        gex = _finite(view.gex_level())
         if gex is None:
             return False
         return _compare(gex, cond.operator, cond.value)
@@ -296,7 +314,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.DEX_LEVEL:
         # F1: net dealer delta, vendor units — sign vocabulary only
-        dex = view.dex_level()
+        dex = _finite(view.dex_level())
         if dex is None:
             return False
         return _compare(dex, cond.operator, cond.value)
@@ -308,7 +326,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.NET_PREMIUM_LEVEL:
         # F2: session net options premium (call − put), VENDOR DOLLARS —
         # sign vocabulary ("bullish flow" → > 0); parser refuses raw sums
-        v = view.net_premium_level()
+        v = _finite(view.net_premium_level())
         if v is None:
             return False
         return _compare(v, cond.operator, cond.value)
@@ -320,7 +338,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.MARKET_TIDE_LEVEL:
         # F2: MARKET-WIDE cumulative tide's session total — one series for
         # all tickers; sign vocabulary ("market risk-on" → > 0)
-        v = view.market_tide_level()
+        v = _finite(view.market_tide_level())
         if v is None:
             return False
         return _compare(v, cond.operator, cond.value)
@@ -333,7 +351,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         # F2: vendor-computed NOPE at the last session stamp — sign/rank
         # only (owner decision: the vendor's IMPLEMENTATION, not the
         # published concept; sign+rank survive monotone rescaling)
-        v = view.nope_level()
+        v = _finite(view.nope_level())
         if v is None:
             return False
         return _compare(v, cond.operator, cond.value)
@@ -345,7 +363,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.PUT_CALL_FLOW_RATIO:
         # F2: Σput/Σcall session volume — dimensionless classic, raw
         # thresholds legal ("ratio above 1" → value 1)
-        v = view.put_call_ratio()
+        v = _finite(view.put_call_ratio())
         if v is None:
             return False
         return _compare(v, cond.operator, cond.value)
@@ -353,13 +371,13 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         # F3: (front-expiry max pain − close)/close × 100 — unit-free %,
         # raw thresholds legal; signed (positive = max pain above spot).
         # "within 1% of max pain" = two ANDed conditions (< 1 and > −1)
-        v = view.max_pain_distance_pct()
+        v = _finite(view.max_pain_distance_pct())
         if v is None:
             return False
         return _compare(v, cond.operator, cond.value)
     if ind_name is Indicator.TERM_STRUCTURE_SLOPE:
         # F4: ATM IV(90d) − ATM IV(30d), VOL POINTS; "< 0" = inverted
-        slope = view.term_structure_slope()
+        slope = _finite(view.term_structure_slope())
         if slope is None:
             return False
         return _compare(slope, cond.operator, cond.value)
