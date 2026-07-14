@@ -24,29 +24,42 @@ import { ApiError, fetchNotebook } from "@/lib/api";
 const SEGMENT =
   "flex items-center gap-1.5 whitespace-nowrap border border-line bg-raised-2 py-2 text-[13px] font-semibold text-ink-2 hover:border-trust-border hover:bg-raised-3 hover:text-ink";
 
+// module-level: an overlapping Save PDF click (non-blocking print engines)
+// must not re-capture the already-flipped title as the one to restore
+let titleFlipPending = false;
+
 export function ExportActions({ runId, demo }: { runId: string; demo: boolean }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const printPdf = () => {
-    setOpen(false);
-    const root = document.documentElement;
-    const prevTheme = root.dataset.theme;
-    const prevTitle = document.title;
-    root.dataset.theme = "light"; // paper palette for paper
-    document.title = `skeptic-run-${runId}`;
-    const restore = () => {
-      if (prevTheme) root.dataset.theme = prevTheme;
-      else delete root.dataset.theme;
-      document.title = prevTitle;
-      window.removeEventListener("afterprint", restore);
-    };
-    window.addEventListener("afterprint", restore);
-    window.print();
-    // print() blocks while the dialog is up in the engines that matter;
-    // this covers any that skip the afterprint event (restore is idempotent)
-    setTimeout(restore, 0);
+    if (!busy) setOpen(false); // a busy menu stays up so its outcome is seen
+    // ThemeApplier owns the palette (beforeprint → paper, afterprint →
+    // settings); here: a filename-shaped title so the saved PDF defaults
+    // to the run's name instead of "Skeptic".
+    let restoreTitle: (() => void) | undefined;
+    if (!titleFlipPending) {
+      titleFlipPending = true;
+      const prevTitle = document.title;
+      restoreTitle = function restore() {
+        titleFlipPending = false;
+        document.title = prevTitle;
+        window.removeEventListener("afterprint", restore);
+      };
+      window.addEventListener("afterprint", restoreTitle);
+      document.title = `skeptic-run-${runId}`;
+    }
+    try {
+      window.print();
+    } catch {
+      // no dialog ever opened (blocked by policy/webview) — undo now
+      restoreTitle?.();
+    }
+    // no timeout fallback on purpose: in engines where print() returns
+    // before the snapshot is composed (Safari), an eager restore renames
+    // the PDF back to "Skeptic". If afterprint never fires, the run-shaped
+    // title persisting until navigation is the milder failure.
   };
 
   const downloadNotebook = async () => {
@@ -77,7 +90,12 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
   };
 
   return (
-    <div className="relative flex shrink-0 print:hidden">
+    <div
+      className="relative flex shrink-0 print:hidden"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !busy) setOpen(false);
+      }}
+    >
       <button
         onClick={printPdf}
         title="save this screen as a PDF — the browser's print dialog opens with the paper palette applied"
@@ -102,8 +120,11 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
       {/* demo runs have no stored run to export — no menu, PDF only */}
       {!demo && (
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            if (!busy) setOpen((v) => !v);
+          }}
           aria-label="more export options"
+          aria-haspopup="menu"
           aria-expanded={open}
           className={clsx(SEGMENT, "rounded-r-[10px] border-l-0 px-2")}
         >
@@ -123,10 +144,20 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
       )}
       {open && !demo && (
         <>
-          {/* click-away backdrop */}
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-[240px] rounded-[10px] border border-line bg-raised-2 p-1.5 shadow-[var(--shadow-pop)]">
+          {/* click-away backdrop — inert while a download is in flight so
+              its failure can't land in a closed menu unseen */}
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => {
+              if (!busy) setOpen(false);
+            }}
+          />
+          <div
+            role="menu"
+            className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-[240px] rounded-[10px] border border-line bg-raised-2 p-1.5 shadow-[var(--shadow-pop)]"
+          >
             <button
+              role="menuitem"
               onClick={downloadNotebook}
               disabled={busy}
               className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[12.5px] font-medium text-ink-2 hover:bg-raised-3 hover:text-ink disabled:cursor-wait"
@@ -148,6 +179,8 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
               </svg>
               {busy ? "exporting…" : "Notebook (.ipynb)"}
             </button>
+            {/* the last attempt's failure stays visible on reopen — honest
+                last-state, with retry one click above */}
             {error && !busy && (
               <div className="px-2.5 pb-1 pt-1.5 font-mono text-[10.5px] leading-[1.5] text-warn">
                 ⚠ {error}

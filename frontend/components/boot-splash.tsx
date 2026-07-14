@@ -48,7 +48,7 @@ export function BootSplash() {
     <div
       aria-hidden
       className={clsx(
-        "fixed inset-0 z-[100] flex items-center justify-center bg-ground transition-opacity",
+        "fixed inset-0 z-[100] flex items-center justify-center bg-ground transition-opacity print:hidden",
         phase === "fading" ? "opacity-0" : "opacity-100",
       )}
       style={{ transitionDuration: `${FADE_MS}ms` }}

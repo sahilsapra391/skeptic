@@ -299,4 +299,10 @@ summary {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+  /* the root's height:100% (above) would constrain pagination in WebKit —
+     body/main get their print overrides in layout.tsx; html has no class
+     hook, so it's released here */
+  html {
+    height: auto;
+  }
 }
