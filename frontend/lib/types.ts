@@ -98,6 +98,50 @@ export interface ProvenanceEvent {
   answered_at?: string;
 }
 
+/** The run's setup story (Chunk A), served on RunPayload.provenance. Two
+ * shapes behind one key: STORED records (fresh runs) carry confirmed.draft
+ * — the SpecDraft exactly as confirmed — plus source and mechanics.build;
+ * DERIVED records (runs predating the column, derived at read time) carry
+ * confirmed.boxes (a spec_json projection), no source/build, and NEVER a
+ * conversation — it was never stored and is never invented. */
+export interface RunProvenance {
+  v: number;
+  origin?: string;
+  recorded_at?: string;
+  source?: "text" | "chart";
+  derived?: boolean;
+  note?: string;
+  parent_run_id?: string | null;
+  prompt?: {
+    text?: string;
+    chart?: {
+      ticker?: string;
+      pins?: { entry: string; exit: string | null }[];
+    };
+  };
+  conversation?: ProvenanceEvent[];
+  confirmed?: {
+    draft?: SpecDraft;
+    boxes?: Record<string, unknown>;
+    costs?: Record<string, number>;
+    untouched?: boolean;
+    derived?: boolean;
+    omitted?: string;
+  };
+  truncated?: { dropped_events: number };
+  mechanics?: {
+    engine_s?: number;
+    gauntlet_s?: number;
+    verdict_s?: number;
+    sessions?: number;
+    clock?: string;
+    resolution_mix?: Record<string, number> | null;
+    effective_start?: string;
+    effective_end?: string;
+    build?: { commit?: string | null; spec_version?: number; fill_model?: string };
+  };
+}
+
 /** /api/data/estimate — window options with real session counts and time
  * estimates measured from completed runs (null until the first run at a
  * clock calibrates; never an invented number). */
@@ -296,6 +340,10 @@ export interface RunPayload {
   /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
+  /** Chunk A: the setup story — stored verbatim for fresh runs, derived at
+   * read time for runs predating the column. Absent only when the stored
+   * record is unreadable. */
+  provenance?: RunProvenance;
   /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
    * time like receipts; the stored verdict is never rewritten. */
   fillAudit?: {

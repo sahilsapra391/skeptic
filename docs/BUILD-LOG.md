@@ -1854,3 +1854,35 @@ the derived grid IS the spec, marked derived — spec_to_draft would
 fabricate via delta rounding and window loss). Verdict-grounding
 guardrail traced clean: provenance never reaches the verdict LLM or
 grounded ask.
+
+## UX Chunk B — "How this was built": the setup story on the run screen (2026-07-14)
+
+WHAT: run detail gains a provenance view rendering Chunk A's record as a
+readable story, top to bottom: origin/lineage note (auto runs link their
+parent) → the initial prompt as the user's message bubble (chart runs add
+the pointer panel: pinned bars, intraday pins keep ET times) → each
+clarifying question with the chosen answer highlighted (free-typed
+answers render as quoted chips; answers pair to questions by event id) →
+the confirmed decision grid → the run-mechanics line (durations, session
+count, resolution mix, effective window, spec version + fill model +
+deploy build). Read-only v1; Results stay the default; the story is one
+click away. The saved-run screen's redundant New analysis button (the
+left nav already has one) is REPLACED by the toggle; the post-run flow
+KEEPS its button — the nav's same-route Link cannot reset in-page state,
+so that copy was never redundant. Naming: "How this was built" (alts
+"Setup story", "The interview") — owner picks at PR review.
+BOTH RECORD SHAPES RENDER: stored records (confirmed.draft + build) and
+derived records (confirmed.boxes marked "derived from the stored spec",
+no build, and the owner-worded line standing where the conversation
+would be: "conversation not captured (predates provenance recording)").
+Automatic runs say "no conversation — this run was started
+automatically" (a different truth than predating the column). Neutral
+palette only — neither P/L nor verdict colors; serif reserved for the
+view heading.
+VERIFIED IN BROWSER against a seeded scratch lake (fixture store, real
+engine+gauntlet runs, token-less local uvicorn + Next on offset ports):
+all four scenarios — text run with two-round Q&A, chart-pointer run,
+derived pre-column run, auto re-run with parent link. Browser pass
+caught 2 real bugs pre-review: date-only chart pins slid back a day
+(UTC-midnight parse formatted in ET — now plain-date formatting) and the
+auto-run wording; plus sub-second runs now say "<1s" not "0s".
