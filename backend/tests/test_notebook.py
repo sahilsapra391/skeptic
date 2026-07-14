@@ -327,8 +327,23 @@ class TestReport:
         doc_plain = self._report()
         assert "Scale-in depth attribution" not in doc_plain
         ladder = {**_PAYLOAD,
-                  "ladderDepth": {"tiers": [{"depth": 1}], "rungs": []}}
-        assert "Scale-in depth attribution" in self._report(payload=ladder)
+                  "ladderDepth": {"tiers": [{"depth": 1, "total_pl": 172.0}],
+                                  "rungs": []}}
+        doc = self._report(payload=ladder)
+        assert "Scale-in depth attribution" in doc
+        # dict rows render as REAL columns, not JSON blobs in a cell
+        assert "<th>depth</th>" in doc and "<th>total_pl</th>" in doc
+        assert '{"depth"' not in doc
+
+    def test_non_finite_series_omits_the_chart(self) -> None:
+        poisoned = {**_PAYLOAD,
+                    "equitySeries": [{"t": "2024-01-02", "v": 10000.0},
+                                     {"t": "2024-01-03", "v": float("nan")}]}
+        doc = self._report(payload=poisoned)
+        # the chart is omitted rather than rendered with NaN coordinates;
+        # the drawdown chart (clean) still renders
+        assert "Equity — stored run" not in doc
+        assert "Drawdown" in doc
 
     def test_deterministic(self) -> None:
         assert self._report() == self._report()
@@ -389,6 +404,9 @@ class TestNotebookEndpoints:
         assert rr.status_code == 200
         assert rr.headers["content-type"].startswith("text/html")
         assert "inline" in rr.headers["content-disposition"]
+        # static document: nothing may execute or phone out even if
+        # escaping ever regressed
+        assert "default-src 'none'" in rr.headers["content-security-policy"]
         assert "sell a monday put" in rr.text
         assert "How this strategy was agreed" in rr.text
         assert rr.text.count("not financial advice") >= 2

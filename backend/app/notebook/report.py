@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 from typing import Any
 
 _INK = "#16181d"
@@ -125,6 +126,11 @@ def _series_svg(series: list[dict[str, Any]] | None, *, kind: str,
     if not series or len(series) < 2:
         return ""
     values = [float(p["v"]) for p in series]
+    if not all(math.isfinite(v) for v in values):
+        # a poisoned point would silently corrupt every coordinate —
+        # omit the chart rather than render garbage (the tables beside
+        # it still carry the numbers)
+        return ""
     lo, hi = min(values), max(values)
     span = (hi - lo) or 1.0
     width, height, pad_l, pad_r, pad_y = 800, 220, 8, 8, 18
@@ -179,6 +185,27 @@ def _rows(pairs: list[tuple[str, Any]]) -> str:
         out.append(f"<tr><td class=\"key\">{_esc(label)}</td>"
                    f"<td>{_esc(rendered)}</td></tr>")
     return "".join(out)
+
+
+def _dict_table(rows: list[dict[str, Any]]) -> str:
+    """A list of homogeneous dicts as a real column table — the ladder
+    and agreement blocks deserve columns, not JSON blobs in a cell."""
+    if not rows:
+        return ""
+    columns: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in columns:
+                columns.append(key)
+    head = "".join(f"<th>{_esc(c)}</th>" for c in columns)
+    body = "".join(
+        "<tr>" + "".join(
+            f"<td>{_esc('' if row.get(c) is None else row.get(c))}</td>"
+            for c in columns) + "</tr>"
+        for row in rows
+    )
+    return (f"<table><thead><tr>{head}</tr></thead>"
+            f"<tbody>{body}</tbody></table>")
 
 
 def _provenance_html(record: dict[str, Any], grid: dict[str, Any]) -> str:
@@ -348,11 +375,7 @@ def build_report(
         parts.append("<p><strong>Cross-source agreement on touched "
                      "sessions</strong> <span class=\"note\">(reported, "
                      "never blended into a score):</span></p>")
-        pair_rows = [(str(p.get("pair", p.get("label", "?"))),
-                      json.dumps({k: v for k, v in p.items()
-                                  if k not in ("pair", "label")}))
-                     for p in dc["pairs"]]
-        parts.append(f"<table><tbody>{_rows(pair_rows)}</tbody></table>")
+        parts.append(_dict_table(dc["pairs"]))
     ld = payload.get("ladderDepth")
     if ld:
         parts.append("<p><strong>Scale-in depth attribution (P&amp;L by "
@@ -360,9 +383,8 @@ def build_report(
         for label, key in (("per-tier", "tiers"), ("marginal per rung", "rungs")):
             rows = ld.get(key) or []
             if rows:
-                parts.append(f'<p class="note">{label}:</p><table><tbody>'
-                             + _rows([(json.dumps(r), "") for r in rows])
-                             + "</tbody></table>")
+                parts.append(f'<p class="note">{_esc(label)}:</p>'
+                             + _dict_table(rows))
     parts.append("</section>")
 
     parts.append(f"<section>{_honesty_html(payload, sweep_notes)}</section>")

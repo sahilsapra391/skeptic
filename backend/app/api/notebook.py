@@ -132,8 +132,18 @@ def export_report(run_id: str) -> Response:
     return Response(
         content=document,
         media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition":
-                 f'inline; filename="skeptic-run-{run_id}.html"'},
+        headers={
+            "Content-Disposition":
+                f'inline; filename="skeptic-run-{run_id}.html"',
+            # defense-in-depth: the document is fully static — even if
+            # escaping ever regressed, nothing may execute or phone out.
+            # Fonts are the one sanctioned external fetch (typography
+            # directive); everything else is inline or forbidden.
+            "Content-Security-Policy":
+                "default-src 'none'; style-src 'unsafe-inline' "
+                "https://fonts.googleapis.com; font-src "
+                "https://fonts.gstatic.com; img-src data:",
+        },
     )
 
 
