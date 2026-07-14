@@ -248,6 +248,22 @@ class TestScaleAwareFloors:
         assert values == [6.0, 8.0, 10.0, 12.0, 14.0]
         assert base_index == 2
 
+    def test_ivx_zscore_small_threshold_gets_a_real_probe(self) -> None:
+        # THE motivating case (PR #97 review): 'ivx_zscore_1y > 0.3' swept
+        # 0.24…0.36 — a 0.12σ band of a ±3σ scale, a guaranteed false
+        # plateau. Floor 0.25σ: 0.3 + [-2..2]·0.25 = [-0.2, 0.05, 0.3,
+        # 0.55, 0.8] — a full σ band. Expressible since spec v8 merged;
+        # the string-keyed floor engaged with zero changes here.
+        spec = _spec_with([{"indicator": "ivx_zscore_1y", "operator": ">",
+                            "value": 0.3}], version=8)
+        muts, note = _mutations(spec)
+        _, values, base_index, _ = next(
+            m for m in muts if m[0] == "cond_ivx_zscore_1y")
+        assert values == [-0.2, 0.05, 0.3, 0.55, 0.8]
+        assert base_index == 2 and values[base_index] == 0.3
+        assert note is not None
+        assert "ivx_zscore_1y > 0.3 swept -0.2…0.8" in note
+
     def test_floor_table_matches_the_vocabulary(self) -> None:
         # every floor key is a real indicator — a typo here would silently
         # disable a floor. ivx_zscore_1y is spec v8 (PR #97): keyed by
