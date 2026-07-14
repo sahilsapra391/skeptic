@@ -847,9 +847,16 @@ Rules (owner decisions 2026-07-08):
   count, and the sweep never re-centers on a better neighbor — a
   better neighbor stays a recommendation that re-enters the gauntlet
   as a NEW trial. Disclosed per condition in conditions_note
-  ("skew_25d swept -0.5…1.5 — absolute family-scale steps …") with the
-  grid ENDPOINTS as the only numerals, so verdict grounding
-  (guardrail #4) always finds them in the report.
+  ("skew_25d > 0.5 swept -0.5…1.5 — absolute family-scale steps …"):
+  the operator + specced value attribute the grid when one indicator
+  appears twice (the max-pain band pair), and every numeral is the
+  specced value or a grid ENDPOINT, so verdict grounding (guardrail
+  #4) always finds them in the report. A threshold AT or BELOW a
+  bounded family's lower edge (e.g. a negative RSI — schema-legal,
+  scale-nonsensical) keeps the pre-floor multiplicative sweep: the
+  floor was grounded on the family's scale, and shifting a grid past
+  the specced value would take the as-specced cell off the grid
+  (review finding, regression-tested).
 - **Capped at the first 3 entry conditions.** Each swept condition adds
   5 engine re-runs on the serialized, OOM-sensitive engine; 3 covers
   the overfit surface of nearly every real spec (secondary filters

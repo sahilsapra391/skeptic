@@ -1893,3 +1893,38 @@ v8 lands, opaque levels absent), note-numeral grounding against the
 verdict validator's own regex, three-part note composition. All 13
 pre-existing sweep tests pass byte-identical (rsi 30 → [24,27,30,33,36],
 rank 90 clamp) — floors bind only where ±20% was degenerate.
+REVIEW (independent 8-angle pass, this PR): 1 BLOCKER + 3 MAJOR fixed,
+2 altitude findings deferred-with-disclosure. BLOCKER (two angles
+executed it live): a negative threshold on a bounded family (schema
+allows it — Condition.value is unconstrained) drove the lower-edge
+shift past the specced value → negative base_index → payload's
+negative indexing reported a FABRICATED as-specced value, no ring on
+the grid, IndexError/500 at large negatives → thresholds at/below the
+family's lower edge now keep the pre-floor multiplicative path,
+regression-tested. MAJORS: retail verdict caveat framed the whole
+note as "We couldn't stress-test every entry rule:" — false for
+floored parts (rules that WERE swept, wider) → reworded "Notes from
+stress-testing your entry rules:"; "±20%" methodology claims went
+stale on every describing surface (recommendations, empty-recs line,
+gauntlet previews, runs.py pending-sweep copy, frontend hint/titles/
+axis captions) → neutral accurate wording ("sensitivity sweep",
+"nudged around your values", axis "lower/higher"); floored
+disclosures were keyed by bare indicator name — unattributable for
+the max-pain band pair → operator + specced value in each entry
+(numerals still grounded: specced value ∈ values). CLEANUPS: dead
+floor<=0 disjunct dropped; _SWEEP_FACTORS hoisted module-level (the
+0.1-step/5-cell coupling documented at the constant, drift risk
+named); duplicate clamped cells (rank base ≥ ~91 pins two cells at
+100) now reuse the deterministic result instead of re-running the
+serialized engine; grounding test now calls the SHIPPING
+validate_numbers/grounding_set instead of a hand-rolled set; floor
+table completeness enforced — every Indicator must hold a floor or an
+explicit _COND_FLOOR_EXEMPT listing (typo guard alone was
+one-directional). DEFERRED, disclosed: the delta sweep retains the
+same small-base under-probing class (0.05Δ sweeps ±0.01 with
+clamp-collapse at 0.03) — own pass, needs strike-granularity design;
+_classify blesses an all-identical-Sharpe sweep as plateau ('or
+valid' fallback → median == peak) — pre-existing classifier hole the
+floors narrow but can't close, owner call on "sweep uninformative"
+disclosure semantics. 628 tests green; canary flagged; frontend
+lint+typecheck clean.

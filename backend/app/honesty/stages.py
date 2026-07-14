@@ -269,15 +269,22 @@ def monte_carlo(
 # ----------------------------------------------------- stage 4: sensitivity
 Setter = Callable[[StrategySpec, float], None]
 
+# The sweep's multiplicative grid: 0.1-spaced, 5 cells, specced value at
+# index 2. _condition_grid's floor guard and additive shape are built on
+# these three facts — change them TOGETHER or the "probed as widely as a
+# reference-scale threshold" equivalence the floors encode silently breaks.
+_SWEEP_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2]
+
 
 def _mutations(
     spec: StrategySpec,
 ) -> tuple[list[tuple[str, list[float], int, Setter]], str | None]:
-    """((name, values ±20% in 5 steps, base index, setter) per numeric
-    param present, conditions-disclosure note). The base index marks the
+    """((name, values in 5 steps — ±20%, or an absolute family-scale grid
+    for small condition thresholds, base index, setter) per numeric param
+    present, conditions-disclosure note). The base index marks the
     as-specced value inside `values`."""
     out: list[tuple[str, list[float], int, Setter]] = []
-    factors = [0.8, 0.9, 1.0, 1.1, 1.2]
+    factors = _SWEEP_FACTORS
 
     lead = spec.position.legs[0].strike_selection
     if lead.method is StrikeMethod.DELTA:
@@ -334,7 +341,7 @@ def _mutations(
     # Small thresholds on wide scales sweep an absolute family-scale grid
     # instead of ±20% (_COND_FAMILY_FLOORS), disclosed in the note.
     # Entry conditions only in v1 (exit/rung deferred, disclosed).
-    note = _append_condition_sweeps(spec, out, factors)
+    note = _append_condition_sweeps(spec, out)
     return out, note
 
 
@@ -390,9 +397,20 @@ _COND_FAMILY_FLOORS: dict[str, tuple[float, float | None]] = {
     # let users state would be the invented-convention sin ourselves).
 }
 
+# Every indicator must appear in the floors table OR here, on purpose —
+# a test enforces the partition so new vocabulary can't silently fall
+# back to ±20% without someone deciding it should (review finding: the
+# typo guard alone only checked the table→enum direction).
+_COND_FLOOR_EXEMPT: frozenset[str] = frozenset({
+    "sma", "ema",              # absolute price — % of price IS the scale
+    "ema_cross_state",         # categorical state, not a threshold scale
+    "gex_level", "dex_level",  # vendor units, raw thresholds parser-refused
+    "net_premium_level", "market_tide_level", "nope_level",
+})
+
 
 def _condition_grid(
-    base: float, indicator: str, factors: list[float]
+    base: float, indicator: str
 ) -> tuple[list[float], int, bool]:
     """The 5 threshold cells for one condition: (values, base index,
     floor-engaged flag). ±20% multiplicative wherever that moves the
@@ -404,11 +422,16 @@ def _condition_grid(
     multiple-testing arithmetic never change with the grid shape."""
     floor, lo = _COND_FAMILY_FLOORS.get(indicator, (0.0, None))
     is_rank = indicator.endswith("_rank_1y") or indicator == "iv_percentile_1y"
-    # factors are 0.1-spaced, so the multiplicative per-cell step is
-    # 10% of |base| (0.1 literal: deriving it from float subtraction of
-    # the factors makes 5×0.1 land just under a 0.5 floor)
-    if floor <= 0.0 or abs(base) * 0.1 >= floor:
-        vals = [base * f for f in factors]
+    # _SWEEP_FACTORS are 0.1-spaced, so the multiplicative per-cell step
+    # is 10% of |base| (0.1 literal: deriving it from float subtraction
+    # of the factors makes 5×0.1 land just under a 0.5 floor).
+    # A threshold AT or BELOW a bounded family's lower edge is outside
+    # the scale the floor was grounded on (e.g. a negative RSI) — keep
+    # the pre-floor multiplicative behavior rather than shift the grid
+    # past the specced value (review finding: shift > 2 would push
+    # base_index negative and mislabel the as-specced cell downstream).
+    if abs(base) * 0.1 >= floor or (lo is not None and base <= lo):
+        vals = [base * f for f in _SWEEP_FACTORS]
         if is_rank:
             vals = [min(100.0, max(0.0, v)) for v in vals]
         return [round(v, 4) for v in vals], 2, False
@@ -417,14 +440,13 @@ def _condition_grid(
     if lo is not None and vals[0] < lo:
         shift = math.ceil((lo - vals[0]) / floor)
         vals = [v + shift * floor for v in vals]
-    # base > lo for any real threshold (value == 0 is sign-skipped), so
-    # shift ≤ 2 and the specced value sits at index 2 - shift
+    # base > lo (guarded above) and value == 0 is sign-skipped, so
+    # shift ≤ 2 and the specced value sits at index 2 - shift ≥ 0
     return [round(v, 4) for v in vals], 2 - shift, True
 
 
 def _append_condition_sweeps(
     spec: StrategySpec, out: list[tuple[str, list[float], int, Setter]],
-    factors: list[float],
 ) -> str | None:
     """Add up to 3 entry-condition threshold sweeps to `out`; return a
     disclosure note for the conditions that were skipped or capped, and
@@ -448,12 +470,17 @@ def _append_condition_sweeps(
             capped += 1
             continue
         name = cond.indicator.value
-        vals, base_index, floor_hit = _condition_grid(cond.value, name, factors)
+        vals, base_index, floor_hit = _condition_grid(cond.value, name)
         if floor_hit:
             # disclosure numerals must stay grounded (guardrail #4): the
-            # grid ENDPOINTS are report values the validator can find;
-            # the step itself might not be
-            floored.append(f"{name} swept {vals[0]:g}…{vals[-1]:g}")
+            # specced value and the grid ENDPOINTS are report values the
+            # validator can find; the step itself might not be. The
+            # operator + specced value attribute the grid when a spec
+            # carries the same indicator twice (the max-pain band pair).
+            floored.append(
+                f"{name} {cond.operator.value} {cond.value:g} swept "
+                f"{vals[0]:g}…{vals[-1]:g}"
+            )
 
         # unique sweep name: indicator, else +operator, else +index — two
         # conditions can share an indicator (the max-pain band pair) and a
@@ -539,7 +566,8 @@ def _sweep_base_spec(
 def sensitivity(
     spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
 ) -> Sensitivity:
-    """Perturb each numeric parameter ±20% in 5 steps, re-run the engine,
+    """Perturb each numeric parameter in 5 steps (±20%, or an absolute
+    family-scale grid for small condition thresholds), re-run the engine,
     classify the optimum (plateau/cliff). At the 5-min clock the sweep also
     nudges the ENTRY TIME ±15/±30 minutes (D2d, per the brief): an edge that
     only exists at exactly one minute of the day is noise — classified with
@@ -549,7 +577,14 @@ def sensitivity(
     sweeps: list[ParamSweep] = []
     for name, values, base_index, setter in mutations:
         sharpes: list[float | None] = []
+        # a clamped grid can repeat a cell (rank base ≥ ~91 pins two cells
+        # at 100) — same spec + same data + same seed is deterministic, so
+        # reuse the result instead of re-running the serialized engine
+        seen: dict[float, float | None] = {}
         for v in values:
+            if v in seen:
+                sharpes.append(seen[v])
+                continue
             mutated = copy.deepcopy(sweep_spec)
             setter(mutated, v)
             try:
@@ -557,6 +592,7 @@ def sensitivity(
                 sharpes.append(_sharpe(_returns(r.equity)))
             except Exception:
                 sharpes.append(None)
+            seen[v] = sharpes[-1]
         sweeps.append(
             ParamSweep(
                 name=name,

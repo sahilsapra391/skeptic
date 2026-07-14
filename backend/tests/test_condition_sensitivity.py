@@ -18,8 +18,13 @@ from datetime import date, timedelta
 
 from app.api.payload import _param_label, _recommendations, _sweep_display_name
 from app.engine.market import build_fixture_store
-from app.honesty.stages import _COND_FAMILY_FLOORS, _mutations, sensitivity
-from app.honesty.verdict import _NUM_RE
+from app.honesty.stages import (
+    _COND_FAMILY_FLOORS,
+    _COND_FLOOR_EXEMPT,
+    _mutations,
+    sensitivity,
+)
+from app.honesty.verdict import grounding_set, validate_numbers
 from app.models.spec import Indicator, StrategySpec
 from tests.test_spec_roundtrip import CANONICAL
 
@@ -163,7 +168,9 @@ class TestScaleAwareFloors:
         assert base_index == 2 and values[base_index] == 0.5
         assert len(values) == 5  # never more cells — the tax is unchanged
         assert note is not None and "absolute family-scale steps" in note
-        assert "skew_25d swept -0.5…1.5" in note
+        # operator + specced value attribute the grid (review finding:
+        # bare indicator names were ambiguous for the max-pain pair)
+        assert "skew_25d > 0.5 swept -0.5…1.5" in note
 
     def test_large_skew_keeps_multiplicative(self) -> None:
         # base 10 → 10%·10 = 1.0 ≥ 0.5 floor → plain ±20%: [8, 9, 10, 11, 12]
@@ -257,8 +264,11 @@ class TestScaleAwareFloors:
 
     def test_note_numerals_are_grounded(self) -> None:
         # guardrail #4 interaction: the note rides into verdict caveats and
-        # the LLM may echo it — every numeric token must be findable in the
-        # report (a sweep grid value) or the 0-30 counting set
+        # the LLM may echo it — validated with the SHIPPING validator
+        # (review finding: a hand-rolled membership check could drift from
+        # validate_numbers' tolerance/scrub semantics), against an allowed
+        # set built exactly the way production builds it: harvesting the
+        # sweep values the report will carry
         spec = _spec_with([
             {"indicator": "skew_25d", "operator": ">", "value": 0.5},
             {"indicator": "max_pain_distance_pct", "operator": "<",
@@ -266,11 +276,50 @@ class TestScaleAwareFloors:
         ], version=7)
         muts, note = _mutations(spec)
         assert note is not None
-        grid_values = {v for m in muts for v in m[1]}
-        allowed = grid_values | {abs(v) for v in grid_values} | {
-            float(x) for x in range(31)}
-        for token in _NUM_RE.findall(note):
-            assert float(token) in allowed, f"ungrounded numeral {token!r}"
+        allowed = grounding_set(
+            {"params": [{"values": m[1]} for m in muts]})
+        assert validate_numbers(note, allowed) == []
+
+    def test_negative_threshold_on_bounded_family_stays_multiplicative(
+        self,
+    ) -> None:
+        # review finding (executed live): 'rsi < -5' floored to a grid
+        # [1,3,5,7,9] with base_index -3 — the specced value fell OFF the
+        # grid and Python negative indexing mislabeled the as-specced cell
+        # downstream. A threshold at/below the family's lower bound now
+        # keeps the pre-floor multiplicative path: hand-computed
+        # -5 × [.8,.9,1,1.1,1.2] = [-4, -4.5, -5, -5.5, -6], base idx 2
+        spec = _spec_with([{"indicator": "rsi", "operator": "<",
+                            "value": -5, "period": 14}])
+        muts, note = _mutations(spec)
+        _, values, base_index, _ = next(m for m in muts if m[0] == "cond_rsi")
+        assert values == [-4.0, -4.5, -5.0, -5.5, -6.0]
+        assert base_index == 2 and values[base_index] == -5.0
+        assert note is None  # not floored, nothing to disclose
+
+    def test_every_indicator_has_a_floor_or_an_exemption(self) -> None:
+        # review finding: the typo guard only checked table→enum; new
+        # vocabulary could silently fall back to ±20% with nobody deciding.
+        # The partition forces the decision per indicator, forever.
+        floors = set(_COND_FAMILY_FLOORS)
+        assert not floors & _COND_FLOOR_EXEMPT  # disjoint by construction
+        undecided = {i.value for i in Indicator} - floors - _COND_FLOOR_EXEMPT
+        assert undecided == set(), (
+            f"new indicator(s) {sorted(undecided)} need a _COND_FAMILY_FLOORS "
+            "entry or an explicit _COND_FLOOR_EXEMPT listing"
+        )
+
+    def test_max_pain_pair_disclosures_are_attributable(self) -> None:
+        # review finding: the canonical band pair produced two same-named
+        # entries — the operator + specced value now tell them apart
+        spec = _spec_with([
+            {"indicator": "max_pain_distance_pct", "operator": "<", "value": 1},
+            {"indicator": "max_pain_distance_pct", "operator": ">", "value": -1},
+        ], version=7)
+        _, note = _mutations(spec)
+        assert note is not None
+        assert "max_pain_distance_pct < 1 swept 0.5…1.5" in note
+        assert "max_pain_distance_pct > -1 swept -1.5…-0.5" in note
 
     def test_floored_and_sign_and_cap_notes_compose(self) -> None:
         # all three disclosure parts at once, still one readable note

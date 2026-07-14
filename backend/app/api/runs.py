@@ -50,7 +50,7 @@ _PENDING_ASK_STATS = (
 )
 _PENDING_SWEEP = (
     "standalone sweeps arrive with the compare/sweep UI — the gauntlet already "
-    "runs a ±20% sensitivity sweep on every backtest."
+    "runs a sensitivity sweep on every backtest."
 )
 
 
