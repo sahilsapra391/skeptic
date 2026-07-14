@@ -1854,3 +1854,42 @@ the derived grid IS the spec, marked derived — spec_to_draft would
 fabricate via delta rounding and window loss). Verdict-grounding
 guardrail traced clean: provenance never reaches the verdict LLM or
 grounded ask.
+
+## F8 follow-up — scale-aware condition-sweep floors (2026-07-14)
+
+WHAT: the F8 threshold sweep perturbed every entry-condition threshold
+±20% multiplicatively — for a SMALL threshold on a WIDE natural scale
+that probes almost nothing ("ivx_zscore_1y > 0.3" sweeps a 0.12σ band
+of a ±3σ scale; same for small skew_25d or max_pain_distance_pct), and
+five near-identical Sharpes read as a FALSE PLATEAU — the classifier
+blessing exactly the fragile threshold it exists to catch. Raised in
+the PR #97 review (ivx_zscore_1y); pre-existing class, fixed here.
+HOW: _COND_FAMILY_FLOORS (stages.py) + _condition_grid — when
+10%·|threshold| per cell falls under the family floor, the sweep
+switches to an absolute grid of ±2 floor-steps around the specced
+value, shifted up whole steps at a bounded family's lower edge (the
+dte whole-day guard's pattern; base always stays ON the grid, at a
+recorded base_index). One grounding rule, not N invented constants:
+floor = 10% of the family's stated reference magnitude (ranks → 20,
+z-scores → 2.5σ, vol points → 5, percent-of-price → 2.5%, drawdown →
+10%, vol levels → 20 = the regime line, ratio → 1.0). Table keyed by
+STRING so ivx_zscore_1y (spec v8, PR #97) picks its floor up whichever
+branch merges first. SMA/EMA keep pure ±20%; vendor-unit *_level
+families get NO invented floor (raw thresholds are parser-refused).
+Disclosed per condition in conditions_note with the grid ENDPOINTS as
+the only numerals (verdict grounding, guardrail #4, always finds them
+in the report's sweep values). TAX UNCHANGED: same 5 cells, same
+plateau/cliff classifier, identical engine-run count, never re-centers
+on a better neighbor (a better neighbor stays a NEW-trial
+recommendation). No engine/model files touched — daily digests
+bit-identical (the sweep is a gauntlet stage).
+TESTS: 11 new hand-computed (test_condition_sensitivity.py) — floored
+grids for small skew (−0.5…1.5) / max-pain (0.5…1.5) / negative base
+(−1.5…−0.5), boundary threshold (10%·5 = the 0.5 floor exactly) stays
+multiplicative, bounded shift for rank 2 → [0,2,4,6,8] base_index 1
+and rsi 3 → [1,3,5,7,9], low rank in-bounds no-shift, floor-table
+typo guard (every key a real Indicator, ivx_zscore_1y excepted until
+v8 lands, opaque levels absent), note-numeral grounding against the
+verdict validator's own regex, three-part note composition. All 13
+pre-existing sweep tests pass byte-identical (rsi 30 → [24,27,30,33,36],
+rank 90 clamp) — floors bind only where ±20% was degenerate.
