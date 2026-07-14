@@ -68,3 +68,21 @@ def test_bearer_token_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         client.get("/api/runs", headers={"Authorization": "Bearer sekrit"}).status_code == 200
     )
+
+
+def test_parse_upstream_failure_is_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An upstream parser failure surfaces as a retryable 503 with the honest
+    detail — never as a fake clarifying question inside a 200."""
+    import requests
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    def _boom(*a: object, **k: object) -> None:
+        raise requests.ConnectionError("upstream down")
+
+    monkeypatch.setattr(requests, "post", _boom)
+    r = client.post("/api/parse", json={"text": "sell a put on SPY, close at 50%"})
+    assert r.status_code == 503
+    assert "try again" in r.json()["detail"]

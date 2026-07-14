@@ -21,7 +21,7 @@ from app.config import load_local_env
 
 load_local_env()
 
-from app.parser.parse import parse_strategy  # noqa: E402
+from app.parser.parse import ParserUnavailableError, parse_strategy  # noqa: E402
 
 CASES = json.loads((Path(__file__).parent / "parser_cases.json").read_text())["cases"]
 
@@ -245,7 +245,15 @@ def main() -> int:
     clear_pass = ambiguous_pass = 0
     lines: list[str] = []
     for case in CASES:
-        outcome = parse_strategy(case["text"])
+        try:
+            outcome = parse_strategy(case["text"])
+        except ParserUnavailableError as exc:
+            # a transient upstream outage must not void the whole run's
+            # accumulated grades — record the case as an outage FAIL
+            # (distinctly labeled, so it never reads as a parse regression)
+            # and keep grading
+            lines.append(f"case {case['case']:>2} [FAIL] (upstream outage) {exc}")
+            continue
         if outcome is None:
             print("OPENROUTER_API_KEY missing — the eval needs the live parser.")
             return 2

@@ -12,13 +12,27 @@ from tests.fixtures.synthetic_market import _spec
 
 
 class _FakeResp:
-    status_code = 200
+    """OpenRouter envelope fake: dict payloads are JSON-encoded, a raw str
+    stands in for a reply that violates the JSON contract, and a non-200
+    status stands in for a gateway outage."""
 
-    def __init__(self, payload: dict) -> None:
-        self._content = json.dumps(payload)
+    def __init__(self, payload: dict | str, status: int = 200) -> None:
+        self._content = payload if isinstance(payload, str) else json.dumps(payload)
+        self.status_code = status
 
     def json(self) -> dict:
         return {"choices": [{"message": {"content": self._content}}]}
+
+
+def _fake_clock(*values: float):
+    """Successive _monotonic() readings; the last value repeats forever so a
+    refactor that changes the clock-read count can't StopIteration a test."""
+    seq = list(values)
+
+    def clock() -> float:
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+
+    return clock
 
 
 def _valid_spec() -> dict:
@@ -119,6 +133,101 @@ def test_malformed_position_falls_back_to_questions(
     )
     out = parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
     assert out is not None and out.status == "questions"
+
+
+# ------------------------------------------------ upstream failure honesty
+def test_upstream_failure_raises_not_a_fake_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An upstream LLM failure is an ERROR the route reports as a 503 — it
+    must never come back as a fake clarifying question (it rendered as
+    "QUESTION 1 OF 1 — I DON'T GUESS" and entered the provenance record)."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    def _boom(*a: object, **k: object) -> None:
+        raise requests.Timeout("upstream took too long")
+
+    monkeypatch.setattr(requests, "post", _boom)
+    with pytest.raises(parser_module.ParserUnavailableError, match="upstream error"):
+        parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
+
+
+def test_budget_exhausted_retry_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The attempt loop answers inside PARSE_BUDGET_SECONDS: when a contract
+    violation earns a retry the budget can't fund, the parser refuses while
+    it can still say so — the proxy must never 504 a healthy engine."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    # deadline calc → attempt-1 remaining → attempt-2 remaining (2s left)
+    monkeypatch.setattr(parser_module, "_monotonic", _fake_clock(0.0, 0.5, 88.0))
+    calls: list[dict] = []
+
+    def _garbage(*a: object, **k: object) -> _FakeResp:
+        calls.append(dict(k))
+        return _FakeResp("no json here")
+
+    monkeypatch.setattr(requests, "post", _garbage)
+    with pytest.raises(parser_module.ParserUnavailableError, match="ran out of time"):
+        parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
+    assert len(calls) == 1  # the doomed retry was never launched
+
+
+def test_attempt_timeout_shrinks_to_the_remaining_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each upstream call gets only what's left of the budget — bounded per
+    phase (connect, read) because requests applies its timeout to each phase
+    separately — so two attempts can never add up past the proxy's leash."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    # deadline calc → attempt-1 remaining (90s) → attempt-2 remaining (40s)
+    monkeypatch.setattr(parser_module, "_monotonic", _fake_clock(0.0, 0.0, 50.0))
+    timeouts: list[tuple[float, float]] = []
+    replies = iter(
+        [_FakeResp("no json here"), _FakeResp({"result": "spec", "spec": _valid_spec()})]
+    )
+
+    def _post(*a: object, **k: object) -> object:
+        timeouts.append(k["timeout"])
+        return next(replies)
+
+    monkeypatch.setattr(requests, "post", _post)
+    out = parser_module.parse_strategy("sell a 30 delta put on SPY, close at 50%")
+    assert out is not None and out.status == "spec"
+    assert timeouts == [(10.0, 60.0), (10.0, 30.0)]
+
+
+def test_upstream_http_blip_retries_once_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One non-200 from the gateway is transient — the loop retries it
+    plainly within budget and a healthy second reply still compiles."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    replies = iter(
+        [_FakeResp("", status=429), _FakeResp({"result": "spec", "spec": _valid_spec()})]
+    )
+    monkeypatch.setattr(requests, "post", lambda *a, **k: next(replies))
+    out = parser_module.parse_strategy("sell a 30 delta put on SPY, close at 50%")
+    assert out is not None and out.status == "spec"
+
+
+def test_persistent_upstream_http_error_is_503_not_a_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-200 on BOTH attempts is an outage, not a parsing problem — it
+    must raise (→ the route's 503), never fall through to the
+    could-not-compile question (the review-caught half of the fake-question
+    bug: HTTP errors return None from the old _call_llm, bypassing the
+    exception path)."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    calls: list[int] = []
+
+    def _outage(*a: object, **k: object) -> _FakeResp:
+        calls.append(1)
+        return _FakeResp("", status=500)
+
+    monkeypatch.setattr(requests, "post", _outage)
+    with pytest.raises(parser_module.ParserUnavailableError, match="upstream error"):
+        parser_module.parse_strategy("sell a put on SPY, close at 50% profit")
+    assert len(calls) == 2  # the transient retry was attempted first
 
 
 # --------------------------------------------------------- D5d: scale-in

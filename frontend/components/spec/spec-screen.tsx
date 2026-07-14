@@ -35,6 +35,14 @@ const SPEC_HINTS: Record<string, [string, string]> = {
     "Days to expiration when the trade opens. 0DTE needs minute data and is refused for now.",
     "How many days until the option expires when the trade opens. Same-day (0) isn't supported yet.",
   ],
+  SCANNING: [
+    "How often the intraday clock may open a position. Default is once per session; every setup takes one entry per signal episode and re-enters after intraday exits.",
+    "How many trades can open in a day. Default is one; every setup lets it re-enter each time the signal fires again after an exit.",
+  ],
+  RESOLUTION: [
+    "Bar resolution per session. Default simulates on the 5-minute grid; finest uses the minute grid where minute data is banked — the run discloses its mix.",
+    "How fine-grained each day's simulation is. Default checks every 5 minutes; finest checks minute by minute where that data exists.",
+  ],
   ANCHOR: [
     "The first pinned example on your chart — where the pattern was taught from.",
     "The first example you pinned on the chart.",
@@ -129,15 +137,18 @@ export function triggerLabel(t: TriggerSpec): string {
   return `${name}${period} ${op?.sym ?? t.operator} ${t.value}`;
 }
 
-/** Tile header: the dial's name plus its tooltip in the chosen register. */
+/** Tile header: the dial's name plus its tooltip in the chosen register.
+ * A tile with no SPEC_HINTS entry renders NO hint — echoing the name back
+ * as its own tooltip is the bug, not a fallback (SCANNING/RESOLUTION
+ * shipped that way once). */
 function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
   const { verbiage } = useSettings();
   const pair = SPEC_HINTS[name.replace(/ [▾✎⌖]$/, "")];
-  const text = pair ? (verbiage === "retail" ? pair[1] : pair[0]) : name;
+  const text = pair ? (verbiage === "retail" ? pair[1] : pair[0]) : null;
   return (
     <div className={clsx(TILE_LABEL, "flex items-center justify-between gap-1", warn && "!text-warn")}>
       <span>{name}</span>
-      <Hint text={text} align="right" />
+      {text && <Hint text={text} align="right" />}
     </div>
   );
 }

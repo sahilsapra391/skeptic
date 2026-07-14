@@ -452,10 +452,16 @@ def parse(req: ParseRequest) -> dict[str, Any]:
     if not req.text.strip():
         raise HTTPException(status_code=422, detail="empty strategy text")
 
-    from app.parser.parse import parse_strategy, spec_to_draft
+    from app.parser.parse import ParserUnavailableError, parse_strategy, spec_to_draft
 
     answers = {str(k): str(v) for k, v in (req.answers or {}).items()}
-    outcome = parse_strategy(req.text, answers or None)
+    try:
+        outcome = parse_strategy(req.text, answers or None)
+    except ParserUnavailableError as exc:
+        # upstream failed or the parse budget ran out — a retryable error,
+        # reported as one; never a fake "clarifying question" (it rendered as
+        # "QUESTION 1 OF 1 — I DON'T GUESS" and entered the provenance record)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if outcome is None:
         raise HTTPException(status_code=501, detail=_PENDING_PARSE_KEY)
     if outcome.status == "questions":

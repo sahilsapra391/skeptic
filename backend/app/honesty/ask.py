@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any
 
 from app.honesty.verdict import (
@@ -24,6 +25,19 @@ from app.honesty.verdict import (
 log = logging.getLogger("ask")
 
 MAX_QUESTION_CHARS = 400
+
+# /runs/{id}/ask runs behind the SAME 100s frontend-proxy leash as /parse
+# (frontend/app/api/[...path]/route.ts) — both grounded attempts must answer
+# inside it, or the proxy 504s a healthy engine mid-retry. Same treatment as
+# the parser's PARSE_BUDGET_SECONDS: one wall-clock budget across attempts,
+# per-phase (connect, read) bounds because requests applies its timeout per
+# phase, and a retry too thin to finish is refused instead of launched.
+ASK_BUDGET_SECONDS = 90.0
+_ATTEMPT_READ_SECONDS = 45.0
+_CONNECT_TIMEOUT_SECONDS = 10.0
+_MIN_RETRY_SECONDS = 10.0
+
+_monotonic = time.monotonic  # patchable in tests — the budget clock
 
 REFUSAL = (
     "I can't ground an answer to that in this run's computed statistics — "
@@ -82,13 +96,24 @@ def answer_question(
         ],
         "temperature": 0.2,
     }
-    for _attempt in range(2):
+    deadline = _monotonic() + ASK_BUDGET_SECONDS
+    for attempt in range(2):
+        remaining = deadline - _monotonic()
+        if attempt and remaining - _CONNECT_TIMEOUT_SECONDS < _MIN_RETRY_SECONDS:
+            # the grounding retry can't finish inside the proxy's leash —
+            # refuse honestly rather than let the proxy 504 a healthy engine
+            log.warning("ask retry refused — budget exhausted")
+            return REFUSAL
         try:
             resp = requests.post(
                 OPENROUTER_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=body,
-                timeout=45,
+                timeout=(
+                    _CONNECT_TIMEOUT_SECONDS,
+                    min(_ATTEMPT_READ_SECONDS,
+                        max(1.0, remaining - _CONNECT_TIMEOUT_SECONDS)),
+                ),
             )
             if resp.status_code != 200:
                 log.warning("ask LLM HTTP %s", resp.status_code)
