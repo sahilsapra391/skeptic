@@ -357,10 +357,15 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         )
     if report.sensitivity.window_note:
         caveats.append(report.sensitivity.window_note + ".")
-    # F8: which entry conditions were not stress-tested and why — so a
-    # missing threshold sweep is never misread as a free pass
+    # F8: which entry conditions were not stress-tested and why, and which
+    # swept an absolute family-scale grid instead of ±20% — so a missing
+    # or reshaped threshold sweep is never misread as a free pass
     if report.sensitivity.conditions_note:
         caveats.append(report.sensitivity.conditions_note.capitalize() + ".")
+    # a small delta swept on absolute strike-scale steps — same
+    # reshaped-grid disclosure duty as the condition floors
+    if report.sensitivity.delta_note:
+        caveats.append(report.sensitivity.delta_note.capitalize() + ".")
     # F7: cross-source agreement over THIS run's window — reported, never
     # scored; every number quoted exists as a numeric report field
     if report.data_confidence is not None and report.data_confidence.note:
@@ -495,11 +500,21 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         f"covered · {report.effective_start} → {report.effective_end}",
         "Backtests always look better than real trading. This is research, not advice.",
     ]
-    # F8: name any entry conditions we couldn't stress-test, in plain terms
+    # F8: how each entry rule was (or wasn't) stress-tested, in plain
+    # terms — the note can now mix not-swept parts (sign tests, cost cap)
+    # with swept-on-a-wider-absolute-grid parts, so the framing must not
+    # claim "couldn't test" for rules that WERE tested
     if report.sensitivity.conditions_note:
         caveats.append(
-            "We couldn't stress-test every entry rule: "
+            "Notes from stress-testing your entry rules: "
             + report.sensitivity.conditions_note + "."
+        )
+    # same duty for the strike choice: a small delta WAS stress-tested,
+    # on wider absolute steps — say so in the same grounded words
+    if report.sensitivity.delta_note:
+        caveats.append(
+            "Notes from stress-testing your strike choice: "
+            + report.sensitivity.delta_note + "."
         )
     cov = report.coverage
     if cov.coverage_ratio < 1.0:

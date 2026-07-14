@@ -27,6 +27,7 @@ from app.engine.market import build_fixture_slice, build_fixture_store
 from app.engine.runner import run_backtest
 from app.main import app
 from app.notebook.builder import build_notebook
+from app.notebook.report import build_report
 from tests.test_finest_resolution import (
     UNDERLYING_2D,
     FinestFixtureIntraday,
@@ -189,8 +190,14 @@ _PAYLOAD = {
     "name": "SPY weekly short put",
     "meta": "SPY · short put · clock daily",
     "mtiles": [{"v": "12%", "l": "CAGR"}],
-    "equitySeries": [["2024-01-02", 10000.0]],
-    "drawdownSeries": [["2024-01-02", 0.0]],
+    # the REAL _downsample row shape: {"t": iso, "v": value} (the report's
+    # SVG crashed on a guessed pair shape — API-loop test caught it)
+    "equitySeries": [{"t": "2024-01-02", "v": 10000.0},
+                     {"t": "2024-06-03", "v": 10800.0},
+                     {"t": "2025-01-02", "v": 11500.0}],
+    "drawdownSeries": [{"t": "2024-01-02", "v": 0.0},
+                       {"t": "2024-06-03", "v": 2.5},
+                       {"t": "2025-01-02", "v": 1.0}],
     "trades": [], "tradeHeader": "Trade log — 10 filled",
     "verdict": {"headline": "Held up.", "survived": "5 OF 5"},
     # the REAL payload shape: honesty is a dict of panel fields, not a
@@ -271,6 +278,83 @@ class TestBuilder:
         assert "Clarified before anything ran" not in story
 
 
+class TestReport:
+    def _report(self, payload: dict | None = None,
+                provenance: dict | None = None) -> str:
+        return build_report(run_id="r1", name="SPY weekly short put",
+                            payload=payload or _PAYLOAD,
+                            provenance=provenance or _PROVENANCE,
+                            grid=_grid())
+
+    def test_story_order_windows_and_disclaimers(self) -> None:
+        doc = self._report()
+        # the story opens before the numbers; disclaimer opens AND closes
+        assert doc.index("How this strategy was agreed") \
+            < doc.index("The numbers") < doc.index("honesty gauntlet") \
+            < doc.index("The verdict") < doc.index("Reproducibility")
+        assert doc.count("not financial advice") >= 2
+        assert "Sell a 30 delta put" in doc
+        assert "How do you exit?" in doc
+        # single-series charts render with their captions
+        assert "Equity — stored run" in doc
+        assert "Drawdown" in doc
+
+    def test_user_text_is_escaped(self) -> None:
+        hostile = {**_PROVENANCE,
+                   "prompt": {"text": '<script>alert("x")</script>'},
+                   "conversation": [
+                       {"kind": "question", "id": "q",
+                        "question": "<img src=x onerror=y>"},
+                       {"kind": "answer", "id": "q", "answer": "a & b < c"},
+                   ]}
+        doc = self._report(provenance=hostile)
+        assert "<script>" not in doc
+        assert "<img" not in doc
+        assert "&lt;script&gt;" in doc
+        assert "a &amp; b &lt; c" in doc
+
+    def test_three_voices_and_no_pl_color_on_verdict(self) -> None:
+        doc = self._report()
+        # the typography directive: exactly the three families, no fourth
+        for family in ("Archivo", "IBM Plex Mono", "Newsreader"):
+            assert family in doc
+        # verdict section carries no color styling — headline is serif ink
+        verdict_chunk = doc[doc.index("The verdict"):
+                            doc.index("Reproducibility")]
+        assert "color:" not in verdict_chunk
+
+    def test_conditional_sections(self) -> None:
+        doc_plain = self._report()
+        assert "Scale-in depth attribution" not in doc_plain
+        ladder = {**_PAYLOAD,
+                  "ladderDepth": {"tiers": [{"depth": 1, "total_pl": 172.0}],
+                                  "rungs": []}}
+        doc = self._report(payload=ladder)
+        assert "Scale-in depth attribution" in doc
+        # dict rows render as REAL columns, not JSON blobs in a cell
+        assert "<th>depth</th>" in doc and "<th>total_pl</th>" in doc
+        assert '{"depth"' not in doc
+
+    def test_non_finite_series_omits_the_chart(self) -> None:
+        poisoned = {**_PAYLOAD,
+                    "equitySeries": [{"t": "2024-01-02", "v": 10000.0},
+                                     {"t": "2024-01-03", "v": float("nan")}]}
+        doc = self._report(payload=poisoned)
+        # the chart is omitted rather than rendered with NaN coordinates;
+        # the drawdown chart (clean) still renders
+        assert "Equity — stored run" not in doc
+        assert "Drawdown" in doc
+
+    def test_deterministic(self) -> None:
+        assert self._report() == self._report()
+
+    def test_no_credentials_or_market_rows(self) -> None:
+        # a standalone document must never carry the token or chain rows
+        doc = self._report()
+        assert "SKEPTIC_ACCESS_TOKEN" not in doc
+        assert "Bearer" not in doc
+
+
 # ───────────────────────────── the API loop ────────────────────────────────
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
@@ -314,6 +398,18 @@ class TestNotebookEndpoints:
         assert nb["metadata"]["skeptic"]["run_id"] == run_id
         story = "".join(nb["cells"][1]["source"])
         assert "sell a monday put" in story
+
+        # report: the human-readable twin — inline HTML, story present
+        rr = client.get(f"/api/runs/{run_id}/report")
+        assert rr.status_code == 200
+        assert rr.headers["content-type"].startswith("text/html")
+        assert "inline" in rr.headers["content-disposition"]
+        # static document: nothing may execute or phone out even if
+        # escaping ever regressed
+        assert "default-src 'none'" in rr.headers["content-security-policy"]
+        assert "sell a monday put" in rr.text
+        assert "How this strategy was agreed" in rr.text
+        assert rr.text.count("not financial advice") >= 2
 
         # reproduce: unchanged fixture lake → every stat matches
         assert client.post(f"/api/runs/{run_id}/reproduce").json()["status"] \

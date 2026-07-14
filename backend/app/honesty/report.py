@@ -85,8 +85,15 @@ class Sensitivity(BaseModel):
     # Disclosed here so the verdict can say so.
     window_note: str | None = None
     # F8: which entry conditions were NOT swept and why (sign tests /
-    # cost cap) — surfaced so absence is never misread as an oversight.
+    # cost cap), and which swept an absolute family-scale grid instead
+    # of ±20% — surfaced so absence or a reshaped grid is never misread
+    # as an oversight.
     conditions_note: str | None = None
+    # Small strike-selection deltas sweep absolute 0.025Δ steps instead
+    # of ±20% (stages._DELTA_STEP_FLOOR — a ±20% cell often cannot move
+    # one strike on a discrete chain). Disclosed like conditions_note;
+    # None on multiplicative sweeps and on runs saved before the floor.
+    delta_note: str | None = None
 
 
 class Dsr(BaseModel):

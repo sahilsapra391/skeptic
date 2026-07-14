@@ -24,7 +24,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
@@ -53,17 +53,19 @@ def _api_base() -> str:
     return os.environ.get("SKEPTIC_PUBLIC_API", "https://api.skeptic.fyi")
 
 
-@router.get("/runs/{run_id}/notebook")
-def export_notebook(run_id: str) -> JSONResponse:
-    """The run's story as an .ipynb — provenance first, then the numbers,
-    then the honesty gauntlet, then the pinned re-execution proof."""
+def _export_inputs(run_id: str) -> tuple[dict[str, Any], dict[str, Any],
+                                         list[str] | None]:
+    """Everything both export formats render from: the merged display
+    payload, the validated spec doc, and the F8 sweep-coverage notes
+    (which live on the stored honesty report, frozen at completion, not
+    in the display payload — baked into the exports so the coverage
+    story travels with the file)."""
     from app.api.runs import get_run
-    from app.notebook.builder import build_notebook
 
     # direct call, not HTTP — FastAPI won't resolve get_run's Query-typed
     # min_trades default, so pass None explicitly (= the omitted-param
     # behavior: the user's stored evidence-bar setting re-grades the read,
-    # #98). The notebook then shows exactly what the app shows.
+    # #98). The exports then show exactly what the app shows.
     payload = get_run(run_id, min_trades=None)  # 404s for us; merges
     # receipts + provenance
     if payload.get("status") != "done":
@@ -81,15 +83,20 @@ def export_notebook(run_id: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail="run not found")
     spec_doc = json.loads(row.spec_json)
     stats = json.loads(row.stats_json) if row.stats_json else {}
-
-    # the F8 sweep-coverage disclosure lives on the stored honesty report
-    # (frozen at completion), not in the display payload — baked into the
-    # notebook's markdown so the coverage story travels with the file.
-    # WHICH keys constitute the disclosure is payload.py's call (the one
-    # selector), never a list baked here.
+    # WHICH keys constitute the F8 sweep-coverage disclosure is
+    # payload.py's call (the one selector), never a list baked here
     sweep_notes = sweep_coverage_notes(
         (stats.get("honesty_report") or {}).get("sensitivity"))
+    return payload, spec_doc, sweep_notes or None
 
+
+@router.get("/runs/{run_id}/notebook")
+def export_notebook(run_id: str) -> JSONResponse:
+    """The run's story as an .ipynb — provenance first, then the numbers,
+    then the honesty gauntlet, then the pinned re-execution proof."""
+    from app.notebook.builder import build_notebook
+
+    payload, spec_doc, sweep_notes = _export_inputs(run_id)
     notebook = build_notebook(
         run_id=run_id,
         name=payload.get("name") or "Skeptic run",
@@ -97,13 +104,48 @@ def export_notebook(run_id: str) -> JSONResponse:
         provenance=payload.get("provenance") or {},
         grid=derived_boxes(spec_doc),
         api_base=_api_base(),
-        sweep_notes=sweep_notes or None,
+        sweep_notes=sweep_notes,
     )
     return JSONResponse(
         content=notebook,
         media_type="application/x-ipynb+json",
         headers={"Content-Disposition":
                  f'attachment; filename="skeptic-run-{run_id}.ipynb"'},
+    )
+
+
+@router.get("/runs/{run_id}/report")
+def export_report(run_id: str) -> Response:
+    """The run's story as a standalone HTML document (owner ask
+    2026-07-14: a format anyone can open) — same story as the notebook,
+    static from the stored run, print-to-PDF clean. Served inline so a
+    browser renders it; the filename rides along for saves."""
+    from app.notebook.report import build_report
+
+    payload, spec_doc, sweep_notes = _export_inputs(run_id)
+    document = build_report(
+        run_id=run_id,
+        name=payload.get("name") or "Skeptic run",
+        payload=payload,
+        provenance=payload.get("provenance") or {},
+        grid=derived_boxes(spec_doc),
+        sweep_notes=sweep_notes,
+    )
+    return Response(
+        content=document,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'inline; filename="skeptic-run-{run_id}.html"',
+            # defense-in-depth: the document is fully static — even if
+            # escaping ever regressed, nothing may execute or phone out.
+            # Fonts are the one sanctioned external fetch (typography
+            # directive); everything else is inline or forbidden.
+            "Content-Security-Policy":
+                "default-src 'none'; style-src 'unsafe-inline' "
+                "https://fonts.googleapis.com; font-src "
+                "https://fonts.gstatic.com; img-src data:",
+        },
     )
 
 

@@ -74,12 +74,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body className="h-screen overflow-hidden bg-ground font-sans text-ink antialiased">
+      {/* print (Save PDF): the scroll cage would clip the printout to one
+          viewport — open it up so the full run paginates */}
+      <body className="h-screen overflow-hidden bg-ground font-sans text-ink antialiased print:h-auto print:overflow-visible">
         <ThemeApplier />
         <BootSplash />
-        <div className="flex h-full">
+        <div className="flex h-full print:block print:h-auto">
           <NavRail />
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto print:overflow-visible">
             <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
           </main>
         </div>

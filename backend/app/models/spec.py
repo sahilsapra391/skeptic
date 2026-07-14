@@ -174,6 +174,27 @@ INTRADAY_CAPABLE_INDICATORS = {
     Indicator.PRICE_VS_VWAP_PCT,
 }
 
+# Indicators the engine evaluates over a bar SERIES (yesterday's value
+# exists in the evaluation pair — conditions.py routes them through
+# _series_pair). crosses_above/crosses_below are defined ONLY here. Every
+# other indicator is read as a single point-in-time observation per bar
+# (vix_level, the ivx/hv family, ranks, flow, VWAP distance, ...) — a
+# "cross" has no previous value there, and the engine's _compare refuses
+# it, so validation must refuse it first: a spec that cannot run must
+# never validate (it used to 500 at the first evaluated session).
+# Deliberately NOT the same set as INTRADAY_CAPABLE_INDICATORS above:
+# price_vs_vwap_pct reads the 5-min clock but as a single observation;
+# drawdown_from_high_pct is daily-only but series-evaluated.
+CROSS_CAPABLE_INDICATORS = {
+    Indicator.RSI,
+    Indicator.SMA,
+    Indicator.EMA,
+    Indicator.PRICE_VS_SMA_PCT,
+    Indicator.PRICE_VS_EMA_PCT,
+    Indicator.EMA_CROSS_STATE,
+    Indicator.DRAWDOWN_FROM_HIGH_PCT,
+}
+
 
 class Operator(StrEnum):
     LT = "<"
@@ -295,6 +316,21 @@ class Condition(BaseModel):
             raise ValueError(
                 "price_vs_vwap_pct is intraday-only — VWAP is session-anchored; "
                 'set timeframe "5min"'
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _crosses_need_series(self) -> Condition:
+        if (
+            self.operator in (Operator.CROSSES_ABOVE, Operator.CROSSES_BELOW)
+            and self.indicator not in CROSS_CAPABLE_INDICATORS
+        ):
+            supported = ", ".join(sorted(i.value for i in CROSS_CAPABLE_INDICATORS))
+            raise ValueError(
+                f"indicator {self.indicator.value} is read as a single "
+                f"point-in-time observation — '{self.operator.value}' needs a "
+                "bar series to detect a cross. Use 'above'/'below' for a level "
+                f"comparison; crosses are supported on {supported}."
             )
         return self
 

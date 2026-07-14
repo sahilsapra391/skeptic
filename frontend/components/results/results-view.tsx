@@ -20,6 +20,7 @@ import type { NullableSeriesPoint, RunPayload, SeriesPoint } from "@/lib/types";
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { Hint } from "@/components/hint";
 import { HowBuilt } from "@/components/results/how-built";
+import { ExportActions } from "@/components/results/export-actions";
 import { PANEL, PANEL_TITLE } from "@/components/results/panel";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
 
@@ -80,9 +81,10 @@ const HINT_MC: HintPair = [
     "If lots of shuffles lose money, the original run got lucky.",
 ];
 const HINT_SENS: HintPair = [
-  "Each parameter nudged ±20% and the backtest re-run. Brighter = better Sharpe. " +
-    "A real edge survives nudges (plateau); a fragile one collapses (cliff).",
-  "We nudged every setting up and down 20% and re-ran the whole test. Brighter = " +
+  "Each parameter nudged around its specced value (±20%, or wider absolute steps " +
+    "for small thresholds and small deltas) and the backtest re-run. Brighter = " +
+    "better Sharpe. A real edge survives nudges (plateau); a fragile one collapses (cliff).",
+  "We nudged every setting around your values and re-ran the whole test. Brighter = " +
     "better result. A real edge survives nudges; a fragile one falls apart.",
 ];
 /** Retail register: same tiles, everyday names. */
@@ -103,7 +105,7 @@ const HINT_TRADES: HintPair = [
 ];
 
 const HINT_RECS: HintPair = [
-  "Each suggestion comes from this run's own gauntlet numbers — the ±20% sweeps " +
+  "Each suggestion comes from this run's own gauntlet numbers — the sensitivity sweeps " +
     "really re-ran the engine. Nothing here is opinion, and acting on one starts " +
     "a new trial that the deflated Sharpe will count against you.",
   "Every suggestion comes from tests we actually ran on this exact strategy — " +
@@ -801,9 +803,9 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
       <div className={clsx(PANEL, "px-5 py-4")}>
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode
-            ? "NUDGE TEST — SETTINGS ±20%"
+            ? "NUDGE TEST — NEARBY SETTINGS"
             : run.sensitivityRows?.length
-              ? "SENSITIVITY — ±20% PER PARAMETER"
+              ? "SENSITIVITY — PER-PARAMETER SWEEP"
               : run.sensitivity.length
                 ? "SENSITIVITY — Δ 15 → 45"
                 : "SENSITIVITY"}
@@ -843,10 +845,13 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
                 </div>
               </div>
             ))}
+            {/* endpoints are "lower/higher", not "±20%": floored condition
+                rows sweep absolute family-scale grids and shifted grids can
+                ring off-center — the cells carry the real values */}
             <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
-              <span>−20%</span>
+              <span>lower</span>
               <span>as specced (ringed)</span>
-              <span>+20%</span>
+              <span>higher</span>
             </div>
           </div>
         ) : run.sensitivityRows?.length ? (
@@ -872,9 +877,9 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
               </div>
             ))}
             <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
-              <span>−20%</span>
+              <span>lower</span>
               <span>as specced</span>
-              <span>+20%</span>
+              <span>higher</span>
             </div>
           </div>
         ) : (
@@ -1061,7 +1066,7 @@ export function ResultsView({
       {onBack && (
         <button
           onClick={onBack}
-          className="mb-[18px] text-[13px] text-ink-4 hover:text-ink-3"
+          className="mb-[18px] text-[13px] text-ink-4 hover:text-ink-3 print:hidden"
         >
           ‹ {backLabel ?? "back"}
         </button>
@@ -1074,7 +1079,7 @@ export function ResultsView({
             {run.demo && <DemoBadge />}
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 gap-2">
+        <div className="ml-auto flex shrink-0 gap-2 print:hidden">
           {onEditSpec && (
             <button
               onClick={onEditSpec}
@@ -1104,6 +1109,9 @@ export function ResultsView({
               {view === "story" ? "Results" : "How this was built"}
             </button>
           )}
+          {/* parity Tier 1 exports: Save PDF prints this screen; the
+              executable notebook lives behind the menu (real runs only) */}
+          <ExportActions runId={run.id} demo={run.demo} />
           {onNew && (
             <button
               onClick={onNew}
@@ -1158,7 +1166,7 @@ export function ResultsView({
             </div>
           )}
 
-          <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg">
+          <div className="sticky bottom-2.5 mt-3.5 flex items-center gap-2.5 rounded-[13px] border border-line bg-[var(--overlay-panel)] py-[9px] pl-4 pr-2.5 backdrop-blur-lg print:hidden">
             <input
               className="flex-1 font-mono text-[15px]"
               placeholder='Ask about this result… "is this just 2020?" · "widen the spread" · "worst month"'

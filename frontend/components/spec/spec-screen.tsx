@@ -108,6 +108,19 @@ const OPERATORS: { id: string; label: string; sym: string }[] = [
   { id: "crosses_below", label: "crosses below", sym: "↘" },
 ];
 
+// crosses_* need a bar series (yesterday's value); everything else is read
+// as a single point-in-time observation and the spec refuses the pair —
+// mirrors CROSS_CAPABLE_INDICATORS in backend/app/models/spec.py
+const CROSS_CAPABLE = new Set([
+  "rsi",
+  "sma",
+  "ema",
+  "price_vs_sma_pct",
+  "price_vs_ema_pct",
+  "ema_cross_state",
+  "drawdown_from_high_pct",
+]);
+
 export function triggerLabel(t: TriggerSpec): string {
   const ind = INDICATORS.find((i) => i.id === t.indicator);
   const op = OPERATORS.find((o) => o.id === t.operator);
@@ -642,9 +655,15 @@ export function SpecScreen({
             value={trig?.indicator ?? "drawdown_from_high_pct"}
             onChange={(e) => {
               const ind = INDICATORS.find((i) => i.id === e.target.value);
+              const op = trig?.operator;
               setTrig({
                 indicator: e.target.value,
                 period: ind?.period ? (trig?.period ?? 14) : undefined,
+                // crosses need a bar series — switching to a point-in-time
+                // indicator keeps the direction but drops to the level form
+                ...(op?.startsWith("crosses_") && !CROSS_CAPABLE.has(e.target.value)
+                  ? { operator: op === "crosses_above" ? ">" : "<" }
+                  : {}),
               });
             }}
             className={SELECT_CLS}
@@ -671,7 +690,15 @@ export function SpecScreen({
             onChange={(e) => setTrig({ operator: e.target.value })}
             className={SELECT_CLS}
           >
-            {OPERATORS.map((o) => (
+            {OPERATORS.filter(
+              // hide crosses for point-in-time indicators, but never hide
+              // the operator a loaded draft actually carries — the dial
+              // shows the stored truth; the run's 422 names the fix
+              (o) =>
+                !o.id.startsWith("crosses_") ||
+                o.id === trig?.operator ||
+                CROSS_CAPABLE.has(trig?.indicator ?? "drawdown_from_high_pct"),
+            ).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
               </option>

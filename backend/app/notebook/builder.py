@@ -204,16 +204,19 @@ pd.DataFrame([{t["l"]: t["v"] for t in run["mtiles"]}])
 '''
 
 _EQUITY_CODE = '''\
-# ── equity and drawdown, computed on the window named above ──
+# ── equity and drawdown, computed on the window named above.
+#    Series rows are {"t": iso_date, "v": value} ──
 import matplotlib.pyplot as plt
 
-eq = pd.DataFrame(run["equitySeries"], columns=["date", "equity"])
-dd = pd.DataFrame(run["drawdownSeries"], columns=["date", "drawdown"])
+eq = pd.DataFrame(run["equitySeries"])
+dd = pd.DataFrame(run["drawdownSeries"])
+print(len(eq), "equity points ·", len(dd), "drawdown points ·",
+      "last equity", eq["v"].iloc[-1])
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True,
                                height_ratios=[3, 1])
-ax1.plot(pd.to_datetime(eq["date"]), eq["equity"])
+ax1.plot(pd.to_datetime(eq["t"]), eq["v"])
 ax1.set_title(f'{run["name"]} — equity (stored run)')
-ax2.fill_between(pd.to_datetime(dd["date"]), dd["drawdown"], 0, alpha=0.4)
+ax2.fill_between(pd.to_datetime(dd["t"]), dd["v"], 0, alpha=0.4)
 ax2.set_title("drawdown")
 plt.tight_layout()
 '''
