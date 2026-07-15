@@ -91,7 +91,10 @@ def _drawdown_series(dates: list[date], equity: list[float]) -> list[dict[str, A
     dd: list[float] = []
     for v in equity:
         peak = max(peak, v)
-        dd.append((1.0 - v / peak) * 100.0 if peak > 0 else 0.0)
+        # a ruined curve (equity ≤ 0 at the halt) reads 100%, never >100% —
+        # you can't lose more than everything (the ruin banner carries the
+        # negative dollar figure)
+        dd.append(min((1.0 - v / peak) * 100.0, 100.0) if peak > 0 else 0.0)
     return _downsample(dates, dd)
 
 
@@ -441,6 +444,10 @@ def _ladder_depth_block(report: HonestyReport) -> dict[str, Any] | None:
                 "marginalPl": money(r.marginal_pl),
                 "plSign": sign(r.marginal_pl),
                 "netNeg": r.net_negative,
+                # buying-power gate refusals at this depth (2026-07-15):
+                # an UNAFFORDABLE rung is a distinct fact from an
+                # unprofitable one
+                "unaffordable": r.unaffordable_baskets,
                 "barPct": round(abs(r.marginal_pl) / max_rung * 100, 1),
             }
             for r in ld.rungs
@@ -504,6 +511,9 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
         return {
             "kind": "refusal",
             "refusal": True,
+            # guardrail #5-adjacent (2026-07-15): the wipeout is structural
+            # so every summary surface (library card) can carry it
+            "ruined": report.ruin is not None,
             "headline": verdict.headline,
             "survived": "NOT EVALUATED",
             "chips": [],
@@ -514,7 +524,15 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
                 "The gauntlet ran, but blessing this sample would be a guess wearing a "
                 "lab coat. Raw output below, unblessed. " + " · ".join(verdict.caveats)
             ),
-            "refusalUnlock": "unlocks at " + " and ".join(needs) if needs else "",
+            # a wiped-out account never unlocks with more data — promising
+            # "unlocks at N trades" on a dead account would be a lie
+            # (review finding 2026-07-15; unlock_conditions excludes it too)
+            "refusalUnlock": (
+                "does not unlock with more data — the account was wiped out; "
+                "change the strategy or the capital"
+                if report.ruin is not None
+                else "unlocks at " + " and ".join(needs) if needs else ""
+            ),
         }
 
     level = trust.level or 1
@@ -533,6 +551,9 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
         # guardrail #5: a graded sub-15 sample is marked structurally so
         # every summary surface (library card) can carry the disclosure too
         "belowStandard": bool(below),
+        # the account was wiped out (2026-07-15) — structural for the same
+        # reason; trust is hard-capped at the floor when this is set
+        "ruined": report.ruin is not None,
         "headline": verdict.headline,
         "survived": f"{survived_count} OF 5 ATTACKS SURVIVED",
         "band": {"left": f"{band_left}%", "width": "30%"},
@@ -577,12 +598,20 @@ def _panel_notes(report: HonestyReport, retail: bool = False) -> list[str]:
         )
 
     if mc.p_loss is not None:
+        # p(ruin) shown only when some reshuffled path actually died at $0
+        # (absorption, 2026-07-15) — a computed ruin share is never silent
+        ruin_bit = (
+            (f" · {_pct(mc.p_ruin, 0)} went broke" if retail
+             else f" · p(ruin) {_pct(mc.p_ruin, 0)}")
+            if mc.p_ruin
+            else ""
+        )
         mc_note = (
             f"{_pct(mc.p_loss, 0)} of reshuffles lost money · worst realistic dip "
-            f"−{_pct(mc.max_drawdown_p95, 0)}"
+            f"−{_pct(mc.max_drawdown_p95, 0)}" + ruin_bit
             if retail
             else f"P(loss) {_pct(mc.p_loss, 0)} · 95th pctile drawdown "
-            f"−{_pct(mc.max_drawdown_p95, 0)}"
+            f"−{_pct(mc.max_drawdown_p95, 0)}" + ruin_bit
         )
     else:
         mc_note = "needs at least 5 finished trades" if retail else "needs ≥ 5 closed trades"
@@ -646,7 +675,12 @@ def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[st
             "numbers are below, unblessed — look, but don't lean on them. "
             + " · ".join(retail_verdict.caveats)
         )
-        block["refusalUnlock"] = "unlocks with " + " and ".join(needs) if needs else ""
+        block["refusalUnlock"] = (
+            "more data won't unlock this — the account ran out of money; "
+            "change the strategy or the starting capital"
+            if report.ruin is not None
+            else "unlocks with " + " and ".join(needs) if needs else ""
+        )
     return {
         **{
             k: block[k]
@@ -725,6 +759,20 @@ def build_run_payload(
         ],
         "equityPoints": "",
         "drawdownPoints": "",
+        # ruin halt (2026-07-15): the chart's terminal marker + banner —
+        # additive key, None on every non-ruined and stored pre-ruin payload
+        "ruin": (
+            {
+                "date": report.ruin.ruin_date,
+                "finalEquity": report.ruin.final_equity,
+                "haltedPositions": report.ruin.positions_closed_at_halt,
+            }
+            if report.ruin
+            else None
+        ),
+        # buying-power profile (2026-07-15) — additive; the funding caveat's
+        # numbers, structured
+        "funding": report.funding.model_dump() if report.funding else None,
         "equitySeries": _downsample(result.dates, result.equity),
         "drawdownSeries": _drawdown_series(result.dates, result.equity),
         "oosShadeX": _oos_shade_x(refusal),
@@ -791,6 +839,9 @@ def run_summary(run_id: str, payload: dict[str, Any], created: str) -> dict[str,
     # disclosure too — the headline alone would read rosier than the verdict
     if verdict.get("belowStandard"):
         label += " · below-standard sample"
+    # the wipeout travels to the card for the same reason (2026-07-15)
+    if verdict.get("ruined"):
+        label += " · wiped out"
     retail = payload.get("retail") or {}
     return {
         "id": run_id,
@@ -851,6 +902,7 @@ def _regrade_report(
         report.oos, report.walk_forward, report.monte_carlo,
         report.sensitivity, sample, report.dsr, report.coverage,
         report.concentration, report.scale_in, res_split,
+        ruin=report.ruin,
     )
     # trust equality already folds the sample cap (survived/label/reasons);
     # the resolution judgment can move without touching trust and still

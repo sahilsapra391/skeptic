@@ -11,11 +11,15 @@ from app.engine.runner import run_backtest
 from app.models.spec import StrategySpec
 from tests.fixtures.engine import (
     fx_covered_call_called_away,
+    fx_credit_spread_reserve,
     fx_credit_spread_stop,
     fx_delta_stop_condor,
+    fx_insufficient_buying_power_skip,
     fx_iron_condor_target,
+    fx_margin_reserve_short_put,
     fx_short_put_assigned,
     fx_short_put_otm,
+    fx_short_put_ruin_halt,
     fx_skip_illiquid,
     fx_skip_zero_bid,
     fx_theta_harvest,
@@ -31,6 +35,11 @@ FIXTURES = [
     fx_skip_illiquid,
     fx_delta_stop_condor,
     fx_theta_harvest,
+    # buying-power gate + ruin halt (owner decision 2026-07-15)
+    fx_insufficient_buying_power_skip,
+    fx_margin_reserve_short_put,
+    fx_credit_spread_reserve,
+    fx_short_put_ruin_halt,
 ]
 
 
@@ -72,6 +81,17 @@ def test_fixture_to_the_cent(module) -> None:
         by_date = dict(zip(result.dates, result.equity, strict=True))
         for ds, value in expect["equity_on"].items():
             assert by_date[date.fromisoformat(ds)] == pytest.approx(value, abs=0.005)
+
+    # ruin halt (2026-07-15): a ruined fixture asserts the halt point; every
+    # OTHER fixture must never trip it — an accidental ruin is a math bug
+    if "ruin" in expect:
+        assert result.ruined
+        assert result.ruin_date == date.fromisoformat(expect["ruin"]["date"])
+        assert result.ruin_equity == pytest.approx(expect["ruin"]["equity"], abs=0.005)
+        assert result.dates[-1] == result.ruin_date, "equity must END at the halt"
+        assert result.effective_end == result.ruin_date
+    else:
+        assert not result.ruined
 
 
 def test_determinism_same_spec_same_data_same_output() -> None:

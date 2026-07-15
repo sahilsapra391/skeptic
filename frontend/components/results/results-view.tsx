@@ -214,6 +214,15 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
 
   return (
     <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
+      {run.ruin && (
+        // the ruin banner (2026-07-15): amber WARN token — never P/L
+        // red/green, and it lives on the data panel, not the verdict band
+        <div className="mb-3 rounded-[9px] border border-warn/60 bg-panel px-3 py-2 font-mono text-[11.5px] leading-[1.5] text-warn">
+          {retailMode
+            ? `⚠ The account ran out of money on ${fmtDate(run.ruin.date)} — the test stopped right there (ended at ${fmtDollars(run.ruin.finalEquity)}). A real broker would likely have shut it down even earlier.`
+            : `⚠ Account wiped out on ${fmtDate(run.ruin.date)} — simulation halted at ${fmtDollars(run.ruin.finalEquity)}. The halt fires at $0, so this is the latest possible ruin date, not the actual.`}
+        </div>
+      )}
       <div className="mb-2.5 flex justify-between">
         <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
           {run.oosShadeX < 860
@@ -256,6 +265,26 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
             </>
           )}
           <polyline points={equityPoints} fill="none" stroke="var(--chart-bright)" strokeWidth="1.8" />
+          {run.ruin && series.length > 0 && (
+            // terminal ruin marker — the curve ENDS here (warn token)
+            <>
+              <line
+                x1={xFor(series.length - 1)}
+                y1="0"
+                x2={xFor(series.length - 1)}
+                y2="200"
+                stroke="rgb(var(--warn-rgb))"
+                strokeDasharray="3 3"
+                strokeWidth="1"
+              />
+              <circle
+                cx={xFor(series.length - 1)}
+                cy={yFor(series[series.length - 1].v)}
+                r="4"
+                fill="rgb(var(--warn-rgb))"
+              />
+            </>
+          )}
           {h !== null && (
             <>
               <line x1={xFor(h)} y1="0" x2={xFor(h)} y2="200" stroke="var(--crosshair)" strokeWidth="1" />

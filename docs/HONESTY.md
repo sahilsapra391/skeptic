@@ -961,3 +961,62 @@ narration — two OpenRouter calls with up to 3 × 45 s validated retries, i.e.
 - `perf.verdict_s` now records the BLOCKING verdict cost the user actually
   waits on (the pre-run time estimates stay honest); the measured narration
   time lands separately as `perf.narration_s`.
+
+## Buying power and the ruin halt — capital is real (2026-07-15)
+
+Before this change the engine's ledger was a single unchecked cash float:
+entries never asked whether the account could fund them, a short-put
+assignment debited `shares × strike` unconditionally, and the equity curve
+ran to −$37,818 on a $21,000 account — fabricated trades of exactly the
+class guardrail #1 exists to prevent (a fill the real world would refuse).
+Two rules fix it, both engine-level so every consumer (gauntlet, sweeps,
+walk-forward, exports) inherits them:
+
+- **The buying-power gate.** An entry (or scale-in rung) that cannot be
+  funded is SKIPPED with the named reason `insufficient_buying_power` —
+  counted in `skip_reasons`, visible in the trade log, never resized.
+  Debits must be covered by post-fill cash. Uncovered short options
+  reserve the market-standard broker minimum (the "20% rule",
+  FINRA/Reg-T-style initial requirement; CBOE margin manuals):
+  `max(20%·spot − OTM, 10%·strike)` per share for puts,
+  `max(20%·spot − OTM, 10%·spot)` for calls. Paired legs (spreads)
+  reserve the strike width; an iron condor reserves the worse side only;
+  a covered call's shares are its collateral. Premium credit is counted
+  once, in cash — never inside the reserve. The formula is a **named,
+  revisitable constant** (`app/engine/margin.py · RESERVE_MODE =
+  "reg_t_20"`): broker requirements vary; changing the mode (e.g. to
+  `cash_secured`) is a reviewed-session decision. The reserve is held
+  from fill to FULL close (conservative on partially settled multi-leg
+  positions), then released.
+- **The ruin halt.** The first session whose end-of-session equity is
+  ≤ $0 halts the simulation right there: a `HALT` event, every open
+  position closed in the log at its mark (reason `ruin_halt`, cash
+  untouched — the appended equity already is the mark), and the run
+  carries `ruined / ruin_date / ruin_equity`. Everything downstream
+  treats the truncation honestly: the coverage stage measures the window
+  to the halt (`halted_at_ruin` — a ruin-shortened window is never
+  blamed on data), Monte Carlo paths are **absorbed at zero** (a
+  reshuffled path that crosses $0 ends there; `p_ruin` reports the share
+  that die; drawdowns cap at 100%), the metrics drawdown caps at 100%,
+  and trust hard-caps at the lowest band with the wipeout named — or, on
+  an already-refused run, the refusal carries the ruin reason first.
+
+**What is deliberately NOT modeled, and disclosed:** a real margin account
+is margin-called and liquidated BEFORE equity reaches zero. Maintenance
+thresholds are broker-specific and would be an invented constant, so the
+halt fires at exactly $0 — which makes the reported ruin date the **latest
+possible**, not the actual. A real account would likely have been
+liquidated earlier. The verdict's ruin caveat says so in both registers
+(the same disclose-what-isn't-modeled rule as modeled quotes and displayed
+depth).
+
+**The funding disclosure.** When a material share of otherwise-eligible
+entries were skipped for buying power (`FUNDING_MATERIAL_SHARE = 0.20` of
+fills + funding skips, minimum `FUNDING_MATERIAL_MIN = 3`, reviewed
+thresholds like every constant in `stages.py`), the verdict must say so: a
+strategy that only "works" if you could fund 3× your account isn't working
+for the user running it. On ladders, unaffordable rungs are attributed in
+the depth table (`LadderRung.unaffordable_baskets`) — a deep add the
+account couldn't fund reads as *unaffordable*, never as merely
+unprofitable. Buying power is reality's cap on martingale ladders;
+`max_total_contracts` is only the user's.

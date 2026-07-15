@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from app.engine import margin
 from app.engine.engine import run_engine
 from app.engine.market import IntradayProvider, MarketStore
 from app.engine.types import MULT, RungFill, RunResult
@@ -24,6 +25,7 @@ from app.honesty.report import (
     Coverage,
     DataConfidence,
     Dsr,
+    FundingProfile,
     HonestyReport,
     LadderDepth,
     LadderRung,
@@ -36,6 +38,7 @@ from app.honesty.report import (
     RegimeSample,
     ResolutionBucket,
     ResolutionSplit,
+    RuinDisclosure,
     ScaleInHonesty,
     Sensitivity,
     SessionBucket,
@@ -105,6 +108,15 @@ NUDGE_SHIFTS_MIN = [-30, -15, 0, 15, 30]
 # session-split bucket boundaries, minutes from midnight ET (D2d)
 SESSION_OPEN_END = 10 * 60 + 30  # 09:30–10:29 = open
 SESSION_MID_END = 15 * 60  # 10:30–14:59 = mid; 15:00+ = close
+
+# Buying-power disclosure thresholds (owner decision 2026-07-15,
+# docs/HONESTY.md · buying power): when at least this share of
+# otherwise-eligible entries (fills + funding skips) hit the
+# insufficient_buying_power gate — and at least this many did — the
+# verdict carries the funding caveat. Reviewed thresholds, like every
+# constant in this file.
+FUNDING_MATERIAL_SHARE = 0.20
+FUNDING_MATERIAL_MIN = 3
 
 
 def _returns(equity: list[float]) -> list[float]:
@@ -219,11 +231,29 @@ def walk_forward(result: RunResult) -> WalkForward:
 
 
 # ---------------------------------------------------- stage 3: Monte Carlo
+def _absorb_at_zero(paths: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Freeze each path at its FIRST value ≤ 0 (owner 2026-07-15): a
+    reshuffled account that crosses $0 is dead — every later step holds the
+    value at absorption. Returns (absorbed paths, hit mask). A no-op on
+    paths that never cross (tested — non-ruined runs are bit-identical)."""
+    mask = paths <= 0.0
+    hit = mask.any(axis=1)
+    n_steps = paths.shape[1]
+    first = np.where(hit, mask.argmax(axis=1), n_steps)
+    frozen = paths[np.arange(paths.shape[0]), np.minimum(first, n_steps - 1)]
+    cols = np.arange(n_steps)
+    absorbed = np.where(cols[None, :] >= first[:, None], frozen[:, None], paths)
+    return absorbed, hit
+
+
 def monte_carlo(
     result: RunResult, initial_capital: float, resamples: int = 1000, block: int = 5
 ) -> MonteCarlo:
     """Circular block bootstrap (block ≈ 5 trades to respect clustering) on
-    per-trade P/L. Seeded → same spec + data + seed = identical output."""
+    per-trade P/L. Seeded → same spec + data + seed = identical output.
+    Paths are absorbed at $0 (you can't keep trading a dead account);
+    drawdowns are measured on the zero-floored paths so ruin reads as
+    100%, never the >100% a negative equity would arithmetic into."""
     pls = np.array([t.pl for t in result.trades if t.pl is not None], dtype=float)
     n = len(pls)
     base = MonteCarlo(
@@ -243,9 +273,11 @@ def monte_carlo(
     sampled = pls[idx.reshape(resamples, -1)[:, :n]]  # (resamples, n)
 
     paths = initial_capital + np.cumsum(sampled, axis=1)
+    paths, ruined = _absorb_at_zero(paths)
     terminals = paths[:, -1]
-    running_peak = np.maximum.accumulate(np.maximum(paths, 1e-9), axis=1)
-    drawdowns = 1.0 - paths / running_peak
+    floored = np.maximum(paths, 0.0)
+    running_peak = np.maximum.accumulate(np.maximum(floored, 1e-9), axis=1)
+    drawdowns = 1.0 - floored / running_peak
     max_dd = drawdowns.max(axis=1)
 
     # fan: percentile of equity across paths at each trade step, downsampled
@@ -263,6 +295,7 @@ def monte_carlo(
         max_drawdown_p50=float(np.percentile(max_dd, 50)),
         max_drawdown_p95=float(np.percentile(max_dd, 95)),
         p_loss=float(np.mean(terminals < initial_capital)),
+        p_ruin=float(np.mean(ruined)),
         fan_p5=[round(float(v), 2) for v in fan[0]],
         fan_p50=[round(float(v), 2) for v in fan[1]],
         fan_p95=[round(float(v), 2) for v in fan[2]],
@@ -987,8 +1020,11 @@ def ladder_depth_attribution(
             r["contracts"] += f.qty
             r["marginal_pl"] += _fill_marginal(b["exit_px"], f.fill_price, f.qty, commission)
     rungs: list[LadderRung] = []
-    for idx in sorted(rung_acc):
-        r = rung_acc[idx]
+    # a rung the buying-power gate refused shows up even when it NEVER
+    # filled anywhere (owner amendment 2026-07-15): the depth table must
+    # read those as UNAFFORDABLE, a distinct fact from unprofitable
+    for idx in sorted(set(rung_acc) | set(result.rung_funding_skips)):
+        r = rung_acc.get(idx, {"fires": 0, "contracts": 0, "marginal_pl": 0.0})
         rungs.append(LadderRung(
             rung_index=idx,
             threshold=si.rungs[idx].value,
@@ -997,6 +1033,7 @@ def ladder_depth_attribution(
             contracts=int(r["contracts"]),
             marginal_pl=round(r["marginal_pl"], 2),
             net_negative=r["marginal_pl"] < 0,
+            unaffordable_baskets=result.rung_funding_skips.get(idx, 0),
         ))
 
     deepest = max(b["max_rung"] for b in baskets)
@@ -1046,6 +1083,12 @@ def scale_in_honesty(
         paths = initial_capital + np.cumsum(sampled, axis=1)
         peak = np.maximum(np.maximum.accumulate(paths, axis=1), initial_capital)
         max_dd = (1.0 - paths / np.maximum(peak, 1e-9)).max(axis=1)
+        # you can't lose more than everything: a path that crosses $0 reads
+        # 100%, never the >100% negative equity arithmetics into (review
+        # finding 2026-07-15 — same rule as the main MC's absorption).
+        # Flag-invariant: capped values are exactly 1.0, still > the 0.30
+        # threshold, so p_ruin/ruin_flagged cannot move.
+        max_dd = np.minimum(max_dd, 1.0)
         p95, p99 = float(np.percentile(max_dd, 95)), float(np.percentile(max_dd, 99))
         p_ruin = float(np.mean(max_dd > RUIN_DRAW_THRESHOLD))
         ruin_flagged = p_ruin >= RUIN_TAIL_PROB
@@ -1414,8 +1457,16 @@ def data_confidence(
 def coverage(result: RunResult) -> Coverage:
     """Guardrail #6 + SEVENTEEN.md: a run whose requested window is mostly
     sessions with NO usable chain tested far less than it claims. Compute the
-    honest coverage share; `materially_short` caps trust downstream."""
-    requested = max(result.requested_sessions, 0)
+    honest coverage share; `materially_short` caps trust downstream.
+
+    A ruin halt truncates the DENOMINATOR to the requested window up to the
+    halt (owner 2026-07-15): the sessions past it weren't untested for lack
+    of data — the account was dead. materially_short keeps measuring DATA
+    shortfall only; the ruin itself is disclosed by the ruin surfaces."""
+    if result.ruined:
+        requested = max(result.requested_sessions_to_ruin, 0)
+    else:
+        requested = max(result.requested_sessions, 0)
     chain_sessions = result.sessions_with_chain
     ratio = min(chain_sessions / requested, 1.0) if requested > 0 else 1.0
     short = requested > 0 and ratio < COVERAGE_MIN_RATIO
@@ -1425,6 +1476,12 @@ def coverage(result: RunResult) -> Coverage:
         if short
         else None
     )
+    if result.ruined and result.ruin_date is not None:
+        note = (
+            f"window measured to the ruin halt ({result.ruin_date.isoformat()}) — "
+            "the sessions past it were never simulated"
+        )
+        reason = f"{reason}; {note}" if reason else note
     req_start = result.requested_start or result.effective_start
     req_end = result.requested_end or result.effective_end
     return Coverage(
@@ -1437,6 +1494,7 @@ def coverage(result: RunResult) -> Coverage:
         coverage_ratio=ratio,
         materially_short=short,
         reason=reason,
+        halted_at_ruin=result.ruined,
     )
 
 
@@ -1447,6 +1505,12 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
     text shows, so the nightly auto-unlock scan (D3b) compares facts, not
     prose. Returns None for graded verdicts."""
     if report.trust.label != "insufficient_evidence":
+        return None
+    # a wiped-out account never unlocks with more data (review finding
+    # 2026-07-15): the run halts at the same ruin date no matter how much
+    # history arrives after it, so entering the auto-unlock scan would
+    # re-run and re-refuse forever — the D5a-interlock exclusion class
+    if report.ruin is not None:
         return None
     cov = report.coverage
     sample = report.regime_sample
@@ -1480,4 +1544,69 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
             if sample.regimes_present < 2 else None
         ),
         sessions_at_refusal=cov.chain_sessions,
+    )
+
+
+# --------------------------------------- ruin + buying power (2026-07-15)
+def ruin_disclosure(result: RunResult) -> RuinDisclosure | None:
+    """The engine's ruin halt, surfaced (docs/HONESTY.md · buying power).
+    None on runs that never hit $0. The date is the LATEST possible ruin
+    date — the halt fires at exactly zero and maintenance margin is
+    deliberately not modeled; the verdict caveat discloses that."""
+    if not result.ruined or result.ruin_date is None:
+        return None
+    halted = sum(
+        1 for t in result.trades if t.action == "CLOSE" and t.reason == "ruin_halt"
+    )
+    return RuinDisclosure(
+        ruin_date=result.ruin_date.isoformat(),
+        final_equity=result.ruin_equity if result.ruin_equity is not None else 0.0,
+        positions_closed_at_halt=halted,
+    )
+
+
+def funding_profile(result: RunResult, spec: StrategySpec) -> FundingProfile:
+    """Count what the buying-power gate refused: SKIP trade-log events
+    (deduped once per SESSION by the engine's skip-log dedupe — the raw
+    skip_counts re-count an unfundable entry on every in-window bar at the
+    5-min clock, which would inflate the share ~80×; review finding
+    2026-07-15) plus DISTINCT unaffordable (basket, rung) pairs on ladders
+    (rung retries never inflate the count). Material when the skipped
+    share of otherwise-eligible entries crosses the reviewed thresholds."""
+    if spec.entry.scale_in is not None:
+        # ladder entries ARE rung fills: their funding skips are counted
+        # below per distinct (basket, rung) — counting the log lines too
+        # would double them (a basket that never opened at all stays
+        # uncounted: conservative)
+        entry_skips = 0
+    else:
+        entry_skips = sum(
+            1 for t in result.trades
+            if t.action == "SKIP" and t.reason == "insufficient_buying_power"
+        )
+    rung_skips = sum(result.rung_funding_skips.values())
+    skipped = entry_skips + rung_skips
+    attempts = result.filled + skipped
+    share = skipped / attempts if attempts > 0 else None
+    material = (
+        skipped >= FUNDING_MATERIAL_MIN
+        and share is not None
+        and share >= FUNDING_MATERIAL_SHARE
+    )
+    note = (
+        f"{skipped} of {attempts} otherwise-eligible entries and ladder adds "
+        f"were skipped for buying power at "
+        f"${spec.backtest.initial_capital:,.0f} capital — the tested strategy "
+        "is smaller than the described one"
+        if material
+        else None
+    )
+    return FundingProfile(
+        initial_capital=spec.backtest.initial_capital,
+        reserve_mode=margin.RESERVE_MODE,
+        skipped_buying_power=skipped,
+        filled=result.filled,
+        skip_share=round(share, 4) if share is not None else None,
+        material=material,
+        note=note,
     )

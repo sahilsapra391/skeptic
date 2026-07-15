@@ -95,6 +95,10 @@ def allowed_numbers(report: HonestyReport) -> set[float]:
     # enough (10 years of 1DTE ≈ 58 folds) to push it past the 0–30
     # counting-number range; caught by the D2 acceptance run's validator.
     out.add(float(sum(1 for f in report.walk_forward.folds if f.ret > 0)))
+    # the funding caveat quotes "skipped of TOTAL" — the total is derived
+    # (filled + skipped), same class as the fold count above
+    if report.funding is not None:
+        out.add(float(report.funding.filled + report.funding.skipped_buying_power))
     return out
 
 
@@ -248,6 +252,62 @@ def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     )
 
 
+def _ruin_caveat(report: HonestyReport, retail: bool = False) -> str | None:
+    """The ruin-halt disclosure (owner 2026-07-15) — required whenever the
+    account was wiped out. Every number comes from report.ruin, so it is
+    grounded by construction; it rides the caveats so it surfaces even when
+    the verdict is withheld. The latest-possible clause is the
+    disclose-what-isn't-modeled rule: maintenance margin is deliberately
+    not modeled (docs/HONESTY.md · buying power)."""
+    ruin = report.ruin
+    if ruin is None:
+        return None
+    if retail:
+        return (
+            f"The account ran out of money on {ruin.ruin_date} — it ended at "
+            f"${ruin.final_equity:,.0f} and the test stopped right there. A real "
+            "broker would likely have shut it down even earlier, so that date "
+            "is the best case, not the actual one."
+        )
+    plural = "s" if ruin.positions_closed_at_halt != 1 else ""
+    return (
+        f"Ruin halt: equity closed at ${ruin.final_equity:,.0f} on "
+        f"{ruin.ruin_date} and the simulation stopped there "
+        f"({ruin.positions_closed_at_halt} open position{plural} marked at the "
+        "halt). The halt fires at $0 — a real margin account is liquidated "
+        "before zero, so this ruin date is the latest possible, not the actual."
+    )
+
+
+def _funding_caveat(report: HonestyReport, retail: bool = False) -> str | None:
+    """The buying-power disclosure (owner 2026-07-15): when a material share
+    of otherwise-eligible entries couldn't be funded, the verdict says so —
+    a strategy that only works on money the account doesn't have isn't
+    working for the user running it. Numbers from report.funding (the
+    total is registered in allowed_numbers)."""
+    funding = report.funding
+    if funding is None or not funding.material:
+        return None
+    skipped = funding.skipped_buying_power
+    total = funding.filled + skipped
+    if retail:
+        return (
+            f"{skipped} of the {total} trades and add-ins this strategy wanted "
+            f"couldn't be taken — a ${funding.initial_capital:,.0f} account "
+            "doesn't have the buying power for them. What got tested is a "
+            "smaller version of what you described."
+        )
+    # the reserve-mode label stays OUT of this string: its digits ("reg_t_20")
+    # would ride through the numeric validator and a future mode rename could
+    # fail grounding (review finding 2026-07-15); it lives in payload.funding
+    return (
+        f"Buying power: {skipped} of {total} otherwise-eligible entries and "
+        f"ladder adds were skipped as unfundable at "
+        f"${funding.initial_capital:,.0f} capital — the tested strategy is "
+        "smaller than the described one."
+    )
+
+
 def template_verdict(report: HonestyReport) -> VerdictText:
     """Uncomfortable part first, always."""
     oos, wf, mc = report.oos, report.walk_forward, report.monte_carlo
@@ -290,6 +350,12 @@ def template_verdict(report: HonestyReport) -> VerdictText:
                 f"{' in a single volatility regime' if sample.regimes_present < 2 else ''}"
                 " can’t answer this honestly."
             )
+    elif report.ruin is not None:
+        headline = (
+            f"The account is wiped out on {report.ruin.ruin_date} — equity ends "
+            f"at ${report.ruin.final_equity:,.0f}. Nothing past that date exists "
+            "to grade."
+        )
     elif not trust.survived["oos"]:
         headline = "Edge fades out-of-sample. What’s left is thin."
     elif trust.survived_count >= 4 and (trust.level or 0) >= 4:
@@ -318,10 +384,15 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         positive = sum(1 for f in wf.folds if f.ret > 0)
         evidence.append(f"Walk-forward: {positive} of {len(wf.folds)} windows profitable")
     if mc.p_loss is not None:
-        evidence.append(
+        mc_line = (
             f"Monte Carlo ({mc.resamples} resamples): {_pct(mc.p_loss)} of paths lose money; "
             f"95th-percentile drawdown {_pct(mc.max_drawdown_p95)}"
         )
+        # absorption at $0 (2026-07-15): reshuffled paths that die are named,
+        # not silently discarded — shown only when any path actually crossed
+        if mc.p_ruin:
+            mc_line += f"; {_pct(mc.p_ruin)} of paths die at $0"
+        evidence.append(mc_line)
 
     breaks_where: list[str] = list(trust.reasons)
     if not breaks_where and sens.verdict == "plateau":
@@ -336,12 +407,20 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     ]
     cov = report.coverage
     if cov.coverage_ratio < 1.0:
+        # on a ruined run the session count is measured TO THE HALT while
+        # the requested range still names the full ask — say so, or the two
+        # numbers visibly disagree (review finding 2026-07-15)
+        ruin_note = (
+            " Session counts run to the ruin halt, not the full request."
+            if cov.halted_at_ruin
+            else ""
+        )
         caveats.insert(
             1,
             f"Chain coverage: {cov.chain_sessions} of {cov.requested_sessions} requested "
             f"sessions carried usable option chains ({_pct(cov.coverage_ratio)}). "
             f"Requested {cov.requested_start} → {cov.requested_end}; "
-            f"tested {cov.effective_start} → {cov.effective_end}.",
+            f"tested {cov.effective_start} → {cov.effective_end}." + ruin_note,
         )
     if report.liquidity is not None and report.liquidity.material and report.liquidity.note:
         caveats.append(f"Liquidity: {report.liquidity.note}.")
@@ -370,6 +449,14 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     # scored; every number quoted exists as a numeric report field
     if report.data_confidence is not None and report.data_confidence.note:
         caveats.append(f"Cross-source check: {report.data_confidence.note}.")
+    ruin_line = _ruin_caveat(report)
+    if ruin_line:
+        # first among the optional caveats — a dead account outranks
+        # every other disclosure
+        caveats.insert(1, ruin_line)
+    funding_line = _funding_caveat(report)
+    if funding_line:
+        caveats.append(funding_line)
     ladder = _ladder_caveat(report)
     if ladder:
         caveats.append(ladder)
@@ -433,6 +520,11 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
                 f"No verdict yet — only {sample.trades} finished trade{plural}. "
                 "That's too few to judge fairly."
             )
+    elif report.ruin is not None:
+        headline = (
+            f"This blew up the account on {report.ruin.ruin_date} — the money "
+            "ran out and the test stopped right there."
+        )
     elif not trust.survived["oos"]:
         headline = "Looked good in training, faded on data it had never seen. Be careful."
     elif trust.survived_count >= 4 and (trust.level or 0) >= 4:
@@ -468,6 +560,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         evidence.append(
             f"We reshuffled its trades {mc.resamples} times — {_pct(mc.p_loss)} of the "
             f"reshuffles ended with less money than they started"
+            + (f", and {_pct(mc.p_ruin)} went completely broke" if mc.p_ruin else "")
         )
 
     breaks_where: list[str] = []
@@ -521,7 +614,9 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         caveats.insert(
             1,
             f"Only {cov.chain_sessions} of {cov.requested_sessions} days in your date range "
-            f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested.",
+            f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested."
+            + (" Days are counted up to when the account ran out, not your full range."
+               if cov.halted_at_ruin else ""),
         )
     fs = report.fill_sources
     modeled = fs.get("alpaca_modeled", 0)
@@ -549,6 +644,12 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
                 f"{_pct(liq.penalized_share)} of fills paid extra slippage for thin "
                 "markets."
             )
+    ruin_line = _ruin_caveat(report, retail=True)
+    if ruin_line:
+        caveats.insert(1, ruin_line)
+    funding_line = _funding_caveat(report, retail=True)
+    if funding_line:
+        caveats.append(funding_line)
     ladder = _ladder_caveat(report, retail=True)
     if ladder:
         caveats.append(ladder)

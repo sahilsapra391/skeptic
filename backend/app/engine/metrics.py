@@ -71,7 +71,11 @@ def compute_metrics(result: RunResult) -> dict[str, float | None]:
         peak = max(peak, v)
         if peak > 0:
             max_dd = max(max_dd, 1.0 - v / peak)
-    metrics["max_drawdown"] = max_dd
+    # a ruined curve (equity ≤ 0, the halt session) reads as a TOTAL loss —
+    # 100%, never the >100% a negative equity point would arithmetic into
+    # (you cannot lose more than everything; the ruin disclosure carries
+    # the negative dollar figure)
+    metrics["max_drawdown"] = min(max_dd, 1.0)
 
     closed: list[TradeEvent] = [t for t in result.trades if t.pl is not None]
     if closed:

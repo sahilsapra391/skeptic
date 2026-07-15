@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
-from app.engine import fills
+from app.engine import fills, margin
 from app.engine.conditions import INTRADAY_LOOKBACK_BARS, all_conditions_pass
 from app.engine.market import (
     IntradayProvider,
@@ -95,6 +95,13 @@ class _State:
     cash: float
     positions: list[Position]
     trades: list[TradeEvent]
+    # buying-power reserve across all OPEN positions (margin.py, owner
+    # 2026-07-15): entries whose requirement exceeds what's left are
+    # skipped `insufficient_buying_power`, never silently resized
+    reserved: float = 0.0
+    # (basket_pid, rung_index) pairs that hit the buying-power gate — the
+    # ladder depth table attributes these as UNAFFORDABLE (owner amendment)
+    unaffordable_rungs: set[tuple[int, int]] = field(default_factory=set)
     next_pid: int = 1
     last_entry_month: tuple[int, int] | None = None
     # liquidity bookkeeping (D1b) — one record per option-LEG fill
@@ -493,6 +500,24 @@ def _risk_per_contract(
     return max(-premium * MULT, 0.0)
 
 
+def _leg_cash_delta(px: float, side: Side, qty: int, commission: float) -> float:
+    """Signed cash of ONE leg fill: shorts credit, longs debit, commission
+    always out. THE entry-economics formula — the buying-power gate and the
+    fill loop both call this so they can never drift apart (a gate pricing
+    buying power off a stale formula would admit/refuse entries the fill
+    can't honor)."""
+    signed = px * qty * MULT if side is Side.SHORT else -px * qty * MULT
+    return signed - commission * qty
+
+
+def _release_reserve(state: _State, pos: Position) -> None:
+    """Release a position's buying-power reserve on FULL close (margin.py).
+    Partial settles keep the reserve — conservative and deterministic."""
+    if pos.margin_reserved:
+        state.reserved -= pos.margin_reserved
+        pos.margin_reserved = 0.0
+
+
 def _count_skip(
     state: _State, skip_dedupe: set[str], day: date, reason: str
 ) -> None:
@@ -632,6 +657,30 @@ def _try_entry(
         skip("risk_size_zero")
         return
 
+    # buying-power gate (owner decision 2026-07-15, docs/HONESTY.md): the
+    # account must fund the fill — post-fill cash covers debits, and short
+    # legs reserve the broker-standard requirement (margin.py). An entry
+    # that can't be funded is a REAL skip, named — trading with money that
+    # doesn't exist is the same fabrication class as filling at mid.
+    entry_cash_delta = sum(
+        _leg_cash_delta(px, leg.side, leg.ratio * contracts, commission)
+        for px, leg in zip(entry_fills, spec.position.legs, strict=True)
+    )
+    covered = spec.position.structure is Structure.COVERED_CALL
+    stock_cost = 100 * contracts * spot if covered else 0.0
+    reserve = margin.position_requirement(
+        spec.position.legs, keys, spot, contracts,
+        stock_cover_shares=100 * contracts if covered else 0,
+    )
+    buying_power = state.cash + entry_cash_delta - stock_cost - state.reserved - reserve
+    if buying_power < 0:
+        skip(
+            "insufficient_buying_power",
+            detail=f"{contracts}ct needs ${-buying_power:,.0f} more buying power"
+                   + (f" (reserve ${reserve:,.0f})" if reserve > 0 else ""),
+        )
+        return
+
     pos = Position(
         pid=state.next_pid,
         structure=spec.position.structure.value,
@@ -665,13 +714,16 @@ def _try_entry(
             "strike": key.strike, "qty": qty, "price": px,
             "source": view.fill_source,
         })
-        cash_delta = px * qty * MULT if leg.side is Side.SHORT else -px * qty * MULT
-        cash_delta -= commission * qty
+        cash_delta = _leg_cash_delta(px, leg.side, qty, commission)
         state.cash += cash_delta
         pos.cash_flow += cash_delta
         pos.legs.append(
             OpenLeg(key=key, side=leg.side.value, qty=qty, entry_price=px, last_mark=px)
         )
+
+    # book the reserve the gate computed — held until FULL close
+    state.reserved += reserve
+    pos.margin_reserved = reserve
 
     depth_notes: list[str] = []
     for q, eff, was_stressed, leg in zip(leg_quotes, leg_slips, leg_stressed,
@@ -794,6 +846,26 @@ def _fire_rungs(
         if qty > remaining:
             qty = remaining
             clamped = True
+
+        # buying-power gate (owner amendment 2026-07-15): buying power is
+        # reality's cap on a ladder — max_total_contracts is only the
+        # user's. An unaffordable rung stays unfired (it may retry at a
+        # cheaper bar) and is attributed as UNAFFORDABLE in the depth
+        # table, never as merely unprofitable.
+        need = px * qty * MULT + commission * qty
+        shortfall = need - (state.cash - state.reserved)
+        if shortfall > 0:
+            _basket_skip(
+                state, view, session_skips, "insufficient_buying_power",
+                detail=f"{key.right} {key.strike:g} rung {rung.value:g}"
+                       f" · needs ${shortfall:,.0f} more",
+            )
+            if basket.contracts > 0:
+                # only established baskets are attributable — a provisional
+                # basket that never fills is discarded and its pid reused
+                # (_open_basket); its funding failure still lands in the log
+                state.unaffordable_rungs.add((basket.pid, idx))
+            continue
 
         # commit the fill: long basket BUYS, so cash and premium go debit
         cash_delta = -px * qty * MULT - commission * qty
@@ -991,6 +1063,8 @@ def _close_position(
         if note:
             depth_notes.append(note)
     pos.closed = pos.stock_shares == 0
+    if pos.closed:
+        _release_reserve(state, pos)
     state.trades.append(
         TradeEvent(
             day=view.as_of,
@@ -1216,11 +1290,66 @@ def _finalize_if_done(pos: Position, state: _State, day: date) -> None:
         return
     if all(leg.settled for leg in pos.legs) and pos.stock_shares == 0 and pos.pending_stock == 0:
         pos.closed = True
+        _release_reserve(state, pos)
         # attach realized P/L to the last event of this position
         for ev in reversed(state.trades):
             if ev.position_id == pos.pid:
                 ev.pl = round(pos.cash_flow, 2)
                 break
+
+
+def _halt_on_ruin(
+    state: _State,
+    result: RunResult,
+    store: MarketStore,
+    day: date,
+    close_px: float,
+    req_start: date,
+    req_end: date,
+) -> None:
+    """The ruin halt (owner decision 2026-07-15, docs/HONESTY.md · buying
+    power): the session's equity closed ≤ $0 — the account is gone and the
+    simulation stops RIGHT HERE. Open positions get CLOSE events at their
+    marks (cash untouched: the just-appended equity already IS the mark);
+    dates/equity end at this session by construction. The halt fires at
+    exactly $0, which makes ruin_date the LATEST possible ruin date — a
+    real margin account would have been liquidated earlier (disclosed).
+
+    The check rides the equity MARK: a session without a close price
+    appends no equity point and cannot measure ruin, so the halt fires at
+    the next MARKED session — no honest mark, no halt (inventing a close
+    to measure against would be a synthetic price)."""
+    equity = result.equity[-1]
+    state.trades.append(
+        TradeEvent(
+            day=day, action="HALT", reason="ruin",
+            detail=f"account wiped out — equity ${equity:,.2f} ≤ $0; simulation halted",
+        )
+    )
+    for pos in state.live:
+        if pos.closed:
+            continue
+        pl = round(pos.cash_flow + _position_value(pos, close_px), 2)
+        state.trades.append(
+            TradeEvent(
+                day=day, action="CLOSE", reason="ruin_halt", pl=pl,
+                detail=_position_desc(pos) + " · marked at the halt",
+                position_id=pos.pid,
+            )
+        )
+        pos.closed = True
+        _release_reserve(state, pos)
+    state.live.clear()
+    result.ruined = True
+    result.ruin_date = day
+    result.ruin_equity = equity
+    # the simulation ENDED here: the effective window is what actually ran
+    # (annualization, the coverage panel and the verdict window line all
+    # read this — claiming the full window was tested would be a lie)
+    result.effective_end = day
+    result.requested_sessions_to_ruin = sum(
+        1 for d in store.sessions if req_start <= d <= min(req_end, day)
+    )
 
 
 def _unwind_pending_stock(state: _State, view: MarketView) -> None:
@@ -1844,6 +1973,11 @@ def run_engine(
                 result.portfolio_vega.append(None if pv is None else round(pv, 2))
                 if open_positions:
                     result.days_in_market += 1
+                if result.equity[-1] <= 0.0:
+                    # ruin halt — both clock branches stop the day loop here
+                    _halt_on_ruin(state, result, store, day, close_px,
+                                  req_start, req_end)
+                    break
             continue
 
         # ------------------------------ daily close path (also the 5-min
@@ -1887,13 +2021,28 @@ def run_engine(
             result.portfolio_vega.append(None if pv is None else round(pv, 2))
             if open_positions:
                 result.days_in_market += 1
+            if result.equity[-1] <= 0.0:
+                _halt_on_ruin(state, result, store, day, close_px,
+                              req_start, req_end)
+                break
 
     result.trades = state.trades
     result.filled = sum(1 for t in state.trades if t.action == "OPEN")
     result.skipped = sum(1 for t in state.trades if t.action == "SKIP")
-    result.sessions_with_chain = (
-        covered_sessions if five_min else sum(1 for d in clock if d in store.chains)
-    )
+    if five_min:
+        result.sessions_with_chain = covered_sessions
+    else:
+        # a ruin halt truncates the honest numerator too — sessions after
+        # the halt were never simulated, chain or not
+        halt = result.ruin_date if result.ruined else None
+        result.sessions_with_chain = sum(
+            1 for d in clock if d in store.chains and (halt is None or d <= halt)
+        )
+    if state.unaffordable_rungs:
+        rung_counts: dict[int, int] = {}
+        for _pid, ridx in state.unaffordable_rungs:
+            rung_counts[ridx] = rung_counts.get(ridx, 0) + 1
+        result.rung_funding_skips = rung_counts
     result.fill_spread_pcts = state.fill_spread_pcts
     result.option_leg_fills = state.option_leg_fills
     result.fills_penalized = state.fills_penalized

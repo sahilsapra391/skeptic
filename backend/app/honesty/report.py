@@ -59,6 +59,10 @@ class MonteCarlo(BaseModel):
     max_drawdown_p50: float | None
     max_drawdown_p95: float | None
     p_loss: float | None  # fraction of paths ending below initial capital
+    # fraction of paths ABSORBED at $0 (owner 2026-07-15): a reshuffled path
+    # that crosses zero ends there — you can't keep trading a dead account.
+    # None on stored pre-absorption reports; 0.0 when no path crossed.
+    p_ruin: float | None = None
     # percentile equity paths for the fan chart (downsampled)
     fan_p5: list[float] = []
     fan_p50: list[float] = []
@@ -138,6 +142,10 @@ class Coverage(BaseModel):
     coverage_ratio: float  # chain_sessions / requested_sessions (0..1)
     materially_short: bool
     reason: str | None
+    # the run halted at ruin (owner 2026-07-15): the denominator above is
+    # the requested window UP TO THE HALT — the shortfall past it is the
+    # account dying, never a data gap (materially_short must not fire on it)
+    halted_at_ruin: bool = False
 
 
 class LiquidityProfile(BaseModel):
@@ -343,6 +351,11 @@ class LadderRung(BaseModel):
     contracts: int  # total contracts added at this depth
     marginal_pl: float  # P&L attributable to fills at this depth (ties out to total)
     net_negative: bool
+    # baskets where this rung hit the buying-power gate (owner amendment
+    # 2026-07-15): a deep add the account couldn't fund is UNAFFORDABLE —
+    # a distinct fact from unprofitable. Buying power is reality's cap on
+    # a ladder; max_total_contracts is only the user's.
+    unaffordable_baskets: int = 0
 
 
 class LadderDepth(BaseModel):
@@ -401,6 +414,39 @@ class ScaleInHonesty(BaseModel):
     reasons: list[str]  # human-readable cap/flag reasons
 
 
+class RuinDisclosure(BaseModel):
+    """The account was wiped out and the simulation halted (owner decision
+    2026-07-15, docs/HONESTY.md · buying power). The halt fires at exactly
+    $0, so `ruin_date` is the LATEST possible ruin date — a real margin
+    account is liquidated before zero; maintenance thresholds are
+    broker-specific and deliberately not modeled. The verdict caveat says
+    so in both registers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ruin_date: str
+    final_equity: float  # the halt session's closing equity (≤ 0)
+    positions_closed_at_halt: int  # open positions marked closed by the halt
+
+
+class FundingProfile(BaseModel):
+    """How much of the described strategy the account could actually fund
+    (owner decision 2026-07-15). Entries and scale-in rungs that hit the
+    buying-power gate are counted here; when the skipped share is material
+    the verdict must say so — a strategy that only 'works' if you could
+    fund 3× your account isn't working for the user running it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    initial_capital: float
+    reserve_mode: str  # margin.RESERVE_MODE the run priced reserves with
+    skipped_buying_power: int  # entry attempts + distinct unaffordable rungs
+    filled: int  # positions actually opened
+    skip_share: float | None  # skipped / (filled + skipped); None when no attempts
+    material: bool
+    note: str | None
+
+
 class Trust(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -428,6 +474,8 @@ class HonestyReport(BaseModel):
     data_confidence: DataConfidence | None = None  # cross-source validation (F7)
     ladder_depth: LadderDepth | None = None  # scale-in runs only (D5b)
     scale_in: ScaleInHonesty | None = None  # scale-in martingale defenses (D5c)
+    ruin: RuinDisclosure | None = None  # the run halted at $0 (2026-07-15)
+    funding: FundingProfile | None = None  # buying-power gate profile (2026-07-15)
     fill_sources: dict[str, int] = {}  # per-leg fill provenance (D2b/D2d)
     trust: Trust
     metrics: dict[str, float | None]
