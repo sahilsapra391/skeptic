@@ -1,0 +1,10 @@
+[Unit]
+Description=Skeptic keep-warm ping every 5 minutes
+
+[Timer]
+OnCalendar=*:0/5
+# no catch-up bursts after downtime — a missed warm ping is worthless late
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -247,8 +247,14 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     setTimeout(flush, 32);
   }, []);
 
+  // set the moment the user pans/zooms — the phase-2 tail swap must never
+  // reset a view the user has touched (an explicit flag, not view
+  // arithmetic: "panned back to the origin" still counts as touched)
+  const userTouchedView = useRef(false);
+
   const mutateView = useCallback(
     (fn: (v: View) => View) => {
+      userTouchedView.current = true;
       viewStateRef.current = clampView(
         fn(viewStateRef.current),
         bufferRef.current?.bars.length ?? 0,
@@ -270,12 +276,19 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
   }, []);
 
   // ---------------------------------------------------------------- loading
+  // Two-phase (2026-07-15): phase 1 is lake-only (`tail: false` — the exact
+  // URL prefetchBars warmed, and the backend skips its blocking live-tail
+  // fetch), so "reading bars…" ends at the cached lake. Phase 2 fetches the
+  // tail-carrying view behind the paint and swaps it in — the delayed badge
+  // appears when it lands. loadSeq guards against a stale swap after the
+  // ticker/interval changed mid-flight.
+  const loadSeq = useRef(0);
   const hardLoad = useCallback(async () => {
     stopInertia();
     setLoading(true);
     setError(null);
-    try {
-      const p: BarsPayload = await getBars(ticker, interval, window_, serverSpecs);
+    const seq = ++loadSeq.current;
+    const apply = (p: BarsPayload, resetView: boolean) => {
       setBuffer({
         bars: p.bars,
         indicators: p.indicators,
@@ -285,14 +298,38 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         source: p.source,
         asOf: p.as_of,
       });
-      viewStateRef.current = { start: 0, span: Math.max(p.bars.length, MIN_SPAN) };
-      setView({ ...viewStateRef.current });
-      setHover(null);
+      if (resetView) {
+        userTouchedView.current = false; // a programmatic reset re-arms it
+        viewStateRef.current = { start: 0, span: Math.max(p.bars.length, MIN_SPAN) };
+        setView({ ...viewStateRef.current });
+        setHover(null);
+      }
+    };
+    try {
+      const p: BarsPayload = await getBars(ticker, interval, window_, serverSpecs, {
+        tail: false,
+      });
+      if (seq !== loadSeq.current) return;
+      apply(p, true);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setBuffer(null);
       setError(e instanceof Error ? e.message : "bars unavailable");
-    } finally {
       setLoading(false);
+      return;
+    }
+    setLoading(false);
+    if (interval === "1d" || interval === "1w") return; // dailies carry no tail
+    try {
+      const full: BarsPayload = await getBars(ticker, interval, window_, serverSpecs);
+      // never yank a view the user has touched (they're exploring the
+      // phase-1 paint — the tail arrives on their next hard load), and
+      // never swap mid-page (loadOlder's in-flight merge would clobber the
+      // swapped buffer and drop the tail — review finding 2026-07-15)
+      if (seq !== loadSeq.current || userTouchedView.current || pagingRef.current) return;
+      apply(full, true);
+    } catch {
+      // the lake-only paint stands; the next hard load retries the tail
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker, interval, window_, specsKey, stopInertia]);
@@ -399,7 +436,12 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     if (!buf?.live || interval === "1d" || interval === "1w") return;
     pollRef.current = setTimeout(async () => {
       try {
-        const p = await getBars(ticker, interval, window_, serverSpecs, { limit: 120 });
+        // fresh: the poll must bypass the client cache (its TTL is now 5min
+        // for paint reuse — a cached poll would freeze the live tail)
+        const p = await getBars(ticker, interval, window_, serverSpecs, {
+          limit: 120,
+          fresh: true,
+        });
         const cur = bufferRef.current;
         if (!cur || !p.bars.length) return;
         const splice = cur.bars.findIndex((b) => b.t === p.bars[0].t);
@@ -432,7 +474,12 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
       } catch {
         // best-effort
       }
-    }, 15_000);
+      // 60s: the poll bypasses the client cache (fresh) and each hit pays
+      // the backend's tail fetch — the old 15s cadence was silently
+      // throttled to ~1/min by the cache TTL anyway, and the recorder
+      // snapshots land ~2min apart, so a faster poll bought nothing
+      // (review finding 2026-07-15)
+    }, 60_000);
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };

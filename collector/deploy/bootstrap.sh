@@ -80,11 +80,14 @@ install -m644 deploy/skeptic-heartbeat.service /etc/systemd/system/
 install -m644 deploy/skeptic-heartbeat.timer   /etc/systemd/system/
 install -m644 deploy/skeptic-autoupdate.service /etc/systemd/system/
 install -m644 deploy/skeptic-autoupdate.timer   /etc/systemd/system/
+install -m644 deploy/skeptic-keepwarm.service /etc/systemd/system/
+install -m644 deploy/skeptic-keepwarm.timer   /etc/systemd/system/
 chmod +x deploy/autoupdate.sh
 systemctl daemon-reload
 systemctl enable --now skeptic-intraday.service
 systemctl enable --now skeptic-heartbeat.timer
 systemctl enable --now skeptic-autoupdate.timer
+systemctl enable --now skeptic-keepwarm.timer
 
 echo
 echo "== recorder status =="

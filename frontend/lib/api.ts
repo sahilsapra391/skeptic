@@ -64,12 +64,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // per call site. `fresh` bypasses the read but still stores the new promise
 // so concurrent followers share it. Failures are never cached. Bounded:
 // paging URLs are unique and would otherwise pile up for the session.
-const promiseCache = new Map<string, { t: number; p: Promise<unknown> }>();
+// `swr` (stale-while-revalidate) serves an EXPIRED-but-resolved entry
+// instantly and refreshes it in the background — navigation paints from
+// the last known data instead of waiting on a cold proxy round-trip.
+const promiseCache = new Map<string, { t: number; p: Promise<unknown>; settled: boolean }>();
 const PROMISE_CACHE_MAX = 64;
+// swr serves an expired entry only this far past its TTL — beyond it the
+// data is too old to paint even briefly (an hour-idle tab must not flash
+// hour-old bars under a "delayed ~15m" badge; review finding 2026-07-15)
+const SWR_MAX_EXTRA_MS = 600_000;
 
-function cachedRequest<T>(url: string, ttlMs: number, fresh = false): Promise<T> {
-  const hit = promiseCache.get(url);
-  if (!fresh && hit && Date.now() - hit.t < ttlMs) return hit.p as Promise<T>;
+function storeRequest<T>(url: string): Promise<T> {
   if (promiseCache.size >= PROMISE_CACHE_MAX) {
     let oldest: string | null = null;
     let oldestT = Infinity;
@@ -82,9 +87,39 @@ function cachedRequest<T>(url: string, ttlMs: number, fresh = false): Promise<T>
     if (oldest) promiseCache.delete(oldest);
   }
   const p = request<T>(url);
-  promiseCache.set(url, { t: Date.now(), p });
-  p.catch(() => promiseCache.delete(url));
+  const entry = { t: Date.now(), p: p as Promise<unknown>, settled: false };
+  promiseCache.set(url, entry);
+  p.then(
+    () => {
+      entry.settled = true;
+    },
+    () => {
+      // delete only OUR entry — a fresh/evicted replacement under the same
+      // URL must survive this stale rejection (review finding 2026-07-15)
+      if (promiseCache.get(url) === entry) promiseCache.delete(url);
+    },
+  );
   return p;
+}
+
+function cachedRequest<T>(
+  url: string,
+  ttlMs: number,
+  fresh = false,
+  swr = false,
+): Promise<T> {
+  const hit = promiseCache.get(url);
+  if (!fresh && hit) {
+    if (Date.now() - hit.t < ttlMs) return hit.p as Promise<T>;
+    if (swr && hit.settled && Date.now() - hit.t < ttlMs + SWR_MAX_EXTRA_MS) {
+      // serve the stale value NOW; the replacement entry is stored before
+      // returning so concurrent expired readers share one refresh
+      const stale = hit.p as Promise<T>;
+      storeRequest<T>(url);
+      return stale;
+    }
+  }
+  return storeRequest<T>(url);
 }
 
 // the composer fetches coverage on mount; a short client cache lets the
@@ -110,29 +145,40 @@ export function getUnderlying(ticker: string, days = 240): Promise<{ series: Und
   return request<{ series: UnderlyingPoint[] }>(`/api/data/underlying/${ticker}?days=${days}`);
 }
 
-// short-TTL in-flight cache so the hero can warm the chart's first fetch
-// before the user opens chart mode — the switch then renders instantly
-const BARS_CACHE_TTL_MS = 60_000;
+// client cache so the hero can warm the chart's first fetch before the
+// user opens chart mode — the switch then renders instantly. 5 minutes:
+// the bars are ~15-min delayed anyway (the UI badge says so), so client
+// staleness inside that window adds no dishonesty a fresh request
+// wouldn't also have; the 15s live poll bypasses via `fresh`.
+const BARS_CACHE_TTL_MS = 300_000;
 
 export function getBars(
   ticker: string,
   interval: ChartInterval,
   window: ChartWindow,
   indicators: string[],
-  opts?: { before?: string; limit?: number },
+  opts?: { before?: string; limit?: number; tail?: boolean; fresh?: boolean },
 ): Promise<BarsPayload> {
   const params = new URLSearchParams({ interval, window, indicators: indicators.join(",") });
   if (opts?.before) params.set("before", opts.before);
   if (opts?.limit) params.set("limit", String(opts.limit));
-  return cachedRequest<BarsPayload>(`/api/data/bars/${ticker}?${params}`, BARS_CACHE_TTL_MS);
+  // tail=0 skips the backend's blocking live-tail fetch — the first paint
+  // reads the cached lake instantly and the tail arrives in a follow-up
+  if (opts?.tail === false) params.set("tail", "0");
+  return cachedRequest<BarsPayload>(
+    `/api/data/bars/${ticker}?${params}`,
+    BARS_CACHE_TTL_MS,
+    opts?.fresh ?? false,
+    true,
+  );
 }
 
-/** Warm the exact request MarketChart issues on first mount (5m · 1w) for
- * ALL three tickers — chart mode then opens instantly and SPY→QQQ→IWM
- * switches land on a warm cache instead of a cold lake read. */
+/** Warm the exact request MarketChart issues on first mount (5m · 1w,
+ * lake-only) for ALL three tickers — chart mode then opens instantly and
+ * SPY→QQQ→IWM switches land on a warm cache instead of a cold lake read. */
 export function prefetchBars(): void {
   for (const t of ["SPY", "QQQ", "IWM"]) {
-    getBars(t, "5m", "1w", []).catch(() => undefined);
+    getBars(t, "5m", "1w", [], { tail: false }).catch(() => undefined);
   }
 }
 
@@ -240,11 +286,14 @@ const RUNS_CACHE_TTL_MS = 30_000;
 
 export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boolean }> {
   // `fresh` bypasses the cache — the library polls with it while a run
-  // is in progress so the card flips to its verdict without a reload
+  // is in progress so the card flips to its verdict without a reload.
+  // swr: an expired listing paints instantly and refreshes behind — the
+  // nav rail calls this on every navigation
   return cachedRequest<{ runs: RunSummary[]; demo: boolean }>(
     "/api/runs",
     RUNS_CACHE_TTL_MS,
     fresh,
+    true,
   );
 }
 
