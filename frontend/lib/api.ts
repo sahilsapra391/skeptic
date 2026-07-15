@@ -69,6 +69,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // the last known data instead of waiting on a cold proxy round-trip.
 const promiseCache = new Map<string, { t: number; p: Promise<unknown>; settled: boolean }>();
 const PROMISE_CACHE_MAX = 64;
+// swr serves an expired entry only this far past its TTL — beyond it the
+// data is too old to paint even briefly (an hour-idle tab must not flash
+// hour-old bars under a "delayed ~15m" badge; review finding 2026-07-15)
+const SWR_MAX_EXTRA_MS = 600_000;
 
 function storeRequest<T>(url: string): Promise<T> {
   if (promiseCache.size >= PROMISE_CACHE_MAX) {
@@ -89,7 +93,11 @@ function storeRequest<T>(url: string): Promise<T> {
     () => {
       entry.settled = true;
     },
-    () => promiseCache.delete(url),
+    () => {
+      // delete only OUR entry — a fresh/evicted replacement under the same
+      // URL must survive this stale rejection (review finding 2026-07-15)
+      if (promiseCache.get(url) === entry) promiseCache.delete(url);
+    },
   );
   return p;
 }
@@ -103,7 +111,7 @@ function cachedRequest<T>(
   const hit = promiseCache.get(url);
   if (!fresh && hit) {
     if (Date.now() - hit.t < ttlMs) return hit.p as Promise<T>;
-    if (swr && hit.settled) {
+    if (swr && hit.settled && Date.now() - hit.t < ttlMs + SWR_MAX_EXTRA_MS) {
       // serve the stale value NOW; the replacement entry is stored before
       // returning so concurrent expired readers share one refresh
       const stale = hit.p as Promise<T>;

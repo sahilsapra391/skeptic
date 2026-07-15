@@ -551,9 +551,11 @@ def get_bars(
         frame, live, has_more, keep, live_kind = _intraday_frame(
             s3, ticker, interval, window, before_ts, target, include_tail=include_tail
         )
-        if not include_tail and before_ts is None:
+        if not include_tail and before_ts is None and len(frame):
             # labeled honestly: this response is the cached lake only — the
-            # tail-carrying follow-up brings the delayed badge
+            # tail-carrying follow-up brings the delayed badge. An EMPTY
+            # lake keeps the default label: promising a separate tail on
+            # zero bars would mislabel the gap (review finding 2026-07-15)
             source = "lake minutes 2024-02→ (live tail loads separately)"
         elif live_kind == "cboe_live":
             source = "lake minutes 2024-02→ + CBOE recorder spot (~15-min delayed)"

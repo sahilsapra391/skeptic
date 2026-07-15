@@ -10,4 +10,7 @@ User=skeptic
 # AND the Railway backend behind it (/api/health is auth-exempt; the proxy
 # holds the token). A GitHub Actions cron would do the same but bills ~9k
 # private-repo minutes/month at */5 — the VM timer costs nothing.
-ExecStart=/usr/bin/curl -fsS --max-time 30 -o /dev/null https://www.skeptic.fyi/api/health
+# no -f: a cold box answers the FIRST ping with a 502/503 while spinning up —
+# that ping still warms it, and it must not mark the unit failed
+# (review finding 2026-07-15); network errors still exit non-zero
+ExecStart=/usr/bin/curl -sS --max-time 30 -o /dev/null https://www.skeptic.fyi/api/health

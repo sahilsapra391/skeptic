@@ -247,8 +247,14 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     setTimeout(flush, 32);
   }, []);
 
+  // set the moment the user pans/zooms — the phase-2 tail swap must never
+  // reset a view the user has touched (an explicit flag, not view
+  // arithmetic: "panned back to the origin" still counts as touched)
+  const userTouchedView = useRef(false);
+
   const mutateView = useCallback(
     (fn: (v: View) => View) => {
+      userTouchedView.current = true;
       viewStateRef.current = clampView(
         fn(viewStateRef.current),
         bufferRef.current?.bars.length ?? 0,
@@ -293,18 +299,17 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         asOf: p.as_of,
       });
       if (resetView) {
+        userTouchedView.current = false; // a programmatic reset re-arms it
         viewStateRef.current = { start: 0, span: Math.max(p.bars.length, MIN_SPAN) };
         setView({ ...viewStateRef.current });
         setHover(null);
       }
     };
-    let phase1Len = 0;
     try {
       const p: BarsPayload = await getBars(ticker, interval, window_, serverSpecs, {
         tail: false,
       });
       if (seq !== loadSeq.current) return;
-      phase1Len = p.bars.length;
       apply(p, true);
     } catch (e) {
       if (seq !== loadSeq.current) return;
@@ -317,12 +322,12 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     if (interval === "1d" || interval === "1w") return; // dailies carry no tail
     try {
       const full: BarsPayload = await getBars(ticker, interval, window_, serverSpecs);
-      if (seq !== loadSeq.current) return;
-      // keep the user's view if they already panned/zoomed the phase-1 paint
-      const untouched =
-        viewStateRef.current.start === 0 &&
-        viewStateRef.current.span === Math.max(phase1Len, MIN_SPAN);
-      apply(full, untouched);
+      // never yank a view the user has touched (they're exploring the
+      // phase-1 paint — the tail arrives on their next hard load), and
+      // never swap mid-page (loadOlder's in-flight merge would clobber the
+      // swapped buffer and drop the tail — review finding 2026-07-15)
+      if (seq !== loadSeq.current || userTouchedView.current || pagingRef.current) return;
+      apply(full, true);
     } catch {
       // the lake-only paint stands; the next hard load retries the tail
     }
@@ -469,7 +474,12 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
       } catch {
         // best-effort
       }
-    }, 15_000);
+      // 60s: the poll bypasses the client cache (fresh) and each hit pays
+      // the backend's tail fetch — the old 15s cadence was silently
+      // throttled to ~1/min by the cache TTL anyway, and the recorder
+      // snapshots land ~2min apart, so a faster poll bought nothing
+      // (review finding 2026-07-15)
+    }, 60_000);
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
