@@ -11,6 +11,7 @@ import math
 import pandas as pd
 
 from app.data import indicators as ind
+from app.engine.daily_series import CACHED_INDICATORS
 from app.engine.market import MarketViewLike
 from app.models.spec import Condition, Indicator, Operator, Timeframe
 
@@ -211,12 +212,26 @@ def _live_price_tail(
 def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if cond.timeframe is Timeframe.FIVE_MIN:
         return _intraday_condition(view, cond)
+    ind_name = cond.indicator
+
+    # The close-series family reads the store's memoized full-history
+    # series when the view offers one (MarketView/BarView do; test fakes
+    # and any other MarketViewLike keep the prefix path below). Same
+    # functions, same numbers — proven cell-by-cell in
+    # tests/test_daily_series_equivalence.py and bounded at the view's own
+    # as_of (app/engine/daily_series.py). Duck-typed on purpose: the
+    # Protocol stays the strategy surface, not a cache contract.
+    if ind_name in CACHED_INDICATORS:
+        pair_of = getattr(view, "daily_series_pair", None)
+        if pair_of is not None:
+            threshold = 0.0 if ind_name is Indicator.EMA_CROSS_STATE else cond.value
+            return _series_pair(pair_of(cond), cond.operator, threshold)
+
     closes = view.closes_upto()
     if not closes:
         return False
     s = pd.Series(closes, dtype=float)
     period = cond.period or 14
-    ind_name = cond.indicator
 
     if ind_name is Indicator.RSI:
         return _series_pair(_tail_values(ind.rsi(s, period)), cond.operator, cond.value)

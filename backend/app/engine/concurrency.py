@@ -29,7 +29,20 @@ def release_memory() -> None:
     """Hand the sweep's freed transient buffers back to the OS. glibc keeps
     freed pandas/numpy chunks in per-thread arenas, so container RSS ratchets
     even though nothing leaks; gc + malloc_trim return them. A no-op where
-    malloc_trim is unavailable (macOS / musl)."""
+    malloc_trim is unavailable (macOS / musl).
+
+    The per-run daily indicator memos go first: they hang off the CACHED
+    store (which outlives the run by design — see chains.STORE_TTL_SECONDS)
+    and are run transients like every other buffer freed here. Dropped in
+    THIS function, rather than at the one call site that built them,
+    because every engine path already ends here — a fill audit and a
+    notebook reproduce would otherwise each have to remember."""
+    try:
+        from app.data.chains import drop_series_caches
+
+        drop_series_caches()
+    except Exception:  # pragma: no cover — never let cleanup fail a run
+        pass
     gc.collect()
     try:
         ctypes.CDLL("libc.so.6").malloc_trim(0)

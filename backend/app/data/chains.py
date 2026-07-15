@@ -212,6 +212,19 @@ STORE_TTL_SECONDS = 1800
 _REBUILD_LOCK = threading.Lock()
 
 
+def drop_series_caches() -> None:
+    """Release every cached store's per-run daily-series memo.
+
+    The STORE is deliberately long-lived (TTL 1800s — rebuilding it costs
+    minutes of R2 pulls), but the indicator series a RUN memoized on it
+    are that run's transients: keeping them would mean the box holds a
+    float array per indicator signature of every spec ever run, for as
+    long as the store lives. The engine lane drops them when a run ends
+    (app/engine/concurrency.release_memory)."""
+    for _, _, store in _STORE_CACHE.values():
+        store.drop_daily_series_cache()
+
+
 def load_market_store(ticker: str, *, refresh: bool = True) -> MarketStore:
     now = time.time()
     entry = _STORE_CACHE.get(ticker)
