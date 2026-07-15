@@ -174,6 +174,9 @@ export interface VerdictPayload {
   refusal: boolean;
   /** graded on a sample under the standard 15-trade floor (lowered bar) */
   belowStandard?: boolean;
+  /** the account was wiped out and the sim halted (2026-07-15) —
+   * trust is hard-capped at the floor when set */
+  ruined?: boolean;
   headline: string;
   survived: string;
   band?: { left: string; width: string };
@@ -339,6 +342,20 @@ export interface RunPayload {
   /** real runs ship raw series; the client shapes them into the charts */
   equitySeries?: SeriesPoint[];
   drawdownSeries?: SeriesPoint[];
+  /** ruin halt (2026-07-15): the account hit $0 and the simulation stopped
+   * there — banner + terminal chart marker. None on non-ruined runs and on
+   * every stored pre-ruin payload. */
+  ruin?: { date: string; finalEquity: number; haltedPositions: number } | null;
+  /** buying-power profile (2026-07-15): what the account couldn't fund */
+  funding?: {
+    initial_capital: number;
+    reserve_mode: string;
+    skipped_buying_power: number;
+    filled: number;
+    skip_share: number | null;
+    material: boolean;
+    note: string | null;
+  } | null;
   /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;

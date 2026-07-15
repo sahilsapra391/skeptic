@@ -49,7 +49,10 @@ def _spec(contracts: int, structure: str = "short_put") -> StrategySpec:
         "sizing": {"method": "fixed_contracts", "value": contracts},
         "costs": {"commission_per_contract": 0.65,
                   "slippage_half_spread_fraction": 0.5, "slippage_half_spread_fraction_sell": 0.5},
-        "backtest": {"start": None, "end": None, "initial_capital": 25000,
+        # capital sized so the buying-power gate (2026-07-15) never binds:
+        # these fixtures deliberately sell up to 40 ATM contracts (reserve
+        # 40 × $2,000 = $80,000) to exercise DEPTH disclosure, not funding
+        "backtest": {"start": None, "end": None, "initial_capital": 250_000,
                      "seed": 42, "clock": "5min"},
     })
 
@@ -162,8 +165,10 @@ class TestDailyClockUnchanged:
             "costs": {"commission_per_contract": 0.65,
                       "slippage_half_spread_fraction": 0.5,
                       "slippage_half_spread_fraction_sell": 0.5},
+            # 50 ATM contracts reserve $100,000 under the buying-power gate
+            # (2026-07-15) — capital sized so the gate never binds here
             "backtest": {"start": None, "end": None,
-                         "initial_capital": 25000, "seed": 42},
+                         "initial_capital": 250_000, "seed": 42},
         })
         result = run_backtest(spec, store)
         assert result.option_leg_fills > 0

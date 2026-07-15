@@ -138,8 +138,10 @@ def run_gauntlet(
     ladder = stages.ladder_depth_attribution(result, spec)
     confidence = stages.data_confidence(result, spec)
     scale_in = stages.scale_in_honesty(result, spec, spec.backtest.initial_capital)
+    ruin = stages.ruin_disclosure(result)
+    funding = stages.funding_profile(result, spec)
     trust = compute_trust(oos, wf, mc, sens, sample, dsr, cov, conc, scale_in,
-                          res_split)
+                          res_split, ruin=ruin)
 
     return HonestyReport(
         oos=oos,
@@ -156,6 +158,8 @@ def run_gauntlet(
         data_confidence=confidence,
         ladder_depth=ladder,
         scale_in=scale_in,
+        ruin=ruin,
+        funding=funding,
         fill_sources=dict(result.fill_sources),
         trust=trust,
         metrics=result.metrics,

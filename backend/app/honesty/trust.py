@@ -25,6 +25,7 @@ from app.honesty.report import (
     OosSplit,
     RegimeSample,
     ResolutionSplit,
+    RuinDisclosure,
     ScaleInHonesty,
     Sensitivity,
     Trust,
@@ -45,6 +46,7 @@ def compute_trust(
     concentration: Concentration | None = None,
     scale_in: ScaleInHonesty | None = None,
     resolution: ResolutionSplit | None = None,
+    ruin: RuinDisclosure | None = None,
 ) -> Trust:
     survived = {
         "oos": not oos.flagged,
@@ -87,7 +89,20 @@ def compute_trust(
         cap_reasons.append(coverage.reason or "requested window mostly lacks chain data")
     if sample.capped:
         cap_reasons.append(sample.cap_reason or "sample too thin")
+    # the ruin halt (owner 2026-07-15): the account was wiped out — on a
+    # refused run the refusal carries the ruin reason FIRST (both facts
+    # disclosed); on a gradeable run the level hard-caps at the lowest band
+    # below. Ruin never rescues a refusal into a grade.
+    ruin_reason = None
+    if ruin is not None:
+        ruin_reason = (
+            f"the account was wiped out on {ruin.ruin_date} "
+            f"(equity ${ruin.final_equity:,.0f}) — no statistic computed "
+            "past that point is investable"
+        )
     if cap_reasons:
+        if ruin_reason:
+            cap_reasons.insert(0, ruin_reason)
         return Trust(
             level=None,
             label="insufficient_evidence",
@@ -99,6 +114,9 @@ def compute_trust(
     reasons: list[str] = []
     core = ["oos", "walk_forward", "monte_carlo", "sensitivity"]
     level = 1 + sum(1 for k in core if survived[k])
+    if ruin_reason:
+        level = 1  # a blown account is the floor, whatever else survived
+        reasons.append(ruin_reason)
 
     if oos.sign_flip:
         level = min(level, 2)
