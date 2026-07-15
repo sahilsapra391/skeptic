@@ -62,13 +62,16 @@ git -C "$DEST" merge --ff-only "$after"   # non-ff (drift/force-push) = loud fai
 chown -R skeptic "$DEST"
 sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync
 
-# units may have changed in the pull; reinstall them all, then restart only
-# the long-lived recorder (the heartbeat is a fresh process every fire)
-install -m644 "$DEST"/collector/deploy/skeptic-intraday.service /etc/systemd/system/
-install -m644 "$DEST"/collector/deploy/skeptic-heartbeat.service /etc/systemd/system/
-install -m644 "$DEST"/collector/deploy/skeptic-heartbeat.timer /etc/systemd/system/
-install -m644 "$DEST"/collector/deploy/skeptic-autoupdate.service /etc/systemd/system/
-install -m644 "$DEST"/collector/deploy/skeptic-autoupdate.timer /etc/systemd/system/
+# Units may have changed in the pull; reinstall them ALL — by glob, because
+# the hand-listed version silently skipped units added after it was written
+# (skeptic-keepwarm landed in #109 and this list never learned about it), so
+# a VM that only ever self-updates would keep running yesterday's unit set
+# while the comment claimed otherwise. Enabling stays with bootstrap.sh: a
+# unit the owner deliberately disabled must not come back on a nightly pull.
+install -m644 "$DEST"/collector/deploy/skeptic-*.service /etc/systemd/system/
+install -m644 "$DEST"/collector/deploy/skeptic-*.timer /etc/systemd/system/
 systemctl daemon-reload
+# restart only the long-lived recorder (the heartbeat is a fresh process
+# every fire, and the keep-warm ping is a oneshot)
 systemctl restart skeptic-intraday.service
 echo "deployed ${after:0:9}; recorder restarted"
