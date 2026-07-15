@@ -995,6 +995,12 @@ def scale_in_honesty(
         paths = initial_capital + np.cumsum(sampled, axis=1)
         peak = np.maximum(np.maximum.accumulate(paths, axis=1), initial_capital)
         max_dd = (1.0 - paths / np.maximum(peak, 1e-9)).max(axis=1)
+        # you can't lose more than everything: a path that crosses $0 reads
+        # 100%, never the >100% negative equity arithmetics into (review
+        # finding 2026-07-15 — same rule as the main MC's absorption).
+        # Flag-invariant: capped values are exactly 1.0, still > the 0.30
+        # threshold, so p_ruin/ruin_flagged cannot move.
+        max_dd = np.minimum(max_dd, 1.0)
         p95, p99 = float(np.percentile(max_dd, 95)), float(np.percentile(max_dd, 99))
         p_ruin = float(np.mean(max_dd > RUIN_DRAW_THRESHOLD))
         ruin_flagged = p_ruin >= RUIN_TAIL_PROB
@@ -1412,6 +1418,12 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
     prose. Returns None for graded verdicts."""
     if report.trust.label != "insufficient_evidence":
         return None
+    # a wiped-out account never unlocks with more data (review finding
+    # 2026-07-15): the run halts at the same ruin date no matter how much
+    # history arrives after it, so entering the auto-unlock scan would
+    # re-run and re-refuse forever — the D5a-interlock exclusion class
+    if report.ruin is not None:
+        return None
     cov = report.coverage
     sample = report.regime_sample
     # needs compare against the bar THIS run was scored at — the user
@@ -1466,12 +1478,24 @@ def ruin_disclosure(result: RunResult) -> RuinDisclosure | None:
 
 
 def funding_profile(result: RunResult, spec: StrategySpec) -> FundingProfile:
-    """Count what the buying-power gate refused: entry attempts (from
-    skip_reasons — episode-level at the 5-min clock, per-session on daily)
-    plus DISTINCT unaffordable (basket, rung) pairs on ladders (rung
-    retries never inflate the count). Material when the skipped share of
-    otherwise-eligible entries crosses the reviewed thresholds."""
-    entry_skips = result.skip_reasons.get("insufficient_buying_power", 0)
+    """Count what the buying-power gate refused: SKIP trade-log events
+    (deduped once per SESSION by the engine's skip-log dedupe — the raw
+    skip_counts re-count an unfundable entry on every in-window bar at the
+    5-min clock, which would inflate the share ~80×; review finding
+    2026-07-15) plus DISTINCT unaffordable (basket, rung) pairs on ladders
+    (rung retries never inflate the count). Material when the skipped
+    share of otherwise-eligible entries crosses the reviewed thresholds."""
+    if spec.entry.scale_in is not None:
+        # ladder entries ARE rung fills: their funding skips are counted
+        # below per distinct (basket, rung) — counting the log lines too
+        # would double them (a basket that never opened at all stays
+        # uncounted: conservative)
+        entry_skips = 0
+    else:
+        entry_skips = sum(
+            1 for t in result.trades
+            if t.action == "SKIP" and t.reason == "insufficient_buying_power"
+        )
     rung_skips = sum(result.rung_funding_skips.values())
     skipped = entry_skips + rung_skips
     attempts = result.filled + skipped
@@ -1482,9 +1506,10 @@ def funding_profile(result: RunResult, spec: StrategySpec) -> FundingProfile:
         and share >= FUNDING_MATERIAL_SHARE
     )
     note = (
-        f"{skipped} of {attempts} otherwise-eligible entries were skipped for "
-        f"buying power at ${spec.backtest.initial_capital:,.0f} capital — the "
-        "tested strategy is smaller than the described one"
+        f"{skipped} of {attempts} otherwise-eligible entries and ladder adds "
+        f"were skipped for buying power at "
+        f"${spec.backtest.initial_capital:,.0f} capital — the tested strategy "
+        "is smaller than the described one"
         if material
         else None
     )

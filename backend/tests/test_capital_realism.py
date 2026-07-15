@@ -157,6 +157,21 @@ class TestAbsorbAtZero:
         assert hit.tolist() == [False, False]
 
 
+def _bootstrap_sampled(pls: list[float], seed: int = 42, resamples: int = 1000,
+                       block: int = 5) -> np.ndarray:
+    """Replicate monte_carlo's circular block bootstrap sampling (same RNG
+    call order) — the independent reconstruction both MC tests assert
+    against, kept in ONE place so a bootstrap change can't desync them."""
+    arr = np.array(pls)
+    n = len(arr)
+    rng = np.random.RandomState(seed)
+    n_blocks = math.ceil(n / block)
+    starts = rng.randint(0, n, size=(resamples, n_blocks))
+    offsets = np.arange(block)
+    idx = (starts[:, :, None] + offsets[None, None, :]) % n
+    return arr[idx.reshape(resamples, -1)[:, :n]]
+
+
 def _mc_result(pls: list[float], seed: int = 42) -> RunResult:
     r = RunResult(ticker="SPY", effective_start=date(2025, 1, 6),
                   effective_end=date(2025, 3, 1), seed=seed)
@@ -175,14 +190,7 @@ class TestMonteCarloAbsorption:
         assert mc.p_ruin == 0.0
 
         # legacy math, replicated independently (same seed, same RNG order)
-        arr = np.array(pls)
-        n = len(arr)
-        rng = np.random.RandomState(42)
-        n_blocks = math.ceil(n / 5)
-        starts = rng.randint(0, n, size=(1000, n_blocks))
-        offsets = np.arange(5)
-        idx = (starts[:, :, None] + offsets[None, None, :]) % n
-        sampled = arr[idx.reshape(1000, -1)[:, :n]]
+        sampled = _bootstrap_sampled(pls)
         paths = initial + np.cumsum(sampled, axis=1)
         terminals = paths[:, -1]
         peak = np.maximum.accumulate(np.maximum(paths, 1e-9), axis=1)
@@ -199,14 +207,7 @@ class TestMonteCarloAbsorption:
         initial = 1_000.0
         mc = monte_carlo(_mc_result(pls), initial)
 
-        arr = np.array(pls)
-        n = len(arr)
-        rng = np.random.RandomState(42)
-        n_blocks = math.ceil(n / 5)
-        starts = rng.randint(0, n, size=(1000, n_blocks))
-        offsets = np.arange(5)
-        idx = (starts[:, :, None] + offsets[None, None, :]) % n
-        sampled = arr[idx.reshape(1000, -1)[:, :n]]
+        sampled = _bootstrap_sampled(pls)
         hits = 0
         for row in sampled:  # independent per-path scan
             c = initial
@@ -357,10 +358,15 @@ class TestFundingProfile:
     def _spec(self) -> StrategySpec:
         return StrategySpec.model_validate(fx_short_put_ruin_halt.SPEC)
 
+    @staticmethod
+    def _bp_skip(day_num: int) -> TradeEvent:
+        return TradeEvent(day=date(2025, 1, day_num), action="SKIP", detail="",
+                          reason="insufficient_buying_power")
+
     def test_material_when_share_and_count_cross(self) -> None:
         r = _mc_result([])
         r.filled = 5
-        r.skip_reasons = {"insufficient_buying_power": 5}
+        r.trades = [self._bp_skip(d) for d in range(6, 11)]
         prof = funding_profile(r, self._spec())
         assert prof.skipped_buying_power == 5
         assert prof.skip_share == pytest.approx(0.5)
@@ -370,10 +376,21 @@ class TestFundingProfile:
     def test_not_material_below_min_count(self) -> None:
         r = _mc_result([])
         r.filled = 2
-        r.skip_reasons = {"insufficient_buying_power": 2}
+        r.trades = [self._bp_skip(6), self._bp_skip(7)]
         prof = funding_profile(r, self._spec())
         assert not prof.material
         assert prof.note is None
+
+    def test_counts_session_events_not_per_bar_attempts(self) -> None:
+        # review finding 2026-07-15: at the 5-min clock skip_counts re-count
+        # an unfundable entry on EVERY in-window bar; the profile must read
+        # the session-deduped log events instead
+        r = _mc_result([])
+        r.filled = 2
+        r.skip_reasons = {"insufficient_buying_power": 80}  # per-bar raw count
+        r.trades = [self._bp_skip(6), self._bp_skip(7)]  # 2 sessions
+        prof = funding_profile(r, self._spec())
+        assert prof.skipped_buying_power == 2
 
     def test_rung_skips_counted_once_per_basket(self) -> None:
         r = _mc_result([])
@@ -383,6 +400,58 @@ class TestFundingProfile:
         assert prof.skipped_buying_power == 3
         assert prof.skip_share == round(3 / 7, 4)  # stored rounded to 4dp
         assert prof.material
+
+
+# ───────────────────────────── the 5-min clock halts on ruin too
+def test_ruin_halts_the_five_min_clock() -> None:
+    """The intraday branch's halt seam (the daily one is covered by
+    fx_short_put_ruin_halt): a 0DTE short put on $3,000, spot crashes to
+    25 by the close → assignment (−$10,000) drives the session's closing
+    equity to −4,295.65 ≤ $0 → HALT at that session; later sessions never
+    simulate. Entry: SELL fill 2.05, credit +204.35 (reserve $2,000 ≤
+    3,000 + 204.35 → fills)."""
+    session = "2025-01-06"
+    expiry = session  # 0DTE settles at the close
+
+    def put_q(bid: float, ask: float) -> dict:
+        return {"expiration": expiry, "right": "put", "strike": 100.0,
+                "bid": bid, "ask": ask, "delta": -0.50}
+
+    bars = ["09:30", "09:35", "09:40"]
+    slc = build_fixture_slice(
+        session,
+        quotes={b: [put_q(2.00, 2.20)] for b in bars},
+        underlying={b: 100.0 for b in bars},
+    )
+    store = build_fixture_store(
+        "SPY", {},
+        {session: (100.0, 25.0), "2025-01-07": (25.0, 25.0)})
+    spec = StrategySpec.model_validate({
+        "spec_version": 2,
+        "meta": {"name": "intraday ruin", "description_raw": "ruin"},
+        "underlying": {"ticker": "SPY"},
+        "position": {
+            "structure": "short_put",
+            "legs": [{"right": "put", "side": "short", "ratio": 1,
+                      "strike_selection": {"method": "delta", "value": 0.50}}],
+            "expiration_selection": {"target_dte": 0, "min_dte": 0, "max_dte": 2},
+        },
+        "entry": {"schedule": {"frequency": "daily"}, "conditions": [],
+                  "max_concurrent_positions": 1},
+        "exit": {"profit_target_pct": 500},  # unhittable — ride to settlement
+        "sizing": {"method": "fixed_contracts", "value": 1},
+        "costs": {"commission_per_contract": 0.65,
+                  "slippage_half_spread_fraction": 0.5,
+                  "slippage_half_spread_fraction_sell": 0.5},
+        "backtest": {"start": None, "end": "2025-01-07",
+                     "initial_capital": 3_000, "seed": 42, "clock": "5min"},
+    })
+    result = run_backtest(spec, store, FixtureIntraday({session: slc}))
+    assert result.ruined
+    assert result.ruin_date == date(2025, 1, 6)
+    assert result.ruin_equity == pytest.approx(-4_295.65)
+    assert result.dates == [date(2025, 1, 6)]  # 01-07 never simulated
+    assert "HALT" in [t.action for t in result.trades]
 
 
 # ──────────── ladder: unaffordable deep adds (owner amendment 2026-07-15)

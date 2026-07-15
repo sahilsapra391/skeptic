@@ -503,7 +503,15 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
                 "The gauntlet ran, but blessing this sample would be a guess wearing a "
                 "lab coat. Raw output below, unblessed. " + " · ".join(verdict.caveats)
             ),
-            "refusalUnlock": "unlocks at " + " and ".join(needs) if needs else "",
+            # a wiped-out account never unlocks with more data — promising
+            # "unlocks at N trades" on a dead account would be a lie
+            # (review finding 2026-07-15; unlock_conditions excludes it too)
+            "refusalUnlock": (
+                "does not unlock with more data — the account was wiped out; "
+                "change the strategy or the capital"
+                if report.ruin is not None
+                else "unlocks at " + " and ".join(needs) if needs else ""
+            ),
         }
 
     level = trust.level or 1
@@ -569,12 +577,20 @@ def _panel_notes(report: HonestyReport, retail: bool = False) -> list[str]:
         )
 
     if mc.p_loss is not None:
+        # p(ruin) shown only when some reshuffled path actually died at $0
+        # (absorption, 2026-07-15) — a computed ruin share is never silent
+        ruin_bit = (
+            (f" · {_pct(mc.p_ruin, 0)} went broke" if retail
+             else f" · p(ruin) {_pct(mc.p_ruin, 0)}")
+            if mc.p_ruin
+            else ""
+        )
         mc_note = (
             f"{_pct(mc.p_loss, 0)} of reshuffles lost money · worst realistic dip "
-            f"−{_pct(mc.max_drawdown_p95, 0)}"
+            f"−{_pct(mc.max_drawdown_p95, 0)}" + ruin_bit
             if retail
             else f"P(loss) {_pct(mc.p_loss, 0)} · 95th pctile drawdown "
-            f"−{_pct(mc.max_drawdown_p95, 0)}"
+            f"−{_pct(mc.max_drawdown_p95, 0)}" + ruin_bit
         )
     else:
         mc_note = "needs at least 5 finished trades" if retail else "needs ≥ 5 closed trades"
@@ -638,7 +654,12 @@ def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[st
             "numbers are below, unblessed — look, but don't lean on them. "
             + " · ".join(retail_verdict.caveats)
         )
-        block["refusalUnlock"] = "unlocks with " + " and ".join(needs) if needs else ""
+        block["refusalUnlock"] = (
+            "more data won't unlock this — the account ran out of money; "
+            "change the strategy or the starting capital"
+            if report.ruin is not None
+            else "unlocks with " + " and ".join(needs) if needs else ""
+        )
     return {
         **{
             k: block[k]

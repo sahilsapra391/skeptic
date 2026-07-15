@@ -92,6 +92,10 @@ def position_requirement(
     at one shared expiration (iron condor), only the worse side is reserved.
     `stock_cover_shares` covers short calls first (covered call → 0).
     """
+    if not any(leg.side is Side.SHORT for leg in legs):
+        return 0.0  # long-only: nothing to reserve (entry-gate hot path —
+        # the full pairing machinery below allocates on every attempt)
+
     shorts: dict[str, list[_Units]] = {"put": [], "call": []}
     longs: dict[str, list[_Units]] = {"put": [], "call": []}
     for leg, key in zip(legs, keys, strict=True):

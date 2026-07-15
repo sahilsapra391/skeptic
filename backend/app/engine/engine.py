@@ -498,6 +498,16 @@ def _risk_per_contract(
     return max(-premium * MULT, 0.0)
 
 
+def _leg_cash_delta(px: float, side: Side, qty: int, commission: float) -> float:
+    """Signed cash of ONE leg fill: shorts credit, longs debit, commission
+    always out. THE entry-economics formula — the buying-power gate and the
+    fill loop both call this so they can never drift apart (a gate pricing
+    buying power off a stale formula would admit/refuse entries the fill
+    can't honor)."""
+    signed = px * qty * MULT if side is Side.SHORT else -px * qty * MULT
+    return signed - commission * qty
+
+
 def _release_reserve(state: _State, pos: Position) -> None:
     """Release a position's buying-power reserve on FULL close (margin.py).
     Partial settles keep the reserve — conservative and deterministic."""
@@ -650,11 +660,10 @@ def _try_entry(
     # legs reserve the broker-standard requirement (margin.py). An entry
     # that can't be funded is a REAL skip, named — trading with money that
     # doesn't exist is the same fabrication class as filling at mid.
-    entry_cash_delta = 0.0
-    for px, leg in zip(entry_fills, spec.position.legs, strict=True):
-        qty = leg.ratio * contracts
-        signed = px * qty * MULT if leg.side is Side.SHORT else -px * qty * MULT
-        entry_cash_delta += signed - commission * qty
+    entry_cash_delta = sum(
+        _leg_cash_delta(px, leg.side, leg.ratio * contracts, commission)
+        for px, leg in zip(entry_fills, spec.position.legs, strict=True)
+    )
     covered = spec.position.structure is Structure.COVERED_CALL
     stock_cost = 100 * contracts * spot if covered else 0.0
     reserve = margin.position_requirement(
@@ -703,8 +712,7 @@ def _try_entry(
             "strike": key.strike, "qty": qty, "price": px,
             "source": view.fill_source,
         })
-        cash_delta = px * qty * MULT if leg.side is Side.SHORT else -px * qty * MULT
-        cash_delta -= commission * qty
+        cash_delta = _leg_cash_delta(px, leg.side, qty, commission)
         state.cash += cash_delta
         pos.cash_flow += cash_delta
         pos.legs.append(
@@ -1303,7 +1311,12 @@ def _halt_on_ruin(
     marks (cash untouched: the just-appended equity already IS the mark);
     dates/equity end at this session by construction. The halt fires at
     exactly $0, which makes ruin_date the LATEST possible ruin date — a
-    real margin account would have been liquidated earlier (disclosed)."""
+    real margin account would have been liquidated earlier (disclosed).
+
+    The check rides the equity MARK: a session without a close price
+    appends no equity point and cannot measure ruin, so the halt fires at
+    the next MARKED session — no honest mark, no halt (inventing a close
+    to measure against would be a synthetic price)."""
     equity = result.equity[-1]
     state.trades.append(
         TradeEvent(

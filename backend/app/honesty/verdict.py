@@ -292,15 +292,18 @@ def _funding_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     total = funding.filled + skipped
     if retail:
         return (
-            f"{skipped} of the {total} trades this strategy wanted couldn't be "
-            f"taken — a ${funding.initial_capital:,.0f} account doesn't have the "
-            "buying power for them. What got tested is a smaller version of "
-            "what you described."
+            f"{skipped} of the {total} trades and add-ins this strategy wanted "
+            f"couldn't be taken — a ${funding.initial_capital:,.0f} account "
+            "doesn't have the buying power for them. What got tested is a "
+            "smaller version of what you described."
         )
+    # the reserve-mode label stays OUT of this string: its digits ("reg_t_20")
+    # would ride through the numeric validator and a future mode rename could
+    # fail grounding (review finding 2026-07-15); it lives in payload.funding
     return (
-        f"Buying power: {skipped} of {total} otherwise-eligible entries were "
-        f"skipped as unfundable at ${funding.initial_capital:,.0f} capital "
-        f"(reserve model {funding.reserve_mode}) — the tested strategy is "
+        f"Buying power: {skipped} of {total} otherwise-eligible entries and "
+        f"ladder adds were skipped as unfundable at "
+        f"${funding.initial_capital:,.0f} capital — the tested strategy is "
         "smaller than the described one."
     )
 
@@ -381,10 +384,15 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         positive = sum(1 for f in wf.folds if f.ret > 0)
         evidence.append(f"Walk-forward: {positive} of {len(wf.folds)} windows profitable")
     if mc.p_loss is not None:
-        evidence.append(
+        mc_line = (
             f"Monte Carlo ({mc.resamples} resamples): {_pct(mc.p_loss)} of paths lose money; "
             f"95th-percentile drawdown {_pct(mc.max_drawdown_p95)}"
         )
+        # absorption at $0 (2026-07-15): reshuffled paths that die are named,
+        # not silently discarded — shown only when any path actually crossed
+        if mc.p_ruin:
+            mc_line += f"; {_pct(mc.p_ruin)} of paths die at $0"
+        evidence.append(mc_line)
 
     breaks_where: list[str] = list(trust.reasons)
     if not breaks_where and sens.verdict == "plateau":
@@ -399,12 +407,20 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     ]
     cov = report.coverage
     if cov.coverage_ratio < 1.0:
+        # on a ruined run the session count is measured TO THE HALT while
+        # the requested range still names the full ask — say so, or the two
+        # numbers visibly disagree (review finding 2026-07-15)
+        ruin_note = (
+            " Session counts run to the ruin halt, not the full request."
+            if cov.halted_at_ruin
+            else ""
+        )
         caveats.insert(
             1,
             f"Chain coverage: {cov.chain_sessions} of {cov.requested_sessions} requested "
             f"sessions carried usable option chains ({_pct(cov.coverage_ratio)}). "
             f"Requested {cov.requested_start} → {cov.requested_end}; "
-            f"tested {cov.effective_start} → {cov.effective_end}.",
+            f"tested {cov.effective_start} → {cov.effective_end}." + ruin_note,
         )
     if report.liquidity is not None and report.liquidity.material and report.liquidity.note:
         caveats.append(f"Liquidity: {report.liquidity.note}.")
@@ -540,6 +556,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         evidence.append(
             f"We reshuffled its trades {mc.resamples} times — {_pct(mc.p_loss)} of the "
             f"reshuffles ended with less money than they started"
+            + (f", and {_pct(mc.p_ruin)} went completely broke" if mc.p_ruin else "")
         )
 
     breaks_where: list[str] = []
@@ -586,7 +603,9 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         caveats.insert(
             1,
             f"Only {cov.chain_sessions} of {cov.requested_sessions} days in your date range "
-            f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested.",
+            f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested."
+            + (" Days are counted up to when the account ran out, not your full range."
+               if cov.halted_at_ruin else ""),
         )
     fs = report.fill_sources
     modeled = fs.get("alpaca_modeled", 0)
