@@ -153,6 +153,7 @@ def pinned_engine_rerun(
     from app.data.chains import load_market_store
     from app.engine.runner import run_backtest
 
+    store = None
     with ENGINE_LOCK:
         try:
             store = load_market_store(spec.underlying.ticker.value,
@@ -165,5 +166,9 @@ def pinned_engine_rerun(
             result = run_backtest(spec, store, intraday,
                                   pinned_resolutions=pinned_resolutions)
         finally:
+            # the daily-series memo is THIS rerun's transient; the store it
+            # hangs off is cached for 30 minutes (chains.STORE_TTL_SECONDS)
+            if store is not None:
+                store.drop_daily_series_cache()
             release_memory()
     return PinnedRerun(spec, result, eff_start, eff_end)

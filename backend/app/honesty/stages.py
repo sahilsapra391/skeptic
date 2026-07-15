@@ -686,8 +686,28 @@ def _sweep_base_spec(
     return base, note
 
 
+def _spec_key(spec: StrategySpec, shift_bars: int = 0) -> str:
+    """The identity of one sweep CELL: its fully-serialized spec plus the
+    entry-time shift. Pydantic v2 dumps fields in declaration order and
+    every cell is a deepcopy of one base mutated in one place, so equal
+    cells produce equal strings — while cells that differ anywhere in the
+    spec get different keys (the old per-sweep `seen` keyed on the raw
+    value alone, which could not tell a 0.30 delta from a 0.30 profit
+    target and so had to be per-parameter).
+
+    One serializer caveat, named rather than assumed: `model_dump_json`
+    renders inf/-inf/nan AND None all as `null`, so specs differing only
+    by that pair would share a key. Unreachable from here — every setter
+    writes a finite float from `_SWEEP_FACTORS`, so no cell can carry
+    inf or None where another carries the other."""
+    return f"{shift_bars}|{spec.model_dump_json()}"
+
+
 def sensitivity(
-    spec: StrategySpec, store: MarketStore, intraday: IntradayProvider | None = None
+    spec: StrategySpec,
+    store: MarketStore,
+    intraday: IntradayProvider | None = None,
+    base_result: RunResult | None = None,
 ) -> Sensitivity:
     """Perturb each numeric parameter in 5 steps (±20%, or an absolute
     family-scale grid for small condition thresholds and small deltas),
@@ -695,28 +715,46 @@ def sensitivity(
     clock the sweep also nudges the ENTRY TIME ±15/±30 minutes (D2d, per
     the brief): an edge that only exists at exactly one minute of the day
     is noise — classified with the same plateau/cliff rules as every
-    parameter."""
+    parameter.
+
+    `base_result` is the run's OWN backtest. Every sweep's middle cell is
+    the as-specced configuration, so without it the engine re-simulates
+    the main run once per sweep — four identical full-history runs the
+    caller already has. Reuse is EQUALITY-GATED on `_spec_key`, never on
+    "it's the base cell": several setters legitimately rewrite the spec at
+    their own base (set_dte re-derives min/max around the target, set_delta
+    normalizes 0-100 deltas, the rounding setters re-round), and those
+    cells are genuinely different specs that must genuinely run. Same
+    spec + same data + same seed is deterministic (CLAUDE.md), which is
+    what makes reusing an equal cell's number identical to computing it.
+    """
     sweep_spec, window_note = _sweep_base_spec(spec, intraday)
     mutations, conditions_note, delta_note = _mutations(sweep_spec)
+    # cell key → sharpe, for the WHOLE sweep run (the old dedup was
+    # per-parameter, so identical cells across sweeps still re-ran)
+    results: dict[str, float | None] = {}
+    if base_result is not None and window_note is None:
+        # window_note is None exactly when _sweep_base_spec returned the
+        # spec UNCHANGED — i.e. the sweep base is what base_result ran.
+        # A bounded 5-min window is a different spec and must not seed.
+        results[_spec_key(sweep_spec)] = _sharpe(_returns(base_result.equity))
+
     sweeps: list[ParamSweep] = []
     for name, values, base_index, setter in mutations:
         sharpes: list[float | None] = []
-        # a clamped grid can repeat a cell (rank base ≥ ~91 pins two cells
-        # at 100) — same spec + same data + same seed is deterministic, so
-        # reuse the result instead of re-running the serialized engine
-        seen: dict[float, float | None] = {}
         for v in values:
-            if v in seen:
-                sharpes.append(seen[v])
-                continue
             mutated = copy.deepcopy(sweep_spec)
             setter(mutated, v)
+            key = _spec_key(mutated)
+            if key in results:
+                sharpes.append(results[key])
+                continue
             try:
                 r = run_engine(mutated, store, intraday)
                 sharpes.append(_sharpe(_returns(r.equity)))
             except Exception:
                 sharpes.append(None)
-            seen[v] = sharpes[-1]
+            results[key] = sharpes[-1]
         sweeps.append(
             ParamSweep(
                 name=name,
@@ -736,12 +774,19 @@ def sensitivity(
                 # honest None, never a fabricated cell
                 nudge_sharpes.append(None)
                 continue
+            # the shift rides the key: a nudged cell is a different run of
+            # the same spec, so it must not collide with the unshifted one
+            key = _spec_key(sweep_spec, shift_min // 5)
+            if key in results:
+                nudge_sharpes.append(results[key])
+                continue
             try:
                 r = run_engine(sweep_spec, store, intraday,
                                entry_shift_bars=shift_min // 5)
                 nudge_sharpes.append(_sharpe(_returns(r.equity)))
             except Exception:
                 nudge_sharpes.append(None)
+            results[key] = nudge_sharpes[-1]
         sweeps.append(
             ParamSweep(
                 name="entry_time",

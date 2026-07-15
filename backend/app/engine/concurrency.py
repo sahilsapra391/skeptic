@@ -29,7 +29,16 @@ def release_memory() -> None:
     """Hand the sweep's freed transient buffers back to the OS. glibc keeps
     freed pandas/numpy chunks in per-thread arenas, so container RSS ratchets
     even though nothing leaks; gc + malloc_trim return them. A no-op where
-    malloc_trim is unavailable (macOS / musl)."""
+    malloc_trim is unavailable (macOS / musl).
+
+    Deliberately dependency-free: the per-run daily indicator memo is
+    dropped by the run that BUILT it, on the store it used
+    (`MarketStore.drop_daily_series_cache`, called in each engine path's
+    own finally) — never from here. Reaching into app.data from the
+    strict engine lane would invert the layering, and walking every
+    cached store would let a SPY run wipe QQQ's memo, leaving correctness
+    resting on ENGINE_LOCK holding in another module (review finding
+    2026-07-15)."""
     gc.collect()
     try:
         ctypes.CDLL("libc.so.6").malloc_trim(0)

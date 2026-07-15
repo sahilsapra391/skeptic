@@ -243,6 +243,13 @@ class BarView:
     def closes_upto(self) -> list[float]:
         return self._prev.closes_upto()
 
+    def daily_series_pair(self, cond: Condition) -> list[float] | None:
+        # the SAME previous-session bound closes_upto() uses: today's daily
+        # close does not exist yet at an intraday bar. Keep these two
+        # together — a cache bound at BarView.as_of would read today
+        # (guardrail #2; app/engine/daily_series.py)
+        return self._prev.daily_series_pair(cond)
+
     def vix(self) -> float | None:
         return self._prev.vix()
 

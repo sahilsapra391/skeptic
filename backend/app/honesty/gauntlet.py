@@ -107,7 +107,10 @@ def run_gauntlet(
     mc = stages.monte_carlo(result, spec.backtest.initial_capital)
 
     on_stage(4, "parameter sensitivity sweep", _mc_preview(mc))
-    sens = stages.sensitivity(spec, store, intraday)
+    # `result` is the run's own backtest: the sweeps' base cells are the
+    # as-specced config, so handing it over turns those into a lookup
+    # instead of re-simulating what the caller already computed
+    sens = stages.sensitivity(spec, store, intraday, base_result=result)
 
     # "nudged around your values", not "±20%": small condition thresholds
     # sweep an absolute family-scale grid wider than ±20% (stages.py

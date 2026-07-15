@@ -20,9 +20,13 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from app.engine.types import ContractKey, Quote
+
+if TYPE_CHECKING:  # pragma: no cover
+    from app.engine.daily_series import DailySeriesCache
+    from app.models.spec import Condition
 
 
 class LookaheadError(RuntimeError):
@@ -90,6 +94,26 @@ class MarketStore:
         self.mpd_dates = sorted(self.mpd_dates)
         self.tide_dates = sorted(self.tide_dates)
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
+        # lazily attached per RUN (daily_series.DailySeriesCache) — the
+        # store outlives runs in chains._STORE_CACHE, so the engine lane
+        # drops it when the run ends (OOM directive)
+        self._daily_series: DailySeriesCache | None = None
+
+    def daily_series_cache(self) -> DailySeriesCache:
+        """The run-scoped memo of daily indicator series. Built on first
+        use; identical numbers to the per-session recompute it replaces
+        (app/engine/daily_series.py carries the causality proof)."""
+        if self._daily_series is None:
+            from app.engine.daily_series import DailySeriesCache
+
+            self._daily_series = DailySeriesCache(self)
+        return self._daily_series
+
+    def drop_daily_series_cache(self) -> None:
+        """Release the memo — called when a run finishes, because the
+        STORE is cached across runs and would otherwise hold every
+        series a spec ever asked for."""
+        self._daily_series = None
 
 
 class MarketViewLike(Protocol):
@@ -215,6 +239,18 @@ class MarketView:
         observable; indicator warmup predating the sim window is fine)."""
         idx = bisect_right(self._store.sessions, self._as_of)
         return self._store._closes[:idx]
+
+    def daily_series_pair(self, cond: Condition) -> list[float] | None:
+        """The condition's (prev, current) evaluation pair, read from the
+        store's memoized full-history series instead of recomputing the
+        indicator over closes_upto() — same numbers, O(1) per session.
+
+        Bounded HERE, at the same as_of closes_upto() uses, and BarView
+        overrides it the same way it overrides closes_upto (its daily
+        reads are the PREVIOUS session's): the date bound is the view's
+        job, never the cache's — a cache keyed on BarView.as_of would
+        read today's close at an intraday bar (guardrail #2)."""
+        return self._store.daily_series_cache().tail_pair(cond, self._as_of)
 
     # ---------------------------------------------------------------- vix
     def vix(self) -> float | None:
