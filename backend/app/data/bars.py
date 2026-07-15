@@ -358,11 +358,16 @@ def _resample_minutes(df: pd.DataFrame, rule: str | None) -> pd.DataFrame:
 
 
 def _intraday_frame(
-    s3: Any, ticker: str, interval: str, window: str, before: pd.Timestamp | None, target: int
+    s3: Any, ticker: str, interval: str, window: str, before: pd.Timestamp | None, target: int,
+    include_tail: bool = True,
 ) -> tuple[pd.DataFrame, bool, bool, int, str | None]:
     """Returns (frame incl. indicator-lookback rows, live, has_more, keep,
     live_kind). live_kind is "iex" (Alpaca real-time), "cboe" (recorder spot,
-    ~15-min delayed) or None."""
+    ~15-min delayed) or None.
+
+    include_tail=False skips the live-tail fetch entirely (the R2 listing +
+    snapshot pulls that made the FIRST chart paint block for seconds) — the
+    caller gets the cached lake instantly and fetches the tail separately."""
     rule, per_bar = INTRADAY_INTERVALS[interval]
     reference_end = before.to_pydatetime() if before is not None else datetime.now(UTC)
     bars_per_month = (390 // per_bar + 1) * 21
@@ -380,7 +385,7 @@ def _intraday_frame(
 
     live = False
     live_kind: str | None = None
-    if before is None:
+    if before is None and include_tail:
         last = minutes["minute_ts"].max() if len(minutes) else pd.Timestamp("2024-02-01", tz="UTC")
         if datetime.now(UTC) - last.to_pydatetime() > timedelta(minutes=2):
             tail = _live_tail_minutes(ticker, last)  # real-time IEX (needs APCA keys)
@@ -529,6 +534,7 @@ def get_bars(
     indicator_specs: list[str],
     before: str | None = None,
     limit: int | None = None,
+    include_tail: bool = True,
 ) -> dict[str, Any]:
     s3 = r2.r2_client()
     before_ts = pd.Timestamp(before) if before else None
@@ -543,9 +549,13 @@ def get_bars(
         source = "lake dailies 1993→ (refreshed nightly)"
     else:
         frame, live, has_more, keep, live_kind = _intraday_frame(
-            s3, ticker, interval, window, before_ts, target
+            s3, ticker, interval, window, before_ts, target, include_tail=include_tail
         )
-        if live_kind == "cboe_live":
+        if not include_tail and before_ts is None:
+            # labeled honestly: this response is the cached lake only — the
+            # tail-carrying follow-up brings the delayed badge
+            source = "lake minutes 2024-02→ (live tail loads separately)"
+        elif live_kind == "cboe_live":
             source = "lake minutes 2024-02→ + CBOE recorder spot (~15-min delayed)"
             live_label = "delayed ~15m · CBOE recorder"
         elif live_kind == "cboe_closed":

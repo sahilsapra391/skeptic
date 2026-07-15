@@ -62,6 +62,25 @@ export default function LibraryPage() {
         </div>
       )}
 
+      {runs === null && !error && (
+        // loading skeleton — the header used to sit over a BLANK page for
+        // the whole cold fetch (several seconds through the proxy on a cold
+        // backend); pulse cards mirror the real card geometry
+        <div className="grid grid-cols-2 gap-3.5" aria-hidden data-testid="library-skeleton">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="animate-pulse rounded-[14px] border border-line bg-panel p-5"
+            >
+              <div className="h-[15px] w-2/5 rounded bg-line" />
+              <div className="mb-3.5 mt-2 h-[12px] w-3/5 rounded bg-line" />
+              <div className="mb-3 h-[14px] w-full rounded bg-line" />
+              <div className="h-[13px] w-4/5 rounded bg-line" />
+            </div>
+          ))}
+        </div>
+      )}
+
       {runs && runs.length === 0 && (
         <div className="mt-10 rounded-[14px] border border-dashed border-line-hover px-6 py-10 text-center">
           <p className="text-[14.5px] text-ink-2">

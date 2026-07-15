@@ -18,6 +18,7 @@ never sleeps, restarts on any crash, and pages you if a session goes quiet.
 | `heartbeat.py` | alerts if no fresh snapshot lands during a session. |
 | `skeptic-heartbeat.service` / `.timer` | run the heartbeat every 5 min. |
 | `autoupdate.sh` + `skeptic-autoupdate.service` / `.timer` | nightly self-update: pull main, sync deps, restart the recorder — never inside/near the session. |
+| `skeptic-keepwarm.service` / `.timer` | ping `skeptic.fyi/api/health` every 5 min so the first idea of the day never lands on a cold Railway box (one ping warms the Vercel proxy AND the backend; a GitHub Actions cron at */5 would bill ~9k private-repo minutes/month — the VM timer is free). |
 | `bootstrap.sh` | provision a fresh Ubuntu VM end to end (idempotent). |
 
 ## Provision (Oracle Cloud always-free — $0)

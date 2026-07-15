@@ -1,0 +1,13 @@
+[Unit]
+Description=Skeptic keep-warm — ping the API so the first idea of the day never hits a cold box
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=skeptic
+# Through the PUBLIC proxy on purpose: one ping warms the Vercel function
+# AND the Railway backend behind it (/api/health is auth-exempt; the proxy
+# holds the token). A GitHub Actions cron would do the same but bills ~9k
+# private-repo minutes/month at */5 — the VM timer costs nothing.
+ExecStart=/usr/bin/curl -fsS --max-time 30 -o /dev/null https://www.skeptic.fyi/api/health
