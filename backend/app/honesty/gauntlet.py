@@ -24,10 +24,6 @@ from app.models.spec import StrategySpec
 Preview = dict[str, str]
 
 StageHook = Callable[[int, str, Preview | None], None]
-# (cell, total, sweep name) as the sensitivity sweep grinds through its
-# grid — stage 4 is minutes of silence otherwise (it re-runs the engine
-# once per cell), and a silent stage is indistinguishable from a dead one
-CellHook = Callable[[int, int, str], None]
 
 
 def _noop(_i: int, _label: str, _preview: Preview | None = None) -> None:  # pragma: no cover
@@ -96,7 +92,6 @@ def run_gauntlet(
     on_stage: StageHook = _noop,
     intraday: IntradayProvider | None = None,
     min_trades: int = stages.MIN_TRADES,
-    on_cell: CellHook | None = None,
 ) -> HonestyReport:
     on_stage(
         1,
@@ -115,8 +110,7 @@ def run_gauntlet(
     # `result` is the run's own backtest: the sweeps' base cells are the
     # as-specced config, so handing it over turns those into a lookup
     # instead of re-simulating what the caller already computed
-    sens = stages.sensitivity(spec, store, intraday, base_result=result,
-                              on_cell=on_cell)
+    sens = stages.sensitivity(spec, store, intraday, base_result=result)
 
     # "nudged around your values", not "±20%": small condition thresholds
     # sweep an absolute family-scale grid wider than ±20% (stages.py

@@ -158,6 +158,7 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
         origin = run.origin or "user"
         parent_run_id = run.parent_run_id
 
+    store = None
     try:
         spec = StrategySpec.model_validate(json.loads(spec_json))
         from app.data.chains import load_market_store
@@ -211,21 +212,9 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                     s2.add(db.RunEvent(run_id=run_id, stage=stage, label=label))
                     s2.commit()
 
-        def on_cell(done: int, total: int, sweep: str) -> None:
-            # stage 4 re-runs the engine once per grid cell — the longest
-            # silence of the run. Event-only: run.stage and previews_json
-            # are untouched, so the stage/preview contract the UI reads is
-            # exactly as before (≤ ~40 rows per run).
-            with db.session() as cs:
-                cs.add(db.RunEvent(
-                    run_id=run_id, stage=4,
-                    label=f"nudging settings — {sweep} · cell {done}/{total}"))
-                cs.commit()
-
         gauntlet_t0 = time.monotonic()
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage,
-                              intraday=intraday, min_trades=min_trades,
-                              on_cell=on_cell)
+                              intraday=intraday, min_trades=min_trades)
         gauntlet_seconds = time.monotonic() - gauntlet_t0
         # D3a: refused verdicts store their unlock needs structured — the
         # nightly auto-unlock scan reasons from these
@@ -365,6 +354,12 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 run.error = f"{type(exc).__name__}: {exc}"
                 s.add(db.RunEvent(run_id=run_id, stage=run.stage, label="failed"))
                 s.commit()
+    finally:
+        # this run's daily-series memo, dropped on the store THIS run used
+        # (it is cached for 30 minutes across runs — chains.STORE_TTL_SECONDS
+        # — so the transient must not ride along). Error paths too.
+        if store is not None:
+            store.drop_daily_series_cache()
 
 
 def _patch_perf_narration(run: db.Run, narration_seconds: float | None) -> None:

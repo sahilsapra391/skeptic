@@ -224,8 +224,13 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name in CACHED_INDICATORS:
         pair_of = getattr(view, "daily_series_pair", None)
         if pair_of is not None:
-            threshold = 0.0 if ind_name is Indicator.EMA_CROSS_STATE else cond.value
-            return _series_pair(pair_of(cond), cond.operator, threshold)
+            pair = pair_of(cond)
+            # None = the memo is full (daily_series._MAX_SERIES) — fall
+            # through and recompute from the prefix, which is exactly the
+            # pre-cache behavior. Never "no signal".
+            if pair is not None:
+                threshold = 0.0 if ind_name is Indicator.EMA_CROSS_STATE else cond.value
+                return _series_pair(pair, cond.operator, threshold)
 
     closes = view.closes_upto()
     if not closes:

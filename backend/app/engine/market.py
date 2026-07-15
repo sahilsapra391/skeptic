@@ -240,7 +240,7 @@ class MarketView:
         idx = bisect_right(self._store.sessions, self._as_of)
         return self._store._closes[:idx]
 
-    def daily_series_pair(self, cond: Condition) -> list[float]:
+    def daily_series_pair(self, cond: Condition) -> list[float] | None:
         """The condition's (prev, current) evaluation pair, read from the
         store's memoized full-history series instead of recomputing the
         indicator over closes_upto() — same numbers, O(1) per session.

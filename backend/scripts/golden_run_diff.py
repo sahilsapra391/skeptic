@@ -39,12 +39,13 @@ from typing import Any
 for _var in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET"):
     os.environ.pop(_var, None)
 
-from app.engine.market import MarketStore  # noqa: E402
+from app.engine.market import MarketStore, build_fixture_slice  # noqa: E402
 from app.engine.runner import run_backtest  # noqa: E402
 from app.engine.types import RunResult  # noqa: E402
 from app.honesty.gauntlet import run_gauntlet  # noqa: E402
 from app.models.spec import StrategySpec  # noqa: E402
 from tests.fixtures.synthetic_market import synthetic_store  # noqa: E402
+from tests.test_five_min_clock import FixtureIntraday  # noqa: E402
 
 FIXTURE = json.loads(
     (Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "overfit_strategy.json")
@@ -70,6 +71,62 @@ def _spec(name: str, position: dict, entry: dict, exit_: dict, version: int = 1)
     }
 
 
+def _five_min_case() -> tuple[str, dict, MarketStore, int, FixtureIntraday]:
+    """A 5-MINUTE run — the clock the other cases cannot reach.
+
+    It is not here for coverage tidiness: the 5-min clock is the ONLY
+    path where `_sweep_base_spec` bounds the window, which is exactly
+    where `sensitivity` must SUPPRESS the base_result seed (the sweep
+    cells run a different, shorter spec than the main backtest). It is
+    also the only path that exercises the entry-time nudge's keying and
+    `BarView.daily_series_pair`'s previous-session bound. Invert that
+    seed guard and a daily-only gate stays green while every 5-min sweep
+    inherits a full-history Sharpe into a windowed grid.
+    """
+    session, expiry = "2025-01-06", "2025-01-07"
+    bars = [f"{9 + (i * 5) // 60:02d}:{(30 + i * 5) % 60:02d}" for i in range(12)]
+    # a gentle intraday drift so RSI/SMA have something to say
+    prices = [100.0 + (i % 5) * 0.25 - (i % 3) * 0.15 for i in range(len(bars))]
+    slc = build_fixture_slice(
+        session,
+        quotes={
+            b: [{"expiration": expiry, "right": "put", "strike": 100.0,
+                 "bid": 1.00 + i * 0.02, "ask": 1.10 + i * 0.02, "delta": -0.45}]
+            for i, b in enumerate(bars)
+        },
+        underlying=dict(zip(bars, prices, strict=True)),
+    )
+    store = build_fixture_store_5min(session)
+    spec = {
+        "spec_version": 2,
+        "meta": {"name": "5min short put", "description_raw": "golden 5min"},
+        "underlying": {"ticker": "SPY"},
+        "position": {
+            "structure": "short_put",
+            "legs": [{"right": "put", "side": "short", "ratio": 1,
+                      "strike_selection": {"method": "delta", "value": 0.45}}],
+            "expiration_selection": {"target_dte": 1, "min_dte": 0, "max_dte": 2},
+        },
+        "entry": {"schedule": {"frequency": "daily", "time_of_day": "09:45"},
+                  "conditions": [], "max_concurrent_positions": 1},
+        "exit": {"profit_target_pct": 40, "stop_loss_pct": 80},
+        "sizing": {"method": "fixed_contracts", "value": 1},
+        "costs": {"commission_per_contract": 0.65,
+                  "slippage_half_spread_fraction": 0.5,
+                  "slippage_half_spread_fraction_sell": 0.5},
+        "backtest": {"start": None, "end": session, "initial_capital": 25000,
+                     "seed": 42, "clock": "5min"},
+    }
+    return ("five_min_short_put", spec, store, 1, FixtureIntraday({session: slc}))
+
+
+def build_fixture_store_5min(session: str) -> MarketStore:
+    from app.engine.market import build_fixture_store
+
+    return build_fixture_store(
+        "SPY", {}, {session: (100.0, 100.0), "2025-01-07": (100.0, 100.0)})
+
+
 def _cases() -> list[tuple[str, dict, MarketStore, int]]:
     """(name, spec_json, store, trials). Chosen to cover the sweep families
     that the dedup and the indicator cache touch:
@@ -82,6 +139,9 @@ def _cases() -> list[tuple[str, dict, MarketStore, int]]:
       long_call_pt_sl — clean PT/SL decimals, so the base cells of both
         sweeps serialize byte-identically to the main run: the dedup's
         reuse path is exercised here, not merely available.
+
+    The 5-min clock rides separately (`_five_min_case`) because it needs
+    an intraday provider — see that function for why it is load-bearing.
     """
     cases: list[tuple[str, dict, MarketStore, int]] = []
 
@@ -169,10 +229,14 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     digests: dict[str, str] = {}
-    for name, spec_json, store, trials in _cases():
+    runs: list[tuple[str, dict, MarketStore, int, Any]] = [
+        (n, s, st, t, None) for n, s, st, t in _cases()
+    ]
+    runs.append(_five_min_case())
+    for name, spec_json, store, trials, intraday in runs:
         spec = StrategySpec.model_validate(spec_json)
-        result = run_backtest(spec, store)
-        report = run_gauntlet(spec, store, result, trials=trials)
+        result = run_backtest(spec, store, intraday)
+        report = run_gauntlet(spec, store, result, trials=trials, intraday=intraday)
         blob = json.dumps(_dump(result, report), sort_keys=True, indent=1)
         (out / f"{name}.json").write_text(blob)
         digests[name] = hashlib.sha256(blob.encode()).hexdigest()

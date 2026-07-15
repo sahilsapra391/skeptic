@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import math
 
-import pandas as pd
 import pytest
 
-from app.data import indicators as ind
-from app.engine.conditions import _series_pair, _tail_values, evaluate_condition
+from app.engine.conditions import evaluate_condition
 from app.engine.daily_series import CACHED_INDICATORS, DailySeriesCache, series_key
 from app.engine.market import MarketView
 from app.models.spec import Condition
@@ -55,27 +53,28 @@ def _cond(doc: dict) -> Condition:
     return Condition.model_validate(doc)
 
 
-def _legacy_pair(closes: list[float], cond: Condition) -> list[float]:
-    """`evaluate_condition`'s pre-cache arithmetic, transcribed — the same
-    prefix Series → indicator → last-two-positions the engine ran per
-    session."""
-    s = pd.Series(closes, dtype=float)
-    name = cond.indicator.value
-    if name == "rsi":
-        return _tail_values(ind.rsi(s, cond.period or 14))
-    if name == "sma":
-        return _tail_values(ind.sma(s, cond.period or 14))
-    if name == "ema":
-        return _tail_values(ind.ema(s, cond.period or 14))
-    if name == "price_vs_sma_pct":
-        return _tail_values((s / ind.sma(s, cond.period or 50) - 1.0) * 100.0)
-    if name == "price_vs_ema_pct":
-        return _tail_values((s / ind.ema(s, cond.period or 20) - 1.0) * 100.0)
-    if name == "ema_cross_state":
-        params = cond.params or {}
-        fast, slow = int(params.get("fast", 9)), int(params.get("slow", 20))
-        return _tail_values(ind.ema(s, fast) - ind.ema(s, slow))
-    raise AssertionError(f"uncached branch in CASES: {name}")
+class LegacyView:
+    """A MarketView WITHOUT `daily_series_pair`.
+
+    This is the whole point of the gate. `evaluate_condition` picks the
+    cached path by duck-typing (`getattr(view, "daily_series_pair", None)`),
+    so a plain MarketView takes it — and comparing that against a
+    transcription of the legacy math in this file would compare the cache
+    to a COPY, leaving the real legacy branch unexecuted and free to drift
+    (a period default changed in conditions.py would keep this file green
+    while every non-MarketView caller silently evaluated a different
+    indicator). Delegating everything except that one attribute forces
+    `evaluate_condition` down its real prefix-recompute branch, so the two
+    sides of every assertion below are both production code paths.
+    """
+
+    def __init__(self, store, as_of) -> None:  # type: ignore[no-untyped-def]
+        self._view = MarketView(store, as_of)
+
+    def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+        if name == "daily_series_pair":
+            raise AttributeError(name)  # the cache seam is invisible here
+        return getattr(self._view, name)
 
 
 @pytest.fixture(scope="module")
@@ -94,34 +93,57 @@ def test_cases_cover_every_cached_indicator() -> None:
 
 
 @pytest.mark.parametrize("doc", CASES, ids=lambda d: f"{d['indicator']}-{d.get('period', 'def')}")
-def test_cached_pair_equals_legacy_pair_at_every_session(doc, store) -> None:
+def test_cached_verdict_equals_legacy_verdict_at_every_session(doc, store) -> None:
+    """BOTH sides run the real `evaluate_condition`: one through a
+    MarketView (cached branch), one through LegacyView (the prefix
+    recompute the engine used to do). Every session, no sampling — the
+    decision the engine acts on must be identical."""
     cond = _cond(doc)
-    cache = DailySeriesCache(store)
-    for i, day in enumerate(store.sessions):
-        closes = store._closes[: i + 1]  # exactly MarketView.closes_upto()
-        legacy = _legacy_pair(closes, cond)
-        cached = cache.tail_pair(cond, day)
+    for day in store.sessions:
+        cached = evaluate_condition(MarketView(store, day), cond)
+        legacy = evaluate_condition(LegacyView(store, day), cond)
         assert cached == legacy, (
-            f"{cond.indicator.value} diverged at session {i} ({day}): "
+            f"{cond.indicator.value} verdict diverged at {day}: "
             f"cached={cached} legacy={legacy}"
         )
-        # NaN never survives into the pair on either path
-        assert all(math.isfinite(v) for v in cached)
 
 
 @pytest.mark.parametrize("doc", CASES, ids=lambda d: f"{d['indicator']}-{d.get('period', 'def')}")
-def test_evaluate_condition_verdict_matches_at_every_session(doc, store) -> None:
-    """The pair feeds a boolean — prove the DECISION is identical too, at
-    every session, through the real evaluate_condition (cached view) vs
-    the legacy arithmetic."""
+def test_cached_pair_is_exactly_the_legacy_pair_at_every_session(doc, store, monkeypatch) -> None:
+    """The verdict above is a boolean — two different numbers could agree
+    on it by luck on this data. This pins the VALUES with exact float
+    equality (`==`, never approx: the cache promises the same number, not
+    a near one).
+
+    The expected pair is CAPTURED from the real legacy branch — spy on
+    `_series_pair` and record the list `evaluate_condition` actually hands
+    it — so nothing here transcribes the production arithmetic and there
+    is nothing to drift out of sync with it."""
     cond = _cond(doc)
-    for i, day in enumerate(store.sessions):
-        view = MarketView(store, day)
-        got = evaluate_condition(view, cond)
-        closes = store._closes[: i + 1]
-        threshold = 0.0 if cond.indicator.value == "ema_cross_state" else cond.value
-        want = _series_pair(_legacy_pair(closes, cond), cond.operator, threshold)
-        assert got == want, f"{cond.indicator.value} verdict differs at {day}"
+    import app.engine.conditions as conditions_mod
+
+    captured: list[list[float]] = []
+    real_series_pair = conditions_mod._series_pair
+
+    def spy(values: list[float], op, threshold: float) -> bool:  # type: ignore[no-untyped-def]
+        captured.append(list(values))
+        return real_series_pair(values, op, threshold)
+
+    monkeypatch.setattr(conditions_mod, "_series_pair", spy)
+
+    cache = DailySeriesCache(store)
+    for day in store.sessions:
+        captured.clear()
+        evaluate_condition(LegacyView(store, day), cond)  # the REAL legacy path
+        # an empty prefix short-circuits before _series_pair — the cache
+        # must return the same nothing
+        legacy_pair = captured[-1] if captured else []
+        cached = cache.tail_pair(cond, day)
+        assert cached == legacy_pair, (
+            f"{cond.indicator.value} value diverged at {day}: "
+            f"cached={cached} legacy={legacy_pair}"
+        )
+        assert all(math.isfinite(v) for v in cached)
 
 
 def test_series_key_ignores_threshold_but_not_period(store) -> None:
@@ -160,3 +182,30 @@ def test_empty_prefix_evaluates_false_like_the_legacy_path(store) -> None:
     cache = DailySeriesCache(store)
     assert cache.tail_pair(_cond(CASES[0]), before) == []
     assert evaluate_condition(MarketView(store, before), _cond(CASES[0])) is False
+
+
+def test_full_memo_falls_back_to_the_legacy_path_not_to_a_crash(store, monkeypatch) -> None:
+    """Past _MAX_SERIES the cache stops memoizing and returns None, and
+    `evaluate_condition` must recompute from the prefix — the pre-cache
+    behavior. The alternative shipped in review: keep computing the FULL
+    series per session without storing it, which is ~2× SLOWER than the
+    prefix code it replaced (and `entry.conditions` has no schema cap, so
+    the ceiling is reachable). A cache that cannot help must hand back."""
+    import app.engine.daily_series as ds
+
+    monkeypatch.setattr(ds, "_MAX_SERIES", 1)
+    cond_a = _cond({"indicator": "rsi", "period": 14, "operator": "<", "value": 45})
+    cond_b = _cond({"indicator": "sma", "period": 20, "operator": ">", "value": 100})
+    day = store.sessions[-1]
+
+    cache = DailySeriesCache(store)
+    assert cache.tail_pair(cond_a, day) is not None  # first key fits
+    assert cache.tail_pair(cond_b, day) is None  # second is over the ceiling
+    assert cache.tail_pair(cond_a, day) is not None  # …the stored one still serves
+
+    # and through the real engine path the answer is still the legacy one
+    store.drop_daily_series_cache()
+    for cond in (cond_a, cond_b):
+        assert evaluate_condition(MarketView(store, day), cond) == evaluate_condition(
+            LegacyView(store, day), cond
+        )

@@ -688,11 +688,18 @@ def _sweep_base_spec(
 
 def _spec_key(spec: StrategySpec, shift_bars: int = 0) -> str:
     """The identity of one sweep CELL: its fully-serialized spec plus the
-    entry-time shift. Pydantic v2 dumps fields in declaration order, and
+    entry-time shift. Pydantic v2 dumps fields in declaration order and
     every cell is a deepcopy of one base mutated in one place, so equal
-    cells produce equal strings — and unequal ones never collide (the old
-    per-sweep `seen` keyed on the raw value alone, which could not tell a
-    0.30 delta from a 0.30 profit target)."""
+    cells produce equal strings — while cells that differ anywhere in the
+    spec get different keys (the old per-sweep `seen` keyed on the raw
+    value alone, which could not tell a 0.30 delta from a 0.30 profit
+    target and so had to be per-parameter).
+
+    One serializer caveat, named rather than assumed: `model_dump_json`
+    renders inf/-inf/nan AND None all as `null`, so specs differing only
+    by that pair would share a key. Unreachable from here — every setter
+    writes a finite float from `_SWEEP_FACTORS`, so no cell can carry
+    inf or None where another carries the other."""
     return f"{shift_bars}|{spec.model_dump_json()}"
 
 
@@ -701,7 +708,6 @@ def sensitivity(
     store: MarketStore,
     intraday: IntradayProvider | None = None,
     base_result: RunResult | None = None,
-    on_cell: Callable[[int, int, str], None] | None = None,
 ) -> Sensitivity:
     """Perturb each numeric parameter in 5 steps (±20%, or an absolute
     family-scale grid for small condition thresholds and small deltas),
@@ -733,11 +739,6 @@ def sensitivity(
         # A bounded 5-min window is a different spec and must not seed.
         results[_spec_key(sweep_spec)] = _sharpe(_returns(base_result.equity))
 
-    total_cells = sum(len(values) for _, values, _, _ in mutations)
-    if spec.backtest.clock is Clock.FIVE_MIN and intraday is not None:
-        total_cells += len(NUDGE_SHIFTS_MIN)
-    done = 0
-
     sweeps: list[ParamSweep] = []
     for name, values, base_index, setter in mutations:
         sharpes: list[float | None] = []
@@ -745,9 +746,6 @@ def sensitivity(
             mutated = copy.deepcopy(sweep_spec)
             setter(mutated, v)
             key = _spec_key(mutated)
-            done += 1
-            if on_cell is not None:
-                on_cell(done, total_cells, name)
             if key in results:
                 sharpes.append(results[key])
                 continue
@@ -771,9 +769,6 @@ def sensitivity(
         nudge_sharpes: list[float | None] = []
         has_tod = spec.entry.schedule.time_of_day is not None
         for shift_min in NUDGE_SHIFTS_MIN:
-            done += 1
-            if on_cell is not None:
-                on_cell(done, total_cells, "entry_time")
             if shift_min < 0 and not has_tod:
                 # entries can't move before the signal/session start —
                 # honest None, never a fabricated cell
