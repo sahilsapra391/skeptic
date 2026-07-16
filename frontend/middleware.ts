@@ -11,7 +11,7 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-const CLERK_ENABLED = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+import { CLERK_ENABLED } from "@/lib/clerk";
 
 export default CLERK_ENABLED
   ? clerkMiddleware()

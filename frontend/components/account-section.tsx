@@ -13,8 +13,7 @@ import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
 import clsx from "clsx";
 
 import { fetchMe, type MePayload } from "@/lib/api";
-
-const CLERK_ENABLED = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+import { CLERK_ENABLED } from "@/lib/clerk";
 
 export function AccountSection({ open }: { open: boolean }) {
   if (!CLERK_ENABLED) return null;

@@ -84,6 +84,10 @@ def resolve_email(claims: dict[str, Any]) -> tuple[str, bool] | None:
     at account creation — never per-request."""
     email = claims.get("email")
     if email:
+        # no email_verified claim defaults to True DELIBERATELY: D2 sets
+        # Clerk to require verification before a session can exist, so a
+        # session implies a verified address. An explicit false claim is
+        # honored; keep verification required in Clerk or add the claim.
         return str(email).strip().lower(), bool(claims.get("email_verified", True))
     return _fetch_user_email(str(claims.get("sub", "")))
 

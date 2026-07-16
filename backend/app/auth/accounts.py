@@ -57,6 +57,16 @@ def user_from_claims(claims: dict[str, Any]) -> db.User | None:
     with db.session() as s:
         existing = s.query(db.User).filter(db.User.clerk_user_id == sub).one_or_none()
     if existing is not None:
+        # a user who verified their email AFTER signup must not stay
+        # unverified forever (review finding) — upgrade when the session
+        # now says verified; verification is never revoked from a claim
+        if existing.verified_at is None and bool(claims.get("email_verified")):
+            with db.session() as s:
+                row = s.get(db.User, existing.id)
+                if row is not None and row.verified_at is None:
+                    row.verified_at = datetime.now(UTC)
+                    s.commit()
+                    return row
         return existing
 
     resolved = clerk.resolve_email(claims)
@@ -70,6 +80,7 @@ def user_from_claims(claims: dict[str, Any]) -> db.User | None:
         return None
     email, verified = resolved
 
+    grant = signup_grant_credits()
     with db.session() as s:
         try:
             user = db.User(
@@ -80,13 +91,9 @@ def user_from_claims(claims: dict[str, Any]) -> db.User | None:
             )
             s.add(user)
             s.flush()
-            s.add(
-                db.CreditLedger(
-                    user_id=user.id, delta=signup_grant_credits(), reason=GRANT_REASON
-                )
-            )
+            s.add(db.CreditLedger(user_id=user.id, delta=grant, reason=GRANT_REASON))
             s.commit()
-            log.info("new account %s — signup grant %d", user.id, signup_grant_credits())
+            log.info("new account %s — signup grant %d", user.id, grant)
             return user
         except IntegrityError:
             s.rollback()

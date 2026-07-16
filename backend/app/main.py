@@ -94,13 +94,15 @@ app.add_middleware(
 async def bearer_auth(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    """Gate + identity (launch L1, app/auth). The service-token semantics
-    are unchanged from the single-user era (TECH-SPEC §10): with
+    """Gate (launch L1, app/auth). The service-token semantics are
+    unchanged from the single-user era (TECH-SPEC §10): with
     SKEPTIC_ACCESS_TOKEN set, the exact bearer passes everything; a
     verified user session additionally passes the small user surface.
     If the token is unset (local dev), requests pass; health stays open
-    for probes. Identity resolution can touch the DB and (once, at account
-    creation) the Clerk API, so it runs off the event loop."""
+    for probes. Identity is resolved lazily inside gate_allows — only
+    user-surface paths pay the JWT verify + DB lookup, so this can touch
+    the DB and (once, at account creation) the Clerk API and therefore
+    runs off the event loop."""
     if not request.url.path.startswith("/api") or request.url.path == "/api/health":
         return await call_next(request)
 
@@ -109,7 +111,7 @@ async def bearer_auth(
     from app import auth
 
     try:
-        ctx = await run_in_threadpool(auth.authenticate, request)
+        allowed = await run_in_threadpool(auth.gate_allows, request)
     except auth.AccountsUnavailableError:
         return Response(
             status_code=503,
@@ -117,8 +119,7 @@ async def bearer_auth(
             'unreachable right now; charts and existing runs stay up"}',
             media_type="application/json",
         )
-    request.state.auth = ctx
-    if not auth.gate_allows(request.url.path, ctx):
+    if not allowed:
         return Response(status_code=401, content='{"detail":"unauthorized"}',
                         media_type="application/json")
     return await call_next(request)

@@ -7,6 +7,9 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
 import { ThemeApplier } from "@/components/theme-applier";
+// launch L1: accounts exist only when the Clerk keys do — without them the
+// provider is skipped entirely and the app is the single-user build
+import { CLERK_ENABLED } from "@/lib/clerk";
 
 import "./globals.css";
 
@@ -49,10 +52,6 @@ export const metadata: Metadata = {
     images: ["/og-image-1200x630.png"],
   },
 };
-
-// launch L1: accounts exist only when the Clerk keys do — without them the
-// provider is skipped entirely and the app is the single-user build
-const CLERK_ENABLED = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const shell = (

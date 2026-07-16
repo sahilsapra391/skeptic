@@ -13,15 +13,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 
+// launch L1: no key, no accounts — the proxy sends exactly what it sent
+// before Clerk existed
+import { CLERK_ENABLED } from "@/lib/clerk";
 import { createDemoRun, demoAskAnswer, demoParse, getDemoRun, listDemoRuns } from "@/lib/demo";
 import type { SpecDraft } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const BACKEND = process.env.SKEPTIC_API_URL ?? "http://localhost:8000";
-// launch L1: no key, no accounts — the proxy sends exactly what it sent
-// before Clerk existed
-const CLERK_ENABLED = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 function demoEnabled(): boolean {
   return process.env.SKEPTIC_DEMO_FALLBACK !== "0";
@@ -44,8 +44,11 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
       const { getToken } = await auth();
       const session = await getToken();
       if (session) headers["x-skeptic-session"] = session;
-    } catch {
-      // no middleware context (build-time render) — treat as signed out
+    } catch (err) {
+      // treat as signed out, but say so — a Clerk outage or misconfig must
+      // be distinguishable from everyone genuinely signing out (review
+      // finding: a bare catch made those identical)
+      console.error("clerk session mint failed — forwarding as signed-out:", err);
     }
   }
   // the client's real IP, for the backend's per-IP rate keys (L4 armor);

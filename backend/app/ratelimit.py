@@ -48,8 +48,12 @@ class SlidingWindowLimiter:
 
 
 def client_ip(request: Request) -> str:
-    """First hop of x-forwarded-for (set by the platform in front of us),
-    else the socket peer. Used as the anonymous rate key."""
+    """First hop of x-forwarded-for, else the socket peer. TRUST BOUNDARY:
+    the value is only as honest as whoever set it — through the Next proxy
+    it is Vercel's spoof-resistant client IP, but a direct-to-backend
+    caller controls it freely. Fine while every limited surface is keyed
+    per-account; L4's anonymous armor must NOT rely on this alone (it
+    pairs the IP window with the signed anon token + Turnstile)."""
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
         return forwarded.split(",")[0].strip()
@@ -57,11 +61,10 @@ def client_ip(request: Request) -> str:
 
 
 def _rate_key(request: Request) -> str:
-    """Per-account when the request carries an identity, per-IP otherwise —
-    a signed-in user behind a shared NAT must not exhaust strangers'
-    budget, and vice versa."""
-    ctx = getattr(request.state, "auth", None)
-    user = getattr(ctx, "user", None)
+    """Per-account when the request carries a resolved identity, per-IP
+    otherwise — a signed-in user behind a shared NAT must not exhaust
+    strangers' budget, and vice versa."""
+    user = getattr(request.state, "auth_user", None)
     if user is not None:
         return f"user:{user.id}"
     return f"ip:{client_ip(request)}"

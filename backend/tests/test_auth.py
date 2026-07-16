@@ -113,6 +113,13 @@ def test_user_session_cannot_reach_service_surface(client: TestClient) -> None:
     assert client.get("/api/runs", headers=as_user(token)).status_code == 401
 
 
+def test_user_surface_prefix_is_segment_aware(client: TestClient) -> None:
+    # "/api/messages" must NOT ride the "/api/me" allowlist entry (bare
+    # startswith would leak sibling routes to any signed-in user)
+    token = make_token(email=unique_email())
+    assert client.get("/api/messages", headers=as_user(token)).status_code == 401
+
+
 def test_local_dev_stays_open_without_token(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -216,11 +223,34 @@ def test_unverified_email_claim_leaves_verified_false(client: TestClient) -> Non
     assert r.json()["verified"] is False
 
 
+def test_verification_upgrades_on_a_later_session(client: TestClient) -> None:
+    # verify-after-signup must not leave the account unverified forever
+    sub, email = f"user_{uuid.uuid4().hex[:10]}", unique_email()
+    first = client.get(
+        "/api/me", headers=as_user(make_token(sub, email, email_verified=False))
+    )
+    assert first.json()["verified"] is False
+    second = client.get(
+        "/api/me", headers=as_user(make_token(sub, email, email_verified=True))
+    )
+    assert second.json()["verified"] is True
+    # and it never re-grants
+    assert second.json()["credits"] == first.json()["credits"]
+
+
 def test_no_email_and_no_secret_means_no_account(client: TestClient) -> None:
     # without an email claim or CLERK_SECRET_KEY the traction record can't
     # get a real address — identity is refused, nothing is invented
     token = make_token()  # no email claim
     assert client.get("/api/me", headers=as_user(token)).status_code == 401
+    # through the pre-launch proxy (service bearer + session header) the
+    # refusal must name the real problem, not tell a signed-in user to
+    # sign in (review finding)
+    r = client.get(
+        "/api/me", headers={**as_service(), "x-skeptic-session": make_token()}
+    )
+    assert r.status_code == 401
+    assert "session not accepted" in r.json()["detail"]
 
 
 def test_email_resolved_via_clerk_api_fallback(
@@ -276,6 +306,17 @@ def test_accounts_refuse_on_sqlite_fallback(
     # the automation principal is unaffected — the runs DB fallback is
     # deliberate for system work
     assert client.get("/api/runs", headers=as_service()).status_code == 200
+    # charts/runs stay up for SIGNED-IN people too: identity is lazy, so a
+    # session header on a non-account path never touches the accounts DB
+    # (review finding: eager resolution 503'd the whole API during an
+    # accounts outage)
+    r2 = client.get(
+        "/api/runs", headers={**as_service(), "x-skeptic-session": token}
+    )
+    assert r2.status_code == 200
+    # and a session-only caller on a non-user path is refused (401), not
+    # crashed into a 503 it never needed accounts for
+    assert client.get("/api/runs", headers=as_user(token)).status_code == 401
 
 
 # ---------------------------------------------------------- rate limiting
