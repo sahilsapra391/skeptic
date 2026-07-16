@@ -285,11 +285,42 @@ def prefix_gb(s3, prefix: str) -> float:
     return total / 1e9
 
 
+def default_lake_cap_gb() -> float:
+    """INTRADAY_MAX_GB as a float; unset, blank, or non-numeric means 0 (off).
+
+    A blank or malformed value must never crash the recorder at startup: an
+    uncapped recorder that keeps banking is strictly safer than a crash-loop
+    that records nothing, which is the very failure the guard exists to avoid.
+    """
+    raw = (os.environ.get("INTRADAY_MAX_GB") or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except ValueError:
+        log.warning("INTRADAY_MAX_GB=%r is not a number; running uncapped", raw)
+        return 0.0
+
+
+def lake_over_cap(s3, max_lake_gb: float) -> float | None:
+    """Lake size in GB when it exceeds a positive cap, else None.
+
+    A non-positive cap disables the guard entirely (and, importantly, skips
+    the R2 prefix listing), so an intentionally unbounded lake pays no
+    per-session LIST cost that grows with the object count.
+    """
+    if max_lake_gb <= 0:
+        return None
+    used = prefix_gb(s3, PREFIX)
+    return used if used > max_lake_gb else None
+
+
 def run_loop(yahoo_every: int, dry_run: bool, max_lake_gb: float) -> int:
     s3 = None if dry_run else r2_client()
     yahoo_leg = YahooLeg()
     log.info("intraday recorder up: CBOE every minute, Yahoo every %d min, "
-             "lake cap %.1f GB", yahoo_every, max_lake_gb)
+             "lake cap %s", yahoo_every,
+             f"{max_lake_gb:.1f} GB" if max_lake_gb > 0 else "uncapped")
     while True:
         now = pd.Timestamp.now(tz="UTC")
         start, end = current_or_next_window(now)
@@ -310,13 +341,16 @@ def run_loop(yahoo_every: int, dry_run: bool, max_lake_gb: float) -> int:
                 time.sleep(min(PRE_OPEN_POLL_SEC, remaining))
             continue
         if not dry_run:
-            used = prefix_gb(s3, PREFIX)
-            if used > max_lake_gb:
-                # protect the shared bucket (and the nightly EOD record) from
-                # filling the free tier; owner raises the cap after enabling
-                # R2 billing, or asks for a filtered/downsampled lake
+            # Optional runaway-write guard. Disabled by default (max_lake_gb
+            # <= 0): the R2 bucket is already paid, so lake size is a policy
+            # knob (INTRADAY_MAX_GB), not a free-tier wall. When set, pause a
+            # session whose lake has grown past the cap rather than keep
+            # writing to a bucket the owner asked to bound.
+            over = lake_over_cap(s3, max_lake_gb)
+            if over is not None:
                 log.error("intraday lake %.1f GB exceeds cap %.1f GB — pausing "
-                          "recording; raise --max-lake-gb or thin the lake", used, max_lake_gb)
+                          "recording; raise INTRADAY_MAX_GB / --max-lake-gb or "
+                          "thin the lake", over, max_lake_gb)
                 time.sleep(3600)
                 continue
         log.info("in session window until %s", end)
@@ -340,8 +374,10 @@ def main() -> int:
     ap.add_argument("--once", action="store_true", help="one snapshot cycle, then exit")
     ap.add_argument("--dry-run", action="store_true", help="fetch+normalize only, no R2 writes")
     ap.add_argument("--max-lake-gb", type=float,
-                    default=float(os.environ.get("INTRADAY_MAX_GB", "6")),
-                    help="pause recording when options_intraday/ exceeds this")
+                    default=default_lake_cap_gb(),
+                    help="pause recording when options_intraday/ exceeds this many "
+                         "GB; <= 0 disables the guard (the default) and skips the "
+                         "per-session R2 size listing")
     args = ap.parse_args()
 
     required = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET")
