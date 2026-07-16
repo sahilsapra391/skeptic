@@ -9,7 +9,6 @@ results.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -41,6 +40,7 @@ def _warm_lake() -> None:
 _warm_lake()
 
 from app.api import data as data_api  # noqa: E402
+from app.api import me as me_api  # noqa: E402
 from app.api import notebook as notebook_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
 from app.db import init_db  # noqa: E402
@@ -94,14 +94,33 @@ app.add_middleware(
 async def bearer_auth(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    """Single-user bearer token (TECH-SPEC §10). If SKEPTIC_ACCESS_TOKEN is
-    unset (local dev), requests pass; health stays open for probes."""
-    token = os.environ.get("SKEPTIC_ACCESS_TOKEN")
-    if token and request.url.path.startswith("/api") and request.url.path != "/api/health":
-        supplied = request.headers.get("authorization", "")
-        if supplied != f"Bearer {token}":
-            return Response(status_code=401, content='{"detail":"unauthorized"}',
-                            media_type="application/json")
+    """Gate + identity (launch L1, app/auth). The service-token semantics
+    are unchanged from the single-user era (TECH-SPEC §10): with
+    SKEPTIC_ACCESS_TOKEN set, the exact bearer passes everything; a
+    verified user session additionally passes the small user surface.
+    If the token is unset (local dev), requests pass; health stays open
+    for probes. Identity resolution can touch the DB and (once, at account
+    creation) the Clerk API, so it runs off the event loop."""
+    if not request.url.path.startswith("/api") or request.url.path == "/api/health":
+        return await call_next(request)
+
+    from fastapi.concurrency import run_in_threadpool
+
+    from app import auth
+
+    try:
+        ctx = await run_in_threadpool(auth.authenticate, request)
+    except auth.AccountsUnavailableError:
+        return Response(
+            status_code=503,
+            content='{"detail":"accounts are unavailable — the accounts database is '
+            'unreachable right now; charts and existing runs stay up"}',
+            media_type="application/json",
+        )
+    request.state.auth = ctx
+    if not auth.gate_allows(request.url.path, ctx):
+        return Response(status_code=401, content='{"detail":"unauthorized"}',
+                        media_type="application/json")
     return await call_next(request)
 
 
@@ -110,6 +129,7 @@ def health() -> dict[str, object]:
     import os
 
     from app import db
+    from app.auth import clerk
     from app.data.r2 import r2_configured
     from app.honesty.stages import MIN_TRADES
     from app.honesty.verdict import DEFAULT_MODEL, PARSER_MODEL
@@ -119,6 +139,8 @@ def health() -> dict[str, object]:
         "status": "ok",
         "r2_configured": r2_configured(),
         "db": db.status(),
+        "accounts": "live — managed auth (Clerk)" if clerk.configured()
+        else "single-user (no CLERK_ISSUER)",
         "engine": "live — EOD engine + full honesty gauntlet",
         "parser": "live — English → spec, questions when ambiguous" if llm
         else "needs OPENROUTER_API_KEY",
@@ -134,6 +156,7 @@ def health() -> dict[str, object]:
 app.include_router(data_api.router, prefix="/api/data", tags=["data"])
 app.include_router(runs_api.router, prefix="/api", tags=["runs"])
 app.include_router(notebook_api.router, prefix="/api", tags=["notebook"])
+app.include_router(me_api.router, prefix="/api", tags=["me"])
 
 
 @app.exception_handler(HTTPException)

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
+import { AccountSection } from "@/components/account-section";
 import { listRuns } from "@/lib/api";
 import { useResolvedTheme } from "@/lib/settings";
 import type { RunSummary } from "@/lib/types";
@@ -210,12 +211,14 @@ export function NavRail() {
           </div>
         </div>
       )}
+      <div className={clsx("mt-auto flex flex-col gap-2", !open && "items-center")}>
+        <AccountSection open={open} />
       <button
         onClick={toggle}
         aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
         title={open ? "Collapse sidebar" : "Expand sidebar"}
         className={clsx(
-          "mt-auto flex h-[38px] items-center rounded-[10px] text-ink-4 hover:bg-raised-2 hover:text-ink",
+          "flex h-[38px] items-center rounded-[10px] text-ink-4 hover:bg-raised-2 hover:text-ink",
           open ? "w-full gap-3 px-2.5" : "w-[38px] justify-center",
         )}
       >
@@ -234,6 +237,7 @@ export function NavRail() {
         </svg>
         {open && <span className="text-[13px] font-semibold">Collapse</span>}
       </button>
+      </div>
       <div
         onPointerDown={startDrag}
         role="separator"

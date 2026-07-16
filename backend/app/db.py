@@ -15,7 +15,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import DateTime, Integer, String, Text, create_engine
+from sqlalchemy import DateTime, Index, Integer, String, Text, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 log = logging.getLogger("db")
@@ -89,6 +89,65 @@ class RunEvent(Base):
     ts: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     stage: Mapped[int] = mapped_column(Integer)
     label: Mapped[str] = mapped_column(String(120))
+
+
+class User(Base):
+    """Accounts (launch L1). This table IS the traction record — every
+    signup lands here regardless of auth provider (PRD C)."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    # normalized to lowercase in code before insert — citext is Postgres-only
+    # and the local/test path is SQLite, so the DB type can't do it for us
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    # NULL under managed auth (owner decision D1 = Clerk); the column exists
+    # so a later self-rolled provider slots in without a migration
+    password_hash: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    clerk_user_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CreditLedger(Base):
+    """Credits are an append-only ledger; balance = SUM(delta), never a
+    mutable balance column (PRD E). Rows are only ever inserted."""
+
+    __tablename__ = "credit_ledger"
+    __table_args__ = (
+        # exactly one signup grant per user, enforced by the DATABASE — a
+        # retried or racing signup cannot double-grant even through a bug
+        # in the application path
+        Index(
+            "uq_credit_ledger_signup_grant",
+            "user_id",
+            unique=True,
+            sqlite_where=text("reason = 'signup_grant'"),
+            postgresql_where=text("reason = 'signup_grant'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(40), index=True)
+    delta: Mapped[int] = mapped_column(Integer)
+    # "signup_grant" | "purchase" | "run_debit" | "engine_refund" | "admin_adjust"
+    reason: Mapped[str] = mapped_column(String(20))
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+LEDGER_REASONS = {"signup_grant", "purchase", "run_debit", "engine_refund", "admin_adjust"}
+
+
+def credit_balance(user_id: str) -> int:
+    """Balance = SUM over the append-only ledger — computed, never stored."""
+    with SessionLocal() as s:
+        total = (
+            s.query(func.coalesce(func.sum(CreditLedger.delta), 0))
+            .filter(CreditLedger.user_id == user_id)
+            .scalar()
+        )
+        return int(total or 0)
 
 
 class TrialCounter(Base):
