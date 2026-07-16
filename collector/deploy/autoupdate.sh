@@ -13,6 +13,14 @@
 # skips from 30 min before the open until close+15min.
 set -euo pipefail
 
+# This script runs as root and drives git as root (deploy key in /root/.ssh,
+# safe.directory in /root/.gitconfig). systemd starts a service with no HOME,
+# so without this every run died at "fatal: $HOME not set" before deploying —
+# a silent stall the snapshot heartbeat can't see (07-14..16, VM stuck 3 days
+# behind main). Set it here, at the source, so the script is correct under the
+# unit, a manual `sudo bash autoupdate.sh`, or a boot-time replay alike.
+export HOME=/root
+
 DEST=/opt/skeptic
 LOG=/var/log/skeptic/autoupdate.log
 exec >>"$LOG" 2>&1
