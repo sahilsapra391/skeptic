@@ -115,7 +115,7 @@ export default function PrivacyPage() {
           You may request access to, correction of, or deletion of your personal
           information, and you may ask us to stop processing it, subject to legal limits.
           Depending on where you live, you may have additional rights under laws such as the
-          GDPR or the CCPA/CPRA. To exercise any right, contact us at privacy@skeptic.fyi.
+          GDPR or the CCPA/CPRA. To exercise any right, contact us at support@spechawk.ai.
           We will not discriminate against you for exercising your rights.
         </p>
       </Section>
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
       <Section n={10} title="Changes and contact">
         <p>
           We may update this Policy; material changes take effect when posted with a new
-          date. Questions or requests: privacy@skeptic.fyi.
+          date. Questions or requests: support@spechawk.ai.
         </p>
       </Section>
     </SubpageShell>

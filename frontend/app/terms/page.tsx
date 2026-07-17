@@ -184,7 +184,7 @@ export default function TermsPage() {
 
       <Section n={14} title="Contact">
         <p>
-          Questions about these Terms: support@skeptic.fyi.
+          Questions about these Terms: support@spechawk.ai.
         </p>
       </Section>
     </SubpageShell>

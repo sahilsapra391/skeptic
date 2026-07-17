@@ -62,7 +62,7 @@ export default function RefundsPage() {
           Payments are handled by our third-party payment processor; your card receipt from
           the processor serves as your invoice. If you were charged in error, believe a
           purchase did not deliver, or have any billing question, contact us at
-          support@skeptic.fyi and we will make it right where the above applies.
+          support@spechawk.ai and we will make it right where the above applies.
         </p>
       </Section>
 
