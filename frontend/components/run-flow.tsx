@@ -124,8 +124,10 @@ export function RunFlow({
   // its background-run banner can track the run even if this popup closes
   onRunStarted?: (runId: string, demo: boolean) => void;
   // launch L4 anon armor: the backend refused this device's free run (402) —
-  // the landing swaps this popup for the create-an-account gate
-  onTrialExhausted?: () => void;
+  // the landing swaps this popup for the create-an-account gate. The reason is
+  // the backend's honest detail (device-used vs trials-busy) so the gate shows
+  // the right message.
+  onTrialExhausted?: (reason?: string) => void;
 }) {
   const [phase, setPhase] = useState<Phase>("compose");
   const [mode, setMode] = useState<Mode>("text");
@@ -194,7 +196,14 @@ export function RunFlow({
     // resolve identity once so the trial framing only shows to visitors
     fetchMe()
       .then(() => alive && setIsAnon(false))
-      .catch(() => alive && setIsAnon(true));
+      .catch((e) => {
+        if (!alive) return;
+        // a definite 401 = anonymous; any other error (network / transient
+        // 5xx) stays "unknown" (null) so a signed-in user isn't shown false
+        // trial framing on a hiccup — null still mounts the human check, so a
+        // true anon whose /me hiccuped is still gated by the backend
+        setIsAnon(e instanceof ApiError && e.status === 401 ? true : null);
+      });
     return () => {
       alive = false;
     };
@@ -476,7 +485,9 @@ export function RunFlow({
       // already being minted by the widget; just ask them to retry. 422
       // (intraday / >3y on the trial) falls through to its own clear message.
       if (e instanceof ApiError && e.status === 402) {
-        onTrialExhausted?.();
+        // device-used OR global-budget — pass the honest detail so the gate
+        // doesn't tell a first-time visitor they've used their run
+        onTrialExhausted?.(e.detail);
         return;
       }
       if (e instanceof ApiError && e.status === 403) {

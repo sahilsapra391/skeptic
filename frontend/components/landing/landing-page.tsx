@@ -46,6 +46,9 @@ export function LandingPage() {
   const [runOpen, setRunOpen] = useState(false);
   const [viewRunId, setViewRunId] = useState<string | null>(null);
   const [gated, setGated] = useState(false);
+  // the backend's honest 402 detail, so the gate distinguishes "this device's
+  // run is spent" from "the global daily budget is booked up"
+  const [gateReason, setGateReason] = useState<string | undefined>(undefined);
   // the background run this browser is tracking (survives popup close +
   // reloads) — the banner watches it to "ready" and back to viewing
   const [activeRunId, setActiveRunId] = useState<string | null>(() => getActiveRun());
@@ -71,9 +74,10 @@ export function LandingPage() {
   // or the global daily budget) — the client gate can't see that, so the run
   // popup hands off to the create-an-account gate. No run started, so there's
   // nothing to track.
-  const onTrialExhausted = useCallback(() => {
+  const onTrialExhausted = useCallback((reason?: string) => {
     setRunFlow(null);
     setRunOpen(false);
+    setGateReason(reason);
     setGated(true);
   }, []);
 
@@ -147,7 +151,7 @@ export function LandingPage() {
         />
       )}
       {viewRunId && <RunViewModal runId={viewRunId} onClose={() => setViewRunId(null)} />}
-      {gated && <DeviceGateModal onClose={() => setGated(false)} />}
+      {gated && <DeviceGateModal reason={gateReason} onClose={() => setGated(false)} />}
     </div>
   );
 }

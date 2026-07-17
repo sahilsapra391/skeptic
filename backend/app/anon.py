@@ -112,11 +112,25 @@ def turnstile_configured() -> bool:
     return bool(os.environ.get("TURNSTILE_SECRET"))
 
 
+_warned_no_turnstile = False
+
+
 def verify_turnstile(token: str | None, ip: str) -> bool:
     """True when the human check passes — or when Turnstile isn't configured
     (dev / pre-launch), so the flow works without Cloudflare keys."""
     secret = os.environ.get("TURNSTILE_SECRET")
     if not secret:
+        # deploy-safety: nothing forces the human check on for public launch,
+        # so warn ONCE the first time an anon run proceeds without it — a
+        # silent bot could otherwise drain the free-run budget
+        global _warned_no_turnstile
+        if not _warned_no_turnstile:
+            _warned_no_turnstile = True
+            log.warning(
+                "anon armor: TURNSTILE_SECRET is unset — the human check is "
+                "SKIPPED. Set it before public launch, or bots can spend the "
+                "anonymous free-run budget."
+            )
         return True
     if not token:
         return False
@@ -144,13 +158,22 @@ def enforce_constraints(spec: StrategySpec) -> None:
             detail="free trial runs use the daily clock — create a free "
             "account to run intraday (5-minute) backtests",
         )
+    long_window = HTTPException(
+        status_code=422,
+        detail="free trial runs cover up to a 3-year window — create a "
+        "free account to test the full history",
+    )
     start, end = spec.backtest.start, spec.backtest.end
-    if start is not None and end is not None and (end - start).days > MAX_ANON_WINDOW_DAYS:
-        raise HTTPException(
-            status_code=422,
-            detail="free trial runs cover up to a 3-year window — create a "
-            "free account to test the full history",
-        )
+    # Open-ended windows are the COMMON case, not an edge: every preset window
+    # sends end=None (runs to the latest session ~= today) and "all" sends
+    # start=None too (full ~20-year history). Resolve both before measuring —
+    # otherwise the span check short-circuits on the None and the <=3y cap
+    # silently never fires for the normal client.
+    if start is None:
+        raise long_window  # open-ended start = full history, always past the cap
+    eff_end = end if end is not None else datetime.now(UTC).date()
+    if (eff_end - start).days > MAX_ANON_WINDOW_DAYS:
+        raise long_window
 
 
 # ----------------------------------------------------------- gating
@@ -158,7 +181,16 @@ def enforce_constraints(spec: StrategySpec) -> None:
 
 def check_limits(token_h: str | None, ip_h: str) -> str:
     """'ok' | 'used_token' | 'used_ip' | 'budget'. Read-only; the caller
-    records the trial only after the run row is created."""
+    records the trial only after the run row is created.
+
+    This is check-then-act, not atomic: a burst of concurrent first-run POSTs
+    from one IP (no cookie yet, so each mints a distinct token) can each read
+    the counts as empty and slip through before the first commits. That window
+    is deliberately left un-locked — the residual is bounded on every side: the
+    per-IP window blocks the NEXT burst, the global daily budget caps the total
+    (no unbounded free compute), and the engine serializes every run behind its
+    lock (a flood can't amplify compute past the budget). A DB lock here would
+    add contention to the hot path for a threat the budget already ceilings."""
     now = datetime.now(UTC)
     with db.session() as s:
         # global daily ceiling first — cheapest signal, protects the engine

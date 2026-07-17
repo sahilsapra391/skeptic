@@ -52,8 +52,9 @@ export function RunFlowModal({
   pitch?: string;
   mode?: "chart";
   onRunStarted?: (runId: string, demo: boolean) => void;
-  // the backend refused this device's free run (armor) — swap to the gate
-  onTrialExhausted?: () => void;
+  // the backend refused this device's free run (armor) — swap to the gate,
+  // carrying the honest reason (device-used vs trials-busy)
+  onTrialExhausted?: (reason?: string) => void;
   onClose: () => void;
   // minimized to the banner while the run keeps going — children stay mounted
   hidden?: boolean;
@@ -125,22 +126,33 @@ export function RunViewModal({ runId, onClose }: { runId: string; onClose: () =>
   );
 }
 
-export function DeviceGateModal({ onClose }: { onClose: () => void }) {
+export function DeviceGateModal({
+  onClose,
+  reason,
+}: {
+  onClose: () => void;
+  // the backend's honest 402 detail — "busy" means the global daily budget
+  // was hit (a first-time visitor), not this device's run being spent
+  reason?: string;
+}) {
   const [firstRun] = useState<string | null>(() => myRunIds()[0] ?? null);
   const [viewFirst, setViewFirst] = useState(false);
   if (viewFirst && firstRun) {
     return <RunViewModal runId={firstRun} onClose={onClose} />;
   }
+  const busy = !!reason && /busy/i.test(reason);
   return (
-    <LandingModal onClose={onClose} label="One free run per device">
+    <LandingModal onClose={onClose} label={busy ? "Free trials are busy" : "One free run per device"}>
       <div className="pb-2 pt-6">
         <h3 className="font-serif text-[26px] font-medium leading-[1.25]">
-          You&apos;ve had this device&apos;s free backtest.
+          {busy
+            ? "Free trials are booked up right now."
+            : "You’ve had this device’s free backtest."}
         </h3>
         <p className="mt-3 text-[14px] leading-[1.65] text-ink-2">
-          The first one is on the house — the next ones come with a free
-          account: 5 more backtests, a library that keeps your runs, and the
-          run you already made comes with you.
+          {busy
+            ? "We cap free runs per day so everyone gets a fair shot at the engine. A free account skips the line: 5 backtests, no card, and a library that keeps every run."
+            : "The first one is on the house — the next ones come with a free account: 5 more backtests, a library that keeps your runs, and the run you already made comes with you."}
         </p>
         <p className="mt-2.5 font-mono text-[11.5px] leading-[1.7] text-ink-4">
           a &ldquo;not enough evidence&rdquo; verdict refunds its credit — you

@@ -252,6 +252,55 @@ def test_enforce_constraints_rejects_intraday_and_long_windows() -> None:
     assert el.value.status_code == 422
     assert "3-year window" in el.value.detail
 
+    # open-ended windows are the COMMON client shape and must NOT slip the cap:
+    # every preset sends end=None (runs to ~today) and "all" sends start=None.
+    open_end_long = StrategySpec.model_validate(fx.SPEC)
+    open_end_long.backtest.start = date(2015, 1, 5)  # ~10y ago → today
+    open_end_long.backtest.end = None
+    with pytest.raises(HTTPException) as eo:
+        anon.enforce_constraints(open_end_long)
+    assert eo.value.status_code == 422
+
+    open_start = StrategySpec.model_validate(fx.SPEC)
+    open_start.backtest.start = None  # full available history
+    open_start.backtest.end = None
+    with pytest.raises(HTTPException) as es:
+        anon.enforce_constraints(open_start)
+    assert es.value.status_code == 422
+
+    # a genuine ≤3y preset (start set, end open) still passes
+    ok_preset = StrategySpec.model_validate(fx.SPEC)
+    ok_preset.backtest.start = datetime.now(UTC).date() - timedelta(days=365 * 2)
+    ok_preset.backtest.end = None
+    anon.enforce_constraints(ok_preset)  # 2-year open window → passes
+
+
+def test_open_ended_long_window_rejected_at_the_endpoint(anon_client: TestClient) -> None:
+    """The full path: an anon posting a 10-year window with end=None (the
+    picker's shape) is refused, not silently run over the whole history."""
+    spec = copy.deepcopy(fx.SPEC)
+    spec["backtest"] = {**spec["backtest"], "start": "2015-01-05", "end": None}
+    r = anon_client.post("/api/backtest", json={"spec": spec}, headers=fresh_ip())
+    assert r.status_code == 422
+    assert "3-year window" in r.json()["detail"]
+
+
+def test_origin_switch_does_not_escape_the_armor(anon_client: TestClient) -> None:
+    """The critical bypass: is_anon must NOT key on req.origin. An anon
+    declaring origin=auto_unlock (an automation origin) is still ARMORED —
+    the second run from the device is refused, exactly like origin=user."""
+    first = anon_client.post(
+        "/api/backtest", json={"spec": fx.SPEC, "origin": "auto_unlock"}, headers=fresh_ip()
+    )
+    assert first.status_code == 200
+    assert trials_for(first.json()["run_id"]) == 1  # armored: the trial was recorded
+    # the cookie rides the same jar → the per-token rule fires on the retry
+    second = anon_client.post(
+        "/api/backtest", json={"spec": fx.SPEC, "origin": "auto_unlock"}, headers=fresh_ip()
+    )
+    assert second.status_code == 402
+    assert "used this device" in second.json()["detail"]
+
 
 def test_signed_in_user_bypasses_the_anon_constraints(anon_client: TestClient) -> None:
     """The constraint is anon-ONLY: a signed-in caller may run intraday and
@@ -436,3 +485,23 @@ def test_armor_proceeds_on_the_sqlite_fallback(
     run_id = r.json()["run_id"]
     assert owner_of(run_id) is None
     assert trials_for(run_id) == 1
+
+
+def test_session_bearing_request_during_outage_is_not_armored(
+    anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A likely signed-in person whose session can't be validated mid-outage
+    (accounts DB on the SQLite fallback) must NOT be forced through the anon
+    armor — a session cookie is presented, so is_anon stays False. A run row
+    is created (unowned) with no anon cookie and no trial. (A bogus cookie
+    under NORMAL operation resolves to None and IS armored — see the other
+    tests — so this is not a bypass.)"""
+    monkeypatch.setattr(db, "FALLBACK_REASON", "neon unreachable (test)")
+    client = new_device()
+    client.cookies.set("skeptic_session", "opaque-token-we-cannot-validate-now")
+    before = anon_trial_count()
+    r = client.post("/api/backtest", json={"spec": fx.SPEC}, headers=fresh_ip())
+    assert r.status_code == 200
+    assert "skeptic_anon" not in r.headers.get("set-cookie", "")
+    assert trials_for(r.json()["run_id"]) == 0
+    assert anon_trial_count() == before

@@ -503,10 +503,18 @@ def backtest(
     # SKEPTIC_REQUIRE_VERIFIED (needs a configured mail sender).
     from app import auth
 
+    # a session presented but unresolvable (accounts DB on the SQLite
+    # fallback) is a likely signed-in person we can't validate right now —
+    # remembered so the anon armor doesn't clamp/Turnstile-gate a real account
+    # mid-outage (a bogus cookie under NORMAL operation still resolves to None
+    # and IS armored)
+    session_seen = auth.session_presented(request)
+    accounts_down = False
     try:
         run_user = auth.resolve_user(request)
     except auth.AccountsUnavailableError:
         run_user = None  # runs-DB fallback still accepts system work
+        accounts_down = True
     if (
         run_user is not None
         and os.environ.get("SKEPTIC_REQUIRE_VERIFIED") == "1"
@@ -533,7 +541,16 @@ def backtest(
     # reject runs BEFORE the run row is created; the trial is recorded after.
     anon_token_h: str | None = None
     anon_ip_h: str | None = None
-    is_anon = run_user is None and not auth.is_service(request) and req.origin == "user"
+    # anonymous = no account we can act for AND not the service principal. It
+    # deliberately does NOT key on req.origin: an anon POSTing origin=auto_unlock
+    # (VALID_ORIGINS, no service bearer) must be ARMORED, not waved through —
+    # the only legitimate auto_unlock/receipt caller is the nightly principal,
+    # which carries the service bearer and is excluded by not is_service.
+    is_anon = (
+        run_user is None
+        and not (accounts_down and session_seen)
+        and not auth.is_service(request)
+    )
     if is_anon:
         from app import anon
 
