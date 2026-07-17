@@ -2,9 +2,12 @@
 run routes are explicit 501s (nothing pretends to be an engine), and the
 bearer middleware guards everything but health."""
 
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.data import coverage
 from app.main import app
 from tests.test_spec_roundtrip import CANONICAL
 
@@ -20,6 +23,18 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "R2_BUCKET",
     ):
         monkeypatch.delenv(var, raising=False)
+    # importing app.main starts a coverage-warmer thread whenever local R2
+    # creds exist (backend/.env / collector/.env). A warmed coverage._CACHE
+    # answers /api/data/coverage without ever touching env vars, so the 503
+    # refusal tested below flakes to 200 whenever slower modules run first
+    # and the warmer wins the race. Join any in-flight build (it dies fast:
+    # with the vars deleted above, its next bucket() read raises), THEN
+    # start cold — clearing before the join would let the build repopulate
+    # the cache mid-test. setitem restores the warmed snapshot on teardown.
+    for t in threading.enumerate():
+        if t.name in ("coverage-warmer", "coverage-refresh"):
+            t.join(timeout=60)
+    monkeypatch.setitem(coverage._CACHE, "snap", (0.0, None))
     return TestClient(app)
 
 
