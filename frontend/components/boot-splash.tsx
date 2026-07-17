@@ -11,8 +11,8 @@ import clsx from "clsx";
 
 import { useResolvedTheme } from "@/lib/settings";
 
-// draw-on: last stroke starts at 0.78s and draws for 0.75s
-const ANIMATION_MS = 1650;
+// draw-on: last stroke starts at 0.84s and draws for 0.75s
+const ANIMATION_MS = 1710;
 const FADE_MS = 400;
 
 // decided ONCE per page load, at module scope — StrictMode's double

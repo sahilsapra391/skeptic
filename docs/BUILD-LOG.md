@@ -2171,24 +2171,62 @@ clean.
 Owner delivered an updated brand kit (~/Downloads/skeptic-brand-kit,
 parametric rebuild). Same four color tokens and file layout; the marks
 changed: the E gains its vertical stem (was three bare bars), the K
-arms pull in tighter, and the draw-on animation re-times to match (the
-three E bars shift to 0.32/0.38/0.44s; the C still starts last at
-0.78s + 0.75s, so BootSplash's ANIMATION_MS=1650 stays correct
-untouched). The S itself is unchanged — s-mark SVGs are byte-identical
+arms pull in tighter, and the draw-on animation re-times to fit the
+new stroke. The S itself is unchanged — s-mark SVGs are byte-identical
 to what shipped, so the standalone mark and collapsed-rail icon were
-already current. Swapped in place, same filenames, no code changes:
-wordmark black/gray/white/white-slash-gray + both skeptic-draw SVGs in
+already current. Swapped in place, same filenames: wordmark
+black/gray/white/white-slash-gray + both skeptic-draw SVGs in
 frontend/public/brand/, og-image, favicon tiles, favicon.ico.
 
-Caught before it shipped: every raster tile in the v2 kit has the S
-riding ~10% above vertical center again — the exact regression the
-2026-07-03 favicon audit fixed (kit source was never patched; measured
-glyph bbox center y=0.39 across 32/180/512, app's fixed tiles sit at
-0.50). Re-applied the same fix: white glyph re-centered by integer
-pixel shift on the kit's native renders (512/180 land exactly 0.500;
-32 lands 0.516, half a pixel, the best an odd-height glyph allows),
-favicon.ico rebuilt from the fixed tiles (16/48/64 Lanczos from the
-512, native 32 frame), all frames verified dark-tile + centered by
-measurement. Favicon stays the owner-picked ink-black tile (layout.tsx
-comment still true); the v2 kit README declares the gray tile primary
-for the brand at large — flagged to owner, not silently flipped.
+Two kit defects caught before they shipped (agent review confirmed
+both; the import is now scripted — see below):
+
+1. Draw-order inversion. The kit inserted the E stem at 0.26s and
+pushed the E bars to 0.32/0.38/0.44s but never re-cascaded the letters
+after E, so the P stem (0.39s) started before the E's bottom bar — the
+old asset's strictly left-to-right stagger, broken between E and P.
+Fixed in both draw SVGs by shifting P/T/slash/C +0.06s (P 0.45/0.51,
+T 0.58/0.64, slash 0.71, C 0.84), which restores the kit's own rhythm:
+0.06s between strokes of a letter, +0.01s at letter boundaries. The C
+now starts last at 0.84s + 0.75s draw, so BootSplash's ANIMATION_MS
+moves 1650 → 1710, keeping the same 120ms cushion.
+
+2. Tile mis-centering, again. Every raster tile in the v2 kit has the
+S riding ~10% above vertical center — the exact regression the
+2026-07-03 favicon audit fixed (measured glyph bbox center y=0.39
+across 32/180/512; the app's fixed tiles sit at 0.50). Root cause, for
+whoever rebuilds the kit: kit.py favicon_svg() hardcodes the glyph
+transform's y-offset at 13 with scale 0.76, putting the glyph center
+at (13+89)/2/128 ≈ 0.398; vertical centering needs
+oy = (128 − 100·0.76)/2 = 26, mirroring how the x-offset is already
+computed. Re-applied the app-side fix: white glyph re-centered by
+integer pixel shift on the kit's native renders. 512 lands exactly
+0.500; 180 and 32 have odd-height glyphs so the center falls on a
+half pixel — measured 0.497–0.500 (180, threshold-dependent by one
+antialiased edge row) and 0.484 (32). Half-pixel ties round the glyph
+UP, never down: the first cut had the 32 — the frame browser tabs
+actually show — half a pixel LOW (0.516) and the owner read it as
+off-center (call 2026-07-16, "a lil up"); 0.484 also matches where
+the pre-v2 fixed tile sat. favicon.ico rebuilt from the fixed tiles
+(16/48/64 Lanczos from the 512, native 32 frame), all frames verified
+dark-tile + centered by measurement.
+
+Both fixes live in scripts/import_brand_kit.py now: point it at a kit
+directory and it copies the SVG masters (brand-token/no-font guards),
+re-cascades out-of-order draw delays (the same cumulative-shift rule
+that produced fix 1), refuses timing that overruns ANIMATION_MS (read
+from boot-splash.tsx, so the contract can't silently drift),
+re-centers the tiles with the round-up tie rule, rebuilds the ico,
+and verifies every output by measurement. Running it against the v2
+kit reproduces this commit's assets byte-identically. Favicon stays
+the owner-picked ink-black tile (layout.tsx comment still true); the
+v2 kit README declares the gray tile primary for the brand at
+large — flagged to owner, not silently flipped.
+
+Review sweep caught one more: same-filename swaps don't propagate to
+favicon caches (browsers refresh those lazily, not per-navigation) or
+OG scrapers (per-URL server-side cache, indefinite) — the old mark
+would have stayed live on exactly the surfaces the rebrand targets.
+layout.tsx metadata URLs now carry ?v=2; bump the version on every
+future kit import. Previously scraped shares still need a manual
+re-scrape (FB/LinkedIn debuggers) after deploy.
