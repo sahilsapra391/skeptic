@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 
+import {
+  INTERVIEW_QUESTIONS,
+  bumpInterviewQuestion,
+  peekInterviewQuestion,
+} from "@/lib/interview-questions";
+
 /**
  * Landing §2 "How it argues" — three panel cards (design 2a lines 107–144,
  * 2b lines 417–450; copy verbatim from copy-deck §2). Card 02 is a live
@@ -12,13 +18,6 @@ import clsx from "clsx";
  * only — no P/L tokens on this surface.
  */
 
-const QUESTION =
-  "Two exits could apply at 21 days — take whichever hits first, or profit target only?";
-
-const OPTIONS = ["whichever hits first", "profit target only", "time exit only"];
-
-// gauntlet stages; mobileSuffix folds the essential note into the label
-// below md, matching 2b rows 1 and 5
 // the gauntlet stages + the verdict, stepped through like the real app's
 // progress. mobileSuffix folds the essential note into the label below md.
 const ATTACK_ROWS: { label: string; note: string; mobileSuffix?: string; verdict?: boolean }[] = [
@@ -34,6 +33,14 @@ const STEP_MS = 900;
 export function HowItArgues() {
   const [answered, setAnswered] = useState(false);
   const [draft, setDraft] = useState("");
+  // a different real-style clarifying question each visit. SSR + first
+  // client render show the canonical one so hydration matches; the mount
+  // effect swaps in this visit's question and advances for next reload.
+  const [interview, setInterview] = useState(INTERVIEW_QUESTIONS[8]);
+  useEffect(() => {
+    setInterview(peekInterviewQuestion());
+    bumpInterviewQuestion();
+  }, []);
 
   // step = completed stages (0..6); the active stage is `step`. It walks
   // the gauntlet and loops, so the card reads as a live run, not a static
@@ -128,10 +135,10 @@ export function HowItArgues() {
                   {"QUESTION 1 OF 1 — I DON'T GUESS"}
                 </div>
                 <div className="mb-3 text-[14.5px] font-semibold leading-[1.4] text-ink md:mb-[14px] md:text-[16.5px] md:leading-[1.375]">
-                  {QUESTION}
+                  {interview.q}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
-                  {OPTIONS.map((option) => (
+                  {interview.options.map((option) => (
                     <button
                       key={option}
                       type="button"

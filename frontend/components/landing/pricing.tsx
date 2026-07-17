@@ -50,15 +50,15 @@ export function Pricing() {
       id="pricing"
       className="border-t border-line-softer px-6 pb-14 pt-[52px] md:px-14 md:py-[84px] xl:px-[120px]"
     >
-      <div className="mx-auto max-w-[1440px]">
+      <div className="mx-auto flex max-w-[1440px] flex-col items-center text-center">
         <div className="font-mono text-[10.5px] font-medium tracking-[.14em] text-trust md:text-[11.5px]">
           PRICING
         </div>
-        <h2 className="mt-3 font-serif text-[27px] font-medium leading-[1.2] md:mt-3.5 md:max-w-[760px] md:text-[40px] md:leading-[1.15]">
-          That’s the whole price list.
+        <h2 className="mt-3 font-serif text-[27px] font-medium leading-[1.2] md:mt-3.5 md:text-[40px] md:leading-[1.15]">
+          Yup, this is the whole price list.
         </h2>
 
-        <div className="mt-5 grid overflow-hidden rounded-[14px] border border-line bg-panel md:mt-[38px] md:max-w-[1000px] md:grid-cols-3">
+        <div className="mt-5 grid w-full overflow-hidden rounded-[14px] border border-line bg-panel md:mt-[38px] md:max-w-[1000px] md:grid-cols-3">
           {ROWS.map((row, i) => (
             <div
               key={row.value}
@@ -82,7 +82,7 @@ export function Pricing() {
         </div>
 
         {/* honesty lines — VERBATIM (owner override Jul 16); never reword */}
-        <div className="mt-3.5 flex max-w-[1000px] flex-col gap-[5px] md:mt-[18px]">
+        <div className="mt-3.5 flex max-w-[1000px] flex-col items-center gap-[5px] md:mt-[18px]">
           <div className="font-mono text-[12px] leading-[1.6] text-ink-2">
             “Not enough evidence” refunds the credit — you only spend on a
             graded verdict.
@@ -92,7 +92,7 @@ export function Pricing() {
           </div>
         </div>
 
-        <div className="mt-5 flex flex-col gap-3 md:mt-7 md:flex-row md:items-center">
+        <div className="mt-5 flex flex-col gap-3 md:mt-7 md:flex-row md:items-center md:justify-center">
           <a
             href="#composer"
             className="flex h-[46px] items-center justify-center rounded-[10px] bg-trust px-5 text-[13.5px] font-semibold text-on-accent transition-opacity hover:opacity-90 md:inline-flex md:h-[42px] md:text-sm md:font-bold"

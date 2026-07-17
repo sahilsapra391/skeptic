@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage, getRun, listRuns, parseText, prefetchBars, startBacktest } from "@/lib/api";
+import { HEADLINES } from "@/lib/headlines";
 import type {
   ParseQuestion,
   ProvenanceEvent,
@@ -35,21 +36,6 @@ type Mode = "text" | "chart";
 
 /** Starter strategies. Ordered by what the library says the user actually
  * runs (structure counts from past runs), most-used first. */
-/** The hero headline rotates — a different version of the same promise on
- * every visit (sequential, persisted, so it always changes). */
-const HEADLINES = [
-  "Describe a strategy. I'll try to break it.",
-  "Bring your thesis. I'll bring the evidence.",
-  "Pitch me a trade. I'll play the skeptic.",
-  "Bring me your best idea. I'll stress-test it.",
-  "Describe a strategy. Let's see what survives.",
-  "Got an edge? Prove it against the data.",
-  "Tell me the trade. I'll tell you where it breaks.",
-  "Describe a strategy. The data gets the last word.",
-  "Show me a winner. I'll check if it was luck.",
-  "Your idea versus six years of market data. Go.",
-];
-
 const PRESETS: { label: string; structure: Structure; phrase: string }[] = [
   {
     label: "Weekly income put",
