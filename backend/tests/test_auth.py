@@ -48,6 +48,12 @@ def as_service() -> dict[str, str]:
     return {"authorization": f"Bearer {SERVICE_TOKEN}"}
 
 
+def as_proxy() -> dict[str, str]:
+    """How the Next proxy opens the gate for forwarded browser traffic —
+    it is NOT the automation principal and gets no data-layer bypass."""
+    return {"x-skeptic-gate": SERVICE_TOKEN}
+
+
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in (
         "SKEPTIC_ACCESS_TOKEN",
@@ -526,6 +532,68 @@ def test_owned_runs_are_private(
     # the service principal reads everything (nightly automation)
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", SERVICE_TOKEN)
     assert dev_client.get(f"/api/runs/{run_a}", headers=as_service()).status_code == 200
+
+
+def test_proxy_gate_is_not_a_service_bypass(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE review-critical invariant: the Next proxy opens the gate with
+    x-skeptic-gate, which must NOT read as the automation principal — else
+    every browser request bypasses the per-run ownership 404. The service
+    token is set (deployed shape)."""
+    import app.data.chains as chains_module
+
+    monkeypatch.setattr(
+        chains_module,
+        "load_market_store",
+        lambda ticker, **kw: build_fixture_store("SPY", fx.CHAINS, fx.UNDERLYING),
+    )
+    token_a = session_of(signup(client))
+    # a run made through the proxy (gate key + session) belongs to the user
+    run_a = client.post(
+        "/api/backtest",
+        json={"spec": fx.SPEC},
+        headers={**as_proxy(), **as_user(token_a)},
+    ).json()["run_id"]
+
+    # an anonymous request carrying ONLY the proxy gate key (no session) is
+    # NOT the owner and NOT service — it gets the ownership 404
+    client.cookies.clear()
+    assert client.get(f"/api/runs/{run_a}", headers=as_proxy()).status_code == 404
+    # …and scope=all through the proxy gate is the curated view, never the
+    # cross-account listing
+    all_runs = client.get("/api/runs?scope=all", headers=as_proxy()).json()["runs"]
+    assert not any(r["id"] == run_a for r in all_runs)
+    # …but the real automation bearer still reads it and lists everything
+    assert client.get(f"/api/runs/{run_a}", headers=as_service()).status_code == 200
+    assert any(
+        r["id"] == run_a
+        for r in client.get("/api/runs?scope=all", headers=as_service()).json()["runs"]
+    )
+    # the gate still OPENS for proxied traffic (today's behavior preserved)
+    assert client.get("/api/runs", headers=as_proxy()).status_code == 200
+
+
+def test_include_does_not_leak_owned_runs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """include= is an anon device's own-run breadcrumb — naming another
+    account's OWNED run id in it must not surface that run's summary
+    (review finding: it contradicted get_run's 404)."""
+    import app.data.chains as chains_module
+
+    monkeypatch.setattr(
+        chains_module,
+        "load_market_store",
+        lambda ticker, **kw: build_fixture_store("SPY", fx.CHAINS, fx.UNDERLYING),
+    )
+    token_a = session_of(signup(client))
+    owned = client.post(
+        "/api/backtest", json={"spec": fx.SPEC}, headers={**as_proxy(), **as_user(token_a)}
+    ).json()["run_id"]
+    client.cookies.clear()
+    listed = client.get(f"/api/runs?include={owned}", headers=as_proxy()).json()["runs"]
+    assert not any(r["id"] == owned for r in listed)
 
 
 def test_library_scoped_to_viewer(

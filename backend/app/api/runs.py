@@ -594,16 +594,29 @@ def list_runs(
             db.Run.summary_json,
             db.Run.spec_json,
         )
-        examples_only = scope != "all"
+        # scope=all is the full cross-account listing — automation ONLY.
+        # A non-service caller appending it (review finding: it was
+        # unguarded) just gets the normal curated view, never everyone's
+        # runs.
+        examples_only = not (scope == "all" and auth.is_service(request))
         examples = set(example_run_ids())  # once — not per row (env parse)
         if examples_only:
+            from sqlalchemy import ColumnElement, or_
+
             own = tuple(x.strip() for x in include.split(",") if x.strip())[:50]
-            id_filter = db.Run.id.in_(tuple(examples) + own)
+            conds: list[ColumnElement[bool]] = [
+                db.Run.id.in_(tuple(examples))  # public showcase, always
+            ]
             if viewer is not None:
-                # the account's own runs ride on ownership, not breadcrumbs
-                query = query.filter(id_filter | (db.Run.user_id == viewer.id))
-            else:
-                query = query.filter(id_filter)
+                # the account's own runs ride on OWNERSHIP, not breadcrumbs
+                conds.append(db.Run.user_id == viewer.id)
+            if own:
+                # include= surfaces an anon device's OWN runs — which are
+                # unowned. An owned run named in include stays private to
+                # its account (review finding: include= leaked owned
+                # summaries by id, contradicting get_run's 404)
+                conds.append(db.Run.id.in_(own) & db.Run.user_id.is_(None))
+            query = query.filter(or_(*conds))
         rows = (
             query.filter(db.Run.status.in_(["queued", "running", "done"]))
             .order_by(db.Run.created_at.desc())

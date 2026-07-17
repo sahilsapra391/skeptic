@@ -43,7 +43,6 @@ __all__ = [
     "gate_allows",
     "is_service",
     "require_user",
-    "require_verified_user",
     "resolve_user",
 ]
 
@@ -72,12 +71,34 @@ def _bearer(request: Request) -> str | None:
 
 
 def is_service(request: Request) -> bool:
+    """TRUE automation only — the nightly/workflow principal that calls the
+    backend DIRECTLY with an Authorization bearer. It is the ONLY thing
+    granted data-layer bypass (reading any run, scope=all). CRITICAL: the
+    Next proxy must NOT trip this — it forwards a person's request and opens
+    the gate with x-skeptic-gate instead (review finding: when the proxy
+    sent the service bearer, is_service was true for ALL browser traffic and
+    the run-ownership 404 never fired)."""
     token = _bearer(request)
     service_token = os.environ.get("SKEPTIC_ACCESS_TOKEN", "")
     return bool(
         service_token
         and token
         and hmac.compare_digest(token.encode(), service_token.encode())
+    )
+
+
+def _has_gate_key(request: Request) -> bool:
+    """The trusted-proxy gate opener (x-skeptic-gate). Passes the middleware
+    gate exactly as the old proxy bearer did — preserving today's behavior
+    (all proxied traffic reaches the app; the anon landing run still works)
+    — but is NEVER a data-layer bypass: a proxied request is a person or an
+    anon, never automation, so ownership/scope decisions ignore it."""
+    service_token = os.environ.get("SKEPTIC_ACCESS_TOKEN", "")
+    supplied = request.headers.get("x-skeptic-gate", "")
+    return bool(
+        service_token
+        and supplied
+        and hmac.compare_digest(supplied.encode(), service_token.encode())
     )
 
 
@@ -125,7 +146,11 @@ def gate_allows(request: Request) -> bool:
     path = request.url.path
     if _on(path, OPEN_PATH_PREFIXES):
         return True
-    if is_service(request):
+    # automation OR trusted-proxy traffic passes the gate — the gate is not
+    # the privacy boundary (data-layer ownership is); it preserves the
+    # single-user era's "the proxy is the only client" trust until the
+    # anon-armor chunk flips to real public mode
+    if is_service(request) or _has_gate_key(request):
         return True
     if _on(path, USER_PATH_PREFIXES):
         return resolve_user(request) is not None
@@ -157,17 +182,3 @@ def require_user(request: Request) -> db.User:
             "account surfaces",
         )
     raise HTTPException(status_code=401, detail="sign in required")
-
-
-def require_verified_user(request: Request) -> db.User:
-    """require_user + the email-verification bar, enforced only once a
-    sender exists (env SKEPTIC_REQUIRE_VERIFIED=1 — owner flips it after
-    configuring Resend/SMTP; before that, blocking would strand everyone)."""
-    user = require_user(request)
-    if os.environ.get("SKEPTIC_REQUIRE_VERIFIED") == "1" and user.verified_at is None:
-        raise HTTPException(
-            status_code=403,
-            detail="verify your email to run backtests — check your inbox "
-            "or resend the link from your account",
-        )
-    return user

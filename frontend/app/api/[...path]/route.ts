@@ -28,13 +28,16 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   const headers: Record<string, string> = {};
   const contentType = req.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
-  // two credentials, two headers (launch L1b, self-rolled): the
-  // Authorization bearer is the GATE (the service token, semantics
-  // unchanged since single-user); IDENTITY is the httpOnly session cookie
-  // the backend set at signup/login — same-origin, so the browser sends it
-  // here and we pass it through untouched for the backend to resolve
+  // the proxy opens the backend gate with x-skeptic-gate — NOT an
+  // Authorization bearer. Those are different principals now (launch L1b):
+  // the bearer is the automation/service identity with data-layer bypass
+  // (nightly, workflows — they call the backend directly), and if the
+  // proxy sent it, every browser request would read as "service" and the
+  // per-run ownership 404 would never fire (review finding). IDENTITY is
+  // the httpOnly session cookie the backend set at signup/login — same-
+  // origin, forwarded untouched for the backend to resolve to a person.
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
-  if (token) headers.authorization = `Bearer ${token}`;
+  if (token) headers["x-skeptic-gate"] = token;
   const cookie = req.headers.get("cookie");
   if (cookie) headers.cookie = cookie;
   // the client's real IP, for the backend's per-IP rate keys (L4 armor);

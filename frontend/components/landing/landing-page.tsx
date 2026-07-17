@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import { useWordmarkDraw } from "@/components/landing/landing-wordmark";
 import { useLandingTheme } from "@/components/landing/use-landing-theme";
+import { fetchMe } from "@/lib/api";
 import { myRunIds } from "@/lib/my-runs";
 
 import { CopilotDemo } from "@/components/landing/copilot-demo";
@@ -40,12 +41,20 @@ export function LandingPage() {
   const [viewRunId, setViewRunId] = useState<string | null>(null);
   const [gated, setGated] = useState(false);
 
-  // one free run per device: a second attempt is asked to create an
-  // account instead. Client-remembered for now — the signed anon token +
-  // Turnstile server armor lands with the accounts chunk.
+  // one free run per DEVICE for anonymous visitors — a second attempt is
+  // asked to create an account instead (client-remembered; the signed
+  // anon token + Turnstile server armor lands with the anon chunk). A
+  // signed-in account holder is NEVER device-gated: they have credits and
+  // the landing popup is their run surface (review finding — the gate
+  // told account holders to make an account they already had).
   const tryRun = (req: { pitch?: string; mode?: "chart" }) => {
-    if (myRunIds().length > 0) setGated(true);
-    else setRunReq(req);
+    if (myRunIds().length === 0) {
+      setRunReq(req);
+      return;
+    }
+    fetchMe()
+      .then(() => setRunReq(req)) // signed in — run it
+      .catch(() => setGated(true)); // anonymous repeat — gate to signup
   };
 
   return (

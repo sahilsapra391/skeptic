@@ -7,6 +7,7 @@ forwards Set-Cookie); failures are uniform — no account-existence oracle.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Any
 
@@ -27,6 +28,15 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # login gets its own per-ACCOUNT window on top of the per-IP dependency —
 # 10 attempts per account per 15 minutes, wherever they come from
 _account_limiter = SlidingWindowLimiter(limit=10, window_s=900)
+
+# GLOBAL signup backstop: the per-IP window trusts x-forwarded-for, which a
+# direct-to-backend caller controls (review finding) — this caps total
+# account creation per day regardless of source. The real fix (Turnstile +
+# signed anon token) lands with the anon-armor chunk; this bounds the
+# damage until then.
+_signup_global = SlidingWindowLimiter(
+    limit=int(os.environ.get("SKEPTIC_SIGNUP_DAILY_MAX", "500")), window_s=86_400
+)
 
 _signup_rate = rate_limited("auth-signup", limit=10, window_s=3600)
 _login_rate = rate_limited("auth-login", limit=30, window_s=900)
@@ -74,8 +84,13 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 def _claim_runs(user_id: str, run_ids: list[str]) -> int:
     """Re-parent this device's pre-account runs. Only UNOWNED, user-origin
-    runs are claimable — nobody claims someone else's work or a system run."""
-    ids = [x.strip() for x in run_ids if x.strip()][:50]
+    runs are claimable — nobody claims someone else's work or a system run.
+    The pinned showcase runs are never claimable (claiming one would strip
+    it from every visitor's library)."""
+    from app.api.runs import example_run_ids
+
+    examples = set(example_run_ids())
+    ids = [x.strip() for x in run_ids if x.strip() and x.strip() not in examples][:50]
     if not ids:
         return 0
     with db.session() as s:
@@ -112,6 +127,12 @@ def signup(
     _: None = Depends(_signup_rate),
 ) -> dict[str, Any]:
     _refuse_on_fallback()
+    global_ok, _retry = _signup_global.check("signup")
+    if not global_ok:
+        raise HTTPException(
+            status_code=429,
+            detail="sign-ups are paused for the day — try again tomorrow",
+        )
     email = req.email.strip().lower()
     if not _EMAIL_RE.match(email):
         raise HTTPException(status_code=422, detail="that doesn't look like an email address")
