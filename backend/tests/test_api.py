@@ -5,6 +5,7 @@ bearer middleware guards everything but health."""
 import pytest
 from fastapi.testclient import TestClient
 
+from app.data import coverage
 from app.main import app
 from tests.test_spec_roundtrip import CANONICAL
 
@@ -20,6 +21,24 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "R2_BUCKET",
     ):
         monkeypatch.delenv(var, raising=False)
+    # importing app.main starts a coverage-warmer thread whenever local R2
+    # creds exist (backend/.env / collector/.env), and a warmed
+    # coverage._CACHE answers /api/data/coverage without touching env vars —
+    # the 503 refusal tested below would flake to 200 whenever slower
+    # modules run first. Every _CACHE["snap"] write happens under
+    # _build_lock (the foreground build holds it; the refresh worker
+    # inherits it across its spawn), so clearing while holding the lock is
+    # a complete barrier: an in-flight build lands before the clear, and
+    # one starting after dies at r2_client() — the vars are already
+    # deleted — before it can write. Bounded acquire: a wedged or leaked
+    # lock must fail THIS test loudly, never hang the suite. setitem
+    # restores the warmed snapshot on teardown, before env is restored.
+    if not coverage._build_lock.acquire(timeout=120):
+        pytest.fail("coverage._build_lock held >120s — wedged or leaked build")
+    try:
+        monkeypatch.setitem(coverage._CACHE, "snap", (0.0, None))
+    finally:
+        coverage._build_lock.release()
     return TestClient(app)
 
 
