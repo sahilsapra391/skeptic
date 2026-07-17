@@ -207,12 +207,25 @@ export function windowToDates(draft: SpecDraft): { start: string | null; end: st
   return { start: start.toISOString().slice(0, 10), end: null };
 }
 
+export type StartResult = {
+  run_id: string;
+  demo: boolean;
+  // present only on the anonymous free-run path (launch L4 armor)
+  queuePosition?: number;
+  trialConstraint?: string;
+};
+
 export function startBacktest(
   draft: SpecDraft,
   parsedSpec?: Record<string, unknown> | null,
   untouched = true,
   conversation: ProvenanceEvent[] = [],
-): Promise<{ run_id: string; demo: boolean }> {
+  // the human-check token from the anon popup — rides the request so the
+  // backend can siteverify it. null when Turnstile isn't configured (dev /
+  // pre-launch) or the caller is a signed-in account (backend skips the
+  // check entirely for those).
+  turnstileToken: string | null = null,
+): Promise<StartResult> {
   // an unedited parser spec runs verbatim — dial edits rebuild from the
   // dials WITH the parsed spec as base, so parser-only vocabulary
   // (ladders, intraday_scan, resolution, force-flat, time-of-day) is
@@ -267,11 +280,17 @@ export function startBacktest(
     conversation,
     confirmed: { draft, costs: spec.costs, untouched },
   };
-  return request<{ run_id: string; demo: boolean }>("/api/backtest", {
+  return request<StartResult>("/api/backtest", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    // the evidence bar (Settings) gates this run's verdict server-side
-    body: JSON.stringify({ spec, provenance, min_trades: getSettings().minTrades }),
+    // the evidence bar (Settings) gates this run's verdict server-side;
+    // turnstile_token is the anon human-check (ignored for signed-in callers)
+    body: JSON.stringify({
+      spec,
+      provenance,
+      min_trades: getSettings().minTrades,
+      turnstile_token: turnstileToken,
+    }),
   }).then((res) => {
     // pre-accounts: this browser's runs ride the curated listing via
     // include=, and signup later re-parents exactly this list (claim flow).
@@ -400,7 +419,13 @@ export type AuthAccount = {
   verificationSent?: boolean;
 };
 
-export function signup(email: string, password: string): Promise<AuthAccount> {
+export function signup(
+  email: string,
+  password: string,
+  // the Turnstile human-check token; null when Turnstile isn't configured
+  // (dev / pre-launch) — the backend skips the check in the same case
+  turnstileToken: string | null = null,
+): Promise<AuthAccount> {
   // the claim flow: this browser's pre-account runs (the skeptic-my-runs
   // breadcrumb) ride the signup and re-parent server-side; on success the
   // breadcrumb clears — ownership is DB truth from here on, and a stale
@@ -408,7 +433,12 @@ export function signup(email: string, password: string): Promise<AuthAccount> {
   return request<AuthAccount>("/api/auth/signup", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password, claim_run_ids: myRunIds() }),
+    body: JSON.stringify({
+      email,
+      password,
+      claim_run_ids: myRunIds(),
+      turnstile_token: turnstileToken,
+    }),
   }).then((account) => {
     clearMyRuns();
     return account;

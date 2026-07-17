@@ -13,8 +13,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
-import { getCoverage, getRun, listRuns, parseText, prefetchBars, startBacktest } from "@/lib/api";
+import {
+  ApiError,
+  fetchMe,
+  getCoverage,
+  getRun,
+  listRuns,
+  parseText,
+  prefetchBars,
+  startBacktest,
+} from "@/lib/api";
 import { HEADLINES } from "@/lib/headlines";
+import { turnstileConfigured } from "@/lib/turnstile";
+import { TurnstileWidget } from "@/components/landing/turnstile-widget";
 import type {
   ParseQuestion,
   ProvenanceEvent,
@@ -104,6 +115,7 @@ export function RunFlow({
   initialMode,
   embedded = false,
   onRunStarted,
+  onTrialExhausted,
 }: {
   initialPitch?: string;
   initialMode?: "chart";
@@ -111,6 +123,11 @@ export function RunFlow({
   // launch L4: the landing learns the run id the instant it's created, so
   // its background-run banner can track the run even if this popup closes
   onRunStarted?: (runId: string, demo: boolean) => void;
+  // launch L4 anon armor: the backend refused this device's free run (402) —
+  // the landing swaps this popup for the create-an-account gate. The reason is
+  // the backend's honest detail (device-used vs trials-busy) so the gate shows
+  // the right message.
+  onTrialExhausted?: (reason?: string) => void;
 }) {
   const [phase, setPhase] = useState<Phase>("compose");
   const [mode, setMode] = useState<Mode>("text");
@@ -156,6 +173,49 @@ export function RunFlow({
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ---- launch L4 anon armor (embedded popup only) --------------------
+  // The human-check token from Turnstile, kept in a ref so its arrival
+  // doesn't re-render the composer mid-typing. null when Turnstile isn't
+  // configured (dev) or hasn't solved yet.
+  const turnstileTokenRef = useRef<string | null>(null);
+  // null = unknown (still resolving), true = anonymous visitor (armor
+  // applies), false = signed-in (backend skips the armor). Drives whether
+  // the trial disclosure + human check show. Only meaningful when embedded.
+  const [isAnon, setIsAnon] = useState<boolean | null>(embedded ? null : false);
+  // the honest "N runs ahead of you" + the trial's stated limits, shown
+  // once the anon run is created
+  const [trialNote, setTrialNote] = useState<{ queue: number; constraint: string } | null>(null);
+  // bump to force the human check to re-solve after its token is consumed
+  const [turnstileReset, setTurnstileReset] = useState(0);
+
+  useEffect(() => {
+    if (!embedded) return;
+    let alive = true;
+    // a signed-in account holder opening the landing popup is NOT anon —
+    // resolve identity once so the trial framing only shows to visitors
+    fetchMe()
+      .then(() => alive && setIsAnon(false))
+      .catch((e) => {
+        if (!alive) return;
+        // a definite 401 = anonymous; any other error (network / transient
+        // 5xx) stays "unknown" (null) so a signed-in user isn't shown false
+        // trial framing on a hiccup — null still mounts the human check, so a
+        // true anon whose /me hiccuped is still gated by the backend
+        setIsAnon(e instanceof ApiError && e.status === 401 ? true : null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [embedded]);
+
+  const onTurnstileVerify = useCallback((token: string | null) => {
+    turnstileTokenRef.current = token;
+  }, []);
+
+  // the human check is a real gate only for an anonymous visitor with
+  // Turnstile configured; everyone else runs without a token
+  const humanCheckOn = embedded && isAnon !== false && turnstileConfigured();
 
   const speech = useSpeechToText((segment) => {
     // segments arrive already polished (lowercase, digits, canonical
@@ -361,6 +421,13 @@ export function RunFlow({
   const runGauntlet = useCallback(async () => {
     // exit AND data window are required choices — never defaults
     if (!draft?.exit || !draft.window || busy) return;
+    // the anon human check must have produced a token before we spend the
+    // engine on a free run — the widget solves in the background, so this
+    // only bites if they click RUN in the first instant
+    if (humanCheckOn && !turnstileTokenRef.current) {
+      setError("just finishing a quick human check — hit run once more in a second");
+      return;
+    }
     // a narration-upgrade poll may still be armed for the PREVIOUS run —
     // kill it so its stale closure can't overwrite the new run's state
     if (pollRef.current) clearTimeout(pollRef.current);
@@ -368,9 +435,16 @@ export function RunFlow({
     setError(null);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
-      const { run_id, demo } = await startBacktest(
-        draft, parsedSpecRef.current, untouched, transcriptRef.current,
+      const { run_id, demo, queuePosition, trialConstraint } = await startBacktest(
+        draft,
+        parsedSpecRef.current,
+        untouched,
+        transcriptRef.current,
+        turnstileTokenRef.current,
       );
+      if (trialConstraint != null) {
+        setTrialNote({ queue: queuePosition ?? 0, constraint: trialConstraint });
+      }
       onRunStarted?.(run_id, demo);
       setPhase("running");
       setRun(null);
@@ -405,11 +479,28 @@ export function RunFlow({
       };
       poll();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "backtest failed");
+      // anon armor: a spent free run (used-device OR global budget) → the
+      // create-an-account gate replaces this popup, so don't also flash an
+      // inline error. 403 = the human check didn't pass → a fresh token is
+      // already being minted by the widget; just ask them to retry. 422
+      // (intraday / >3y on the trial) falls through to its own clear message.
+      if (e instanceof ApiError && e.status === 402) {
+        // device-used OR global-budget — pass the honest detail so the gate
+        // doesn't tell a first-time visitor they've used their run
+        onTrialExhausted?.(e.detail);
+        return;
+      }
+      if (e instanceof ApiError && e.status === 403) {
+        turnstileTokenRef.current = null;
+        setTurnstileReset((n) => n + 1); // mint a fresh token for the retry
+        setError("the human check didn't pass — give it a moment and run again");
+      } else {
+        setError(e instanceof Error ? e.message : "backtest failed");
+      }
     } finally {
       setBusy(false);
     }
-  }, [draft, busy, onRunStarted]);
+  }, [draft, busy, humanCheckOn, onRunStarted, onTrialExhausted]);
 
   const reset = useCallback(() => {
     pollCancelledRef.current = true;
@@ -434,11 +525,22 @@ export function RunFlow({
 
   if (phase === "running") {
     return (
-      <GauntletProgress
-        stage={run?.stage ?? 0}
-        name={run?.name ?? draft?.quote ?? ""}
-        previews={run?.previews}
-      />
+      <div>
+        <GauntletProgress
+          stage={run?.stage ?? 0}
+          name={run?.name ?? draft?.quote ?? ""}
+          previews={run?.previews}
+        />
+        {/* anon trial: honest queue position + the run's stated limits */}
+        {trialNote && (
+          <p className="mt-4 text-center font-mono text-[11px] leading-[1.6] text-ink-4">
+            {trialNote.queue === 0
+              ? "you're next in line"
+              : `${trialNote.queue} run${trialNote.queue === 1 ? "" : "s"} ahead of you`}{" "}
+            · {trialNote.constraint}
+          </p>
+        )}
+      </div>
     );
   }
 
@@ -539,6 +641,22 @@ export function RunFlow({
           onRun={runGauntlet}
           earliestYear={earliestYear}
         />
+        {/* anon trial framing — honest about the free run's limits, so the
+            visitor picks a daily ≤3y window instead of hitting the backend's
+            refusal. Only shown to a confirmed anonymous visitor. */}
+        {embedded && isAnon === true && (
+          <p className="mt-3 text-center font-mono text-[11px] leading-[1.6] text-ink-4">
+            free trial run — daily resolution, up to a 3-year window · create a
+            free account for intraday and the full history
+          </p>
+        )}
+        {/* the human check (invisible unless Cloudflare challenges) — mounted
+            here so it has solved by the time RUN is clicked */}
+        {embedded && isAnon !== false && (
+          <div className="mt-3">
+            <TurnstileWidget onVerify={onTurnstileVerify} resetKey={turnstileReset} />
+          </div>
+        )}
         {error && (
           <div className="mt-3 rounded-xl border border-warn/50 px-3.5 py-3 font-mono text-[12px] text-warn">
             {error}

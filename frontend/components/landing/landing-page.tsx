@@ -46,6 +46,9 @@ export function LandingPage() {
   const [runOpen, setRunOpen] = useState(false);
   const [viewRunId, setViewRunId] = useState<string | null>(null);
   const [gated, setGated] = useState(false);
+  // the backend's honest 402 detail, so the gate distinguishes "this device's
+  // run is spent" from "the global daily budget is booked up"
+  const [gateReason, setGateReason] = useState<string | undefined>(undefined);
   // the background run this browser is tracking (survives popup close +
   // reloads) — the banner watches it to "ready" and back to viewing
   const [activeRunId, setActiveRunId] = useState<string | null>(() => getActiveRun());
@@ -65,6 +68,17 @@ export function LandingPage() {
     setRunOpen(false);
     setActiveRunId(null);
     clearActiveRun();
+  }, []);
+
+  // the server armor refused this device's free run (a cleared-cookie repeat,
+  // or the global daily budget) — the client gate can't see that, so the run
+  // popup hands off to the create-an-account gate. No run started, so there's
+  // nothing to track.
+  const onTrialExhausted = useCallback((reason?: string) => {
+    setRunFlow(null);
+    setRunOpen(false);
+    setGateReason(reason);
+    setGated(true);
   }, []);
 
   // one free run per DEVICE for anonymous visitors. Once a run is in flight
@@ -87,7 +101,13 @@ export function LandingPage() {
         setRunFlow(req); // signed in — run it
         setRunOpen(true);
       })
-      .catch(() => setGated(true)); // anonymous repeat — gate to signup
+      .catch(() => {
+        // anonymous repeat — the CLIENT device gate, always the "used this
+        // device's run" message. Clear any stale reason from a prior
+        // budget-402 so this gate never inherits the "busy" copy.
+        setGateReason(undefined);
+        setGated(true);
+      });
   };
 
   return (
@@ -132,11 +152,12 @@ export function LandingPage() {
           mode={runFlow.mode}
           hidden={!runOpen}
           onRunStarted={onRunStarted}
+          onTrialExhausted={onTrialExhausted}
           onClose={() => setRunOpen(false)}
         />
       )}
       {viewRunId && <RunViewModal runId={viewRunId} onClose={() => setViewRunId(null)} />}
-      {gated && <DeviceGateModal onClose={() => setGated(false)} />}
+      {gated && <DeviceGateModal reason={gateReason} onClose={() => setGated(false)} />}
     </div>
   );
 }

@@ -166,6 +166,24 @@ class EmailToken(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class AnonTrial(Base):
+    """One row per anonymous free backtest (launch L4 anon armor). The
+    signed anon-token's SHA-256 and a salted hash of the client IP gate the
+    one-free-run-per-device rule; the global daily budget counts rows by
+    created_at. run_id ties the trial to its run so signup can re-parent it
+    (the claim flow). No raw token or IP is ever stored."""
+
+    __tablename__ = "anon_trials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_hash: Mapped[str] = mapped_column(String(64), index=True)
+    ip_hash: Mapped[str] = mapped_column(String(64), index=True)
+    run_id: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), index=True
+    )
+
+
 LEDGER_REASONS = {"signup_grant", "purchase", "run_debit", "engine_refund", "admin_adjust"}
 
 

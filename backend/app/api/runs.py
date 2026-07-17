@@ -18,7 +18,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from app import db
@@ -89,6 +89,9 @@ class BacktestRequest(BaseModel):
     # confirmed draft) — display-only, size-capped in creation_record;
     # ignored on automatic runs, which have no conversation
     provenance: dict[str, Any] | None = None
+    # launch L4 anon armor: the Cloudflare Turnstile token, required only on
+    # the anonymous free-run path (signed-in / service callers ignore it)
+    turnstile_token: str | None = Field(default=None, max_length=4000)
 
 
 def _inherit_trials(parent_run_id: str | None, family: str) -> int:
@@ -487,18 +490,31 @@ def parse(req: ParseRequest) -> dict[str, Any]:
 
 
 @router.post("/backtest")
-def backtest(req: BacktestRequest, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
+def backtest(
+    req: BacktestRequest,
+    tasks: BackgroundTasks,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
     # launch L1b: runs belong to the account that started them. Resolution
-    # is lazy and optional — service/automation and (pre-flip) anonymous
-    # runs stamp NULL, which stays claimable at signup. The verified-email
-    # bar applies to signed-in people only, and only once the owner flips
+    # is lazy and optional — service/automation and anonymous runs stamp
+    # NULL, which stays claimable at signup. The verified-email bar applies
+    # to signed-in people only, and only once the owner flips
     # SKEPTIC_REQUIRE_VERIFIED (needs a configured mail sender).
     from app import auth
 
+    # a session presented but unresolvable (accounts DB on the SQLite
+    # fallback) is a likely signed-in person we can't validate right now —
+    # remembered so the anon armor doesn't clamp/Turnstile-gate a real account
+    # mid-outage (a bogus cookie under NORMAL operation still resolves to None
+    # and IS armored)
+    session_seen = auth.session_presented(request)
+    accounts_down = False
     try:
         run_user = auth.resolve_user(request)
     except auth.AccountsUnavailableError:
         run_user = None  # runs-DB fallback still accepts system work
+        accounts_down = True
     if (
         run_user is not None
         and os.environ.get("SKEPTIC_REQUIRE_VERIFIED") == "1"
@@ -518,6 +534,64 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks, request: Request) -> 
 
     if req.origin not in VALID_ORIGINS:
         raise HTTPException(status_code=422, detail=f"unknown origin {req.origin!r}")
+
+    # launch L4 anon armor: the anonymous free-run path is defended so a
+    # doctored client can't turn the engine into free compute. Signed-in
+    # users and the service principal skip ALL of this. Everything that can
+    # reject runs BEFORE the run row is created; the trial is recorded after.
+    anon_token_h: str | None = None
+    anon_ip_h: str | None = None
+    # anonymous = no account we can act for AND not the service principal. It
+    # deliberately does NOT key on req.origin: an anon POSTing origin=auto_unlock
+    # (VALID_ORIGINS, no service bearer) must be ARMORED, not waved through —
+    # the only legitimate auto_unlock/receipt caller is the nightly principal,
+    # which carries the service bearer and is excluded by not is_service.
+    is_anon = run_user is None and not auth.is_service(request)
+    # a session presented but unresolvable (accounts DB on the SQLite fallback)
+    # is a likely signed-in person we can't validate right now. The DB-free
+    # layers below (the human check + the fast-path constraint) STILL apply to
+    # them — so an outage is never a bot-flushable free-compute hole — but the
+    # per-device DB limits (token/IP/budget) relax, so we don't one-run-block a
+    # real account mid-outage. A bogus cookie under NORMAL operation resolves to
+    # None (no exception) → outage_session is False → the full armor applies.
+    outage_session = accounts_down and session_seen
+    if is_anon:
+        from app import anon
+
+        ip = anon.client_ip(request)
+        if not anon.verify_turnstile(req.turnstile_token, ip):
+            raise HTTPException(
+                status_code=403,
+                detail="the human check didn't pass — please try again",
+            )
+        anon.enforce_constraints(spec)  # daily clock + <=3y window, or 422
+        if not outage_session:
+            anon_token_h = anon.verified_hash(request.cookies.get(anon.ANON_COOKIE))
+            anon_ip_h = anon.ip_hash(ip)
+            verdict = anon.check_limits(anon_token_h, anon_ip_h)
+            if verdict == "budget":
+                raise HTTPException(
+                    status_code=402,
+                    detail="free trials are busy right now — create a free "
+                    "account for 5 backtests, no card",
+                )
+            if verdict in ("used_token", "used_ip"):
+                raise HTTPException(
+                    status_code=402,
+                    detail="you've used this device's free backtest — create a "
+                    "free account for 5 more, no card",
+                )
+            if anon_token_h is None:  # first run from this device — mint a token
+                raw_token, anon_token_h = anon.new_token()
+                response.set_cookie(
+                    anon.ANON_COOKIE,
+                    raw_token,
+                    max_age=60 * 60 * 24 * 365,
+                    httponly=True,
+                    secure=True,
+                    samesite="lax",
+                    path="/",
+                )
 
     # the evidence bar: the caller's setting; automatic re-runs without one
     # inherit their parent's so an unlock never moves its own goalposts
@@ -547,8 +621,25 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks, request: Request) -> 
             )
         )
         s.commit()
+    # record the anon trial only after the run row exists, so a failed
+    # creation never burns the visitor's one free run. Best-effort: a
+    # trial-write hiccup must not 500 a run that already exists and is about
+    # to execute — the per-IP window and global daily budget still bound abuse.
+    if is_anon and anon_token_h is not None and anon_ip_h is not None:
+        from app import anon
+
+        try:
+            anon.record_trial(anon_token_h, anon_ip_h, run_id)
+        except Exception:  # noqa: BLE001 — never fail a created run on the audit write
+            log.exception("anon trial write failed for run %s", run_id)
     tasks.add_task(_execute_run, run_id, note, min_trades)
-    return {"run_id": run_id, "demo": False, "status": "queued"}
+    out: dict[str, Any] = {"run_id": run_id, "demo": False, "status": "queued"}
+    if is_anon:
+        from app import anon
+
+        out["queuePosition"] = anon.queue_position(run_id)
+        out["trialConstraint"] = "daily resolution · up to a 3-year window"
+    return out
 
 
 def example_run_ids() -> tuple[str, ...]:
