@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import { HEADLINES } from "@/lib/headlines";
 import { turnstileConfigured } from "@/lib/turnstile";
+import { notifyCreditsChanged } from "@/lib/credits-events";
 import { TurnstileWidget } from "@/components/landing/turnstile-widget";
 import type {
   ParseQuestion,
@@ -446,6 +447,9 @@ export function RunFlow({
         setTrialNote({ queue: queuePosition ?? 0, constraint: trialConstraint });
       }
       onRunStarted?.(run_id, demo);
+      // a signed-in run just debited a credit — refresh the nav balance
+      // (no navigation happens here, so it would otherwise go stale)
+      notifyCreditsChanged();
       setPhase("running");
       setRun(null);
       // self-scheduling poll: each tick AWAITS the prior response before
@@ -460,6 +464,8 @@ export function RunFlow({
           setRun(payload);
           if (payload.status === "done") {
             setPhase("results");
+            // a refusal refunds the credit at completion — refresh the balance
+            notifyCreditsChanged();
             // numbers are final; the narration upgrade is being written
             // off the critical path — keep a slow poll until it lands
             if (payload.narrationPending) {
@@ -470,6 +476,7 @@ export function RunFlow({
           if (payload.status === "error") {
             setError(payload.error ?? "backtest failed");
             setPhase("spec");
+            notifyCreditsChanged(); // an our-fault failure refunded the credit
             return;
           }
         } catch {
@@ -485,9 +492,12 @@ export function RunFlow({
       // already being minted by the widget; just ask them to retry. 422
       // (intraday / >3y on the trial) falls through to its own clear message.
       if (e instanceof ApiError && e.status === 402) {
-        // device-used OR global-budget — pass the honest detail so the gate
-        // doesn't tell a first-time visitor they've used their run
-        onTrialExhausted?.(e.detail);
+        // 402 has two callers: an ANON trial spent (device / global budget) →
+        // the account gate replaces the popup; a SIGNED-IN account out of
+        // credits (no gate wired) → surface the backend's honest message
+        // ("out of backtest credits — top-ups are coming soon") inline.
+        if (onTrialExhausted) onTrialExhausted(e.detail);
+        else setError(e.detail);
         return;
       }
       if (e instanceof ApiError && e.status === 403) {

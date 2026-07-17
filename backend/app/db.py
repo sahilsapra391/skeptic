@@ -128,6 +128,16 @@ class CreditLedger(Base):
             sqlite_where=text("reason = 'signup_grant'"),
             postgresql_where=text("reason = 'signup_grant'"),
         ),
+        # at most one engine_refund per run (launch L2): the credit law is
+        # "you only pay for a graded verdict", so a refusal / our-fault
+        # failure refunds — but exactly ONCE, DB-enforced against retries.
+        Index(
+            "uq_credit_ledger_refund",
+            "run_id",
+            unique=True,
+            sqlite_where=text("reason = 'engine_refund'"),
+            postgresql_where=text("reason = 'engine_refund'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -190,12 +200,51 @@ LEDGER_REASONS = {"signup_grant", "purchase", "run_debit", "engine_refund", "adm
 def credit_balance(user_id: str) -> int:
     """Balance = SUM over the append-only ledger — computed, never stored."""
     with SessionLocal() as s:
-        total = (
-            s.query(func.coalesce(func.sum(CreditLedger.delta), 0))
-            .filter(CreditLedger.user_id == user_id)
-            .scalar()
+        return credit_balance_tx(s, user_id)
+
+
+def credit_balance_tx(s: Session, user_id: str) -> int:
+    """Balance within an EXISTING transaction — the debit path recomputes the
+    balance under a user-row lock, so the read and the debit are one atomic
+    decision (no overdraft from two simultaneous runs)."""
+    total = (
+        s.query(func.coalesce(func.sum(CreditLedger.delta), 0))
+        .filter(CreditLedger.user_id == user_id)
+        .scalar()
+    )
+    return int(total or 0)
+
+
+def refund_run(run_id: str) -> bool:
+    """Give back the credit a run debited — the credit law (owner override):
+    you only pay for a GRADED verdict, so a refusal or an our-fault failure
+    refunds. Idempotent and self-scoped: a no-op if the run was never charged
+    (anon-armor run / service / a claimed anon run) or was already refunded.
+    The engine_refund unique index is the DB backstop against a race."""
+    from sqlalchemy.exc import IntegrityError
+
+    with SessionLocal() as s:
+        debit = (
+            s.query(CreditLedger)
+            .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "run_debit")
+            .first()
         )
-        return int(total or 0)
+        if debit is None:
+            return False  # never charged — nothing to refund
+        already = (
+            s.query(CreditLedger.id)
+            .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "engine_refund")
+            .first()
+        )
+        if already is not None:
+            return False  # idempotent — already refunded
+        s.add(CreditLedger(user_id=debit.user_id, delta=1, reason="engine_refund", run_id=run_id))
+        try:
+            s.commit()
+        except IntegrityError:  # a concurrent refund won the race — fine
+            s.rollback()
+            return False
+    return True
 
 
 class TrialCounter(Base):
@@ -276,6 +325,21 @@ def _ensure_columns() -> None:
                              ("user_id", "VARCHAR(40)")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
+    _ensure_indexes()
+
+
+def _ensure_indexes() -> None:
+    """create_all adds new indexes only to tables it CREATES, never to a
+    table that already exists — so a partial unique index added after first
+    deploy (L2 refund-once) is patched onto the live credit_ledger here.
+    Both Postgres and SQLite (>=3.8) accept this exact partial-index DDL."""
+    from sqlalchemy import text
+
+    with _engine.begin() as conn:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_refund "
+            "ON credit_ledger (run_id) WHERE reason = 'engine_refund'"
+        ))
 
 
 def session() -> Session:

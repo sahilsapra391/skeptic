@@ -15,6 +15,7 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 import { fetchMe, logout, type MePayload } from "@/lib/api";
+import { CREDITS_CHANGED } from "@/lib/credits-events";
 
 function PersonIcon() {
   return (
@@ -42,11 +43,17 @@ export function AccountSection({ open }: { open: boolean }) {
 
   useEffect(() => {
     let alive = true;
-    fetchMe()
-      .then((m) => alive && setMe(m))
-      .catch(() => alive && setMe(null));
+    const refresh = () =>
+      fetchMe()
+        .then((m) => alive && setMe(m))
+        .catch(() => alive && setMe(null));
+    refresh();
+    // a run debits (start) and may refund (completion) without a route
+    // change — refresh the balance when the run flow signals it
+    window.addEventListener(CREDITS_CHANGED, refresh);
     return () => {
       alive = false;
+      window.removeEventListener(CREDITS_CHANGED, refresh);
     };
   }, [pathname]);
 

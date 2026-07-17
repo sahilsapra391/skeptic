@@ -348,6 +348,12 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                     except Exception:
                         log.exception("receipt attach failed for %s", parent_run_id)
             s.commit()
+        # launch L2 credit law: a refusal refunds — you only pay for a GRADED
+        # verdict. Decided once here at completion (a later view-time re-grade
+        # never claws it back). Idempotent + self-scoped: a no-op for anon /
+        # service runs that were never charged.
+        if bool(payload.get("verdict", {}).get("refusal")):
+            db.refund_run(run_id)
     except Exception as exc:
         log.exception("run %s failed", run_id)
         with db.session() as s:
@@ -357,6 +363,8 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 run.error = f"{type(exc).__name__}: {exc}"
                 s.add(db.RunEvent(run_id=run_id, stage=run.stage, label="failed"))
                 s.commit()
+        # our-fault failure refunds the credit too (idempotent / self-scoped)
+        db.refund_run(run_id)
     finally:
         # this run's daily-series memo, dropped on the store THIS run used
         # (it is cached for 30 minutes across runs — chains.STORE_TTL_SECONDS
@@ -534,6 +542,12 @@ def backtest(
 
     if req.origin not in VALID_ORIGINS:
         raise HTTPException(status_code=422, detail=f"unknown origin {req.origin!r}")
+    # a signed-in caller's run is ALWAYS origin="user" (launch L2): the
+    # automation origins (auto_unlock / receipt) belong to the nightly
+    # principal, which carries the service bearer. Forcing it server-side also
+    # stops a session caller from dodging the credit debit by declaring an
+    # automation origin (the field is client-supplied).
+    origin = "user" if run_user is not None else req.origin
 
     # launch L4 anon armor: the anonymous free-run path is defended so a
     # doctored client can't turn the engine into free compute. Signed-in
@@ -597,14 +611,34 @@ def backtest(
     # inherit their parent's so an unlock never moves its own goalposts
     if req.min_trades is not None:
         min_trades = req.min_trades
-    elif req.origin in ("auto_unlock", "receipt"):
+    elif origin in ("auto_unlock", "receipt"):
         min_trades = _inherit_min_trades(req.parent_run_id)
     else:
         min_trades = MIN_TRADES
 
+    # launch L2 credits: a signed-in caller spends 1 credit per run. The anon
+    # path is defended by the armor (no credits); the service principal is
+    # never charged. Hard block at 0 (L3 adds top-ups).
+    charge_credit = run_user is not None and not auth.is_service(request)
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
     with db.session() as s:
+        if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
+            uid = run_user.id
+            # lock THIS account's row so two simultaneous runs can't both
+            # spend the last credit (SQLite serializes writes; Postgres takes
+            # the row lock). Recompute the balance under the lock, then debit
+            # and create in ONE transaction — a crash between them leaves
+            # NEITHER (the atomicity guarantee).
+            s.query(db.User).filter(db.User.id == uid).with_for_update().first()
+            if db.credit_balance_tx(s, uid) <= 0:
+                raise HTTPException(
+                    status_code=402,
+                    detail="you're out of backtest credits — top-ups are coming soon",
+                )
+            s.add(
+                db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
+            )
         s.add(
             db.Run(
                 id=run_id,
@@ -612,11 +646,11 @@ def backtest(
                 stage=0,
                 seed=spec.backtest.seed,
                 spec_json=spec.model_dump_json(),
-                origin=req.origin,
+                origin=origin,
                 parent_run_id=req.parent_run_id,
                 user_id=run_user.id if run_user is not None else None,
                 provenance_json=creation_record(
-                    req.provenance, req.origin, req.parent_run_id, note
+                    req.provenance, origin, req.parent_run_id, note
                 ),
             )
         )
