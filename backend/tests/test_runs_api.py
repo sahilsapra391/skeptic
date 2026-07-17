@@ -91,6 +91,40 @@ def test_example_curation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -
     assert {first, second} <= all_ids
 
 
+def test_examples_survive_a_heavy_users_own_runs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flat limit(50) trimmed the OLDER pinned examples out from under 50
+    newer own runs (review finding) — the curated branch must keep both."""
+    import json as _json
+    import uuid as _uuid
+    from datetime import UTC, datetime, timedelta
+
+    from app import db
+
+    now = datetime.now(UTC)
+    example_id = _uuid.uuid4().hex[:12]
+    own_ids = [_uuid.uuid4().hex[:12] for _ in range(50)]
+    with db.session() as s:
+        # the example is the OLDEST row; 50 own runs are newer
+        s.add(db.Run(id=example_id, status="done", spec_json="{}",
+                     created_at=now - timedelta(days=30),
+                     summary_json=_json.dumps({"id": example_id, "name": "ex"})))
+        for i, rid in enumerate(own_ids):
+            s.add(db.Run(id=rid, status="done", spec_json="{}",
+                         created_at=now - timedelta(minutes=i),
+                         summary_json=_json.dumps({"id": rid, "name": f"own {i}"})))
+        s.commit()
+    monkeypatch.setenv("SKEPTIC_EXAMPLE_RUN_IDS", example_id)
+
+    listed = {
+        r["id"]
+        for r in client.get(f"/api/runs?include={','.join(own_ids)}").json()["runs"]
+    }
+    assert example_id in listed
+    assert set(own_ids) <= listed
+
+
 def test_run_error_is_surfaced(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     import app.data.chains as chains_module
 

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import clsx from "clsx";
 
+import { TrustBandCard } from "@/components/verdict/trust-band";
+
 /**
  * Landing §3 — the verdict showcase ("Refusal is a feature.").
  * Design: docs/design/landing/Skeptic Landing.dc.html option 2a lines 146-188
@@ -59,35 +61,6 @@ const RANGE_ROWS: RangeRow[] = [
   },
 ];
 
-/* TrustBand, card variant — geometry verbatim from the DS bundle
- * (_ds_bundle.js:1322-1437): 14px wrap, 2px track at top 6, 10px band at
- * top 2, 3px marker full-height; withheld = dashed empty track. */
-function TrustBand({ band, marker, withheld }: Pick<RangeRow, "band" | "marker" | "withheld">) {
-  return (
-    <div className="relative mb-2.5 h-[14px]">
-      <div className="absolute inset-x-0 top-[6px] h-[2px] bg-band-track" />
-      {withheld ? (
-        <div className="absolute left-[4%] top-[2px] h-[10px] w-[92%] rounded-[4px] border border-dashed border-line-hover" />
-      ) : (
-        <>
-          {band && (
-            <div
-              className="absolute top-[2px] h-[10px] rounded-[4px] border border-trust-border bg-trust-dim"
-              style={{ left: `min(${band.left}, calc(100% - ${band.width}))`, width: band.width }}
-            />
-          )}
-          {marker && (
-            <div
-              className="absolute top-0 h-[14px] w-[3px] rounded-[2px] bg-trust"
-              style={{ left: `min(${marker}, calc(100% - 4px))` }}
-            />
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function RangeRowCard({ row }: { row: RangeRow }) {
   const body = (
     <>
@@ -102,7 +75,13 @@ function RangeRowCard({ row }: { row: RangeRow }) {
           {row.meta}
         </span>
       </div>
-      <TrustBand band={row.band} marker={row.marker} withheld={row.withheld} />
+      {/* the app's own band component — the landing must never drift from
+          the verdict surfaces it's advertising */}
+      <TrustBandCard
+        band={row.band ?? undefined}
+        marker={row.marker ?? undefined}
+        withheld={row.withheld}
+      />
       <div className="font-serif text-[14px] italic leading-[1.45] text-ink-2 md:text-[15px]">
         {row.quote}
       </div>
@@ -174,7 +153,9 @@ export function VerdictShowcase() {
                   <span className="rounded-full border border-trust-border px-3.5 py-1.5 text-[13px] text-trust">
                     re-run on a longer window — unlocks at ≥ 15 trades (has 12)
                   </span>
-                  <span className="rounded-full border border-trust-border px-3.5 py-1.5 text-[13px] text-trust">
+                  {/* neutral pill per the mockup — editing the spec is the
+                      user's move, not one of the trust-hued re-run offers */}
+                  <span className="rounded-full border border-line-hover px-3.5 py-1.5 font-mono text-[12px] text-ink-3">
                     edit the spec — make the entry fire more often
                   </span>
                 </div>

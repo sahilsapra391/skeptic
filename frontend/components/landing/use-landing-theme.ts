@@ -10,7 +10,7 @@
  * gate) — without that it rewrites data-theme from app settings every 60s.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 
 import { resolveTheme, type Theme } from "@/lib/settings";
 
@@ -33,10 +33,17 @@ function load(): Theme {
 
 export function useLandingTheme(): LandingTheme {
   const [pref, setPref] = useState<Theme>("market"); // SSR-safe default
-  const [resolved, setResolved] = useState<"light" | "dark">("dark");
+  // seed from the pre-paint head script's stamp, not a hardcoded "dark" —
+  // a daytime (market-hours-light) first load otherwise renders the white
+  // brand assets on paper until the mount effects run (review finding)
+  const [resolved, setResolved] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" && document.documentElement.dataset.theme === "light"
+      ? "light"
+      : "dark",
+  );
 
-  useEffect(() => {
-    setPref(load()); // the real preference, post-mount
+  useLayoutEffect(() => {
+    setPref(load()); // the real preference, before first paint post-hydration
   }, []);
 
   useEffect(() => {

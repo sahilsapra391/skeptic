@@ -300,6 +300,12 @@ export function CopilotDemo() {
           <span>it entered, managed, and exited on its own — reasoning logged, replayable</span>
           <span>no dates, no waitlist theater</span>
         </div>
+        {/* this panel shows P&L — the legal rail says every results surface
+            carries the disclaimer, mockup or not */}
+        <div className="mt-2 font-mono text-[10.5px] text-ink-5 md:mt-1.5">
+          demo replay of a stored run · research tool, not financial advice — backtests
+          overstate live results
+        </div>
       </div>
     </section>
   );

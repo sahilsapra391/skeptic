@@ -12,32 +12,43 @@
  * there is no hydration mismatch and no replay on every navigation.
  */
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import clsx from "clsx";
 
 import styles from "./landing-wordmark.module.css";
 
 export const DRAW_MS = 1590;
 
-// consumed at module scope (StrictMode-safe, same pattern as boot-splash)
-const alreadyDrawn = (() => {
-  if (typeof window === "undefined") return true; // SSR renders the drawn state
+// Once per SESSION, decided lazily and remembered at module scope. The
+// boot-splash consumes its flag at module load, which works because it
+// lives in a layout that mounts once — this hook lives in a PAGE that
+// remounts on every client navigation back to `/`, so the decision must
+// be consumed exactly once ACROSS mounts (review finding: a frozen
+// module-IIFE result replayed the draw + entrance stagger on every
+// return visit within the session).
+let played = false;
+function firstVisitThisSession(): boolean {
   try {
-    if (sessionStorage.getItem("sk-landing-drawn")) return true;
+    if (sessionStorage.getItem("sk-landing-drawn")) return false;
     sessionStorage.setItem("sk-landing-drawn", "1");
-    return false;
+    return true;
   } catch {
-    return true; // private mode — never replay forever
+    return false; // private mode — never replay forever
   }
-})();
+}
 
 /** First-visit state shared with the hero's entrance stagger: `run` bumps on
  * every replay (remount key), `firstVisit` is true only when this pageview
- * actually animates the draw. */
+ * actually animates the draw. Layout effect: the animating state must be
+ * decided before the browser paints the hydrated tree, or first-time
+ * visitors see the hero flash visible → hidden → fade back in. */
 export function useWordmarkDraw() {
   const [run, setRun] = useState(0);
-  useEffect(() => {
-    if (!alreadyDrawn) setRun(1);
+  useLayoutEffect(() => {
+    if (!played && firstVisitThisSession()) {
+      played = true; // StrictMode double-effect and later remounts both skip
+      setRun(1);
+    }
   }, []);
   return {
     run,

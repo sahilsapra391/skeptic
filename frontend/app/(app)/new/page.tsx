@@ -168,10 +168,18 @@ export default function NewAnalysisPage() {
     ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
     : text;
 
-  // the chatbox grows a line at a time with its content (capped, then scrolls)
+  // the chatbox grows a line at a time with its content (capped, then
+  // scrolls). Empty clears the inline height instead of measuring — a
+  // mount-time measurement before styles settle froze a bogus 200px into
+  // the empty box on the landing's clone of this effect; same guard here
   useEffect(() => {
     const ta = composerRef.current;
     if (!ta) return;
+    if (!composerValue) {
+      ta.style.height = "";
+      ta.style.overflowY = "hidden";
+      return;
+    }
     ta.style.height = "auto";
     const capped = Math.min(ta.scrollHeight, 200);
     ta.style.height = `${capped}px`;
@@ -197,9 +205,14 @@ export default function NewAnalysisPage() {
       })
       .catch(() => undefined);
     // presets follow usage: structures you actually run float to the front
+    // (the pinned showcase examples are not usage — scoring them would give
+    // every fresh visitor the same example-biased order)
     listRuns()
       .then(({ runs }) => {
-        const history = runs.map((r) => `${r.name} ${r.meta}`.toLowerCase()).join(" · ");
+        const history = runs
+          .filter((r) => !r.example)
+          .map((r) => `${r.name} ${r.meta}`.toLowerCase())
+          .join(" · ");
         const scored = PRESETS.map((p, i) => ({
           p,
           i,

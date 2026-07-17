@@ -30,14 +30,6 @@ import styles from "./hero.module.css";
 
 export type WordmarkDraw = ReturnType<typeof useWordmarkDraw>;
 
-// copy-deck Hero: rotate 3.6s, pause on focus/typing
-const PLACEHOLDERS = [
-  "sell a 30-delta put on SPY every week, close at 50% profit or 21 days…",
-  "iron condor on SPY at 16 delta, 45 DTE, exit at 21 DTE or 2x credit stop…",
-  "buy a 10-delta SPY put, 45 DTE, sell at +200% or hold to expiry…",
-  "covered call on SPY, sell the 30-delta monthly, roll at 21 DTE…",
-];
-
 // the app's PRESETS entries for the three landing chips (labels/structure
 // sublabels/phrases verbatim — click fills the composer, app parity)
 const PRESETS = [
@@ -56,6 +48,14 @@ const PRESETS = [
     sub: "long put",
     phrase: "buy a 10-delta SPY put, 45 DTE, sell at +200% or hold to expiry",
   },
+];
+
+// copy-deck Hero: rotate 3.6s, pause on focus/typing. Derived from the
+// chips so a preset reword can never leave a stale placeholder behind —
+// only the covered-call line has no chip to derive from
+const PLACEHOLDERS = [
+  ...PRESETS.map((p) => `${p.phrase}…`),
+  "covered call on SPY, sell the 30-delta monthly, roll at 21 DTE…",
 ];
 
 // scroll-morph constants (component-specs §2): scrub window 0→260px,
@@ -111,9 +111,17 @@ export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: Word
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(apply);
     };
+    // coalesced through the same rAF as the scrub — measure() forces a
+    // synchronous reflow (transform strip + two rects), so once per frame,
+    // not once per resize event
+    let resizeRaf = 0;
     const onResize = () => {
-      measure();
-      schedule();
+      if (resizeRaf) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0;
+        measure();
+        apply();
+      });
     };
     measure();
     apply();
@@ -121,6 +129,7 @@ export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: Word
     window.addEventListener("resize", onResize);
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", onResize);
     };

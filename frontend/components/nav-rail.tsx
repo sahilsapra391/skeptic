@@ -138,7 +138,9 @@ export function NavRail() {
 
   useEffect(() => {
     listRuns()
-      .then(({ runs }) => setRecent(runs.slice(0, 6)))
+      // the pinned showcase runs are Library content, not the visitor's
+      // activity — "RECENT ANALYSES" must never present them as it
+      .then(({ runs }) => setRecent(runs.filter((r) => !r.example).slice(0, 6)))
       .catch(() => undefined);
     // refreshes on navigation, so a just-finished run shows up
   }, [pathname]);

@@ -564,13 +564,17 @@ def list_runs(
             db.Run.spec_json,
         )
         examples_only = scope != "all"
+        examples = set(example_run_ids())  # once — not per row (env parse)
         if examples_only:
             own = tuple(x.strip() for x in include.split(",") if x.strip())[:50]
-            query = query.filter(db.Run.id.in_(example_run_ids() + own))
+            query = query.filter(db.Run.id.in_(tuple(examples) + own))
         rows = (
             query.filter(db.Run.status.in_(["queued", "running", "done"]))
             .order_by(db.Run.created_at.desc())
-            .limit(50)
+            # the curated branch is already bounded by the id filter — a flat
+            # 50 would trim the OLDER pinned examples out from under a heavy
+            # user's 50 own runs (review finding)
+            .limit(60 if examples_only else 50)
             .all()
         )
         runs: list[dict[str, Any]] = []
@@ -594,7 +598,7 @@ def list_runs(
                 continue
             if summary_json:
                 summary = json.loads(summary_json)
-                if run_id in example_run_ids():
+                if run_id in examples:
                     summary["example"] = True
                 runs.append(summary)
                 continue

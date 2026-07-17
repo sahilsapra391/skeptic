@@ -298,9 +298,11 @@ export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boo
   // Pre-accounts curation (launch L4): the server lists the two pinned
   // examples; this browser's own runs ride along explicitly — the same
   // id list the claim flow re-parents at signup.
+  // sorted: the ids are recency-ordered in storage, and an order-sensitive
+  // key would mint a fresh cache entry (cold nav-rail paint) after every run
   const mine = myRunIds();
   const url = mine.length
-    ? `/api/runs?include=${encodeURIComponent(mine.join(","))}`
+    ? `/api/runs?include=${encodeURIComponent([...mine].sort().join(","))}`
     : "/api/runs";
   return cachedRequest<{ runs: RunSummary[]; demo: boolean }>(
     url,
