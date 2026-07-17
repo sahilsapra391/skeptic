@@ -479,6 +479,9 @@ export interface RunPayload {
   narrationStartedAt?: string;
   /** which writer produced the stored verdict text: "template" | "llm" */
   verdictSource?: string;
+  /** launch L4: one of the two pinned showcase runs (server-decided) —
+   * the run screen banners it so it's never mistaken for the viewer's own */
+  example?: boolean;
   /** the verdict was re-decided at the viewer's minimum-trades setting
    * (`bar`) instead of the bar the run was scored at (`ranAt`) */
   regraded?: { bar: number; ranAt: number } | null;
@@ -503,6 +506,9 @@ export interface RunSummary {
   upgradeOf?: string | null; // the refused run this one supersedes
   autoNote?: string | null; // "re-ran automatically — N new sessions"
   supersededBy?: string | null; // set on the OLD refusal once upgraded
+  /** launch L4: one of the two pinned showcase runs — badged everywhere so
+   * a stranger never mistakes it for their own result */
+  example?: boolean;
 }
 
 export interface CoverageRange {

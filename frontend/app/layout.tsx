@@ -4,8 +4,6 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-import { BootSplash } from "@/components/boot-splash";
-import { NavRail } from "@/components/nav-rail";
 import { ThemeApplier } from "@/components/theme-applier";
 // launch L1: accounts exist only when the Clerk keys do — without them the
 // provider is skipped entirely and the app is the single-user build
@@ -34,9 +32,35 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "Skeptic",
+  // SEO (launch L4): absolute URLs for OG/canonical resolve against this.
+  // Every claim in titles/descriptions must stay literally true — the
+  // audience detects fakery for a living (design brief), and so do raters.
+  metadataBase: new URL("https://skeptic.fyi"),
+  title: {
+    default: "Skeptic — The Options Backtester That Argues With You",
+    template: "%s — Skeptic",
+  },
   description:
-    "The backtester that argues with you. Research tool, not financial advice.",
+    "Backtest options strategies in plain English. Skeptic interviews you, " +
+    "runs the strategy on real intraday options data — fills at bid/ask, " +
+    "never mid — then attacks its own result and refuses verdicts the " +
+    "evidence can't support. Research tool, not financial advice.",
+  applicationName: "Skeptic",
+  category: "finance",
+  keywords: [
+    "options backtesting",
+    "backtest options strategies",
+    "options strategy backtest",
+    "0DTE backtest",
+    "short put backtest",
+    "iron condor backtest",
+    "options trading research",
+    "walk-forward analysis",
+    "monte carlo backtest",
+  ],
+  // no root canonical: Next metadata inherits into child segments, which
+  // would declare every subpage a duplicate of `/` — each page carries its
+  // own (the landing's lives in app/page.tsx)
   icons: {
     // owner-picked: the ink-black tile with the centered white S.
     // ?v=2 = brand kit v2 (2026-07-16): same filenames, new bytes — without
@@ -50,9 +74,26 @@ export const metadata: Metadata = {
     apple: "/favicon-dark-tile-180.png?v=2",
   },
   openGraph: {
-    title: "Skeptic",
-    description: "The backtester that argues with you.",
+    title: "Skeptic — The Options Backtester That Argues With You",
+    description:
+      "Pitch a trade in plain English. Get the honest read — refusals included.",
+    url: "https://skeptic.fyi",
+    siteName: "Skeptic",
+    type: "website",
+    locale: "en_US",
     images: ["/og-image-1200x630.png?v=2"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Skeptic — The Options Backtester That Argues With You",
+    description:
+      "Pitch a trade in plain English. Get the honest read — refusals included.",
+    images: ["/og-image-1200x630.png?v=2"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
   },
 };
 
@@ -60,18 +101,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const shell = (
     <html
       lang="en"
-      className={`${archivo.variable} ${plexMono.variable} ${newsreader.variable}`}
+      // scroll-smooth: the landing's in-page anchors (pricing CTA → composer,
+      // scroll cue → how-it-argues) glide; the app shell never window-scrolls
+      // so it's inert there
+      className={`${archivo.variable} ${plexMono.variable} ${newsreader.variable} scroll-smooth`}
       suppressHydrationWarning
     >
       <head>
         {/* apply Appearance before first paint — no theme flash. Mirrors
             resolveTheme() in lib/settings.ts: Market Hours (default/unset) is
-            light 8am–6pm New York, dark otherwise. */}
+            light 8am–6pm New York, dark otherwise. The landing at `/` keeps
+            its own preference key (sk-landing-theme, launch L4) so its footer
+            control never rewrites app settings; accent stays shared. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
               "try{var s=JSON.parse(localStorage.getItem('skeptic-settings')||'{}');" +
-              "var t=s.theme,eff;" +
+              "var t=location.pathname==='/'?(localStorage.getItem('sk-landing-theme')||'market'):s.theme;" +
+              "var eff;" +
               "if(t==='light'||t==='dark'){eff=t;}else{" +
               "var h=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York'," +
               "hour12:false,hour:'2-digit'}).format(new Date()))%24;" +
@@ -81,17 +128,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      {/* print (Save PDF): the scroll cage would clip the printout to one
-          viewport — open it up so the full run paginates */}
-      <body className="h-screen overflow-hidden bg-ground font-sans text-ink antialiased print:h-auto print:overflow-visible">
+      {/* the viewport-locked app shell (nav rail + scroll-caged main) lives
+          in app/(app)/layout.tsx — the landing at `/` scrolls the window */}
+      <body className="bg-ground font-sans text-ink antialiased">
         <ThemeApplier />
-        <BootSplash />
-        <div className="flex h-full print:block print:h-auto">
-          <NavRail />
-          <main className="flex-1 overflow-auto print:overflow-visible">
-            <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
-          </main>
-        </div>
+        {children}
         <Analytics />
         <SpeedInsights />
       </body>

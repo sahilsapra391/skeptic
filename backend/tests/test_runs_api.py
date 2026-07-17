@@ -53,9 +53,76 @@ def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
     actions = [t["a"] for t in payload["trades"]]
     assert "ASSIGN" in actions and "OPEN" in actions
 
-    listing = client.get("/api/runs").json()
+    # curation (launch L4): the default listing is examples-only — a fresh
+    # run appears via include= (the caller's own id) or scope=all
+    listing = client.get(f"/api/runs?include={run_id}").json()
     assert listing["demo"] is False
     assert any(item["id"] == run_id for item in listing["runs"])
+    assert any(item["id"] == run_id for item in client.get("/api/runs?scope=all").json()["runs"])
+    assert not any(
+        item["id"] == run_id for item in client.get("/api/runs").json()["runs"]
+    )
+
+
+def test_example_curation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The public library is the two pinned examples, badged; a visitor's
+    own runs ride along via include=; nothing else leaks (owner 2026-07-17)."""
+    first = client.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
+    second = client.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
+    monkeypatch.setenv("SKEPTIC_EXAMPLE_RUN_IDS", first)
+
+    # default: examples only, explicitly badged
+    runs = client.get("/api/runs").json()["runs"]
+    assert [r["id"] for r in runs] == [first]
+    assert runs[0]["example"] is True
+
+    # the caller's own run rides along, unbadged; the other stays hidden
+    runs = client.get(f"/api/runs?include={second}").json()["runs"]
+    assert {r["id"] for r in runs} == {first, second}
+    own = next(r for r in runs if r["id"] == second)
+    assert "example" not in own
+
+    # the example's full payload says so too — the run screen banners it
+    assert client.get(f"/api/runs/{first}").json()["example"] is True
+    assert "example" not in client.get(f"/api/runs/{second}").json()
+
+    # scope=all keeps the full listing (owner/automation, pre-launch)
+    all_ids = {r["id"] for r in client.get("/api/runs?scope=all").json()["runs"]}
+    assert {first, second} <= all_ids
+
+
+def test_examples_survive_a_heavy_users_own_runs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flat limit(50) trimmed the OLDER pinned examples out from under 50
+    newer own runs (review finding) — the curated branch must keep both."""
+    import json as _json
+    import uuid as _uuid
+    from datetime import UTC, datetime, timedelta
+
+    from app import db
+
+    now = datetime.now(UTC)
+    example_id = _uuid.uuid4().hex[:12]
+    own_ids = [_uuid.uuid4().hex[:12] for _ in range(50)]
+    with db.session() as s:
+        # the example is the OLDEST row; 50 own runs are newer
+        s.add(db.Run(id=example_id, status="done", spec_json="{}",
+                     created_at=now - timedelta(days=30),
+                     summary_json=_json.dumps({"id": example_id, "name": "ex"})))
+        for i, rid in enumerate(own_ids):
+            s.add(db.Run(id=rid, status="done", spec_json="{}",
+                         created_at=now - timedelta(minutes=i),
+                         summary_json=_json.dumps({"id": rid, "name": f"own {i}"})))
+        s.commit()
+    monkeypatch.setenv("SKEPTIC_EXAMPLE_RUN_IDS", example_id)
+
+    listed = {
+        r["id"]
+        for r in client.get(f"/api/runs?include={','.join(own_ids)}").json()["runs"]
+    }
+    assert example_id in listed
+    assert set(own_ids) <= listed
 
 
 def test_run_error_is_surfaced(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

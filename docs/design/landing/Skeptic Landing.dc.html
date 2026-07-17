@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/tokens/colors.css">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/tokens/typography.css">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/tokens/motion.css">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/tokens/base.css">
+<link rel="stylesheet" href="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/styles.css">
+<script src="_ds/skeptic-design-system-68b39367-e7d9-48d3-86ab-38b02403fd1d/_ds_bundle.js"></script>
+<style>
+body{margin:0;background:#08090a;font-family:var(--font-sans);color:var(--ink)}
+a{color:var(--ink-3);text-decoration:none}a:hover{color:var(--ink)}
+.dv-turn{padding:44px 48px 38px;border-bottom:1px solid var(--line-softer);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:12px;margin:0 0 6px}
+.dv-tid{font:600 10px var(--font-mono);padding:3px 8px;background:var(--ink);color:#08090a;border-radius:4px;text-decoration:none}
+.dv-tname{font:600 13.5px var(--font-sans);color:var(--ink)}
+.dv-sub{font:400 12.5px/1.6 var(--font-sans);color:var(--ink-3);margin:0 0 26px;max-width:900px}
+.dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:10px;scroll-margin-top:16px;max-width:100%}
+.dv-oid{font:600 10.5px var(--font-mono);padding:3px 8px;background:var(--raised-2);color:var(--ink-2);border-radius:5px;text-decoration:none;flex:none}
+.dv-olabel{display:flex;align-items:baseline;gap:9px;font:400 11.5px var(--font-sans);color:var(--ink-3)}
+.dv-card{background:var(--ground);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.dv-opt:target .dv-oid{background:var(--ac);color:var(--on-accent)}
+.dv-next{margin:28px 0 0;font:12px/1.6 var(--font-sans);color:var(--ink-4)}
+.dv-anno{border:1px dashed var(--line-hover);border-radius:10px;background:var(--panel-deep);padding:12px 16px;font-family:var(--font-mono);font-size:11px;line-height:1.8;color:var(--ink-3)}
+.dv-anno b{color:var(--ink-2);font-weight:500}
+.dv-anno .k{color:var(--ac);letter-spacing:.12em;font-size:10px;display:block;margin-bottom:2px}
+.dv-rowhd{width:100%;font:500 11px var(--font-mono);letter-spacing:.14em;color:var(--ink-4);margin:10px 0 -14px}
+.dv-card span[aria-label]{letter-spacing:0;text-indent:0;padding-top:1px}
+[data-theme]{color:var(--ink);--ac:rgb(var(--ac-rgb));--acd:rgb(var(--ac-rgb) / 0.12);--acb:rgb(var(--ac-rgb) / 0.5);--ac-faint:rgb(var(--ac-rgb) / 0.03);--warn:rgb(var(--warn-rgb));--trust:var(--ac);--trust-dim:var(--acd);--trust-border:var(--acb);--text-body:var(--ink-2);--text-muted:var(--ink-3);--text-faint:var(--ink-4);--surface-ground:var(--ground);--surface-card:var(--panel)}
+@keyframes sk-cursor{0%{transform:translate(30px,218px)}5%{transform:translate(95px,155px)}9%{transform:translate(155px,185px)}12%{transform:translate(142px,168px)}22%{transform:translate(142px,168px)}27%{transform:translate(215px,205px)}33%{transform:translate(335px,92px)}40%{transform:translate(420px,110px)}43%{transform:translate(412px,120px)}50%{transform:translate(412px,120px)}55%{transform:translate(485px,172px)}61%{transform:translate(565px,62px)}66%{transform:translate(658px,68px)}70%{transform:translate(649px,77px)}78%{transform:translate(649px,77px)}84%{transform:translate(705px,132px)}92%{transform:translate(765px,82px)}100%{transform:translate(742px,98px)}}
+@keyframes sk-sig1{0%,10%{opacity:0;transform:translateY(6px)}14%,36%{opacity:1;transform:none}40%,100%{opacity:0;transform:translateY(-4px)}}
+@keyframes sk-sig2{0%,40%{opacity:0;transform:translateY(6px)}44%,64%{opacity:1;transform:none}68%,100%{opacity:0;transform:translateY(-4px)}}
+@keyframes sk-sig3{0%,68%{opacity:0;transform:translateY(6px)}72%,92%{opacity:1;transform:none}96%,100%{opacity:0;transform:translateY(-4px)}}
+@keyframes sk-m1{0%,14%{opacity:0}17%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-m2{0%,42%{opacity:0}45%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l1{0%,6%{opacity:0}9%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l2{0%,13%{opacity:0}16%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l3{0%,24%{opacity:0}27%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l4{0%,42%{opacity:0}45%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l5{0%,70%{opacity:0}73%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l6{0%,84%{opacity:0}87%,94%{opacity:1}98%,100%{opacity:0}}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Assembled on your picks: <a class="dv-oid" href="#1a">1a</a> hero with scroll-morphing wordmark + <a class="dv-oid" href="#1e">1e</a> with the reframed refusal + the copilot teaser</span></div>
+<p class="dv-sub"><b style="color:var(--ink-2)">Scroll inside the frame</b> — the wordmark shrinks from the hero into the nav slot as you scroll down, and returns on the way up (scrub-linked, transform-only). Refusal is now about the strategy not trading enough in the chosen window, with two honest unlock actions. Below the verdict section: the copilot concept demo, looping.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a" data-screen-label="2a assembled page — hero, verdict, copilot" style="width:1440px">
+<div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Assembled page (scrollable frame) — hero → the verdict → where this goes</div>
+<div class="dv-card" style="width:1440px">
+<div data-sk-scroll data-theme="{{ themeAttr }}" style="height:820px;overflow-y:auto;overflow-x:hidden;background:var(--ground);position:relative">
+  <div data-sk-nav style="position:sticky;top:0;z-index:30;display:flex;justify-content:flex-end;align-items:center;gap:18px;height:64px;padding:0 44px;border-bottom:1px solid rgba(42,43,48,0)">
+    <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="ghost" hint-size="70px,36px">Sign in</x-import>
+    <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="secondary" hint-size="170px,36px">Get 5 free backtests</x-import>
+  </div>
+  <div style="position:sticky;top:10px;z-index:40;height:104px;margin-top:119px;display:flex;align-items:center;justify-content:center;pointer-events:none">
+    <div data-sk-logo style="will-change:transform;pointer-events:auto">
+      <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="460" hint-size="460px,100px"></x-import>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;height:533px;position:relative;padding-top:6px">
+    <h1 style="margin:18px 0 14px;font-family:var(--font-serif);font-size:44px;font-weight:500;line-height:1.12;letter-spacing:-.01em;text-align:center">Pitch me a trade. I'll play the skeptic.</h1>
+    <p style="margin:0;max-width:620px;text-align:center;font-size:15px;line-height:1.65;color:var(--ink-3)">Describe an options strategy in plain English. Skeptic interviews you and runs it on real intraday options data.</p>
+    <div style="width:690px;max-width:90%;margin-top:32px">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" value="{{ hero2Text }}" placeholder="{{ heroPlaceholder }}" busy="{{ submitted2 }}" on-change="{{ onHero2Change }}" on-submit="{{ onHero2Submit }}" hint-size="100%,64px"></x-import>
+    </div>
+    <div style="height:52px;display:flex;align-items:center">
+      <sc-if value="{{ submitted2 }}" hint-placeholder-val="{{ false }}">
+        <div class="animate-fade-rise" style="display:flex;align-items:center;gap:12px;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-3)">
+          <span style="border:1px dashed var(--line-hover);border-radius:999px;padding:4px 12px;color:var(--ink-4)">human check — Turnstile</span>
+          <span>queued honestly — 2 runs ahead of you</span>
+          <span style="color:var(--ink-5)">·</span>
+          <span style="color:var(--ink-4)">trial run: daily clock · ≤3-year window</span>
+          <button onClick="{{ resetSubmit2 }}" style="color:var(--ink-5);font-size:11px" title="reset the mock">× reset</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ notSubmitted2 }}" hint-placeholder-val="{{ true }}">
+        <div style="font-family:var(--font-mono);font-size:11.5px;color:var(--ink-4)">your first backtest is free — no account, no card</div>
+      </sc-if>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:820px">
+      <sc-for list="{{ hero2Presets }}" as="p" hint-placeholder-count="3">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.PresetChip" label="{{ p.label }}" structure="{{ p.structure }}" phrase="{{ p.phrase }}" on-click="{{ p.pick }}" hint-size="170px,58px"></x-import>
+      </sc-for>
+      <button style="border-radius:14px;border:1px dashed var(--line-hover);padding:10px 16px;text-align:left;color:var(--ink-3)" title="chart-teach mode">
+        <div style="font-size:14px;font-weight:500">or pin examples on a chart</div>
+        <div style="margin-top:2px;font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-4)">chart-teach →</div>
+      </button>
+    </div>
+    <div style="margin-top:30px;font-size:12.5px;color:var(--ink-4)">Research tool, not financial advice.</div>
+    <button onClick="{{ scrollToArgue }}" style-hover="color:var(--ink-2)" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink-4);padding:10px 0">HOW IT ARGUES ↓</button>
+  </div>
+
+  <div data-sk-s3 style="padding:84px 120px 64px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">HOW IT ARGUES</div>
+    <h2 style="margin:14px 0 0;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:760px">Three moves. No guesses.</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin-top:38px;align-items:start">
+      <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3)"><span>01 — YOU PITCH</span><span style="color:var(--ink-5)">english, or a chart</span></div>
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--line-soft)"><img src="assets/stills/chart-teach-v2.png" style="width:100%;display:block;filter:{{ stillFilter }}" alt="pin winning examples on the SPY chart"></div>
+        <div style="font-size:13.5px;line-height:1.6;color:var(--ink-2)">"You showed me winners — that's what eyes do. I'll test every look-alike since 1993, losers included."</div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3)"><span>02 — IT INTERVIEWS</span><span style="color:var(--ink-5)">ambiguity earns a question</span></div>
+        <div style="font-size:13.5px;line-height:1.6;color:var(--ink-2)">"Here's what I heard — every dial is adjustable."</div>
+        <sc-if value="{{ notQAnswered }}" hint-placeholder-val="{{ true }}">
+          <x-import component-from-global-scope="SkepticDesignSystem_68b393.QuestionCard" index="{{ 1 }}" total="{{ 1 }}" question="Two exits could apply at 21 days — take whichever hits first, or profit target only?" options="{{ qOptions }}" on-answer="{{ onQAnswer }}" hint-size="100%,200px"></x-import>
+        </sc-if>
+        <sc-if value="{{ qAnswered }}" hint-placeholder-val="{{ false }}">
+          <div class="animate-fade-rise" style="border-radius:14px;border:1px dashed var(--acb);background:var(--acd);padding:16px 20px;display:flex;flex-direction:column;gap:8px">
+            <div style="font-family:var(--font-mono);font-size:12.5px;color:var(--ac)">✓ spec compiled — 10 dials, every one adjustable</div>
+            <div style="font-family:var(--font-mono);font-size:11.5px;color:var(--ink-3)">window: last 1 year · 220 sessions · ~3s</div>
+            <button onClick="{{ resetQ }}" style="align-self:flex-start;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">↺ ask me again</button>
+          </div>
+        </sc-if>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px;display:flex;flex-direction:column;gap:13px">
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3)"><span>03 — IT ATTACKS ITSELF</span><span style="color:var(--ink-5)">then the verdict</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-family:var(--font-mono);font-size:13px">
+          <div style="display:flex;gap:10px;align-items:baseline;color:var(--ink-3)"><span style="width:16px">✓</span><span style="flex:1">Backtest</span><span style="font-size:10.5px;color:var(--ink-5)">real bid/ask, never mid</span></div>
+          <div style="display:flex;gap:10px;align-items:baseline;color:var(--ink-3)"><span style="width:16px">✓</span><span style="flex:1">Test on data it never saw</span><span style="font-size:10.5px;color:var(--ink-5)">last 30% kept hidden</span></div>
+          <div style="display:flex;gap:10px;align-items:baseline;color:var(--ink-3)"><span style="width:16px">✓</span><span style="flex:1">Test each time period</span><span style="font-size:10.5px;color:var(--ink-5)">rolling ~2-month windows</span></div>
+          <div style="display:flex;gap:10px;align-items:baseline;color:var(--ink-3)"><span style="width:16px">✓</span><span style="flex:1">Reshuffle the trades 1,000×</span><span style="font-size:10.5px;color:var(--ink-5)">how much was luck?</span></div>
+          <div style="display:flex;gap:10px;align-items:baseline;color:var(--ink-3)"><span style="width:16px">✓</span><span style="flex:1">Nudge the settings</span><span style="font-size:10.5px;color:var(--ink-5)">does it survive small changes?</span></div>
+          <div style="display:flex;gap:10px;align-items:baseline;color:var(--ink)"><span style="width:16px">▶</span><span style="flex:1">The honest verdict</span><span style="font-size:10.5px;color:var(--ink-4)">grounded in the numbers above</span></div>
+        </div>
+        <div style="margin-top:2px;height:6px;border-radius:3px;background:var(--line-softer);overflow:hidden"><div style="height:100%;width:83%;border-radius:3px;background:var(--ac)"></div></div>
+        <div style="font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">live numbers stream while it runs — never a loading bar</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:88px 120px 64px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">MOST BACKTESTERS TELL YOU WHAT YOU WANT TO HEAR</div>
+    <h2 style="margin:14px 0 12px;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:760px">Refusal is a feature.</h2>
+    <p style="margin:0;max-width:730px;font-size:15px;line-height:1.65;color:var(--ink-2)">Nine fills in a year isn't evidence — it's anecdotes. Skeptic ships the numbers, withholds the blessing, and shows exactly what unlocks a verdict.</p>
+    <div style="display:grid;grid-template-columns:58fr 42fr;gap:26px;margin-top:44px;align-items:start">
+      <div>
+        <div style="border-radius:16px;padding:28px;border:1px dashed var(--acb);background:linear-gradient(180deg,var(--acd),var(--ac-faint))">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <span style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">VERDICT — THE HONEST READ</span>
+            <span style="font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--ac)">VERDICT WITHHELD</span>
+          </div>
+          <div style="font-family:var(--font-serif);font-size:32px;font-weight:500;line-height:1.25;max-width:640px">Nine trades isn't evidence. This strategy barely fired in the window you picked.</div>
+          <p style="margin:16px 0 0;max-width:640px;font-size:15.5px;line-height:1.65;color:var(--ink-2)">The spec is valid. The engine ran it. But the entry fired 9 times in a 1-year window — below the 15-trade bar. Numbers shown, blessing withheld.</p>
+          <div style="margin-top:18px;border-radius:10px;border:1px dashed var(--acb);padding:12px 14px">
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ac);margin-bottom:10px">TWO HONEST WAYS TO A VERDICT</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="trustpill" hint-size="250px,30px">re-run on last 3 years · 711 sessions · ~11s</x-import>
+              <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="trustpill" hint-size="270px,30px">re-run on all available · 3,480 sessions · ~55s</x-import>
+              <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="pill" hint-size="260px,30px">edit the spec — make the entry fire more often</x-import>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">
+          <span>QQQ 0DTE fade · 9 trades in the last-1-year window · ran Jul 12 '26</span>
+          <a href="#2a" style="color:var(--ink-3)">read the full run →</a>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3);margin-bottom:2px">THE RANGE — RECENT VERDICTS</div>
+        <sc-for list="{{ rangeRows }}" as="r" hint-placeholder-count="3">
+          <div style-hover="background:var(--raised);border-color:var(--line-hover)" style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px 18px 12px;transition:background .18s ease,border-color .18s ease">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+              <span style="font-family:var(--font-mono);font-size:12px;color:var(--ink-2)">{{ r.name }}</span>
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:{{ r.metaColor }}">{{ r.meta }}</span>
+            </div>
+            <x-import component-from-global-scope="SkepticDesignSystem_68b393.TrustBand" variant="card" band="{{ r.band }}" marker="{{ r.marker }}" withheld="{{ r.withheld }}" hint-size="100%,14px"></x-import>
+            <div style="font-family:var(--font-serif);font-style:italic;font-size:15px;line-height:1.45;color:var(--ink-2)">{{ r.quote }}</div>
+          </div>
+        </sc-for>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--ink-4);margin-top:4px">refused, damned, or blessed — whatever the evidence supports.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:84px 120px 64px;border-top:1px solid var(--line-softer)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">RECEIPTS</span>
+      <span style="font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">every fallback disclosed · gaps stay gaps, never interpolated</span>
+    </div>
+    <h2 style="margin:14px 0 0;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:760px">The data earns the verdicts.</h2>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:38px">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="3,480" label="SESSIONS ON TAP" hint="the window picker's 'all available' — ~55s runtime" hint-size="100%,86px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="0DTE" label="MINUTE-LEVEL FILLS" hint="intraday chains down to same-day expiry" hint-size="100%,86px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="bid/ask" label="NEVER MID" hint="slip 0.85/0.9 · $0.65/ct — measured, not assumed" hint-size="100%,86px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="2009" label="CHAINS SINCE" hint="pulled from the coverage endpoint at build — hand-verified" hint-size="100%,86px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="379" label="DAYS COLLECTING" hint="live counter from the data lake" hint-align="right" hint-size="100%,86px"></x-import>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.CoverageChip" label="SPY chains" fill="{{ 0.92 }}" range="Jan '20 → now" hint-size="180px,26px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.CoverageChip" label="QQQ/IWM chains" fill="{{ 0.06 }}" range="Jul '26 → now" hint-size="200px,26px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.CoverageChip" label="minute bars" fill="{{ 0.36 }}" range="Feb '24 → now" hint-size="190px,26px"></x-import>
+      <span style="font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">nightly lake · through Jul 15, 19:10 · asymmetric on purpose →</span>
+    </div>
+  </div>
+
+  <div style="padding:88px 120px 70px;border-top:1px solid var(--line-softer)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">WHERE THIS GOES — COMING SOON</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:11px;color:var(--ink-3)"><span class="animate-pin-pulse" style="width:6px;height:6px;border-radius:50%;background:var(--ac);display:inline-block"></span>autonomous session — replayed</span>
+    </div>
+    <h2 style="margin:14px 0 12px;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:760px">Coming next: it takes the trade itself.</h2>
+    <p style="margin:0 0 36px;max-width:730px;font-size:15px;line-height:1.65;color:var(--ink-2)">Enters, manages, exits — and narrates every call as it makes it. Still refuses what the evidence can't support.</p>
+    <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel-chart);overflow:hidden;display:grid;grid-template-columns:1fr 330px">
+      <div style="position:relative">
+        <div style="display:flex;justify-content:space-between;padding:12px 18px 0;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;color:var(--ink-4)">
+          <span>SPY · 5m · demo feed</span><span>fills from the stored run</span>
+        </div>
+        <svg viewBox="0 0 845 300" preserveAspectRatio="none" style="width:100%;height:300px;display:block">
+          <line x1="0" y1="75" x2="845" y2="75" stroke="var(--grid)" stroke-width="1"></line>
+          <line x1="0" y1="150" x2="845" y2="150" stroke="var(--grid)" stroke-width="1"></line>
+          <line x1="0" y1="225" x2="845" y2="225" stroke="var(--grid)" stroke-width="1"></line>
+          {{ candleEls }}
+          <circle cx="142.5" cy="172" r="4.5" fill="var(--ac)" style="animation:sk-m1 14s infinite"></circle>
+          <circle cx="142.5" cy="172" r="9" fill="none" stroke="var(--acb)" stroke-width="1.2" style="animation:sk-m1 14s infinite"></circle>
+          <circle cx="412.5" cy="126" r="4.5" fill="var(--ac)" style="animation:sk-m2 14s infinite"></circle>
+          <circle cx="412.5" cy="126" r="9" fill="none" stroke="var(--acb)" stroke-width="1.2" style="animation:sk-m2 14s infinite"></circle>
+        </svg>
+        <div style="position:absolute;left:0;top:0;animation:sk-cursor 14s ease-in-out infinite">
+          <svg width="15" height="15" viewBox="0 0 15 15" style="display:block"><path d="M2 1.5 L12.5 7.5 L7.5 8.5 L5.5 13.5 Z" fill="var(--ac)"></path></svg>
+          <span style="margin-left:12px;border-radius:999px;background:var(--ac);color:var(--on-accent);padding:2px 9px;font-family:var(--font-mono);font-size:10px">copilot</span>
+        </div>
+        <div style="position:absolute;left:92px;top:192px;border-radius:999px;background:var(--ink);color:var(--ground);padding:2px 9px;font-family:var(--font-mono);font-size:10px;animation:sk-m1 14s infinite">SOLD 1× 512P @ 2.31</div>
+        <div style="position:absolute;left:360px;top:144px;border-radius:999px;background:var(--ink);color:var(--ground);padding:2px 9px;font-family:var(--font-mono);font-size:10px;animation:sk-m2 14s infinite">BOUGHT BACK @ 1.12</div>
+        <div style="position:absolute;left:56px;top:62px;width:225px;border:1px solid var(--line-hover);border-radius:9px;background:var(--raised);box-shadow:var(--shadow-pop);padding:9px 13px;animation:sk-sig1 14s infinite">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ac);margin-bottom:3px">ENTER — SELL THE 30Δ PUT</div>
+          <div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">Premium is rich. Case built, order placed — on its own.</div>
+          <div style="margin-top:4px;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-4)">credit $2.31 · Mar 4</div>
+        </div>
+        <div style="position:absolute;left:262px;top:16px;width:225px;border:1px solid var(--line-hover);border-radius:9px;background:var(--raised);box-shadow:var(--shadow-pop);padding:9px 13px;animation:sk-sig2 14s infinite">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ac);margin-bottom:3px">CLOSE — TARGET HIT</div>
+          <div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">50% profit. Bought back; the edge is spent.</div>
+          <div style="margin-top:4px;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-4)"><span style="color:var(--pl-pos)">+$115</span> · held 14d</div>
+        </div>
+        <div style="position:absolute;left:475px;top:128px;width:225px;border:1px solid var(--line-hover);border-radius:9px;background:var(--raised);box-shadow:var(--shadow-pop);padding:9px 13px;animation:sk-sig3 14s infinite">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--warn)">STAND ASIDE</div>
+          <div style="margin-top:3px;font-size:12.5px;line-height:1.5;color:var(--ink-2)">Spread is 31% of mid — a fill here would be fantasy.</div>
+          <div style="margin-top:4px;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-4)">skipped · Apr 8</div>
+        </div>
+      </div>
+      <div style="border-left:1px solid var(--line-softer);background:var(--panel-deep);padding:14px 18px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;color:var(--ink-4);margin-bottom:2px"><span class="animate-pin-pulse" style="width:5px;height:5px;border-radius:50%;background:var(--ac);display:inline-block"></span>REASONING — LIVE</div>
+        <div style="font-family:var(--font-mono);font-size:11.5px;line-height:1.55;color:var(--ink-3);animation:sk-l1 14s infinite">Mar 4 · scanning the tape — hunting rich premium at 30Δ</div>
+        <div style="font-family:var(--font-mono);font-size:11.5px;line-height:1.55;color:var(--ink);animation:sk-l2 14s infinite">Mar 4 · SOLD 1× SPY 512P @ 2.31 (bid 2.29 / ask 2.35)</div>
+        <div style="font-family:var(--font-mono);font-size:11.5px;line-height:1.55;color:var(--ink-3);animation:sk-l3 14s infinite">why · target 50% · time exit 21 DTE · theta does the work</div>
+        <div style="font-family:var(--font-mono);font-size:11.5px;line-height:1.55;color:var(--ink);animation:sk-l4 14s infinite">Mar 18 · BOUGHT BACK @ 1.12 — target hit · <span style="color:var(--pl-pos)">+$115</span> · held 14d</div>
+        <div style="font-family:var(--font-mono);font-size:11.5px;line-height:1.55;color:var(--warn);animation:sk-l5 14s infinite">Apr 8 · next entry looks juicy — but the spread is 31% of mid. standing aside.</div>
+        <div style="font-family:var(--font-mono);font-size:11.5px;line-height:1.55;color:var(--ink-2);animation:sk-l6 14s infinite">edge spent. every call logged + replayable — no human touched this trade.</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">
+      <span>it entered, managed, and exited on its own — reasoning logged, replayable</span>
+      <span>no dates, no waitlist theater</span>
+    </div>
+  </div>
+
+  <div style="padding:84px 120px 84px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">PRICING</div>
+    <h2 style="margin:14px 0 0;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:760px">That's the whole price list.</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden;margin-top:38px;max-width:1000px">
+      <div style="padding:26px 28px">
+        <div style="font-family:var(--font-mono);font-size:30px;font-weight:600">1</div>
+        <div style="margin-top:6px;font-size:14.5px;color:var(--ink-2)">free backtest, right now</div>
+        <div style="margin-top:10px;font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--ink-4)">no account, no card</div>
+      </div>
+      <div style="padding:26px 28px;border-left:1px solid var(--line-softer)">
+        <div style="font-family:var(--font-mono);font-size:30px;font-weight:600">5</div>
+        <div style="margin-top:6px;font-size:14.5px;color:var(--ink-2)">free with an account</div>
+        <div style="margin-top:10px;font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--ink-4)">yes account, still no card</div>
+      </div>
+      <div style="padding:26px 28px;border-left:1px solid var(--line-softer)">
+        <div style="font-family:var(--font-mono);font-size:30px;font-weight:600">$10 → 50</div>
+        <div style="margin-top:6px;font-size:14.5px;color:var(--ink-2)">one-time, fifty more</div>
+        <div style="margin-top:10px;font-family:var(--font-mono);font-size:11.5px;line-height:1.6;color:var(--ink-4)">no subscription, no tiers</div>
+      </div>
+    </div>
+    <div style="margin-top:18px;max-width:1000px;display:flex;flex-direction:column;gap:5px">
+      <div style="font-family:var(--font-mono);font-size:12px;color:var(--ink-2)">"Not enough evidence" refunds the credit — you only spend on a graded verdict.</div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">same if a run fails on our end — the credit comes back on its own</div>
+    </div>
+    <div style="margin-top:28px;display:flex;align-items:center;gap:12px">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="primary" on-click="{{ scrollToTop }}" dc-props="{{ ctaPrimaryProps }}" hint-size="200px,42px">Run your free backtest</x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="secondary" dc-props="{{ ctaSecondaryProps }}" hint-size="170px,42px">Create an account</x-import>
+    </div>
+  </div>
+
+  <div style="border-top:1px solid var(--line);background:var(--navbg);padding:40px 120px 30px">
+    <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:48px">
+      <div>
+        <sc-if value="{{ themeIsDark }}" hint-placeholder-val="{{ true }}"><img src="assets/brand/wordmark-white-u1.svg" alt="SK=PT/C" style="height:13px;display:block"></sc-if>
+        <sc-if value="{{ themeIsLight }}" hint-placeholder-val="{{ false }}"><img src="assets/brand/wordmark-black-u1.svg" alt="SK=PT/C" style="height:13px;display:block"></sc-if>
+        <p style="margin:14px 0 0;max-width:280px;font-size:13px;line-height:1.6;color:var(--ink-3)">The backtester that argues with you. Pitch a trade; get the honest read — refusals included.</p>
+        <div style="margin-top:14px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">day 379 of collection →</div>
+      </div>
+      <div>
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-4);margin-bottom:12px">PRODUCT</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:13px">
+          <a href="#2a">How it argues</a>
+          <a href="#2a">The verdict block</a>
+          <a href="#2a">Data coverage</a>
+          <a href="#2a">Pricing</a>
+        </div>
+      </div>
+      <div>
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-4);margin-bottom:12px">LEGAL</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:13px">
+          <a href="#2a">Terms of Service</a>
+          <a href="#2a">Privacy policy</a>
+          <a href="#2a">Refund policy</a>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:26px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--ink-4)">© 2026 Skeptic · skeptic.fyi</span>
+      <div style="display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:11px;background:var(--panel)">
+        <sc-for list="{{ themeModes }}" as="m" hint-placeholder-count="3">
+          <button onClick="{{ m.pick }}" style="padding:6px 14px;border-radius:8px;font-size:12.5px;font-weight:500;background:{{ m.bg }};color:{{ m.color }}">{{ m.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:1440px">
+  <span class="k">SPEC — SCROLL-MORPHING WORDMARK</span>
+  · hero wordmark (460px) is position:sticky; on scroll it translates + scales into the nav slot, top-left (transform-only, scrub-linked to scrollTop 0→260px, smoothstep easing — reverses on scroll-up automatically) · lands at ~92px wide next to an otherwise empty nav-left · <b>flag if you meant literally top-RIGHT</b> — it would collide with Sign in / Get 5 free, so those would move left<br>
+  <span class="k" style="margin-top:6px">SPEC — REFRAMED REFUSAL</span>
+  · refusal cause is now the spec, not our data: entry fired 9× in the chosen 1-year window · unlock actions use the real window-picker numbers (711 sessions ~11s · 3,480 sessions ~55s, REC 2 @ 0:20) · component note for engineering: VerdictBlock needs a <b>refusalActions</b> slot (pills row) replacing the "track progress in Data →" link<br>
+  <span class="k" style="margin-top:6px">SPEC — COPILOT DEMO</span>
+  · 14s autonomous loop: it sells the put, buys it back at target, then <b>refuses</b> a fantasy fill — dots + flags mark its fills, the rail narrates every call as it happens · all prices/dates from the stored run's trade log, nothing invented · closing beat = the refusal: the copilot that stands aside is the brand · reduced-motion: static frame, all lines visible · 1m candles use P/L green/red — allowed: market data, never the verdict<br>
+  <span class="k" style="margin-top:6px">SPEC — SECTIONS 2 / 4 / 6 + FOOTER</span>
+  · S2 "how it argues": chart-teach still → <b>CLIP B, REC 2 (4:43 PM) 0:04–0:08</b>, 4s loop, pinning + "That's the idea →" · question card is live (answer it) — real question from the app · gauntlet stage names verbatim from REC 1 @ 0:27<br>
+  · S4 receipts: values render from the coverage endpoint at build · "2009 chains" is from the brief — <b>hand-verify before launch</b> · coverage chips mirror the app home, asymmetric on purpose<br>
+  · S6 pricing: one panel, three numbers, PRD-E honesty lines verbatim · primary CTA scrolls back to the live composer · footer = slim brand/product/legal + © row (<b>disclaimer dropped per owner Jul 16</b> — PRD H calls it a launch blocker on landing; logged as an open decision for legal pages)
+</div>
+</sc-if>
+</div>
+
+<div class="dv-opt" id="2am" data-screen-label="2a hero — mobile" style="width:390px">
+<div class="dv-olabel"><a class="dv-oid" href="#2am">2am</a>Hero mobile — bigger mark, new subhead (same shrink-to-nav on scroll)</div>
+<div class="dv-card" style="width:390px">
+  <div style="min-height:700px;display:flex;flex-direction:column;background:var(--ground);padding:0 0 22px">
+    <div style="display:flex;align-items:center;justify-content:flex-end;padding:16px 18px">
+      <span style="font-size:13px;font-weight:600;color:var(--ink-2);padding:10px 4px">Sign in</span>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:14px 18px 0">
+      <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="300" hint-size="300px,65px"></x-import>
+      <h1 style="margin:26px 0 10px;font-family:var(--font-serif);font-size:30px;font-weight:500;line-height:1.15;letter-spacing:-.01em;text-align:center">Pitch me a trade. I'll play the skeptic.</h1>
+      <p style="margin:0 0 24px;text-align:center;font-size:13.5px;line-height:1.6;color:var(--ink-3)">Describe an options strategy in plain English. Skeptic interviews you and runs it on real intraday options data.</p>
+      <div style="width:100%">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…" show-mic="{{ true }}" hint-size="100%,84px"></x-import>
+      </div>
+      <div style="margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">first one's free — no account, no card</div>
+      <div style="display:flex;flex-direction:column;gap:8px;width:100%;margin-top:22px">
+        <button style="border-radius:14px;border:1px solid var(--line-soft);background:var(--panel);padding:12px 16px;text-align:left;min-height:44px">
+          <div style="font-size:14px;font-weight:500;color:var(--ink-2)">Weekly income put</div>
+          <div style="margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">short put</div>
+        </button>
+        <button style="border-radius:14px;border:1px solid var(--line-soft);background:var(--panel);padding:12px 16px;text-align:left;min-height:44px">
+          <div style="font-size:14px;font-weight:500;color:var(--ink-2)">Calm-market condor</div>
+          <div style="margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">iron condor</div>
+        </button>
+      </div>
+      <div style="margin-top:24px;text-align:center;font-size:11.5px;line-height:1.6;color:var(--ink-4)">Research tool, not financial advice.</div>
+    </div>
+    <div style="text-align:center;margin-top:24px;font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;color:var(--ink-5)">HOW IT ARGUES ↓</div>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="2b" data-screen-label="2b full page — mobile" style="width:390px">
+<div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Full page, mobile — scroll inside</div>
+<div class="dv-card" style="width:390px">
+<div data-sk-scroll data-theme="{{ themeAttr }}" style="height:812px;overflow-y:auto;overflow-x:hidden;background:var(--ground)">
+  <div style="position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 18px;background:var(--ground);border-bottom:1px solid var(--line-softer)">
+    <sc-if value="{{ themeIsDark }}" hint-placeholder-val="{{ true }}"><img src="assets/brand/s-mark-white-u1.svg" alt="Skeptic" style="height:22px;display:block"></sc-if>
+    <sc-if value="{{ themeIsLight }}" hint-placeholder-val="{{ false }}"><img src="assets/brand/s-mark-black-u1.svg" alt="Skeptic" style="height:22px;display:block"></sc-if>
+    <span style="font-size:13px;font-weight:600;color:var(--ink-2);padding:10px 4px">Sign in</span>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;position:relative;height:700px;justify-content:center;padding:0 18px 44px">
+    <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="280" hint-size="280px,61px"></x-import>
+    <h1 style="margin:22px 0 10px;font-family:var(--font-serif);font-size:29px;font-weight:500;line-height:1.16;letter-spacing:-.01em;text-align:center">Pitch me a trade. I'll play the skeptic.</h1>
+    <p style="margin:0 0 22px;text-align:center;font-size:13.5px;line-height:1.6;color:var(--ink-3)">Describe an options strategy in plain English. Skeptic interviews you and runs it on real intraday options data.</p>
+    <div style="width:100%">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…" show-mic="{{ true }}" hint-size="100%,84px"></x-import>
+    </div>
+    <div style="margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">first one's free — no account, no card</div>
+    <div style="display:flex;gap:8px;width:100%;margin-top:20px">
+      <button style="flex:1;border-radius:14px;border:1px solid var(--line-soft);background:var(--panel);padding:11px 14px;text-align:left;min-height:44px">
+        <div style="font-size:13.5px;font-weight:500;color:var(--ink-2)">Weekly income put</div>
+        <div style="margin-top:2px;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-4)">short put</div>
+      </button>
+      <button style="flex:1;border-radius:14px;border:1px dashed var(--line-hover);background:transparent;padding:11px 14px;text-align:left;min-height:44px">
+        <div style="font-size:13.5px;font-weight:500;color:var(--ink-3)">or pin it on a chart</div>
+        <div style="margin-top:2px;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-4)">chart-teach →</div>
+      </button>
+    </div>
+    <div style="margin-top:22px;font-size:11.5px;color:var(--ink-4)">Research tool, not financial advice.</div>
+    <button onClick="{{ scrollToArgue }}" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;color:var(--ink-4);padding:10px 0">HOW IT ARGUES ↓</button>
+  </div>
+
+  <div data-sk-s3 style="padding:52px 18px 44px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">HOW IT ARGUES</div>
+    <h2 style="margin:12px 0 22px;font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.2">Three moves. No guesses.</h2>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-3)">01 — YOU PITCH</div>
+        <div style="border-radius:8px;overflow:hidden;border:1px solid var(--line-soft)"><img src="assets/stills/chart-teach-v2.png" style="width:100%;display:block;filter:{{ stillFilter }}" alt="pin examples on the chart"></div>
+        <div style="font-size:13px;line-height:1.55;color:var(--ink-2)">"You showed me winners — that's what eyes do. I'll test every look-alike since 1993, losers included."</div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-3)">02 — IT INTERVIEWS</div>
+        <div style="font-size:13px;line-height:1.55;color:var(--ink-2)">"Here's what I heard — every dial is adjustable."</div>
+        <div style="border-radius:14px;border:1px solid var(--acb);background:var(--acd);padding:14px 16px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;color:var(--ac);margin-bottom:4px">QUESTION 1 OF 1 — I DON'T GUESS</div>
+          <div style="font-size:14.5px;font-weight:600;line-height:1.4">Two exits could apply at 21 days — take whichever hits first, or profit target only?</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+            <span style="border-radius:999px;border:1px solid var(--acb);padding:7px 13px;font-size:12.5px;color:var(--ac)">whichever hits first</span>
+            <span style="border-radius:999px;border:1px solid var(--acb);padding:7px 13px;font-size:12.5px;color:var(--ac)">profit target only</span>
+          </div>
+        </div>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-3)">03 — IT ATTACKS ITSELF</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-family:var(--font-mono);font-size:12px">
+          <div style="display:flex;gap:9px;color:var(--ink-3)"><span style="width:14px">✓</span><span>Backtest — real bid/ask, never mid</span></div>
+          <div style="display:flex;gap:9px;color:var(--ink-3)"><span style="width:14px">✓</span><span>Test on data it never saw</span></div>
+          <div style="display:flex;gap:9px;color:var(--ink-3)"><span style="width:14px">✓</span><span>Test each time period</span></div>
+          <div style="display:flex;gap:9px;color:var(--ink-3)"><span style="width:14px">✓</span><span>Reshuffle the trades 1,000×</span></div>
+          <div style="display:flex;gap:9px;color:var(--ink-3)"><span style="width:14px">✓</span><span>Nudge the settings ±20%</span></div>
+          <div style="display:flex;gap:9px;color:var(--ink)"><span style="width:14px">▶</span><span>The honest verdict</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:52px 18px 44px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">MOST BACKTESTERS TELL YOU WHAT YOU WANT TO HEAR</div>
+    <h2 style="margin:12px 0 10px;font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.2">Refusal is a feature.</h2>
+    <p style="margin:0 0 22px;font-size:13.5px;line-height:1.6;color:var(--ink-2)">Nine fills in a year isn't evidence — it's anecdotes. Numbers shown, blessing withheld.</p>
+    <div style="border-radius:16px;padding:20px;border:1px dashed var(--acb);background:linear-gradient(180deg,var(--acd),var(--ac-faint))">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ac)"><span>VERDICT — THE HONEST READ</span><span>WITHHELD</span></div>
+      <div style="font-family:var(--font-serif);font-size:21px;font-weight:500;line-height:1.3">Nine trades isn't evidence. This strategy barely fired in the window you picked.</div>
+      <div style="margin-top:14px;border-radius:10px;border:1px dashed var(--acb);padding:10px 12px">
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;color:var(--ac);margin-bottom:8px">TWO HONEST WAYS TO A VERDICT</div>
+        <div style="display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:11.5px;color:var(--ac)">
+          <span style="border:1px solid var(--acb);border-radius:999px;padding:7px 12px">re-run on last 3 years · 711 sessions · ~11s</span>
+          <span style="border:1px solid var(--acb);border-radius:999px;padding:7px 12px">edit the spec — make the entry fire more often</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+      <sc-for list="{{ rangeRows }}" as="r" hint-placeholder-count="3">
+        <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:12px 14px 10px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+            <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--ink-2)">{{ r.name }}</span>
+            <span style="font-family:var(--font-mono);font-size:10px;color:{{ r.metaColor }}">{{ r.meta }}</span>
+          </div>
+          <x-import component-from-global-scope="SkepticDesignSystem_68b393.TrustBand" variant="card" band="{{ r.band }}" marker="{{ r.marker }}" withheld="{{ r.withheld }}" hint-size="100%,14px"></x-import>
+          <div style="font-family:var(--font-serif);font-style:italic;font-size:14px;line-height:1.45;color:var(--ink-2)">{{ r.quote }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="padding:52px 18px 44px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">RECEIPTS</div>
+    <h2 style="margin:12px 0 22px;font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.2">The data earns the verdicts.</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="3,480" label="SESSIONS ON TAP" hint-size="100%,80px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="0DTE" label="MINUTE-LEVEL FILLS" hint-size="100%,80px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="bid/ask" label="NEVER MID" hint-size="100%,80px"></x-import>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.MetricTile" value="2009" label="CHAINS SINCE" hint-size="100%,80px"></x-import>
+    </div>
+    <div style="margin-top:14px;font-family:var(--font-mono);font-size:10.5px;line-height:1.7;color:var(--ink-4)">day 379 of collection · nightly lake · every fallback disclosed · gaps stay gaps, never interpolated</div>
+  </div>
+
+  <div style="padding:52px 18px 44px;border-top:1px solid var(--line-softer)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">COMING NEXT</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:10px;color:var(--ink-3)"><span class="animate-pin-pulse" style="width:5px;height:5px;border-radius:50%;background:var(--ac);display:inline-block"></span>autonomous session</span>
+    </div>
+    <h2 style="margin:12px 0 10px;font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.2">It takes the trade itself.</h2>
+    <p style="margin:0 0 20px;font-size:13.5px;line-height:1.6;color:var(--ink-2)">Enters, manages, exits — and narrates every call. Still refuses what the evidence can't support.</p>
+    <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel-chart);overflow:hidden">
+      <div style="display:flex;justify-content:space-between;padding:10px 14px 0;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-4)">
+        <span>SPY · 5m · demo feed</span><span>fills from the stored run</span>
+      </div>
+      <svg viewBox="0 0 845 300" style="width:100%;height:auto;display:block">
+        {{ candleEls }}
+        <circle cx="142.5" cy="172" r="5" fill="var(--ac)" style="animation:sk-m1 14s infinite"></circle>
+        <circle cx="412.5" cy="126" r="5" fill="var(--ac)" style="animation:sk-m2 14s infinite"></circle>
+      </svg>
+      <div style="border-top:1px solid var(--line-softer);background:var(--panel-deep);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.12em;color:var(--ink-4)"><span class="animate-pin-pulse" style="width:4px;height:4px;border-radius:50%;background:var(--ac);display:inline-block"></span>REASONING — LIVE</div>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--ink-3);animation:sk-l1 14s infinite">Mar 4 · scanning the tape — hunting rich premium at 30Δ</div>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--ink);animation:sk-l2 14s infinite">Mar 4 · SOLD 1× SPY 512P @ 2.31 (bid 2.29 / ask 2.35)</div>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--ink-3);animation:sk-l3 14s infinite">why · target 50% · time exit 21 DTE · theta does the work</div>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--ink);animation:sk-l4 14s infinite">Mar 18 · BOUGHT BACK @ 1.12 — target hit · <span style="color:var(--pl-pos)">+$115</span> · held 14d</div>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--warn);animation:sk-l5 14s infinite">Apr 8 · entry looks juicy — spread is 31% of mid. standing aside.</div>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.55;color:var(--ink-2);animation:sk-l6 14s infinite">every call logged + replayable — no human touched this trade.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:52px 18px 56px;border-top:1px solid var(--line-softer)">
+    <div style="font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">PRICING</div>
+    <h2 style="margin:12px 0 20px;font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.2">That's the whole price list.</h2>
+    <div style="border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden">
+      <div style="padding:18px 20px;display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:var(--font-mono);font-size:24px;font-weight:600;width:86px">1</span>
+        <span style="font-size:13.5px;color:var(--ink-2)">free backtest — no account, no card</span>
+      </div>
+      <div style="padding:18px 20px;border-top:1px solid var(--line-softer);display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:var(--font-mono);font-size:24px;font-weight:600;width:86px">5</span>
+        <span style="font-size:13.5px;color:var(--ink-2)">free with an account — your first run comes with you</span>
+      </div>
+      <div style="padding:18px 20px;border-top:1px solid var(--line-softer);display:flex;align-items:baseline;gap:14px">
+        <span style="font-family:var(--font-mono);font-size:24px;font-weight:600;width:86px">$10 → 50</span>
+        <span style="font-size:13.5px;color:var(--ink-2)">one-time — no subscription, no tiers</span>
+      </div>
+    </div>
+    <div style="margin-top:14px;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--ink-4)">"not enough evidence" refunds the credit — you only spend on a graded verdict · our-fault failures refund too</div>
+    <button onClick="{{ scrollToTop }}" style="margin-top:20px;width:100%;min-height:46px;border-radius:10px;background:var(--ac);color:var(--on-accent);font-size:13.5px;font-weight:600">Run your free backtest</button>
+  </div>
+
+  <div style="border-top:1px solid var(--line);background:var(--navbg);padding:32px 18px 26px">
+    <sc-if value="{{ themeIsDark }}" hint-placeholder-val="{{ true }}"><img src="assets/brand/wordmark-white-u1.svg" alt="SK=PT/C" style="height:12px;display:block"></sc-if>
+    <sc-if value="{{ themeIsLight }}" hint-placeholder-val="{{ false }}"><img src="assets/brand/wordmark-black-u1.svg" alt="SK=PT/C" style="height:12px;display:block"></sc-if>
+    <p style="margin:12px 0 0;font-size:12.5px;line-height:1.6;color:var(--ink-3)">The backtester that argues with you.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:16px;font-size:12.5px">
+      <a href="#2b">How it argues</a><a href="#2b">Pricing</a><a href="#2b">Terms</a><a href="#2b">Privacy</a><a href="#2b">Refunds</a>
+    </div>
+    <div style="margin-top:16px;display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:11px;background:var(--panel)">
+      <sc-for list="{{ themeModes }}" as="m" hint-placeholder-count="3">
+        <button onClick="{{ m.pick }}" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:500;background:{{ m.bg }};color:{{ m.color }}">{{ m.label }}</button>
+      </sc-for>
+    </div>
+    <div style="margin-top:14px;font-family:var(--font-mono);font-size:10px;color:var(--ink-4)">© 2026 Skeptic · every number computed, none decorative</div>
+  </div>
+</div>
+</div>
+</div>
+
+</div>
+<p class="dv-next">Try next: "swap the 2009 tile for a coverage-endpoint value" · "make the pricing CTA sticky on mobile" · "tune any section's copy — the deck lives in docs/design/landing/"</p>
+</section>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Hero + Section 3 (verdict showcase) — the two carriers</span></div>
+<p class="dv-sub">Three hero treatments, two showcase treatments, mobile for the leads. Every string on these frames is draft copy-deck material; dashed mono cards under each option carry specs + asset requests. All numbers trace to the recordings or DS fixtures — fixtures are tagged. Recordings were captured in light theme (market hours); these frames are the landing's dark theme, so clip treatment is an open question (see notes).</p>
+
+<div class="dv-opts">
+
+<div class="dv-opt" id="1n" style="width:430px">
+<div class="dv-olabel"><a class="dv-oid" href="#1n">1n</a>Design notes — read first</div>
+<div class="dv-card" style="width:430px;background:var(--panel);padding:18px 20px">
+  <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ac);margin-bottom:10px">DESIGN NOTES — TURN 1</div>
+  <div style="font-size:12.5px;line-height:1.7;color:var(--ink-2);display:flex;flex-direction:column;gap:10px">
+    <div><b style="font-weight:600;color:var(--ink)">Grounding.</b> Parsed all three recordings frame-by-frame. Real numbers now in hand: window picker "last 1 year · 220 sessions · ~3s" → "all available · 3,480 sessions · ~55s"; gauntlet stages verbatim (last 30% hidden, rolling ~2-month windows, 1,000 reshuffles, ±20% nudges); fills "bid/ask + slip 0.85/0.9 · $0.65/ct"; two real verdicts, both damning.</div>
+    <div><b style="font-weight:600;color:var(--ink)">Assumptions.</b> Landing is dark-only (no market-hours swap). Hero composer is framed as the real surface — I designed its empty / typing / submitted-anon states, not a mock parse. Sign-in affordance = ghost "Sign in" + secondary "Get 5 free backtests," top right.</div>
+    <div><b style="font-weight:600;color:var(--ink)">Open questions.</b> ① Clips are light-theme captures — re-record in dark (Settings → theme) or keep paper-on-ink contrast as shown in <a href="#1b" class="dv-oid">1b</a>? ② Both recorded runs are damning; S3 needs your pinned refused + blessed run ids (fixtures tagged meanwhile). ③ Chart-teach says "since 1993" but the window picker tops out at 3,480 sessions (~14y) — which wording goes on the page? ④ OK to preview accent variants via the Tweaks panel, cyan default?</div>
+    <div><b style="font-weight:600;color:var(--ink)">Next.</b> You pick hero + showcase directions → I build all six sections + footer, desktop + mobile, full copy deck, component specs, asset list → export to docs/design/landing/.</div>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="1a" data-screen-label="1a hero — the empty room" style="width:1440px">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Hero — "The empty room." App-faithful, zero video, the composer is the whole argument. Interactive: type / pick a chip / submit.</div>
+<div class="dv-card" style="width:1440px">
+  <div style="height:790px;display:flex;flex-direction:column;background:var(--ground)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 44px">
+      <img src="assets/brand/wordmark-white-u1.svg" alt="SK=PT/C" style="height:15px;display:block">
+      <div style="display:flex;align-items:center;gap:10px">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="ghost" hint-size="70px,36px">Sign in</x-import>
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="secondary" hint-size="170px,36px">Get 5 free backtests</x-import>
+      </div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding-top:52px">
+      <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="340" hint-size="340px,74px"></x-import>
+      <h1 style="margin:30px 0 14px;font-family:var(--font-serif);font-size:44px;font-weight:500;line-height:1.12;letter-spacing:-.01em;text-align:center">Pitch me a trade. I'll play the skeptic.</h1>
+      <p style="margin:0;max-width:620px;text-align:center;font-size:15px;line-height:1.65;color:var(--ink-3)">Describe an options strategy in plain English. Skeptic interviews you, runs it on real intraday options data, then attacks its own result — and refuses to bless anything the evidence can't support.</p>
+      <div style="width:690px;max-width:90%;margin-top:34px">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" value="{{ heroText }}" placeholder="{{ heroPlaceholder }}" busy="{{ submitted }}" on-change="{{ onHeroChange }}" on-submit="{{ onHeroSubmit }}" hint-size="100%,64px"></x-import>
+      </div>
+      <div style="height:52px;display:flex;align-items:center">
+        <sc-if value="{{ submitted }}" hint-placeholder-val="{{ false }}">
+          <div class="animate-fade-rise" style="display:flex;align-items:center;gap:12px;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-3)">
+            <span style="border:1px dashed var(--line-hover);border-radius:999px;padding:4px 12px;color:var(--ink-4)">human check — Turnstile</span>
+            <span>queued honestly — 2 runs ahead of you</span>
+            <span style="color:var(--ink-5)">·</span>
+            <span style="color:var(--ink-4)">trial run: daily clock · ≤3-year window</span>
+            <button onClick="{{ resetSubmit }}" style="color:var(--ink-5);font-size:11px" title="reset the mock">× reset</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ notSubmitted }}" hint-placeholder-val="{{ true }}">
+          <div style="font-family:var(--font-mono);font-size:11.5px;color:var(--ink-4)">your first backtest is free — no account, no card</div>
+        </sc-if>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:820px">
+        <sc-for list="{{ heroPresets }}" as="p" hint-placeholder-count="3">
+          <x-import component-from-global-scope="SkepticDesignSystem_68b393.PresetChip" label="{{ p.label }}" structure="{{ p.structure }}" phrase="{{ p.phrase }}" on-click="{{ p.pick }}" hint-size="170px,58px"></x-import>
+        </sc-for>
+        <button style="border-radius:14px;border:1px dashed var(--line-hover);padding:10px 16px;text-align:left;color:var(--ink-3)" title="chart-teach mode">
+          <div style="font-size:14px;font-weight:500">or pin examples on a chart</div>
+          <div style="margin-top:2px;font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-4)">chart-teach →</div>
+        </button>
+      </div>
+      <div style="margin-top:30px;font-size:12.5px;color:var(--ink-4)">Research tool, not financial advice. Backtests overstate live results.</div>
+    </div>
+    <div style="text-align:center;padding:0 0 26px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink-5)">HOW IT ARGUES ↓</div>
+  </div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:1440px">
+  <span class="k">SPEC — HERO EMBED</span>
+  · composer = the live app surface, same parser — landing shell static, app hydrates on first keystroke (PRD F) · placeholder rotates 4 real prompts every 3.6s, pauses once the user types<br>
+  · anon submit: Turnstile chip appears inline · queue position shown honestly · trial constraint disclosed verbatim: "trial run: daily clock · ≤3-year window" · past daily budget the row becomes the signup CTA<br>
+  · draw-on wordmark: brand-kit <b>skeptic-draw-white.svg</b>, ~1.65s, plays once per visit (sessionStorage); click replays here · zero video above the fold<br>
+  · preset chips are the app's own (recording 1, 0:02); showing 3 of 12 + the chart-teach affordance — full grid is an option<br>
+  <span class="k" style="margin-top:6px">COPY</span>
+  · headline + standing line verbatim from the app · subhead is new, voice-matched — flag if it overpromises · "queued honestly" microcopy from PRD F ("2 runs ahead of you")
+</div>
+</sc-if>
+</div>
+
+<div class="dv-opt" id="1am" data-screen-label="1a hero — mobile" style="width:390px">
+<div class="dv-olabel"><a class="dv-oid" href="#1am">1am</a>Hero mobile (of <a class="dv-oid" href="#1a">1a</a>) — composer-first, 44px+ targets</div>
+<div class="dv-card" style="width:390px">
+  <div style="min-height:740px;display:flex;flex-direction:column;background:var(--ground);padding:0 0 22px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px">
+      <img src="assets/brand/s-mark-white-u1.svg" alt="Skeptic" style="height:24px;display:block">
+      <span style="font-size:13px;font-weight:600;color:var(--ink-2);padding:10px 4px">Sign in</span>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:26px 18px 0">
+      <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="230" hint-size="230px,50px"></x-import>
+      <h1 style="margin:24px 0 10px;font-family:var(--font-serif);font-size:30px;font-weight:500;line-height:1.15;letter-spacing:-.01em;text-align:center">Pitch me a trade. I'll play the skeptic.</h1>
+      <p style="margin:0 0 24px;text-align:center;font-size:13.5px;line-height:1.6;color:var(--ink-3)">Plain English in, honest verdict out — run on real intraday options data.</p>
+      <div style="width:100%">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…" show-mic="{{ true }}" hint-size="100%,84px"></x-import>
+      </div>
+      <div style="margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">first one's free — no account, no card</div>
+      <div style="display:flex;flex-direction:column;gap:8px;width:100%;margin-top:22px">
+        <button style="border-radius:14px;border:1px solid var(--line-soft);background:var(--panel);padding:12px 16px;text-align:left;min-height:44px">
+          <div style="font-size:14px;font-weight:500;color:var(--ink-2)">Weekly income put</div>
+          <div style="margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">short put</div>
+        </button>
+        <button style="border-radius:14px;border:1px solid var(--line-soft);background:var(--panel);padding:12px 16px;text-align:left;min-height:44px">
+          <div style="font-size:14px;font-weight:500;color:var(--ink-2)">Calm-market condor</div>
+          <div style="margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">iron condor</div>
+        </button>
+      </div>
+      <div style="margin-top:24px;text-align:center;font-size:11.5px;line-height:1.6;color:var(--ink-4)">Research tool, not financial advice.</div>
+    </div>
+    <div style="text-align:center;margin-top:26px;font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;color:var(--ink-5)">HOW IT ARGUES ↓</div>
+  </div>
+</div>
+</div>
+
+<div class="dv-opt" id="1b" data-screen-label="1b hero — split, the interview visible" style="width:1440px">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Hero — "The argument, visible." Split: composer left, a live capture of the interview right. One clip above the fold.</div>
+<div class="dv-card" style="width:1440px">
+  <div style="height:740px;display:flex;flex-direction:column;background:var(--ground)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 44px">
+      <img src="assets/brand/wordmark-white-u1.svg" alt="SK=PT/C" style="height:15px;display:block">
+      <div style="display:flex;align-items:center;gap:10px">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="ghost" hint-size="70px,36px">Sign in</x-import>
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="secondary" hint-size="170px,36px">Get 5 free backtests</x-import>
+      </div>
+    </div>
+    <div style="flex:1;display:grid;grid-template-columns:46fr 54fr;gap:48px;align-items:center;padding:0 56px 40px">
+      <div>
+        <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="250" hint-size="250px,54px"></x-import>
+        <h1 style="margin:26px 0 14px;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;letter-spacing:-.01em">Pitch me a trade.<br>I'll play the skeptic.</h1>
+        <p style="margin:0 0 28px;font-size:15px;line-height:1.65;color:var(--ink-3);max-width:480px">It interviews you about the ambiguous parts, runs the strategy on real intraday options data, then attacks its own result. No guesses, no flattery.</p>
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" placeholder="{{ heroPlaceholder }}" hint-size="100%,64px"></x-import>
+        <div style="margin-top:14px;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-4)">your first backtest is free — no account, no card</div>
+        <div style="margin-top:22px;font-size:12.5px;color:var(--ink-4)">Research tool, not financial advice. Backtests overstate live results.</div>
+      </div>
+      <div>
+        <div style="border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 16px;border-bottom:1px solid var(--line-softer);font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink-4)">
+            <span>THE INTERVIEW — LIVE CAPTURE</span><span>▶ 5.5s loop · muted</span>
+          </div>
+          <img src="assets/stills/spec-window-open.png" alt="spec confirmation with window picker open" style="width:100%;display:block">
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:16px;margin-top:12px">
+          <div style="font-size:13.5px;line-height:1.55;color:var(--ink-2)">"Here's what I heard — every dial is adjustable."</div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--ink-4);text-align:right;flex:none">window choices show real session counts<br>220 (1y) → 3,480 (all) · runtime estimates included</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:1440px">
+  <span class="k">ASSET REQUEST — 1B CLIP</span>
+  · <b>CLIP A</b> — REC 1 (4:42 PM) <b>0:22.0 → 0:27.5</b>, 5.5s loop: dials settle, WINDOW dropdown opens on the real session counts. hold 0.8s on the open dropdown before looping<br>
+  · crop: drop browser chrome + nav rail, keep the content column (1920 source ≈ x 268→1820, y 112→1080) · poster still = REC 2 @ 0:20 (shown above)<br>
+  · <b>THEME DECISION</b> — capture is light (market hours). option A: re-record after 6pm ET or force dark in Settings. option B: keep paper-on-ink contrast, frame it as "the document." decide once for all clips<br>
+  · fallback for reduced-motion / slow networks: the poster still, no autoplay
+</div>
+</sc-if>
+</div>
+
+<div class="dv-opt" id="1c" data-screen-label="1c hero — boot sequence" style="width:1440px">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Hero — "Boot sequence." The wordmark draw IS the hero; everything else enters after it. Most restraint, most confidence.</div>
+<div class="dv-card" style="width:1440px">
+  <div style="height:800px;display:flex;flex-direction:column;background:var(--ground)">
+    <div style="display:flex;justify-content:flex-end;padding:20px 44px">
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.Button" variant="ghost" hint-size="70px,36px">Sign in</x-import>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:-30px">
+      <x-import component-from-global-scope="sk-draw" from="./sk-draw.js" width="520" hint-size="520px,112px"></x-import>
+      <h1 class="animate-fade-rise" style="animation-delay:1.55s;animation-duration:.45s;margin:44px 0 0;font-family:var(--font-serif);font-size:32px;font-weight:400;line-height:1.2;text-align:center;color:var(--ink-2)">Pitch me a trade. I'll play the skeptic.</h1>
+      <div class="animate-fade-rise" style="animation-delay:1.85s;animation-duration:.45s;width:690px;max-width:90%;margin-top:36px">
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.Composer" placeholder="sell a 30-delta put on SPY every week, close at 50% profit or 21 days…" hint-size="100%,64px"></x-import>
+        <div style="margin-top:14px;text-align:center;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-4)">one real backtest, free — no account · Research tool, not financial advice.</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-softer);padding:14px 44px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">
+      <span>skeptic.fyi</span>
+      <span>real intraday options data · fills at bid/ask plus slippage, never mid · 3,480 sessions on tap</span>
+    </div>
+  </div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:1440px">
+  <span class="k">SPEC — 1C MOTION</span>
+  · the only motion is the brand: wordmark draws on (1.65s), headline fade-rises at 1.55s, composer at 1.85s — after first visit everything is instant (sessionStorage)<br>
+  · secondary CTA intentionally absent: the composer is the CTA. sign-in stays ghost · receipts line numbers are real (window picker + gauntlet stage note)
+</div>
+</sc-if>
+</div>
+
+<div class="dv-rowhd">SECTION 3 — THE VERDICT SHOWCASE (refused vs blessed)</div>
+
+<div class="dv-opt" id="1d" data-screen-label="1d showcase — two case files" style="width:1440px">
+<div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Showcase — "Two case files." Equal weight, refusal first. Rendered from stored run payloads — no screenshots, no video.</div>
+<div class="dv-card" style="width:1440px">
+  <div style="background:var(--ground);padding:76px 120px 60px">
+    <div style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">THE VERDICT IS THE PRODUCT</div>
+    <h2 style="margin:14px 0 12px;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:820px">Most backtesters tell you what you want to hear.</h2>
+    <p style="margin:0;max-width:740px;font-size:15px;line-height:1.65;color:var(--ink-2)">Skeptic hides the last 30% of history, walks forward in rolling windows, reshuffles your trades 1,000 times and nudges every setting ±20% — then grades only what survives. When the evidence is thin, it refuses to bless the run. The refusal is the feature.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:44px">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3)">
+          <span>THE ONE IT REFUSED</span>
+          <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ false }}"><span style="color:var(--warn);letter-spacing:.04em">fixture — owner pins run id</span></sc-if>
+        </div>
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.VerdictBlock" verdict="{{ refusalV }}" hint-size="100%,380px"></x-import>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">
+          <span>QQQ 0DTE fade · 9 trades · ran Jul 12 '26</span>
+          <a href="#1d" style="color:var(--ink-3)">read the full run →</a>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3)">
+          <span>THE ONE IT BLESSED — CONDITIONS ATTACHED</span>
+          <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ false }}"><span style="color:var(--warn);letter-spacing:.04em">fixture — owner pins run id</span></sc-if>
+        </div>
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.VerdictBlock" verdict="{{ gradedV }}" hint-size="100%,540px"></x-import>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">
+          <span>30Δ weekly SPY put · 214 trades · ran Jul 16 '26</span>
+          <a href="#1d" style="color:var(--ink-3)">read the full run →</a>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:40px;text-align:center;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">rendered live from two stored runs — every number computed, none decorative</div>
+    <div style="margin-top:10px;text-align:center;font-size:11px;color:var(--ink-4)">Research tool, not financial advice. Backtests overstate live results.</div>
+  </div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:1440px">
+  <span class="k">SPEC — 1D SHOWCASE</span>
+  · content = DS demo fixtures in the app's exact payload shapes. <b>owner: pin 1 refused + 1 blessed run id</b>; engineering renders these blocks from stored payloads (build plan L4) — zero engine load, zero video<br>
+  · color contract holds: trust hue only, dashed border = withheld · asymmetric heights are honest (a refusal is shorter than a graded verdict) — grid is top-aligned on purpose<br>
+  · "read the full run →" links to the public run page; both runs must be replayable
+</div>
+</sc-if>
+</div>
+
+<div class="dv-opt" id="1dm" data-screen-label="1d showcase — mobile" style="width:390px">
+<div class="dv-olabel"><a class="dv-oid" href="#1dm">1dm</a>Showcase mobile (of <a class="dv-oid" href="#1d">1d</a>) — refusal first; graded case collapses its evidence</div>
+<div class="dv-card" style="width:390px">
+  <div style="background:var(--ground);padding:44px 18px 36px">
+    <div style="font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">THE VERDICT IS THE PRODUCT</div>
+    <h2 style="margin:12px 0 10px;font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.2">Most backtesters tell you what you want to hear.</h2>
+    <p style="margin:0 0 28px;font-size:13.5px;line-height:1.6;color:var(--ink-2)">1,000 reshuffles, hidden history, ±20% nudges — then a grade only the evidence can earn. Thin evidence gets a refusal, not a blessing.</p>
+    <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-3);margin-bottom:8px">THE ONE IT REFUSED</div>
+    <div style="border-radius:16px;padding:20px;border:1px dashed var(--acb);background:linear-gradient(180deg,var(--acd),var(--ac-faint))">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ac)"><span>VERDICT — THE HONEST READ</span><span>WITHHELD</span></div>
+      <div style="font-family:var(--font-serif);font-size:22px;font-weight:500;line-height:1.3">Not enough evidence to grade this. That's the honest answer.</div>
+      <p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:var(--ink-2)">Only 9 trades closed inside the window. Below the 15-trade evidence bar a verdict would be statistical theater — numbers shown, blessing withheld.</p>
+      <div style="margin-top:12px;border-radius:10px;border:1px dashed var(--acb);padding:8px 12px;font-family:var(--font-mono);font-size:11px;color:var(--ac)">unlocks at ~15 trades — about 9 more weeks of data</div>
+    </div>
+    <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink-3);margin:26px 0 8px">THE ONE IT BLESSED — CONDITIONS ATTACHED</div>
+    <div style="border-radius:16px;padding:20px;border:1px solid var(--acb);background:linear-gradient(180deg,var(--acd),var(--ac-faint))">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ac)"><span>VERDICT — THE HONEST READ</span><span>4 OF 5</span></div>
+      <div style="font-family:var(--font-serif);font-size:22px;font-weight:500;line-height:1.3">The edge is real but thin — and it only earns its keep in calm markets.</div>
+      <x-import component-from-global-scope="SkepticDesignSystem_68b393.TrustBand" variant="card" band="{{ bandGraded }}" marker="52%" hint-size="100%,14px"></x-import>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">
+        <span style="border-radius:999px;border:1px solid var(--acb);padding:3px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--ac)">OOS: holds</span>
+        <span style="border-radius:999px;border:1px solid var(--acb);padding:3px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--ac)">walk-fwd: 7/9</span>
+        <span style="border-radius:999px;border:1px solid var(--acb);padding:3px 10px;font-family:var(--font-mono);font-size:10.5px;color:var(--ac)">MC: p05 > $0</span>
+      </div>
+      <button style="display:flex;align-items:center;gap:6px;margin-top:14px;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-3);min-height:44px">▸ evidence — holds up / where it breaks</button>
+    </div>
+    <div style="margin-top:26px;text-align:center;font-family:var(--font-mono);font-size:10px;color:var(--ink-4);line-height:1.7">rendered from stored runs — every number computed<br>Research tool, not financial advice.</div>
+  </div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:390px">
+  <span class="k">MOBILE SPEC</span>
+  · graded verdict collapses its evidence grid behind "▸ evidence" (44px target) — the two-column grid never squeezes below 480px<br>
+  · band + chips stay; refusal card needs no collapse (it has no grid)
+</div>
+</sc-if>
+</div>
+
+<div class="dv-opt" id="1e" data-screen-label="1e showcase — refusal leads + the range" style="width:1440px">
+<div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Showcase — "Refusal leads, plus the range." Asymmetric: the refusal is the headline act; a rail of real verdicts shows the instrument's full scale.</div>
+<div class="dv-card" style="width:1440px">
+  <div style="background:var(--ground);padding:76px 120px 60px">
+    <div style="font-family:var(--font-mono);font-size:11.5px;font-weight:500;letter-spacing:.14em;color:var(--ac)">MOST BACKTESTERS TELL YOU WHAT YOU WANT TO HEAR</div>
+    <h2 style="margin:14px 0 12px;font-family:var(--font-serif);font-size:40px;font-weight:500;line-height:1.15;max-width:760px">Refusal is a feature.</h2>
+    <p style="margin:0;max-width:720px;font-size:15px;line-height:1.65;color:var(--ink-2)">When only 9 trades close inside the data window, a verdict would be statistical theater. Skeptic ships the numbers and withholds the blessing — and tells you exactly what would unlock it.</p>
+    <div style="display:grid;grid-template-columns:58fr 42fr;gap:26px;margin-top:44px;align-items:start">
+      <div>
+        <x-import component-from-global-scope="SkepticDesignSystem_68b393.VerdictBlock" verdict="{{ refusalV }}" hint-size="100%,380px"></x-import>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-family:var(--font-mono);font-size:11px;color:var(--ink-4)">
+          <span>QQQ 0DTE fade · 9 trades · ran Jul 12 '26 <sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ false }}"><span style="color:var(--warn)">· fixture — owner pins run id</span></sc-if></span>
+          <a href="#1e" style="color:var(--ink-3)">read the full run →</a>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-3);margin-bottom:2px">THE RANGE — RECENT VERDICTS</div>
+        <sc-for list="{{ rangeRows }}" as="r" hint-placeholder-count="3">
+          <div style-hover="background:var(--raised);border-color:var(--line-hover)" style="border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:14px 18px 12px;transition:background .18s ease,border-color .18s ease">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+              <span style="font-family:var(--font-mono);font-size:12px;color:var(--ink-2)">{{ r.name }}</span>
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:{{ r.metaColor }}">{{ r.meta }}</span>
+            </div>
+            <x-import component-from-global-scope="SkepticDesignSystem_68b393.TrustBand" variant="card" band="{{ r.band }}" marker="{{ r.marker }}" withheld="{{ r.withheld }}" hint-size="100%,14px"></x-import>
+            <div style="font-family:var(--font-serif);font-style:italic;font-size:15px;line-height:1.45;color:var(--ink-2)">{{ r.quote }}</div>
+          </div>
+        </sc-for>
+        <div style="font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--ink-4);margin-top:4px">refused, damned, or blessed — whatever the evidence supports.</div>
+      </div>
+    </div>
+    <div style="margin-top:36px;text-align:center;font-size:11px;color:var(--ink-4)">Research tool, not financial advice. Backtests overstate live results.</div>
+  </div>
+</div>
+<sc-if value="{{ showAnnotations }}" hint-placeholder-val="{{ true }}">
+<div class="dv-anno" style="width:1440px">
+  <span class="k">SPEC + REAL RUN AVAILABLE</span>
+  · middle range row is a <b>real recorded verdict</b>: "84% of profit came from 13 lucky days — the rest is noise." — SPY .30Δ short put, ran Jul 16 '26 (REC 1 @ 1:05). owner: supply its run id + payload; band position here is approximated from the capture<br>
+  · rows 1 + 3 are fixtures (owner pins) · band geometry renders from payloads, never hand-placed · quotes are the runs' own verdict headlines, serif italic — they are the testimonials we're allowed to have
+</div>
+</sc-if>
+</div>
+
+</div>
+<p class="dv-next">Try next: "merge <a class="dv-oid" href="#1b">1b</a>'s clip under <a class="dv-oid" href="#1a">1a</a>'s composer" · "<a class="dv-oid" href="#1d">1d</a> but with <a class="dv-oid" href="#1e">1e</a>'s range rail beneath" · "show the full preset grid in <a class="dv-oid" href="#1a">1a</a>" · "build the remaining sections on 1a + 1d"</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showAnnotations&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Presentation&quot;}}">
+class Component extends DCLogic {
+  state = { phIdx: 0, heroText: "", submitted: false, hero2Text: "", submitted2: false, qAnswered: false, themeMode: "market" };
+  onPageScroll = (e) => {
+    const c = e.currentTarget;
+    if (this._raf) return;
+    this._raf = requestAnimationFrame(() => {
+      this._raf = 0;
+      const p = Math.max(0, Math.min(1, c.scrollTop / 260));
+      const q = p * p * (3 - 2 * p);
+      const logo = c.querySelector("[data-sk-logo]");
+      if (logo) logo.style.transform = "translate(" + (-611 * q).toFixed(1) + "px, " + (-28 * q).toFixed(1) + "px) scale(" + (1 - 0.72 * q).toFixed(3) + ")";
+      const nav = c.querySelector("[data-sk-nav]");
+      if (nav) {
+        nav.style.borderBottom = "1px solid rgba(" + (this._lightNow ? "217,217,222" : "42,43,48") + "," + q.toFixed(2) + ")";
+        nav.style.background = q > 0.05 ? "var(--ground)" : "transparent";
+      }
+    });
+  };
+  componentDidMount() {
+    this._t = setInterval(() => {
+      if (!this.state.heroText && !this.state.submitted) this.setState(s => ({ phIdx: (s.phIdx + 1) % 4 }));
+    }, 3600);
+    try { const t = localStorage.getItem("sk-landing-theme"); if (t === "light" || t === "dark" || t === "market") this.setState({ themeMode: t }); } catch (e) {}
+    this._mt = setInterval(() => { if (this.state.themeMode === "market") this.forceUpdate(); }, 60000);
+    const bind = () => document.querySelectorAll("[data-sk-scroll]").forEach((el) => {
+      if (!el._skBound) { el._skBound = true; el.addEventListener("scroll", this.onPageScroll); }
+    });
+    bind();
+    this._bt = setInterval(bind, 1500);
+  }
+  componentWillUnmount() { clearInterval(this._t); clearInterval(this._mt); clearInterval(this._bt); }
+  renderVals() {
+    const PHS = [
+      "sell a 30-delta put on SPY every week, close at 50% profit or 21 days",
+      "iron condor on SPY at 16 delta, 45 DTE, exit at 21 DTE or 2x credit stop",
+      "buy a 10-delta SPY put, 45 DTE, sell at +200% or hold to expiry",
+      "covered call on SPY, sell the 30-delta monthly, roll at 21 DTE",
+    ];
+    const set = (v) => this.setState({ heroText: v, submitted: false });
+    const heroPresets = [
+      { label: "Weekly income put", structure: "short put", phrase: PHS[0] },
+      { label: "Calm-market condor", structure: "iron condor", phrase: PHS[1] },
+      { label: "Crash-insurance put", structure: "long put", phrase: PHS[2] },
+    ].map(p => ({ ...p, pick: () => set(p.phrase) }));
+    let etHour = 12;
+    try { etHour = parseInt(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date()), 10); } catch (e) {}
+    const themeLight = this.state.themeMode === "light" || (this.state.themeMode === "market" && etHour >= 8 && etHour < 18);
+    this._lightNow = themeLight;
+    const set2 = (v) => this.setState({ hero2Text: v, submitted2: false });
+    const hero2Presets = [
+      { label: "Weekly income put", structure: "short put", phrase: PHS[0] },
+      { label: "Calm-market condor", structure: "iron condor", phrase: PHS[1] },
+      { label: "Crash-insurance put", structure: "long put", phrase: PHS[2] },
+    ].map(p => ({ ...p, pick: () => set2(p.phrase) }));
+    const lerpPath = (x) => {
+      const P = [[0, 225], [45, 205], [80, 190], [110, 150], [142.5, 172], [185, 145], [225, 160], [265, 128], [305, 148], [350, 118], [380, 140], [412.5, 126], [455, 148], [500, 112], [535, 132], [575, 95], [610, 118], [649.5, 83], [690, 106], [730, 88], [775, 98], [845, 60]];
+      for (let i = 1; i < P.length; i++) if (x <= P[i][0]) {
+        const t = (x - P[i - 1][0]) / (P[i][0] - P[i - 1][0]);
+        return P[i - 1][1] + t * (P[i][1] - P[i - 1][1]);
+      }
+      return P[P.length - 1][1];
+    };
+    const fr = (n) => { const s = Math.sin(n) * 43758.5453; return s - Math.floor(s); };
+    const anchors = { 9: 172, 27: 126, 43: 83 };
+    const candleEls = [];
+    for (let i = 0; i < 56; i++) {
+      const cx = i * 15 + 7.5, base = lerpPath(cx), isA = anchors[i] != null;
+      const close = isA ? anchors[i] : base + (fr(i * 7.13 + 1.7) - 0.5) * 14;
+      const open = isA ? close + 7 : base + (fr(i * 3.77 + 9.1) - 0.5) * 14;
+      const bodyY = Math.min(open, close), bodyH = Math.max(1.5, Math.abs(open - close));
+      const up = close <= open, col = up ? "var(--pl-pos)" : "var(--pl-neg)";
+      candleEls.push(React.createElement("g", { key: i },
+        React.createElement("line", { x1: cx, y1: bodyY - (3 + fr(i * 5.1 + 3) * 9), x2: cx, y2: bodyY + bodyH + 3 + fr(i * 9.3 + 5) * 9, stroke: col, strokeWidth: 1 }),
+        React.createElement("rect", { x: i * 15 + 4, y: bodyY, width: 7, height: bodyH, fill: col })
+      ));
+    }
+    return {
+      showAnnotations: this.props.showAnnotations ?? true,
+      candleEls,
+      onPageScroll: this.onPageScroll,
+      themeAttr: themeLight ? "light" : "dark",
+      themeIsLight: themeLight,
+      themeIsDark: !themeLight,
+      stillFilter: themeLight ? "none" : "invert(1) hue-rotate(180deg)",
+      themeModes: [["market", "Market Hours"], ["light", "Light"], ["dark", "Dark"]].map(([id, label]) => ({
+        id, label,
+        pick: () => { try { localStorage.setItem("sk-landing-theme", id); } catch (e) {} this.setState({ themeMode: id }); },
+        bg: this.state.themeMode === id ? "var(--raised-2)" : "transparent",
+        color: this.state.themeMode === id ? "var(--ink)" : "var(--ink-3)",
+      })),
+      ctaPrimaryProps: { style: { height: 42, padding: "0 20px" } },
+      ctaSecondaryProps: { style: { height: 42, padding: "0 18px" } },
+      qAnswered: this.state.qAnswered,
+      notQAnswered: !this.state.qAnswered,
+      qOptions: ["whichever hits first", "profit target only", "time exit only"],
+      onQAnswer: () => this.setState({ qAnswered: true }),
+      resetQ: () => this.setState({ qAnswered: false }),
+      scrollToTop: (e) => {
+        const c = e.currentTarget.closest("[data-sk-scroll]");
+        if (c) c.scrollTo({ top: 0, behavior: "smooth" });
+      },
+      scrollToArgue: (e) => {
+        const c = e.currentTarget.closest("[data-sk-scroll]");
+        const s3 = c && c.querySelector("[data-sk-s3]");
+        if (c && s3) c.scrollTo({ top: s3.offsetTop - 56, behavior: "smooth" });
+      },
+      hero2Text: this.state.hero2Text,
+      onHero2Change: set2,
+      onHero2Submit: () => this.state.hero2Text.trim() && this.setState({ submitted2: true }),
+      resetSubmit2: () => this.setState({ submitted2: false, hero2Text: "" }),
+      submitted2: this.state.submitted2,
+      notSubmitted2: !this.state.submitted2,
+      hero2Presets,
+      heroPlaceholder: PHS[this.state.phIdx] + "…",
+      heroText: this.state.heroText,
+      onHeroChange: set,
+      onHeroSubmit: () => this.state.heroText.trim() && this.setState({ submitted: true }),
+      resetSubmit: () => this.setState({ submitted: false, heroText: "" }),
+      submitted: this.state.submitted,
+      notSubmitted: !this.state.submitted,
+      heroPresets,
+      bandGraded: { left: "38%", width: "26%" },
+      refusalV: {
+        refusal: true,
+        headline: "Not enough evidence to grade this. That's the honest answer.",
+        survived: "VERDICT WITHHELD",
+        refusalBody: "The spec is valid and the engine ran it — but only 9 trades closed inside the data window. Below your 15-trade evidence bar a verdict would be statistical theater, so this run ships unblessed: numbers shown, blessing withheld.",
+        refusalUnlock: "unlocks at ~15 trades — about 9 more weeks of QQQ chain collection",
+      },
+      gradedV: {
+        headline: "The edge is real but thin — and it only earns its keep in calm markets.",
+        survived: "SURVIVED 4 OF 5 ATTACKS",
+        band: { left: "38%", width: "26%" }, marker: "52%",
+        chips: ["OOS: holds", "walk-forward: 7/9 windows", "Monte Carlo: p05 > $0", "sensitivity: plateau", "luck: unlikely"],
+        evidence: [
+          "Out-of-sample Sharpe keeps 71% of in-sample (0.93 vs 1.31).",
+          "Wins in 7 of 9 walk-forward windows; no single window carries the total.",
+          "Median reshuffle still ends positive — sequence luck isn't the story.",
+        ],
+        breaks: [
+          "VIX above 28 flips expectancy negative — the 2024-08 spike alone erased 4 months of gains.",
+          "Fills assume displayed size; 3% of fills exceeded it.",
+          "Below 45 DTE the plateau narrows toward a cliff.",
+        ],
+        caveat: "Standing caveats: 6.2 years of data · fills at bid/ask plus measured slippage, never mid · every re-run of this family raises the luck bar · backtests overstate live results.",
+      },
+      rangeRows: [
+        { name: "16Δ SPY condor 45 DTE", meta: "121 trades · Jul 9 '26", metaColor: "var(--ink-4)", band: { left: "55%", width: "24%" }, marker: "64%", withheld: false, quote: "\u201CSurvived every attack. Small edge, honestly earned.\u201D" },
+        { name: "SPY .30Δ short put", meta: "REAL RUN — REC 1", metaColor: "var(--ac)", band: { left: "22%", width: "22%" }, marker: "33%", withheld: false, quote: "\u201C84% of profit came from 13 lucky days — the rest is noise.\u201D" },
+        { name: "QQQ 0DTE fade", meta: "9 trades · withheld", metaColor: "var(--ink-4)", band: null, marker: null, withheld: true, quote: "\u201CNot enough evidence to grade. Unblessed by design.\u201D" },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

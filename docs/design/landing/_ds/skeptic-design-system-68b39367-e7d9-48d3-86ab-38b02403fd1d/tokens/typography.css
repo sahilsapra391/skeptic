@@ -1,0 +1,28 @@
+/* Skeptic type — the three-voice system (owner directive 2026-07-03):
+   Archivo for body/UI, IBM Plex Mono for data + labels, Newsreader serif for
+   headings and important moments ONLY. No other families. */
+:root{
+--font-sans:"Archivo",sans-serif;
+--font-mono:"IBM Plex Mono",monospace;
+--font-serif:"Newsreader",Georgia,serif;
+/* parity aliases (app code references these names, e.g. chart text) */
+--font-archivo:"Archivo",sans-serif;
+--font-plex-mono:"IBM Plex Mono",monospace;
+--font-newsreader:"Newsreader",Georgia,serif;
+/* scale — exact px from the app; sizes are deliberately off-grid (13.5, 14.5…) */
+--text-hero:clamp(32px,3.6vw,44px); /* serif 500, lh 1.12, ls -.01em */
+--text-h1:32px;            /* serif 500 — page titles, verdict headline */
+--text-title:21px;         /* sans 650 — run name */
+--text-metric:24px;        /* mono 600 — metric tiles */
+--text-body-lg:16.5px;     /* composer input */
+--text-body:14.5px;        /* body copy, lh 1.6 */
+--text-ui:13px;            /* buttons, nav items (600) */
+--text-data:13px;          /* mono table rows */
+--text-caption:12.5px;     /* secondary copy */
+--text-fine:11.5px;        /* mono fine print */
+--text-label:11.5px;       /* mono 500 CAPS, ls .12em — panel titles */
+--text-microlabel:10.5px;  /* mono 500 CAPS, ls .08em — tile labels */
+--text-chartnote:10px;     /* mono — axis + chart annotations */
+--tracking-label:.12em;--tracking-wide:.14em;--tracking-micro:.08em;
+--leading-body:1.6;--leading-tight:1.25;
+}

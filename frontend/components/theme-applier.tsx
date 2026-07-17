@@ -12,14 +12,21 @@
  * flip back mid-dialog in engines where print() doesn't block. */
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 
 import { getSettings, resolveTheme, useSettings } from "@/lib/settings";
 
 export function ThemeApplier() {
   const { theme, accent } = useSettings();
+  const pathname = usePathname();
   const printing = useRef(false);
+  // the landing owns data-theme on `/` (its footer control + own storage
+  // key, launch L4) — without this gate the app-settings writer here would
+  // win a 60s tug-of-war the landing can't see. Accent stays shared.
+  const onLanding = pathname === "/";
   useEffect(() => {
     document.documentElement.dataset.accent = accent;
+    if (onLanding) return;
     const apply = () => {
       if (printing.current) return;
       document.documentElement.dataset.theme = resolveTheme(getSettings().theme);
@@ -41,6 +48,6 @@ export function ThemeApplier() {
       window.removeEventListener("afterprint", after);
       if (id !== undefined) window.clearInterval(id);
     };
-  }, [theme, accent]);
+  }, [theme, accent, onLanding]);
   return null;
 }

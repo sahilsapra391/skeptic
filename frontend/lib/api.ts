@@ -16,6 +16,7 @@ import type {
   SpecDraft,
   UnderlyingPoint,
 } from "./types";
+import { myRunIds, rememberRun } from "./my-runs";
 import { getSettings } from "./settings";
 import { draftToSpec } from "./spec";
 
@@ -271,6 +272,11 @@ export function startBacktest(
     headers: { "content-type": "application/json" },
     // the evidence bar (Settings) gates this run's verdict server-side
     body: JSON.stringify({ spec, provenance, min_trades: getSettings().minTrades }),
+  }).then((res) => {
+    // pre-accounts: this browser's runs ride the curated listing via
+    // include=, and signup later re-parents exactly this list (claim flow)
+    rememberRun(res.run_id);
+    return res;
   });
 }
 
@@ -288,9 +294,18 @@ export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boo
   // `fresh` bypasses the cache — the library polls with it while a run
   // is in progress so the card flips to its verdict without a reload.
   // swr: an expired listing paints instantly and refreshes behind — the
-  // nav rail calls this on every navigation
+  // nav rail calls this on every navigation.
+  // Pre-accounts curation (launch L4): the server lists the two pinned
+  // examples; this browser's own runs ride along explicitly — the same
+  // id list the claim flow re-parents at signup.
+  // sorted: the ids are recency-ordered in storage, and an order-sensitive
+  // key would mint a fresh cache entry (cold nav-rail paint) after every run
+  const mine = myRunIds();
+  const url = mine.length
+    ? `/api/runs?include=${encodeURIComponent([...mine].sort().join(","))}`
+    : "/api/runs";
   return cachedRequest<{ runs: RunSummary[]; demo: boolean }>(
-    "/api/runs",
+    url,
     RUNS_CACHE_TTL_MS,
     fresh,
     true,

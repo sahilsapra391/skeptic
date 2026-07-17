@@ -83,11 +83,24 @@ export default function RunPage({ params }: { params: { id: string } }) {
   // key remounts per run: sidebar run-to-run navigation must not carry over
   // the story/results tab choice or a previous run's grounded answer.
   return (
-    <ResultsView
-      key={run.id}
-      run={run}
-      onBack={() => router.push("/library")}
-      backLabel="Library"
-    />
+    <>
+      {run.example && (
+        <div className="mb-4 flex items-center gap-3 rounded-[12px] border border-trust-border bg-trust-dim px-4 py-2.5">
+          <span className="shrink-0 font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
+            EXAMPLE RUN
+          </span>
+          <span className="text-[13px] text-ink-2">
+            One of two showcase results included with every account — a real
+            backtest, but not yours. Runs you start appear alongside it.
+          </span>
+        </div>
+      )}
+      <ResultsView
+        key={run.id}
+        run={run}
+        onBack={() => router.push("/library")}
+        backLabel="Library"
+      />
+    </>
   );
 }

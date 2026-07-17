@@ -1,0 +1,88 @@
+/* B5 copilot demo — one shared 14s replay loop. Keyframes are VERBATIM from
+   the approved design (docs/design/landing/Skeptic Landing.dc.html lines
+   41–52); do not retime without a design update. Timeline: the cursor pauses
+   12–22% / 43–50% / 70–78% at the three anchor candles; sk-m1/m2 reveal the
+   fill dots + flag pills after the first two pauses; sk-l1..l6 accumulate the
+   reasoning rail in sync (l2 with m1, l4 with m2, l5 with sig3); everything
+   fades 94–100% and loops. Easing lives on the cursor element only — every
+   other artifact runs the default ease, exactly like the design. */
+
+.cursor {
+  animation: sk-cursor 14s ease-in-out infinite;
+}
+.sig1 {
+  animation: sk-sig1 14s infinite;
+}
+.sig2 {
+  animation: sk-sig2 14s infinite;
+}
+.sig3 {
+  animation: sk-sig3 14s infinite;
+}
+.m1 {
+  animation: sk-m1 14s infinite;
+}
+.m2 {
+  animation: sk-m2 14s infinite;
+}
+.l1 {
+  animation: sk-l1 14s infinite;
+}
+.l2 {
+  animation: sk-l2 14s infinite;
+}
+.l3 {
+  animation: sk-l3 14s infinite;
+}
+.l4 {
+  animation: sk-l4 14s infinite;
+}
+.l5 {
+  animation: sk-l5 14s infinite;
+}
+.l6 {
+  animation: sk-l6 14s infinite;
+}
+/* marker class for the globally-animated pin-pulse dots so the loop can be
+   frozen under reduced motion (global utility, hence the !important) */
+.pulseDot {
+}
+
+@keyframes sk-cursor{0%{transform:translate(30px,218px)}5%{transform:translate(95px,155px)}9%{transform:translate(155px,185px)}12%{transform:translate(142px,168px)}22%{transform:translate(142px,168px)}27%{transform:translate(215px,205px)}33%{transform:translate(335px,92px)}40%{transform:translate(420px,110px)}43%{transform:translate(412px,120px)}50%{transform:translate(412px,120px)}55%{transform:translate(485px,172px)}61%{transform:translate(565px,62px)}66%{transform:translate(658px,68px)}70%{transform:translate(649px,77px)}78%{transform:translate(649px,77px)}84%{transform:translate(705px,132px)}92%{transform:translate(765px,82px)}100%{transform:translate(742px,98px)}}
+@keyframes sk-sig1{0%,10%{opacity:0;transform:translateY(6px)}14%,36%{opacity:1;transform:none}40%,100%{opacity:0;transform:translateY(-4px)}}
+@keyframes sk-sig2{0%,40%{opacity:0;transform:translateY(6px)}44%,64%{opacity:1;transform:none}68%,100%{opacity:0;transform:translateY(-4px)}}
+@keyframes sk-sig3{0%,68%{opacity:0;transform:translateY(6px)}72%,92%{opacity:1;transform:none}96%,100%{opacity:0;transform:translateY(-4px)}}
+@keyframes sk-m1{0%,14%{opacity:0}17%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-m2{0%,42%{opacity:0}45%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l1{0%,6%{opacity:0}9%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l2{0%,13%{opacity:0}16%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l3{0%,24%{opacity:0}27%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l4{0%,42%{opacity:0}45%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l5{0%,70%{opacity:0}73%,94%{opacity:1}98%,100%{opacity:0}}
+@keyframes sk-l6{0%,84%{opacity:0}87%,94%{opacity:1}98%,100%{opacity:0}}
+
+/* reduced motion: freeze the replay legibly — every card, pill, dot and rail
+   line visible at once; the cursor parks at the STAND ASIDE pause (70–78%). */
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+    transform: translate(649px, 77px);
+  }
+  .sig1,
+  .sig2,
+  .sig3,
+  .m1,
+  .m2,
+  .l1,
+  .l2,
+  .l3,
+  .l4,
+  .l5,
+  .l6 {
+    animation: none;
+    opacity: 1;
+  }
+  .pulseDot {
+    animation: none !important;
+  }
+}
