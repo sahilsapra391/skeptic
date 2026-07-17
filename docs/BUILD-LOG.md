@@ -2222,3 +2222,11 @@ kit reproduces this commit's assets byte-identically. Favicon stays
 the owner-picked ink-black tile (layout.tsx comment still true); the
 v2 kit README declares the gray tile primary for the brand at
 large — flagged to owner, not silently flipped.
+
+Review sweep caught one more: same-filename swaps don't propagate to
+favicon caches (browsers refresh those lazily, not per-navigation) or
+OG scrapers (per-URL server-side cache, indefinite) — the old mark
+would have stayed live on exactly the surfaces the rebrand targets.
+layout.tsx metadata URLs now carry ?v=2; bump the version on every
+future kit import. Previously scraped shares still need a manual
+re-scrape (FB/LinkedIn debuggers) after deploy.
