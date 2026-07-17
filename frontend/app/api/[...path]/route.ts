@@ -11,11 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 
-// launch L1: no key, no accounts — the proxy sends exactly what it sent
-// before Clerk existed
-import { CLERK_ENABLED } from "@/lib/clerk";
 import { createDemoRun, demoAskAnswer, demoParse, getDemoRun, listDemoRuns } from "@/lib/demo";
 import type { SpecDraft } from "@/lib/types";
 
@@ -32,25 +28,15 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   const headers: Record<string, string> = {};
   const contentType = req.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
-  // two credentials, two headers (launch L1): the Authorization bearer is
-  // the GATE (the service token, semantics unchanged since single-user);
-  // x-skeptic-session is the IDENTITY — the signed-in user's short-lived
-  // Clerk JWT, verified server-side against the instance JWKS. The token
-  // itself never ships to the browser; it's minted here, server-side.
+  // two credentials, two headers (launch L1b, self-rolled): the
+  // Authorization bearer is the GATE (the service token, semantics
+  // unchanged since single-user); IDENTITY is the httpOnly session cookie
+  // the backend set at signup/login — same-origin, so the browser sends it
+  // here and we pass it through untouched for the backend to resolve
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
   if (token) headers.authorization = `Bearer ${token}`;
-  if (CLERK_ENABLED) {
-    try {
-      const { getToken } = await auth();
-      const session = await getToken();
-      if (session) headers["x-skeptic-session"] = session;
-    } catch (err) {
-      // treat as signed out, but say so — a Clerk outage or misconfig must
-      // be distinguishable from everyone genuinely signing out (review
-      // finding: a bare catch made those identical)
-      console.error("clerk session mint failed — forwarding as signed-out:", err);
-    }
-  }
+  const cookie = req.headers.get("cookie");
+  if (cookie) headers.cookie = cookie;
   // the client's real IP, for the backend's per-IP rate keys (L4 armor);
   // Vercel stamps it on the inbound request
   const xff = req.headers.get("x-forwarded-for");
@@ -145,10 +131,18 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
       const v = upstream.headers.get(h);
       if (v) headers[h] = v;
     }
-    return new NextResponse(payload, {
+    const res = new NextResponse(payload, {
       status: upstream.status,
       headers,
     });
+    // the backend sets/clears the session cookie (auth routes); relay every
+    // Set-Cookie so the browser stores it against THIS origin. getSetCookie
+    // is the only spec-correct multi-value read — the single-header fallback
+    // covers runtimes that predate it (one auth cookie today, so safe).
+    const single = upstream.headers.get("set-cookie");
+    const setCookies = upstream.headers.getSetCookie?.() ?? (single ? [single] : []);
+    for (const c of setCookies) res.headers.append("set-cookie", c);
+    return res;
   } catch (err) {
     // a timed-out request is NOT an unreachable backend — the engine was
     // healthy and still working when the proxy gave up; say that honestly,

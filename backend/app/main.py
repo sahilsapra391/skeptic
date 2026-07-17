@@ -39,6 +39,7 @@ def _warm_lake() -> None:
 
 _warm_lake()
 
+from app.api import auth_routes as auth_api  # noqa: E402
 from app.api import data as data_api  # noqa: E402
 from app.api import me as me_api  # noqa: E402
 from app.api import notebook as notebook_api  # noqa: E402
@@ -130,7 +131,6 @@ def health() -> dict[str, object]:
     import os
 
     from app import db
-    from app.auth import clerk
     from app.data.r2 import r2_configured
     from app.honesty.stages import MIN_TRADES
     from app.honesty.verdict import DEFAULT_MODEL, PARSER_MODEL
@@ -140,8 +140,9 @@ def health() -> dict[str, object]:
         "status": "ok",
         "r2_configured": r2_configured(),
         "db": db.status(),
-        "accounts": "live — managed auth (Clerk)" if clerk.configured()
-        else "single-user (no CLERK_ISSUER)",
+        "accounts": "live — email + password, self-rolled (argon2id + DB sessions)"
+        + (" · verification required" if os.environ.get("SKEPTIC_REQUIRE_VERIFIED") == "1"
+           else " · verification optional until a mail sender is configured"),
         "engine": "live — EOD engine + full honesty gauntlet",
         "parser": "live — English → spec, questions when ambiguous" if llm
         else "needs OPENROUTER_API_KEY",
@@ -158,6 +159,7 @@ app.include_router(data_api.router, prefix="/api/data", tags=["data"])
 app.include_router(runs_api.router, prefix="/api", tags=["runs"])
 app.include_router(notebook_api.router, prefix="/api", tags=["notebook"])
 app.include_router(me_api.router, prefix="/api", tags=["me"])
+app.include_router(auth_api.router, prefix="/api", tags=["auth"])
 
 
 @app.exception_handler(HTTPException)

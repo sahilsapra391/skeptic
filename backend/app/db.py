@@ -79,6 +79,9 @@ class Run(Base):
     # Tier 1 (notebook): pinned deterministic re-execution outcome — stored
     # like receipts/audit; the run's verdict is never rewritten
     reproduce_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # launch L1b: the account that owns this run. NULL = pre-accounts /
+    # anonymous — claimable exactly once at signup (the conversion moment)
+    user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class RunEvent(Base):
@@ -134,6 +137,33 @@ class CreditLedger(Base):
     reason: Mapped[str] = mapped_column(String(20))
     run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class AuthSession(Base):
+    """Self-rolled sessions (launch L1b, owner decision D1-reversed): the
+    cookie carries an opaque random token; the DB stores only its SHA-256.
+    Revocation is a row update — sessions are DB truth, never stateless."""
+
+    __tablename__ = "auth_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(40), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class EmailToken(Base):
+    """Single-use email-verification tokens — stored hashed, like sessions."""
+
+    __tablename__ = "email_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(40), index=True)
+    purpose: Mapped[str] = mapped_column(String(20), default="verify")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 LEDGER_REASONS = {"signup_grant", "purchase", "run_debit", "engine_refund", "admin_adjust"}
@@ -224,7 +254,8 @@ def _ensure_columns() -> None:
                        "reproduce_json"):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
-        for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)")):
+        for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)"),
+                             ("user_id", "VARCHAR(40)")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
 

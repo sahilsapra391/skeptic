@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { AccountGate } from "@/components/account-gate";
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
 
@@ -20,12 +21,17 @@ export const metadata: Metadata = {
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
-      <BootSplash />
-      <NavRail />
-      <main className="flex-1 overflow-auto print:overflow-visible">
-        <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
-      </main>
-    </div>
+    // AccountGate (L1b): the app is account-gated — signed-out visitors are
+    // walked to /signup. Soft here (children render while it checks); the
+    // backend path matrix is the hard gate.
+    <AccountGate>
+      <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
+        <BootSplash />
+        <NavRail />
+        <main className="flex-1 overflow-auto print:overflow-visible">
+          <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
+        </main>
+      </div>
+    </AccountGate>
   );
 }

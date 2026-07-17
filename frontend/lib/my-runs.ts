@@ -30,3 +30,15 @@ export function rememberRun(id: string): void {
     /* private mode — the run still exists server-side */
   }
 }
+
+/** Signup claimed these ids server-side — ownership is DB truth now, and a
+ * stale breadcrumb would keep riding `include=` (and a future signup from
+ * this browser would try to re-claim runs that already have an owner). */
+export function clearMyRuns(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* private mode */
+  }
+}

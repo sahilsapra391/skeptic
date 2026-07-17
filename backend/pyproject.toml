@@ -13,8 +13,9 @@ dependencies = [
     "requests>=2.32",
     "sqlalchemy>=2.0",
     "psycopg2-binary>=2.9",
-    # launch L1: Clerk session-JWT verification (JWKS, RS256)
-    "pyjwt[crypto]>=2.8",
+    # launch L1b: self-rolled credentials (owner decision — no third party
+    # in the login path); argon2id via passlib
+    "passlib[argon2]>=1.7",
 ]
 
 [dependency-groups]

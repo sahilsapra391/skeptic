@@ -16,7 +16,7 @@ import type {
   SpecDraft,
   UnderlyingPoint,
 } from "./types";
-import { myRunIds, rememberRun } from "./my-runs";
+import { clearMyRuns, myRunIds, rememberRun } from "./my-runs";
 import { getSettings } from "./settings";
 import { draftToSpec } from "./spec";
 
@@ -373,7 +373,7 @@ export function getHealth(): Promise<{
 
 /** Launch L1: the signed-in account — email + credit balance (computed
  * server-side from the append-only ledger; there is no stored balance).
- * 401 (signed out / Clerk not configured) surfaces as ApiError. */
+ * 401 (signed out) surfaces as ApiError. */
 export type MePayload = {
   email: string;
   credits: number;
@@ -383,4 +383,58 @@ export type MePayload = {
 
 export function fetchMe(): Promise<MePayload> {
   return request<MePayload>("/api/me");
+}
+
+/** Launch L1b (self-rolled auth): what signup/login return. The session
+ * itself never touches client code — it rides an httpOnly cookie set by
+ * the backend and relayed through the proxy. */
+export type AuthAccount = {
+  email: string;
+  credits: number;
+  verified: boolean;
+  claimedRuns?: number;
+  verificationSent?: boolean;
+};
+
+export function signup(email: string, password: string): Promise<AuthAccount> {
+  // the claim flow: this browser's pre-account runs (the skeptic-my-runs
+  // breadcrumb) ride the signup and re-parent server-side; on success the
+  // breadcrumb clears — ownership is DB truth from here on, and a stale
+  // list would try to re-claim already-owned runs on a future signup
+  return request<AuthAccount>("/api/auth/signup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password, claim_run_ids: myRunIds() }),
+  }).then((account) => {
+    clearMyRuns();
+    return account;
+  });
+}
+
+export function login(email: string, password: string): Promise<AuthAccount> {
+  return request<AuthAccount>("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function logout(): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
+}
+
+export function verifyEmail(token: string): Promise<AuthAccount> {
+  return request<AuthAccount>("/api/auth/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function resendVerification(): Promise<{
+  ok: boolean;
+  verified: boolean;
+  verificationSent?: boolean;
+}> {
+  return request("/api/auth/resend-verification", { method: "POST" });
 }
