@@ -55,6 +55,7 @@ def _sweep_orphaned_runs() -> None:
     from app import db
 
     try:
+        stuck_ids: list[str] = []
         with db.session() as s:
             stuck = (
                 s.query(db.Run)
@@ -69,8 +70,15 @@ def _sweep_orphaned_runs() -> None:
                 )
                 s.add(db.RunEvent(run_id=run.id, stage=run.stage or 0,
                                   label="interrupted by service restart"))
+                stuck_ids.append(run.id)
             if stuck:
                 s.commit()
+        # L2 credit law: an interrupted run is an our-fault failure — refund
+        # the credit it debited (idempotent + self-scoped: a no-op for anon /
+        # service runs that were never charged). Without this, a redeploy or
+        # OOM mid-run would permanently charge a signed-in user for nothing.
+        for run_id in stuck_ids:
+            db.refund_run(run_id)
     except Exception:  # a sweep failure must never block boot
         import logging
 

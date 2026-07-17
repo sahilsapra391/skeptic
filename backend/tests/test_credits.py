@@ -210,6 +210,92 @@ def test_service_principal_is_not_charged(monkeypatch: pytest.MonkeyPatch) -> No
 # ------------------------------------------------- forced origin (no dodge)
 
 
+def _boom(*a: object, **k: object) -> bool:
+    raise RuntimeError("refund exploded")
+
+
+# ---------------------------------------------------- the paywall-bypass seal
+
+
+def test_refunded_refusal_cannot_unlock_at_a_lower_bar(grading: TestClient) -> None:
+    """The critical exploit: submit at an absurd bar to FORCE a refusal (→
+    refund → net 0 credits), then view at ?min_trades=1 to unlock the graded
+    verdict for free. The seal keeps a REFUNDED refusal refused at any bar —
+    you get the credit back OR the verdict, never both. (This fixture GRADES
+    at bar 1, so without the seal the second view would bless it.)"""
+    email = _email()
+    _signup(grading, email)
+
+    r = grading.post("/api/backtest", json={"spec": fx.SPEC, "min_trades": 10000})
+    assert r.status_code == 200
+    run_id = r.json()["run_id"]
+    assert _verdict(grading, run_id)["refusal"] is True  # refused at bar 10000
+    assert _credits(grading) == 5  # debited then refunded → net zero
+
+    # the exploit's second move — view at bar 1 to unlock the verdict
+    regraded = grading.get(f"/api/runs/{run_id}?min_trades=1").json()
+    assert regraded["verdict"]["refusal"] is True  # SEALED — still refused
+    assert _credits(grading) == 5  # and never re-charged
+
+
+def test_a_charged_graded_run_still_regrades_freely(grading: TestClient) -> None:
+    """The seal is scoped to REFUNDED runs: a graded (charged) run still
+    re-grades both ways at view time (the shipped evidence-bar feature)."""
+    email = _email()
+    _signup(grading, email)
+    run_id = grading.post(
+        "/api/backtest", json={"spec": fx.SPEC, "min_trades": 1}
+    ).json()["run_id"]
+    assert not _verdict(grading, run_id).get("refusal")  # graded, charged
+    assert _credits(grading) == 4
+    # raise the bar at view time → it re-caps to a refusal (display only, no
+    # refund) — proof the seal didn't freeze non-refunded runs
+    strict = grading.get(f"/api/runs/{run_id}?min_trades=10000").json()
+    assert strict["verdict"]["refusal"] is True
+    assert _credits(grading) == 4  # still charged — view-time re-grade never refunds
+
+
+# ------------------------------------------------ durability: interrupted runs
+
+
+def test_boot_sweep_refunds_interrupted_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run debits at creation; if the process dies mid-run (OOM / redeploy)
+    the completion-path refund never fires. The boot sweep marks it error AND
+    refunds — an interrupted run must not permanently charge the user."""
+    client = _client(monkeypatch, _grading_store)
+    import app.api.runs as runs_mod
+
+    monkeypatch.setattr(runs_mod, "_execute_run", lambda *a, **k: None)  # never completes
+    from app.main import _sweep_orphaned_runs
+
+    email = _email()
+    _signup(client, email)
+    run_id = client.post(
+        "/api/backtest", json={"spec": fx.SPEC, "min_trades": 1}
+    ).json()["run_id"]
+    assert _credits(client) == 4  # debited; run stuck queued (engine stubbed)
+
+    _sweep_orphaned_runs()
+    with db.session() as s:
+        assert s.get(db.Run, run_id).status == "error"
+    assert _credits(client) == 5  # the interrupted run's credit was refunded
+
+
+def test_refund_failure_does_not_corrupt_a_completed_run(
+    refusing: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal refund is isolated: a transient failure in refund_run must
+    NOT flip an already-committed 'done' run to 'error' via the outer except."""
+    email = _email()
+    _signup(refusing, email)
+    monkeypatch.setattr(db, "refund_run", _boom)
+    r = refusing.post("/api/backtest", json={"spec": fx.SPEC})
+    assert r.status_code == 200
+    run_id = r.json()["run_id"]
+    with db.session() as s:
+        assert s.get(db.Run, run_id).status == "done"  # not corrupted to error
+
+
 def test_session_caller_origin_is_forced_to_user(grading: TestClient) -> None:
     """A signed-in caller can't declare an automation origin to dodge the
     debit — the run is stamped origin=user and charged like any other."""

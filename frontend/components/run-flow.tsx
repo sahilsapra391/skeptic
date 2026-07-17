@@ -457,6 +457,9 @@ export function RunFlow({
       // requests (the old fixed 400ms setInterval flooded /api/runs/{id}
       // and stole threadpool threads from the running gauntlet)
       pollCancelledRef.current = false;
+      // the balance changes at most once per run (refund on completion); fire
+      // the refresh on the FIRST done/error, not on every narration poll tick
+      let balanceNotified = false;
       const poll = async () => {
         try {
           const payload = await getRun(run_id);
@@ -465,7 +468,10 @@ export function RunFlow({
           if (payload.status === "done") {
             setPhase("results");
             // a refusal refunds the credit at completion — refresh the balance
-            notifyCreditsChanged();
+            if (!balanceNotified) {
+              balanceNotified = true;
+              notifyCreditsChanged();
+            }
             // numbers are final; the narration upgrade is being written
             // off the critical path — keep a slow poll until it lands
             if (payload.narrationPending) {
@@ -476,7 +482,10 @@ export function RunFlow({
           if (payload.status === "error") {
             setError(payload.error ?? "backtest failed");
             setPhase("spec");
-            notifyCreditsChanged(); // an our-fault failure refunded the credit
+            if (!balanceNotified) {
+              balanceNotified = true;
+              notifyCreditsChanged(); // an our-fault failure refunded the credit
+            }
             return;
           }
         } catch {
@@ -493,10 +502,11 @@ export function RunFlow({
       // (intraday / >3y on the trial) falls through to its own clear message.
       if (e instanceof ApiError && e.status === 402) {
         // 402 has two callers: an ANON trial spent (device / global budget) →
-        // the account gate replaces the popup; a SIGNED-IN account out of
-        // credits (no gate wired) → surface the backend's honest message
-        // ("out of backtest credits — top-ups are coming soon") inline.
-        if (onTrialExhausted) onTrialExhausted(e.detail);
+        // the account gate; a SIGNED-IN account out of credits → the honest
+        // message inline. isAnon===false = a resolved account (even in the
+        // embedded landing popup), so a signed-in user is NEVER sent to the
+        // "create a free account" gate — they already have one.
+        if (onTrialExhausted && isAnon !== false) onTrialExhausted(e.detail);
         else setError(e.detail);
         return;
       }
@@ -510,7 +520,7 @@ export function RunFlow({
     } finally {
       setBusy(false);
     }
-  }, [draft, busy, humanCheckOn, onRunStarted, onTrialExhausted]);
+  }, [draft, busy, humanCheckOn, isAnon, onRunStarted, onTrialExhausted]);
 
   const reset = useCallback(() => {
     pollCancelledRef.current = true;

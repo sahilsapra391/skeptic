@@ -349,11 +349,16 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                         log.exception("receipt attach failed for %s", parent_run_id)
             s.commit()
         # launch L2 credit law: a refusal refunds — you only pay for a GRADED
-        # verdict. Decided once here at completion (a later view-time re-grade
-        # never claws it back). Idempotent + self-scoped: a no-op for anon /
-        # service runs that were never charged.
+        # verdict. Decided once here at completion; the view-time SEAL keeps a
+        # refunded refusal from being unlocked at a lower bar. Idempotent +
+        # self-scoped (no-op for anon / service runs). ISOLATED: the run is
+        # already committed 'done' — a refund hiccup must never flip it to
+        # 'error' via the outer except, so swallow + log here.
         if bool(payload.get("verdict", {}).get("refusal")):
-            db.refund_run(run_id)
+            try:
+                db.refund_run(run_id)
+            except Exception:
+                log.exception("refusal refund failed for %s", run_id)
     except Exception as exc:
         log.exception("run %s failed", run_id)
         with db.session() as s:
@@ -364,7 +369,10 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 s.add(db.RunEvent(run_id=run_id, stage=run.stage, label="failed"))
                 s.commit()
         # our-fault failure refunds the credit too (idempotent / self-scoped)
-        db.refund_run(run_id)
+        try:
+            db.refund_run(run_id)
+        except Exception:
+            log.exception("error-path refund failed for %s", run_id)
     finally:
         # this run's daily-series memo, dropped on the store THIS run used
         # (it is cached for 30 minutes across runs — chains.STORE_TTL_SECONDS
@@ -625,11 +633,13 @@ def backtest(
     with db.session() as s:
         if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
             uid = run_user.id
-            # lock THIS account's row so two simultaneous runs can't both
-            # spend the last credit (SQLite serializes writes; Postgres takes
-            # the row lock). Recompute the balance under the lock, then debit
-            # and create in ONE transaction — a crash between them leaves
-            # NEITHER (the atomicity guarantee).
+            # lock THIS account's row (Postgres) so two simultaneous runs
+            # can't both spend the last credit, then recompute the balance
+            # under the lock and debit + create in ONE transaction — a crash
+            # between them leaves NEITHER (the atomicity guarantee). On the
+            # SQLite fallback with_for_update is a no-op, so a concurrent
+            # overdraft of 1 credit is possible there; acceptable, as the
+            # fallback is degraded single-node mode and prod is Postgres.
             s.query(db.User).filter(db.User.id == uid).with_for_update().first()
             if db.credit_balance_tx(s, uid) <= 0:
                 raise HTTPException(
@@ -836,14 +846,22 @@ def get_run(
         # re-grades at read time against the caller's bar (both ways:
         # a 13-trade refusal unlocks at bar 1, a graded run re-caps at
         # 300). Per-request view; the stored row is never mutated.
+        # L2 SEAL: a REFUNDED refusal must NOT unlock at a lower bar — the
+        # credit was given back, so blessing it now would be a free graded
+        # verdict (submit at min_trades=10000 to force a refund, then view at
+        # ?min_trades=1 to unlock it — a full paywall bypass). Only a stored
+        # refusal can be unlocked downward, so the ledger check is scoped to
+        # that case (graded and anon/unpaid runs re-grade freely).
         if min_trades is not None and run.stats_json:
             from app.api.payload import regrade_for_min_trades
 
-            try:
-                stats = json.loads(run.stats_json)
-            except Exception:
-                stats = None
-            payload = regrade_for_min_trades(payload, stats, min_trades)
+            stored_refusal = bool(payload.get("verdict", {}).get("refusal"))
+            if not (stored_refusal and db.was_refunded(run_id)):
+                try:
+                    stats = json.loads(run.stats_json)
+                except Exception:
+                    stats = None
+                payload = regrade_for_min_trades(payload, stats, min_trades)
         spec_dict = json.loads(run.spec_json) if run.spec_json else {}
         # UX Chunk A: the setup story. Stored records merge verbatim; rows
         # predating the column get a READ-TIME derivation from stored fields
@@ -1050,7 +1068,10 @@ def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
     from app.honesty.ask import answer_question
 
     stats = json.loads(run.stats_json)
-    if req.min_trades is not None:
+    # L2 seal: a refunded run (always a refusal) is NOT re-graded down — the
+    # answer stays consistent with the sealed screen and can't verbally bless
+    # a run whose credit was refunded (the paywall-bypass vector get_run seals)
+    if req.min_trades is not None and not db.was_refunded(run_id):
         # same re-gate the displayed payload got — answers and screen agree,
         # and the bar number itself is grounded (it rides the sample dump)
         stats = regrade_stats_for_min_trades(stats, req.min_trades)

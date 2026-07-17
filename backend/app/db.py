@@ -215,6 +215,21 @@ def credit_balance_tx(s: Session, user_id: str) -> int:
     return int(total or 0)
 
 
+def was_refunded(run_id: str) -> bool:
+    """True once a run's credit has been given back (engine_refund exists).
+    The view-time re-grade uses this to SEAL a refunded run: you got the
+    credit OR a blessed verdict, never both — a refunded refusal must not be
+    re-graded into a graded verdict at a lower bar (that would be a free
+    graded verdict + free engine compute = a paywall bypass)."""
+    with SessionLocal() as s:
+        return (
+            s.query(CreditLedger.id)
+            .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "engine_refund")
+            .first()
+            is not None
+        )
+
+
 def refund_run(run_id: str) -> bool:
     """Give back the credit a run debited — the credit law (owner override):
     you only pay for a GRADED verdict, so a refusal or an our-fault failure
