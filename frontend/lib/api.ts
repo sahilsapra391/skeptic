@@ -355,3 +355,17 @@ export function getHealth(): Promise<{
 }> {
   return request("/api/health");
 }
+
+/** Launch L1: the signed-in account — email + credit balance (computed
+ * server-side from the append-only ledger; there is no stored balance).
+ * 401 (signed out / Clerk not configured) surfaces as ApiError. */
+export type MePayload = {
+  email: string;
+  credits: number;
+  verified: boolean;
+  createdAt: string | null;
+};
+
+export function fetchMe(): Promise<MePayload> {
+  return request<MePayload>("/api/me");
+}

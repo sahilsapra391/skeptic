@@ -11,7 +11,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 
+// launch L1: no key, no accounts — the proxy sends exactly what it sent
+// before Clerk existed
+import { CLERK_ENABLED } from "@/lib/clerk";
 import { createDemoRun, demoAskAnswer, demoParse, getDemoRun, listDemoRuns } from "@/lib/demo";
 import type { SpecDraft } from "@/lib/types";
 
@@ -28,8 +32,29 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   const headers: Record<string, string> = {};
   const contentType = req.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
+  // two credentials, two headers (launch L1): the Authorization bearer is
+  // the GATE (the service token, semantics unchanged since single-user);
+  // x-skeptic-session is the IDENTITY — the signed-in user's short-lived
+  // Clerk JWT, verified server-side against the instance JWKS. The token
+  // itself never ships to the browser; it's minted here, server-side.
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
   if (token) headers.authorization = `Bearer ${token}`;
+  if (CLERK_ENABLED) {
+    try {
+      const { getToken } = await auth();
+      const session = await getToken();
+      if (session) headers["x-skeptic-session"] = session;
+    } catch (err) {
+      // treat as signed out, but say so — a Clerk outage or misconfig must
+      // be distinguishable from everyone genuinely signing out (review
+      // finding: a bare catch made those identical)
+      console.error("clerk session mint failed — forwarding as signed-out:", err);
+    }
+  }
+  // the client's real IP, for the backend's per-IP rate keys (L4 armor);
+  // Vercel stamps it on the inbound request
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) headers["x-forwarded-for"] = xff;
   // LLM round-trips get long leashes: the parser bounds its whole attempt
   // loop to 90s wall-clock (PARSE_BUDGET_SECONDS, backend parse.py — clarify
   // -loop re-parses on DeepSeek regularly pass 30s) and grounded Q&A runs a

@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { Archivo, IBM_Plex_Mono, Newsreader } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
 import { ThemeApplier } from "@/components/theme-applier";
+// launch L1: accounts exist only when the Clerk keys do — without them the
+// provider is skipped entirely and the app is the single-user build
+import { CLERK_ENABLED } from "@/lib/clerk";
 
 import "./globals.css";
 
@@ -53,7 +57,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
+  const shell = (
     <html
       lang="en"
       className={`${archivo.variable} ${plexMono.variable} ${newsreader.variable}`}
@@ -93,4 +97,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </body>
     </html>
   );
+  return CLERK_ENABLED ? <ClerkProvider>{shell}</ClerkProvider> : shell;
 }
