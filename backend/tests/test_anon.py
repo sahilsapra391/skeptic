@@ -347,6 +347,31 @@ def test_turnstile_failure_blocks_the_anon_run(
     assert anon_trial_count() == before  # a failed human check burns nothing
 
 
+def test_signup_is_gated_by_the_human_check(
+    anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Turnstile also gates account creation (bot-signup defense). A failing
+    check → 403 and no account; a passing check → the signup proceeds. Reuses
+    the one canonical siteverify (anon.verify_turnstile)."""
+    monkeypatch.setattr(anon, "verify_turnstile", lambda token, ip: False)
+    r = anon_client.post(
+        "/api/auth/signup",
+        json={"email": unique_email(), "password": PASSWORD, "turnstile_token": "bad"},
+        headers=fresh_ip(),
+    )
+    assert r.status_code == 403
+    assert "human check" in r.json()["detail"]
+
+    monkeypatch.setattr(anon, "verify_turnstile", lambda token, ip: True)
+    ok = anon_client.post(
+        "/api/auth/signup",
+        json={"email": unique_email(), "password": PASSWORD, "turnstile_token": "good"},
+        headers=fresh_ip(),
+    )
+    assert ok.status_code == 200
+    assert "skeptic_session" in ok.headers.get("set-cookie", "")
+
+
 def test_verify_turnstile_unit(monkeypatch: pytest.MonkeyPatch) -> None:
     class Resp:
         status_code = 200

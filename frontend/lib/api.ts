@@ -419,7 +419,13 @@ export type AuthAccount = {
   verificationSent?: boolean;
 };
 
-export function signup(email: string, password: string): Promise<AuthAccount> {
+export function signup(
+  email: string,
+  password: string,
+  // the Turnstile human-check token; null when Turnstile isn't configured
+  // (dev / pre-launch) — the backend skips the check in the same case
+  turnstileToken: string | null = null,
+): Promise<AuthAccount> {
   // the claim flow: this browser's pre-account runs (the skeptic-my-runs
   // breadcrumb) ride the signup and re-parent server-side; on success the
   // breadcrumb clears — ownership is DB truth from here on, and a stale
@@ -427,7 +433,12 @@ export function signup(email: string, password: string): Promise<AuthAccount> {
   return request<AuthAccount>("/api/auth/signup", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password, claim_run_ids: myRunIds() }),
+    body: JSON.stringify({
+      email,
+      password,
+      claim_run_ids: myRunIds(),
+      turnstile_token: turnstileToken,
+    }),
   }).then((account) => {
     clearMyRuns();
     return account;

@@ -8,11 +8,13 @@
  * honors ?next= (the account gate stamps it), falling back to /new.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { ApiError, signup, type AuthAccount } from "@/lib/api";
 import { nextTarget } from "@/lib/next-param";
+import { turnstileConfigured } from "@/lib/turnstile";
+import { TurnstileWidget } from "@/components/landing/turnstile-widget";
 
 const FIELD =
   "w-full rounded-[10px] border border-line-hover bg-panel px-3.5 py-2.5 text-[14.5px] " +
@@ -30,13 +32,33 @@ export function SignupForm() {
   const [search, setSearch] = useState("");
   useEffect(() => setSearch(window.location.search), []);
 
+  // the Turnstile human-check token (null until solved). Kept in a ref so its
+  // arrival doesn't re-render the form; a bump on resetKey re-solves after the
+  // token is consumed (a 403 retry).
+  const turnstileTokenRef = useRef<string | null>(null);
+  const [turnstileReset, setTurnstileReset] = useState(0);
+  const onTurnstileVerify = useCallback((token: string | null) => {
+    turnstileTokenRef.current = token;
+  }, []);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // the human check must have produced a token before we submit — the
+    // widget solves in the background, so this only bites on an instant submit
+    if (turnstileConfigured() && !turnstileTokenRef.current) {
+      setError(new ApiError(0, "just finishing a quick human check, try again in a second"));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      setDone(await signup(email, password));
+      setDone(await signup(email, password, turnstileTokenRef.current));
     } catch (err) {
+      // a failed human check (403) consumes the token — re-mint one for the retry
+      if (err instanceof ApiError && err.status === 403) {
+        turnstileTokenRef.current = null;
+        setTurnstileReset((n) => n + 1);
+      }
       setError(
         err instanceof ApiError
           ? err
@@ -121,6 +143,11 @@ export function SignupForm() {
           )}
         </p>
       )}
+      {/* the human check — invisible unless Cloudflare challenges; renders
+          nothing when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (dev) */}
+      <div className="mt-5">
+        <TurnstileWidget onVerify={onTurnstileVerify} resetKey={turnstileReset} />
+      </div>
       <button
         type="submit"
         disabled={busy}

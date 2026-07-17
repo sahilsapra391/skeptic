@@ -47,6 +47,10 @@ _resend_rate = rate_limited("auth-resend", limit=3, window_s=3600)
 class SignupRequest(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=200)
+    # Cloudflare Turnstile token (cf-turnstile-response) — the human check
+    # that gates account creation against scripted bot signups. Optional in
+    # the model so dev/pre-launch works; verified server-side below.
+    turnstile_token: str | None = Field(default=None, max_length=4000)
     # the claim flow (owner): the runs this device made before the account
     # existed come with it — the conversion moment
     claim_run_ids: list[str] = Field(default_factory=list, max_length=50)
@@ -128,6 +132,17 @@ def signup(
     _: None = Depends(_signup_rate),
 ) -> dict[str, Any]:
     _refuse_on_fallback()
+    # bot gate: the human check runs before any signup work. Reuses the one
+    # canonical Turnstile siteverify (POST /siteverify with {secret, response,
+    # remoteip}, gated on success). Skipped when TURNSTILE_SECRET is unset
+    # (dev / pre-launch), exactly like the anonymous-run path.
+    from app import anon
+
+    if not anon.verify_turnstile(req.turnstile_token, client_ip(request)):
+        raise HTTPException(
+            status_code=403,
+            detail="the human check didn't pass — please try again",
+        )
     global_ok, _retry = _signup_global.check("signup")
     if not global_ok:
         raise HTTPException(
@@ -151,8 +166,7 @@ def signup(
     # anon token (server-side truth) is the primary source; the client's
     # localStorage breadcrumb is a belt-and-suspenders fallback for the
     # pre-armor path. Union, so neither can miss the visitor's first run.
-    from app import anon
-
+    # (anon already imported above for the human-check gate.)
     anon_ids = anon.claim_anon_runs(request.cookies.get(anon.ANON_COOKIE), user.id)
     breadcrumb = _claim_runs(user.id, req.claim_run_ids)
     claimed = len(set(anon_ids)) + breadcrumb

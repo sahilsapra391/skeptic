@@ -70,6 +70,10 @@ export function TurnstileWidget({
           "expired-callback": () => onVerify(null),
           "error-callback": () => onVerify(null),
           appearance: "interaction-only", // invisible unless a challenge is needed
+          // integration-attribution label (the render-API equivalent of a
+          // cf-turnstile div's data-action) — a static tag in our own
+          // Cloudflare analytics, no per-user data
+          action: "turnstile-spin-v2",
         });
       })
       .catch(() => onVerify(null));
