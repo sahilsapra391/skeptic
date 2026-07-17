@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 
+import { HEADLINES, bumpHeadline, peekHeadline } from "@/lib/headlines";
 import { useSpeechToText } from "@/lib/use-speech";
 
 import { LandingWordmark, useWordmarkDraw } from "./landing-wordmark";
@@ -67,7 +68,7 @@ const MORPH_TY = -28;
 const MORPH_SCALE = 0.718;
 const MORPH_TX_FALLBACK = -630; // 1440 shell constant until measured
 
-export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: WordmarkDraw }) {
+export function LandingTopbar({ draw }: { theme: LandingTheme; draw: WordmarkDraw }) {
   const navRef = useRef<HTMLElement | null>(null);
   const borderRef = useRef<HTMLDivElement | null>(null);
   const slotRef = useRef<HTMLDivElement | null>(null);
@@ -141,11 +142,20 @@ export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: Word
     <>
       {/* mobile topbar (2b): static s-mark + Sign in, no morph below md */}
       <nav className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line-softer bg-ground px-[18px] md:hidden">
+        {/* CSS theme swap off the painted data-theme — a theme.resolved prop
+            here mismatched the SSR src and forced a hydration patch */}
         {/* eslint-disable-next-line @next/next/no-img-element -- tiny static brand asset, app idiom (boot-splash) */}
         <img
-          src={theme.resolved === "light" ? "/brand/s-mark-black.svg" : "/brand/s-mark-white.svg"}
+          src="/brand/s-mark-white.svg"
           alt="Skeptic"
-          className="block h-[22px] w-auto"
+          className="block h-[22px] w-auto [[data-theme=light]_&]:hidden"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element -- tiny static brand asset */}
+        <img
+          src="/brand/s-mark-black.svg"
+          alt=""
+          aria-hidden
+          className="hidden h-[22px] w-auto [[data-theme=light]_&]:block"
         />
         <Link href="/signin" className="px-1 py-2.5 text-[13px] font-semibold text-ink-2">
           Sign in
@@ -203,6 +213,16 @@ export function LandingHero({
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
   const [phIndex, setPhIndex] = useState(0);
+  // the hero promise rotates on every reload, just like the app's New
+  // Analysis screen (shared HEADLINES). SSR + first client render show the
+  // canonical line so hydration matches (a mismatching h1 text replaces the
+  // whole document); the mount effect swaps in this visit's line and
+  // advances the counter for next time.
+  const [headline, setHeadline] = useState(HEADLINES[2]);
+  useEffect(() => {
+    setHeadline(peekHeadline());
+    bumpHeadline();
+  }, []);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const prefetchedRef = useRef(false);
 
@@ -291,7 +311,7 @@ export function LandingHero({
             stagger,
           )}
         >
-          Pitch me a trade. I&apos;ll play the skeptic.
+          {headline}
         </h1>
         <p
           style={delayRest}

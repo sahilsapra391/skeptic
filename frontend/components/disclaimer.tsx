@@ -4,7 +4,7 @@ export function Disclaimer({ short = false }: { short?: boolean }) {
     <div className="mt-3 text-center text-[11px] text-ink-4">
       {short
         ? "Research tool, not financial advice."
-        : "Research tool, not financial advice. Backtests run on approximate self-collected data and overstate live results."}
+        : "Research tool, not financial advice. Backtests run on approximate, self-collected data."}
     </div>
   );
 }

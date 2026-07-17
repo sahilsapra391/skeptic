@@ -402,8 +402,7 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         f"{sample.trades} closed trades · "
         f"{sample.regimes_present} volatility regime{'s' if sample.regimes_present != 1 else ''} "
         f"represented · window {report.effective_start} → {report.effective_end}",
-        "Self-collected EOD data; fills modeled at bid/ask plus slippage. "
-        "Backtests overstate live results.",
+        "Self-collected EOD data; fills modeled at bid/ask plus slippage.",
     ]
     cov = report.coverage
     if cov.coverage_ratio < 1.0:

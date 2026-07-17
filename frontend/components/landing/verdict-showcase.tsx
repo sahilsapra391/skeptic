@@ -129,11 +129,13 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
           numbers, withholds the blessing, and shows exactly what unlocks a verdict.
         </p>
 
-        <div className="mt-[22px] grid items-start gap-[26px] md:mt-11 md:grid-cols-[58fr_42fr]">
-          {/* refusal card — run 42ce700a376f, copy verbatim from the stored verdict */}
-          <div>
+        <div className="mt-[22px] grid items-stretch gap-[26px] md:mt-11 md:grid-cols-[58fr_42fr]">
+          {/* refusal card — run 42ce700a376f, copy verbatim from the stored verdict.
+              the column stretches to the range rail's height and the card grows
+              to fill it, so the two sides match (owner 2026-07-17) */}
+          <div className="flex flex-col">
             <div
-              className="rounded-2xl border border-dashed border-trust-border p-5 md:p-7"
+              className="flex flex-1 flex-col rounded-2xl border border-dashed border-trust-border p-5 md:p-7"
               style={{ background: "linear-gradient(180deg,var(--acd),var(--ac-faint))" }}
             >
               <div className="mb-2 flex items-center justify-between gap-3 md:mb-2.5">
@@ -152,6 +154,11 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
                 The spec is valid. The engine ran it. But only 12 trades closed inside the 1-year
                 window — below the 15-trade evidence bar. Numbers shown, blessing withheld.
               </p>
+              {/* spacer eats free height so the unlock box sits at the bottom
+                  when the card is the taller-column filler, while keeping a
+                  fixed gap when it isn't (review finding: bare mt-auto
+                  collapsed the gap to 0 if the card was the taller side) */}
+              <div className="hidden md:block md:flex-1" aria-hidden />
               <div className="mt-3.5 rounded-[10px] border border-dashed border-trust-border px-3 py-2.5 md:mt-[18px] md:px-3.5 md:py-3">
                 <div className="mb-2 font-mono text-[10px] tracking-[.12em] text-trust md:mb-2.5 md:text-[11px]">
                   TWO HONEST WAYS TO A VERDICT
@@ -198,7 +205,7 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
         <div className="mx-auto mt-10 max-w-[640px] text-center font-mono text-[11px] leading-[1.8] text-ink-4">
           <div>rendered from real stored runs — every number computed, none decorative</div>
           <div className="text-ink-5">
-            Research tool, not financial advice. Backtests overstate live results.
+            Research tool, not financial advice.
           </div>
         </div>
       </div>

@@ -48,21 +48,27 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
     };
   }, []);
 
-  const wordmark =
-    theme.resolved === "light"
-      ? "/brand/wordmark-black.svg"
-      : "/brand/wordmark-white.svg";
-
   return (
     <footer className="border-t border-line bg-navbg px-6 pb-[26px] pt-8 md:px-14 md:pb-[30px] md:pt-10 xl:px-[120px]">
       <div className="mx-auto max-w-[1440px]">
         <div className="md:grid md:grid-cols-[1.5fr_1fr_1fr] md:gap-12">
           <div>
+            {/* CSS theme swap off the painted <html data-theme> — a stale
+                theme.resolved prop rendered the white mark on the light
+                footer (near-invisible, SS1) */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={wordmark}
+              src="/brand/wordmark-white.svg"
               alt="Skeptic"
-              className="block h-3 w-auto md:h-[13px]"
+              className="block h-3 w-auto md:h-[13px] [[data-theme=light]_&]:hidden"
+              draggable={false}
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/wordmark-black.svg"
+              alt=""
+              aria-hidden
+              className="hidden h-3 w-auto md:h-[13px] [[data-theme=light]_&]:block"
               draggable={false}
             />
             <p className="mt-3 text-[12.5px] leading-[1.6] text-ink-3 md:mt-3.5 md:max-w-[280px] md:text-[13px]">
@@ -141,14 +147,7 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
 
         <div className="mt-4 flex flex-col items-start gap-3.5 md:mt-[26px] md:flex-row md:items-center md:justify-between">
           <span className="order-2 font-mono text-[10px] text-ink-4 md:order-1 md:text-[10.5px]">
-            © 2026 Skeptic ·{" "}
-            <span className="md:hidden">
-              every number computed, none decorative
-            </span>
-            <span className="hidden md:inline">
-              skeptic.fyi · every number on this page is computed — none
-              decorative
-            </span>
+            © 2026 Skeptic · skeptic.fyi is owned and operated by SpecHawk Inc.
           </span>
           <div
             role="group"

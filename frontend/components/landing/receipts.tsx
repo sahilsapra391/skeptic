@@ -160,8 +160,7 @@ export function Receipts() {
         )}
         <span className="font-mono text-[11px] text-ink-4">
           nightly lake
-          {coverage.record_latest ? ` · through ${shortDate(coverage.record_latest)}` : ""} · asymmetric
-          on purpose →
+          {coverage.record_latest ? ` · through ${shortDate(coverage.record_latest)}` : ""}
         </span>
       </>
     );

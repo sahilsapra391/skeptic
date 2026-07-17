@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage, getRun, listRuns, parseText, prefetchBars, startBacktest } from "@/lib/api";
+import { HEADLINES } from "@/lib/headlines";
 import type {
   ParseQuestion,
   ProvenanceEvent,
@@ -35,21 +36,6 @@ type Mode = "text" | "chart";
 
 /** Starter strategies. Ordered by what the library says the user actually
  * runs (structure counts from past runs), most-used first. */
-/** The hero headline rotates — a different version of the same promise on
- * every visit (sequential, persisted, so it always changes). */
-const HEADLINES = [
-  "Describe a strategy. I'll try to break it.",
-  "Bring your thesis. I'll bring the evidence.",
-  "Pitch me a trade. I'll play the skeptic.",
-  "Bring me your best idea. I'll stress-test it.",
-  "Describe a strategy. Let's see what survives.",
-  "Got an edge? Prove it against the data.",
-  "Tell me the trade. I'll tell you where it breaks.",
-  "Describe a strategy. The data gets the last word.",
-  "Show me a winner. I'll check if it was luck.",
-  "Your idea versus six years of market data. Go.",
-];
-
 const PRESETS: { label: string; structure: Structure; phrase: string }[] = [
   {
     label: "Weekly income put",
@@ -117,10 +103,14 @@ export function RunFlow({
   initialPitch,
   initialMode,
   embedded = false,
+  onRunStarted,
 }: {
   initialPitch?: string;
   initialMode?: "chart";
   embedded?: boolean;
+  // launch L4: the landing learns the run id the instant it's created, so
+  // its background-run banner can track the run even if this popup closes
+  onRunStarted?: (runId: string, demo: boolean) => void;
 }) {
   const [phase, setPhase] = useState<Phase>("compose");
   const [mode, setMode] = useState<Mode>("text");
@@ -378,9 +368,10 @@ export function RunFlow({
     setError(null);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
-      const { run_id } = await startBacktest(
+      const { run_id, demo } = await startBacktest(
         draft, parsedSpecRef.current, untouched, transcriptRef.current,
       );
+      onRunStarted?.(run_id, demo);
       setPhase("running");
       setRun(null);
       // self-scheduling poll: each tick AWAITS the prior response before
@@ -418,7 +409,7 @@ export function RunFlow({
     } finally {
       setBusy(false);
     }
-  }, [draft, busy]);
+  }, [draft, busy, onRunStarted]);
 
   const reset = useCallback(() => {
     pollCancelledRef.current = true;
@@ -596,11 +587,15 @@ export function RunFlow({
 
   return (
     <div>
-      <div className="mx-auto mb-9 mt-[9vh] flex max-w-[900px] flex-col items-center">
-        <h1 className="text-center font-serif text-[clamp(32px,3.6vw,44px)] font-medium leading-[1.12] tracking-[-.01em]">
-          {headline}
-        </h1>
-      </div>
+      {/* embedded in the landing popup, the modal supplies the framing —
+          drop the big headline so it's just the composer/chart (owner) */}
+      {!embedded && (
+        <div className="mx-auto mb-9 mt-[9vh] flex max-w-[900px] flex-col items-center">
+          <h1 className="text-center font-serif text-[clamp(32px,3.6vw,44px)] font-medium leading-[1.12] tracking-[-.01em]">
+            {headline}
+          </h1>
+        </div>
+      )}
 
       <div className="mb-4 flex justify-center">{modeChips}</div>
 
@@ -683,7 +678,7 @@ export function RunFlow({
             )}
           </div>
           <p className="mt-3.5 text-center text-[12.5px] text-ink-4">
-            Research tool, not financial advice. Backtests overstate live results.
+            Research tool, not financial advice.
           </p>
           <div className="mx-auto mt-7 flex max-w-[1300px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (

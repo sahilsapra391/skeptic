@@ -274,8 +274,12 @@ export function startBacktest(
     body: JSON.stringify({ spec, provenance, min_trades: getSettings().minTrades }),
   }).then((res) => {
     // pre-accounts: this browser's runs ride the curated listing via
-    // include=, and signup later re-parents exactly this list (claim flow)
-    rememberRun(res.run_id);
+    // include=, and signup later re-parents exactly this list (claim flow).
+    // A demo-fallback run lives only in the proxy's memory and won't
+    // survive a later view (serverless instances differ) — remembering it
+    // would 404 on view AND wrongly burn the device's one free run, so
+    // skip it (owner-reported bug 2026-07-17).
+    if (!res.demo) rememberRun(res.run_id);
     return res;
   });
 }

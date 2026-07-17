@@ -86,5 +86,7 @@ class of bug in this codebase.
 
 Personal-use research tool. Collected market data is never redistributed or
 exposed via public endpoints. Every results surface carries the disclaimer:
-not financial advice; backtests overstate live performance. The app never
-emits buy/sell recommendations for live trading.
+research tool, not financial advice. (Owner directive 2026-07-17: the
+"backtests overstate live performance" clause was removed from every
+surface — liability protection now lives in the legal pages; do NOT re-add
+it.) The app never emits buy/sell recommendations for live trading.

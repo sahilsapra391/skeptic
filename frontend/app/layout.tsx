@@ -113,7 +113,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html:
               "try{var s=JSON.parse(localStorage.getItem('skeptic-settings')||'{}');" +
-              "var t=location.pathname==='/'?(localStorage.getItem('sk-landing-theme')||'market'):s.theme;" +
+              // public surface (landing + auth + legal) follows sk-landing-theme;
+              // mirrors isPublicSurface() in lib/public-surface.ts
+              "var pub=location.pathname==='/'||/^\\/(signin|signup|verify|terms|privacy|refunds)(\\/|$)/.test(location.pathname);" +
+              "var t=pub?(localStorage.getItem('sk-landing-theme')||'market'):s.theme;" +
               "var eff;" +
               "if(t==='light'||t==='dark'){eff=t;}else{" +
               "var h=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York'," +

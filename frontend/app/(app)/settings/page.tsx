@@ -320,8 +320,8 @@ export default function SettingsPage() {
 
       <div className="rounded-[14px] border border-dashed border-line-hover p-5 text-[13px] leading-[1.65] text-ink-3">
         Skeptic is a research instrument. It produces no recommendations to buy or sell any
-        security. Backtests are computed on approximate, self-collected data and systematically
-        overstate real-world results. Past performance does not predict future results.
+        security. Backtests are computed on approximate, self-collected data. Past performance
+        does not predict future results.
       </div>
     </div>
   );

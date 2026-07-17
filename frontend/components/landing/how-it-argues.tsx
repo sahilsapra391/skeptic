@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
+
+import {
+  INTERVIEW_QUESTIONS,
+  bumpInterviewQuestion,
+  peekInterviewQuestion,
+} from "@/lib/interview-questions";
 
 /**
  * Landing §2 "How it argues" — three panel cards (design 2a lines 107–144,
@@ -12,24 +18,46 @@ import clsx from "clsx";
  * only — no P/L tokens on this surface.
  */
 
-const QUESTION =
-  "Two exits could apply at 21 days — take whichever hits first, or profit target only?";
-
-const OPTIONS = ["whichever hits first", "profit target only", "time exit only"];
-
-// gauntlet stages; mobileSuffix folds the essential note into the label
-// below md, matching 2b rows 1 and 5
-const GAUNTLET_ROWS: { label: string; note: string; mobileSuffix?: string }[] = [
+// the gauntlet stages + the verdict, stepped through like the real app's
+// progress. mobileSuffix folds the essential note into the label below md.
+const ATTACK_ROWS: { label: string; note: string; mobileSuffix?: string; verdict?: boolean }[] = [
   { label: "Backtest", note: "real bid/ask, never mid", mobileSuffix: " — real bid/ask, never mid" },
   { label: "Test on data it never saw", note: "last 30% kept hidden" },
   { label: "Test each time period", note: "rolling ~2-month windows" },
   { label: "Reshuffle the trades 1,000×", note: "how much was luck?" },
   { label: "Nudge the settings", note: "does it survive small changes?", mobileSuffix: " ±20%" },
+  { label: "The honest verdict", note: "grounded in the numbers above", verdict: true },
 ];
+const STEP_MS = 900;
 
-export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
+export function HowItArgues() {
   const [answered, setAnswered] = useState(false);
   const [draft, setDraft] = useState("");
+  // a different real-style clarifying question each visit. SSR + first
+  // client render show the canonical one so hydration matches; the mount
+  // effect swaps in this visit's question and advances for next reload.
+  const [interview, setInterview] = useState(INTERVIEW_QUESTIONS[8]);
+  useEffect(() => {
+    setInterview(peekInterviewQuestion());
+    bumpInterviewQuestion();
+  }, []);
+
+  // step = completed stages (0..6); the active stage is `step`. It walks
+  // the gauntlet and loops, so the card reads as a live run, not a static
+  // checklist (owner 2026-07-17). Reduced motion pins it fully complete.
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setStep(ATTACK_ROWS.length);
+      return;
+    }
+    const id = window.setInterval(
+      () => setStep((s) => (s >= ATTACK_ROWS.length ? 0 : s + 1)),
+      STEP_MS,
+    );
+    return () => window.clearInterval(id);
+  }, []);
+  const pct = Math.round((step / ATTACK_ROWS.length) * 100);
 
   const answer = () => setAnswered(true);
   const reset = () => {
@@ -50,7 +78,7 @@ export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
           Three moves. No guesses.
         </h2>
 
-        <div className="mt-[22px] grid items-start gap-[14px] md:mt-[38px] md:grid-cols-3 md:gap-[22px]">
+        <div className="mt-[22px] grid items-stretch gap-[14px] md:mt-[38px] md:grid-cols-3 md:gap-[22px]">
           {/* 01 — YOU PITCH */}
           <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-panel p-4 md:gap-[14px] md:p-5">
             <div className="flex justify-between font-mono text-[10.5px] tracking-[.12em] text-ink-3 md:text-[11px]">
@@ -58,13 +86,15 @@ export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
               <span className="hidden text-ink-5 md:inline">english, or a chart</span>
             </div>
             <div className="overflow-hidden rounded-lg border border-line-soft">
-              {/* still is a light-mode capture; dark theme inverts it (design page logic) */}
+              {/* the still is a LIGHT capture — it follows the page: shown
+                  as-is on a light page, inverted (hue preserved) on a dark
+                  one. Driven off the painted <html data-theme>, NOT a React
+                  prop, so it can never mismatch the actual background. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/landing/chart-teach-v2.png"
                 alt="pin winning examples on the SPY chart"
-                className="block w-full"
-                style={{ filter: resolved === "dark" ? "invert(1) hue-rotate(180deg)" : "none" }}
+                className="block w-full [[data-theme=dark]_&]:[filter:invert(1)_hue-rotate(180deg)]"
               />
             </div>
             {/* "1993" = SPY inception per copy-deck §2 (flagged VERIFY there) */}
@@ -105,10 +135,10 @@ export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
                   {"QUESTION 1 OF 1 — I DON'T GUESS"}
                 </div>
                 <div className="mb-3 text-[14.5px] font-semibold leading-[1.4] text-ink md:mb-[14px] md:text-[16.5px] md:leading-[1.375]">
-                  {QUESTION}
+                  {interview.q}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
-                  {OPTIONS.map((option) => (
+                  {interview.options.map((option) => (
                     <button
                       key={option}
                       type="button"
@@ -158,31 +188,54 @@ export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
               <span className="hidden text-ink-5 md:inline">then the verdict</span>
             </div>
             <div className="flex flex-col gap-[9px] font-mono text-[12px] md:gap-[10px] md:text-[13px]">
-              {GAUNTLET_ROWS.map((row) => (
-                <div
-                  key={row.label}
-                  className="flex items-baseline gap-[9px] text-ink-3 md:gap-[10px]"
-                >
-                  <span className="w-[14px] shrink-0 md:w-4">✓</span>
-                  <span className="flex-1">
-                    {row.label}
-                    {row.mobileSuffix && <span className="md:hidden">{row.mobileSuffix}</span>}
-                  </span>
-                  <span className="hidden text-[10.5px] text-ink-5 md:inline">{row.note}</span>
-                </div>
-              ))}
-              <div className="flex items-baseline gap-[9px] text-ink md:gap-[10px]">
-                <span className="w-[14px] shrink-0 md:w-4">▶</span>
-                <span className="flex-1">The honest verdict</span>
-                <span className="hidden text-[10.5px] text-ink-4 md:inline">
-                  grounded in the numbers above
-                </span>
-              </div>
+              {ATTACK_ROWS.map((row, i) => {
+                const done = i < step;
+                const active = i === step;
+                return (
+                  <div
+                    key={row.label}
+                    className={clsx(
+                      "flex items-baseline gap-[9px] transition-[color,opacity] duration-300 md:gap-[10px]",
+                      active
+                        ? "text-ink"
+                        : done
+                          ? row.verdict
+                            ? "text-ink"
+                            : "text-ink-3"
+                          : "text-ink-5 opacity-60",
+                    )}
+                  >
+                    <span className="flex w-[14px] shrink-0 justify-center md:w-4">
+                      {active ? (
+                        <span className="inline-block h-[7px] w-[7px] animate-pin-pulse rounded-full bg-trust motion-reduce:animate-none" />
+                      ) : done ? (
+                        <span className="text-trust">{row.verdict ? "▶" : "✓"}</span>
+                      ) : (
+                        <span>{row.verdict ? "▶" : "○"}</span>
+                      )}
+                    </span>
+                    <span className="flex-1">
+                      {row.label}
+                      {row.mobileSuffix && <span className="md:hidden">{row.mobileSuffix}</span>}
+                    </span>
+                    <span
+                      className={clsx(
+                        "hidden text-[10.5px] md:inline",
+                        active ? "text-trust" : "text-ink-5",
+                      )}
+                    >
+                      {row.note}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            {/* progress bar + footnote are desktop-only (absent from 2b);
-                83% = 5 of 6 stages done, matching the ▶ row. trust hue, not P/L */}
+            {/* progress bar walks the gauntlet with the step; trust hue, not P/L */}
             <div className="mt-[2px] hidden h-[6px] overflow-hidden rounded-[3px] bg-line-softer md:block">
-              <div className="h-full w-[83%] rounded-[3px] bg-trust" />
+              <div
+                className="h-full rounded-[3px] bg-trust transition-[width] duration-300 ease-out"
+                style={{ width: `${pct}%` }}
+              />
             </div>
             <div className="hidden font-mono text-[11px] text-ink-4 md:block">
               live numbers stream while it runs — never a loading bar
