@@ -87,7 +87,7 @@ export default function LibraryPage() {
             Nothing here yet. The first thing this tool will do with your idea is try to break it.
           </p>
           <Link
-            href="/"
+            href="/new"
             className="mt-4 inline-block rounded-[10px] bg-trust px-5 py-2.5 text-[14px] font-bold text-on-accent"
           >
             New analysis →
@@ -138,7 +138,7 @@ export default function LibraryPage() {
             </Link>
           ))}
           <Link
-            href="/"
+            href="/new"
             className="flex min-h-[140px] items-center justify-center rounded-[14px] border border-dashed border-line-hover p-5 text-[14.5px] text-ink-4 hover:border-trust-border hover:text-trust"
           >
             + New Analysis

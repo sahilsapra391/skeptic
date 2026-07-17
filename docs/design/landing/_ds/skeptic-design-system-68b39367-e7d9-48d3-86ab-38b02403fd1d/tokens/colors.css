@@ -1,0 +1,54 @@
+/* Skeptic color tokens — verbatim from frontend/app/globals.css.
+   Theme swap via attributes on <html>: data-theme="dark"(default)|"light",
+   data-accent="cyan"(default)|"sage"|"lavender"|"rose".
+   COLOR CONTRACT (TECH-SPEC §8): the trust/accent family (--ac*) never colors
+   P/L; --pl-pos/--pl-neg never color trust surfaces. */
+:root{
+--ground:#0b0c0e;--navbg:#0e0f12;--panel:#161719;--panel-deep:#101113;--panel-chart:#121315;
+--raised:#1b1c1f;--raised-2:#202124;--raised-3:#26272b;
+--line:#2a2b30;--line-soft:#232428;--line-softer:#1e1f22;--line-hover:#3a3c42;
+--grid:#191a1d;--band-track:#2c2d32;
+--ink:#f2f3f5;--ink-2:#c9cbcf;--ink-3:#9498a0;--ink-4:#686c73;--ink-5:#53565d;
+--chart:#d2d5da;--chart-bright:#e4e6ea;--chart-mid:#7e838b;--crosshair:#3a3d43;
+--heat-rgb:210 213 219; /* @kind color */
+--warn-rgb:217 164 65; /* @kind color */
+--pl-pos:#43c987;--pl-neg:#e0604f;
+--on-accent:#0b0c0e;
+--oos-shade:rgba(255,255,255,0.035);
+--overlay-panel:rgba(22,23,25,0.92);
+--shadow-soft:0 20px 60px rgba(0,0,0,0.5);
+--shadow-pop:0 8px 24px rgba(0,0,0,0.55);
+--ac-rgb:63 193 207; /* @kind color */
+--ac:rgb(var(--ac-rgb));
+--acd:rgb(var(--ac-rgb) / 0.12);
+--acb:rgb(var(--ac-rgb) / 0.5);
+--ac-faint:rgb(var(--ac-rgb) / 0.03);
+--warn:rgb(var(--warn-rgb));
+/* semantic aliases */
+--trust:var(--ac);--trust-dim:var(--acd);--trust-border:var(--acb);
+--surface-ground:var(--ground);--surface-card:var(--panel);
+--text-body:var(--ink-2);--text-muted:var(--ink-3);--text-faint:var(--ink-4);
+}
+[data-accent="sage"]{--ac-rgb:156 204 163 /* @kind color */}
+[data-accent="lavender"]{--ac-rgb:178 164 235 /* @kind color */}
+[data-accent="rose"]{--ac-rgb:232 166 180 /* @kind color */}
+[data-theme="light"]{
+--ground:#f4f4f5;--navbg:#efeff1;--panel:#ffffff;--panel-deep:#f7f7f8;--panel-chart:#fafafa;
+--raised:#ececee;--raised-2:#e4e4e7;--raised-3:#dfdfe3;
+--line:#d9d9de;--line-soft:#e2e2e6;--line-softer:#e7e7ea;--line-hover:#b9b9c0;
+--grid:#e6e6ea;--band-track:#d9d9de;
+--ink:#16181d;--ink-2:#34383f;--ink-3:#5a616b;--ink-4:#8a919b;--ink-5:#a5abb4;
+--chart:#3a4149;--chart-bright:#24292f;--chart-mid:#6b7480;--crosshair:#b7bcc4;
+--heat-rgb:58 65 73; /* @kind color */
+--warn-rgb:168 118 22; /* @kind color */
+--pl-pos:#1e9e62;--pl-neg:#cc4433;
+--on-accent:#ffffff;
+--oos-shade:rgba(16,16,20,0.045);
+--overlay-panel:rgba(255,255,255,0.92);
+--shadow-soft:0 20px 50px rgba(16,16,20,0.12);
+--shadow-pop:0 8px 24px rgba(16,16,20,0.16);
+--ac-rgb:13 125 138; /* @kind color */
+}
+[data-theme="light"][data-accent="sage"]{--ac-rgb:58 122 72 /* @kind color */}
+[data-theme="light"][data-accent="lavender"]{--ac-rgb:100 84 200 /* @kind color */}
+[data-theme="light"][data-accent="rose"]{--ac-rgb:176 71 96 /* @kind color */}

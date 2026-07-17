@@ -1,0 +1,5 @@
+/* Webfonts — production loads these exact families from Google via
+   next/font/google (frontend/app/layout.tsx); no binaries live in the repo,
+   so this design system links the same Google-hosted files.
+   Archivo 400–700 · IBM Plex Mono 400/500/600 · Newsreader 400/500 ± italic. */
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap");

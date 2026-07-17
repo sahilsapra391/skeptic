@@ -1,0 +1,23 @@
+/* Skeptic geometry — radii, borders, layout measures. Exact values from the
+   app; never snap them to a 4/8 grid. Borders are always 1px solid. */
+:root{
+--radius-composer:22px;  /* the big chatbox */
+--radius-verdict:16px;   /* Verdict Block */
+--radius-panel:14px;     /* panels, cards, preset chips */
+--radius-tile:12px;      /* metric tiles, error boxes */
+--radius-seg:11px;       /* segmented-control shell (3px pad inside) */
+--radius-control:10px;   /* buttons, nav items, refusal strip */
+--radius-field:9px;      /* inputs, small buttons, tooltips, hover cards */
+--radius-item:8px;       /* sidebar recent rows */
+--radius-bar:3px;        /* progress + meter bars */
+--radius-pill:999px;
+--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:28px;--space-7:34px;
+--shell-max:1620px;      /* main content max width */
+--shell-pad:34px;        /* main gutter */
+--rail-w:56px;           /* collapsed nav rail */
+--nav-w:196px;           /* default open sidebar */
+--measure-compose:960px; /* composer column */
+--measure-chat:684px;    /* thinking/clarify column */
+--measure-gauntlet:650px;/* run-in-progress column */
+--measure-verdict:860px; /* verdict headline max width */
+}

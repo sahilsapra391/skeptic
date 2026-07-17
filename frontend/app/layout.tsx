@@ -4,8 +4,6 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-import { BootSplash } from "@/components/boot-splash";
-import { NavRail } from "@/components/nav-rail";
 import { ThemeApplier } from "@/components/theme-applier";
 // launch L1: accounts exist only when the Clerk keys do — without them the
 // provider is skipped entirely and the app is the single-user build
@@ -81,17 +79,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      {/* print (Save PDF): the scroll cage would clip the printout to one
-          viewport — open it up so the full run paginates */}
-      <body className="h-screen overflow-hidden bg-ground font-sans text-ink antialiased print:h-auto print:overflow-visible">
+      {/* the viewport-locked app shell (nav rail + scroll-caged main) lives
+          in app/(app)/layout.tsx — the landing at `/` scrolls the window */}
+      <body className="bg-ground font-sans text-ink antialiased">
         <ThemeApplier />
-        <BootSplash />
-        <div className="flex h-full print:block print:h-auto">
-          <NavRail />
-          <main className="flex-1 overflow-auto print:overflow-visible">
-            <div className="mx-auto max-w-shell px-[34px] pb-10 pt-8">{children}</div>
-          </main>
-        </div>
+        {children}
         <Analytics />
         <SpeedInsights />
       </body>

@@ -12,7 +12,7 @@ import type { RunSummary } from "@/lib/types";
 
 const ITEMS: { href: string; title: string; icon: React.ReactNode }[] = [
   {
-    href: "/",
+    href: "/new",
     title: "New Analysis",
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -144,7 +144,7 @@ export function NavRail() {
   }, [pathname]);
 
   const activeFor = (href: string) => {
-    if (href === "/") return pathname === "/";
+    if (href === "/new") return pathname === "/new";
     // saved runs are library entries — keep Library lit while reading one
     if (href === "/library") return pathname.startsWith("/library") || pathname.startsWith("/runs");
     return pathname.startsWith(href);
