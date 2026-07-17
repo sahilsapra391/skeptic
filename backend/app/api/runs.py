@@ -529,23 +529,46 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
     return {"run_id": run_id, "demo": False, "status": "queued"}
 
 
+def example_run_ids() -> tuple[str, ...]:
+    """The two showcase runs every visitor sees (owner picks, 2026-07-17):
+    one blessed with a real gain, one refused for too few trades. Env-
+    overridable so re-pinning never needs a deploy."""
+    raw = os.environ.get("SKEPTIC_EXAMPLE_RUN_IDS", "612905835dca,42ce700a376f")
+    return tuple(x.strip() for x in raw.split(",") if x.strip())
+
+
 @router.get("/runs")
-def list_runs() -> dict[str, Any]:
+def list_runs(
+    scope: str = Query(default="examples"),
+    include: str = Query(default="", max_length=1200),
+) -> dict[str, Any]:
     """Library listing. Reads ONLY the small summary column — pulling 50
     full payloads (equity series and all) per listing is how a database
     transfer quota dies. Queued/running runs get an ephemeral summary so
-    navigating away from the progress screen never 'loses' a run."""
+    navigating away from the progress screen never 'loses' a run.
+
+    Pre-accounts curation (owner 2026-07-17): the DEFAULT listing is the
+    two pinned example runs, explicitly badged — the dev-era history must
+    not appear as anyone's library. `include` adds the caller's OWN run ids
+    (the client remembers what it started; the accounts chunk re-parents
+    exactly this list — the claim flow). scope=all keeps the full listing
+    for the owner and stays until the accounts chunk gates it on principal
+    (nightly automation reads the DB directly and is unaffected)."""
     with db.session() as s:
+        query = s.query(
+            db.Run.id,
+            db.Run.created_at,
+            db.Run.status,
+            db.Run.stage,
+            db.Run.summary_json,
+            db.Run.spec_json,
+        )
+        examples_only = scope != "all"
+        if examples_only:
+            own = tuple(x.strip() for x in include.split(",") if x.strip())[:50]
+            query = query.filter(db.Run.id.in_(example_run_ids() + own))
         rows = (
-            s.query(
-                db.Run.id,
-                db.Run.created_at,
-                db.Run.status,
-                db.Run.stage,
-                db.Run.summary_json,
-                db.Run.spec_json,
-            )
-            .filter(db.Run.status.in_(["queued", "running", "done"]))
+            query.filter(db.Run.status.in_(["queued", "running", "done"]))
             .order_by(db.Run.created_at.desc())
             .limit(50)
             .all()
@@ -570,7 +593,10 @@ def list_runs() -> dict[str, Any]:
                 )
                 continue
             if summary_json:
-                runs.append(json.loads(summary_json))
+                summary = json.loads(summary_json)
+                if run_id in example_run_ids():
+                    summary["example"] = True
+                runs.append(summary)
                 continue
             # stored before summary_json existed — build once, persist, done
             run = s.get(db.Run, run_id)
@@ -649,6 +675,10 @@ def get_run(
         payload["replayEligible"] = (
             (run.origin or "user") == "user" and replay_eligible_spec(spec_dict)
         )
+        # owner 2026-07-17: the two pinned showcase runs say so, explicitly —
+        # a stranger must never mistake an example for their own result
+        if run_id in example_run_ids():
+            payload["example"] = True
         return payload
     if run.status == "error":
         return {"id": run_id, "demo": False, "status": "error",

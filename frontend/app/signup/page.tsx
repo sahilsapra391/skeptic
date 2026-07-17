@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { SubpageShell } from "@/components/landing/subpage-shell";
 
-export const metadata: Metadata = { title: "Create an account — Skeptic" };
+export const metadata: Metadata = { title: "Create an account", alternates: { canonical: "/signup" } };
 
 /**
  * Honest placeholder until the in-house accounts chunk lands (email +

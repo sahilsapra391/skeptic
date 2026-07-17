@@ -1,0 +1,38 @@
+/* draw-on strokes: pathLength=1 normalizes every path so dash 1→0 draws it.
+   Timing = the committed brand kit (.75s, cubic-bezier(.33,0,.2,1)); colors
+   via currentColor so the mark re-inks live on theme flips. */
+.mark {
+  /* no display here: it would outrank Tailwind's responsive hidden/block
+     utilities on the same element (module CSS loads after utilities) —
+     callers set `block`/`md:hidden` themselves. The explicit ratio keeps
+     width-only sizing honest: without it an attribute-less svg collapses
+     to the 150×20 fallback in Chromium. */
+  aspect-ratio: 704 / 152;
+  height: auto;
+  line-height: 0;
+  color: var(--ink);
+}
+.mark :global(path.w) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 12;
+  stroke-linecap: butt;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw 0.75s cubic-bezier(0.33, 0, 0.2, 1) forwards;
+}
+.drawn :global(path.w) {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mark :global(path.w) {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}

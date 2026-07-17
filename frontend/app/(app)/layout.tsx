@@ -1,5 +1,15 @@
+import type { Metadata } from "next";
+
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
+
+// the app surfaces are an application, not content — the landing + legal
+// pages are the indexable face (launch L4). Public run pages become
+// indexable when a server-rendered share surface exists, not before:
+// client-rendered payload screens index as thin/duplicate content.
+export const metadata: Metadata = {
+  robots: { index: false, follow: true },
+};
 
 /**
  * The app shell (launch L4): nav rail + scroll-caged main. This wrapper

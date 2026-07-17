@@ -53,9 +53,42 @@ def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
     actions = [t["a"] for t in payload["trades"]]
     assert "ASSIGN" in actions and "OPEN" in actions
 
-    listing = client.get("/api/runs").json()
+    # curation (launch L4): the default listing is examples-only — a fresh
+    # run appears via include= (the caller's own id) or scope=all
+    listing = client.get(f"/api/runs?include={run_id}").json()
     assert listing["demo"] is False
     assert any(item["id"] == run_id for item in listing["runs"])
+    assert any(item["id"] == run_id for item in client.get("/api/runs?scope=all").json()["runs"])
+    assert not any(
+        item["id"] == run_id for item in client.get("/api/runs").json()["runs"]
+    )
+
+
+def test_example_curation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The public library is the two pinned examples, badged; a visitor's
+    own runs ride along via include=; nothing else leaks (owner 2026-07-17)."""
+    first = client.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
+    second = client.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
+    monkeypatch.setenv("SKEPTIC_EXAMPLE_RUN_IDS", first)
+
+    # default: examples only, explicitly badged
+    runs = client.get("/api/runs").json()["runs"]
+    assert [r["id"] for r in runs] == [first]
+    assert runs[0]["example"] is True
+
+    # the caller's own run rides along, unbadged; the other stays hidden
+    runs = client.get(f"/api/runs?include={second}").json()["runs"]
+    assert {r["id"] for r in runs} == {first, second}
+    own = next(r for r in runs if r["id"] == second)
+    assert "example" not in own
+
+    # the example's full payload says so too — the run screen banners it
+    assert client.get(f"/api/runs/{first}").json()["example"] is True
+    assert "example" not in client.get(f"/api/runs/{second}").json()
+
+    # scope=all keeps the full listing (owner/automation, pre-launch)
+    all_ids = {r["id"] for r in client.get("/api/runs?scope=all").json()["runs"]}
+    assert {first, second} <= all_ids
 
 
 def test_run_error_is_surfaced(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

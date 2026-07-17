@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { SubpageShell } from "@/components/landing/subpage-shell";
 
-export const metadata: Metadata = { title: "Sign in — Skeptic" };
+export const metadata: Metadata = { title: "Sign in", alternates: { canonical: "/signin" } };
 
 /** Honest placeholder until the in-house accounts chunk lands. */
 export default function SigninPage() {

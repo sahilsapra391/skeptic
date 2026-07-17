@@ -215,9 +215,41 @@ export default function NewAnalysisPage() {
     };
   }, []);
 
+  // landing handoff (launch L4): /new?pitch=<text> prefills + auto-compiles,
+  // /new?mode=chart opens chart-teach directly. Read via location.search, NOT
+  // useSearchParams — the hook forces a Suspense split of this client page at
+  // build (Next 14). One-shot on mount; params are consumed so a refresh
+  // doesn't re-fire the parse. (A same-route /new?pitch=… client navigation
+  // wouldn't remount, but every handoff comes from `/`, a cross-route mount.)
+  const bootedRef = useRef(false);
+  useEffect(() => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const pitch = params.get("pitch");
+    const modeParam = params.get("mode");
+    if (params.has("pitch") || params.has("mode")) {
+      window.history.replaceState(null, "", "/new");
+    }
+    if (modeParam === "chart") {
+      setMode("chart");
+      setRenderedMode("chart");
+      return;
+    }
+    if (pitch?.trim()) {
+      setText(pitch);
+      void compileTextRef.current(undefined, pitch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const compileText = useCallback(
-    async (withAnswers?: Record<string, string>) => {
-      if (!text.trim() || busy) return;
+    // `source` overrides state `text` for the landing handoff: setText in
+    // the same tick hasn't landed yet, so the boot effect passes the pitch
+    // explicitly; clarify re-compiles keep reading state as before
+    async (withAnswers?: Record<string, string>, source?: string) => {
+      const input = source ?? text;
+      if (!input.trim() || busy) return;
       const gen = ++compileGenRef.current;
       // the thinking view has no mic control — a live dictation must not
       // keep appending to the prompt behind it
@@ -229,7 +261,7 @@ export default function NewAnalysisPage() {
         // to a spec, an earlier attempt's conversation must not ride along;
         // a re-compile with answers is the same conversation continuing
         if (!withAnswers) transcriptRef.current = [];
-        const res = await parseText(text, withAnswers);
+        const res = await parseText(input, withAnswers);
         if (gen !== compileGenRef.current) return; // cancelled — drop it
         if (res.status === "questions") {
           const asked = new Date().toISOString();
@@ -262,6 +294,11 @@ export default function NewAnalysisPage() {
     },
     [text, busy, speech],
   );
+
+  // live ref so the one-shot boot effect never calls a stale closure — the
+  // same pattern use-speech.ts uses for onSegmentRef
+  const compileTextRef = useRef(compileText);
+  compileTextRef.current = compileText;
 
   const cancelCompile = useCallback(() => {
     compileGenRef.current++;

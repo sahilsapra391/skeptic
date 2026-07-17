@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { SubpageShell } from "@/components/landing/subpage-shell";
 
-export const metadata: Metadata = { title: "Terms of Service — Skeptic" };
+export const metadata: Metadata = { title: "Terms of Service", alternates: { canonical: "/terms" } };
 
 /** Placeholder — the owner supplies the final text before launch (PRD H:
  * legal pages are launch blockers, not PR blockers). */

@@ -38,6 +38,7 @@ const config: Config = {
         trust: "rgb(var(--ac-rgb) / <alpha-value>)",
         "trust-dim": "var(--acd)",
         "trust-border": "var(--acb)",
+        "trust-faint": "var(--ac-faint)",
         // P/L pair — profit/loss data ONLY
         "pl-pos": "var(--pl-pos)",
         "pl-neg": "var(--pl-neg)",
@@ -53,6 +54,10 @@ const config: Config = {
       },
       maxWidth: {
         shell: "1620px",
+      },
+      boxShadow: {
+        soft: "var(--shadow-soft)",
+        pop: "var(--shadow-pop)",
       },
     },
   },

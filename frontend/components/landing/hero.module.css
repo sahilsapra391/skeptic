@@ -1,0 +1,8 @@
+/* globals' animate-fade-rise / animate-pin-pulse ship no reduced-motion
+   guard; the first-visit entrance stagger and the status pulse dots must
+   freeze legibly (everything visible, nothing animating). */
+@media (prefers-reduced-motion: reduce) {
+  .motionSafe {
+    animation: none !important;
+  }
+}

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { SubpageShell } from "@/components/landing/subpage-shell";
 
-export const metadata: Metadata = { title: "Privacy Policy — Skeptic" };
+export const metadata: Metadata = { title: "Privacy Policy", alternates: { canonical: "/privacy" } };
 
 /** Placeholder — the owner supplies the final text before launch (PRD H). */
 export default function PrivacyPage() {

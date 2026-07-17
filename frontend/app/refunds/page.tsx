@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { SubpageShell } from "@/components/landing/subpage-shell";
 
-export const metadata: Metadata = { title: "Refund Policy — Skeptic" };
+export const metadata: Metadata = { title: "Refund Policy", alternates: { canonical: "/refunds" } };
 
 /** Placeholder — the owner supplies the final text before launch (PRD H).
  * Credit semantics reflect the owner's Jul 16 override: refusals refund. */

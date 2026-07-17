@@ -110,6 +110,11 @@ export default function LibraryPage() {
                 {r.name}
               </div>
               <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
+              {r.example && (
+                <div className="mb-2 inline-block rounded-full border border-trust-border bg-trust-dim px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
+                  EXAMPLE RUN — a showcase result, not yours
+                </div>
+              )}
               {r.autoNote && (
                 <div className="mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
                   ↻ {r.autoNote}
