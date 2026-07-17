@@ -54,13 +54,17 @@ def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
     assert "ASSIGN" in actions and "OPEN" in actions
 
     # curation (launch L4): the default listing is examples-only — a fresh
-    # run appears via include= (the caller's own id) or scope=all
+    # unowned run appears via include= (the caller's own id)
     listing = client.get(f"/api/runs?include={run_id}").json()
     assert listing["demo"] is False
     assert any(item["id"] == run_id for item in listing["runs"])
-    assert any(item["id"] == run_id for item in client.get("/api/runs?scope=all").json()["runs"])
     assert not any(
         item["id"] == run_id for item in client.get("/api/runs").json()["runs"]
+    )
+    # scope=all is automation-only now (L1b): a non-service caller passing
+    # it just gets the curated view, never the cross-account listing
+    assert not any(
+        item["id"] == run_id for item in client.get("/api/runs?scope=all").json()["runs"]
     )
 
 
@@ -86,9 +90,10 @@ def test_example_curation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -
     assert client.get(f"/api/runs/{first}").json()["example"] is True
     assert "example" not in client.get(f"/api/runs/{second}").json()
 
-    # scope=all keeps the full listing (owner/automation, pre-launch)
+    # scope=all is automation-only (L1b security fix): a non-service caller
+    # gets the curated view, not the cross-account listing
     all_ids = {r["id"] for r in client.get("/api/runs?scope=all").json()["runs"]}
-    assert {first, second} <= all_ids
+    assert second not in all_ids  # not the caller's example, not included
 
 
 def test_examples_survive_a_heavy_users_own_runs(

@@ -18,7 +18,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from app import db
@@ -487,7 +487,28 @@ def parse(req: ParseRequest) -> dict[str, Any]:
 
 
 @router.post("/backtest")
-def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
+def backtest(req: BacktestRequest, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
+    # launch L1b: runs belong to the account that started them. Resolution
+    # is lazy and optional — service/automation and (pre-flip) anonymous
+    # runs stamp NULL, which stays claimable at signup. The verified-email
+    # bar applies to signed-in people only, and only once the owner flips
+    # SKEPTIC_REQUIRE_VERIFIED (needs a configured mail sender).
+    from app import auth
+
+    try:
+        run_user = auth.resolve_user(request)
+    except auth.AccountsUnavailableError:
+        run_user = None  # runs-DB fallback still accepts system work
+    if (
+        run_user is not None
+        and os.environ.get("SKEPTIC_REQUIRE_VERIFIED") == "1"
+        and run_user.verified_at is None
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="verify your email to run backtests — resend the link "
+            "from your account",
+        )
     try:
         spec = StrategySpec.model_validate(req.spec)
     except ValidationError as exc:
@@ -519,6 +540,7 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
                 spec_json=spec.model_dump_json(),
                 origin=req.origin,
                 parent_run_id=req.parent_run_id,
+                user_id=run_user.id if run_user is not None else None,
                 provenance_json=creation_record(
                     req.provenance, req.origin, req.parent_run_id, note
                 ),
@@ -543,6 +565,7 @@ def example_run_ids() -> tuple[str, ...]:
 
 @router.get("/runs")
 def list_runs(
+    request: Request,
     scope: str = Query(default="examples"),
     include: str = Query(default="", max_length=1200),
 ) -> dict[str, Any]:
@@ -551,13 +574,17 @@ def list_runs(
     transfer quota dies. Queued/running runs get an ephemeral summary so
     navigating away from the progress screen never 'loses' a run.
 
-    Pre-accounts curation (owner 2026-07-17): the DEFAULT listing is the
-    two pinned example runs, explicitly badged — the dev-era history must
-    not appear as anyone's library. `include` adds the caller's OWN run ids
-    (the client remembers what it started; the accounts chunk re-parents
-    exactly this list — the claim flow). scope=all keeps the full listing
-    for the owner and stays until the accounts chunk gates it on principal
-    (nightly automation reads the DB directly and is unaffected)."""
+    Curation (owner 2026-07-17): a signed-in user's library is THEIR runs
+    plus the pinned, badged examples; anonymous/pre-account callers get
+    the examples plus the ids their device remembers (`include` — exactly
+    the list signup re-parents). scope=all stays for the service principal
+    and pre-flip owner use (nightly automation reads the DB directly)."""
+    from app import auth
+
+    try:
+        viewer = auth.resolve_user(request)
+    except auth.AccountsUnavailableError:
+        viewer = None
     with db.session() as s:
         query = s.query(
             db.Run.id,
@@ -567,11 +594,29 @@ def list_runs(
             db.Run.summary_json,
             db.Run.spec_json,
         )
-        examples_only = scope != "all"
+        # scope=all is the full cross-account listing — automation ONLY.
+        # A non-service caller appending it (review finding: it was
+        # unguarded) just gets the normal curated view, never everyone's
+        # runs.
+        examples_only = not (scope == "all" and auth.is_service(request))
         examples = set(example_run_ids())  # once — not per row (env parse)
         if examples_only:
+            from sqlalchemy import ColumnElement, or_
+
             own = tuple(x.strip() for x in include.split(",") if x.strip())[:50]
-            query = query.filter(db.Run.id.in_(tuple(examples) + own))
+            conds: list[ColumnElement[bool]] = [
+                db.Run.id.in_(tuple(examples))  # public showcase, always
+            ]
+            if viewer is not None:
+                # the account's own runs ride on OWNERSHIP, not breadcrumbs
+                conds.append(db.Run.user_id == viewer.id)
+            if own:
+                # include= surfaces an anon device's OWN runs — which are
+                # unowned. An owned run named in include stays private to
+                # its account (review finding: include= leaked owned
+                # summaries by id, contradicting get_run's 404)
+                conds.append(db.Run.id.in_(own) & db.Run.user_id.is_(None))
+            query = query.filter(or_(*conds))
         rows = (
             query.filter(db.Run.status.in_(["queued", "running", "done"]))
             .order_by(db.Run.created_at.desc())
@@ -623,12 +668,27 @@ def list_runs(
 @router.get("/runs/{run_id}")
 def get_run(
     run_id: str,
+    request: Request,
     min_trades: int | None = Query(default=None, ge=1, le=10_000),
 ) -> dict[str, Any]:
     with db.session() as s:
         run = s.get(db.Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    # launch L1b: OWNED runs are private to their account (service and the
+    # pinned examples excepted; unowned pre-account runs stay reachable by
+    # id — that's how an anonymous device revisits its own run). 404, not
+    # 403 — existence is nobody else's business.
+    if run.user_id is not None and run_id not in example_run_ids():
+        from app import auth
+
+        if not auth.is_service(request):
+            try:
+                viewer = auth.resolve_user(request)
+            except auth.AccountsUnavailableError:
+                viewer = None
+            if viewer is None or viewer.id != run.user_id:
+                raise HTTPException(status_code=404, detail=f"run {run_id} not found")
     if run.status == "done" and run.payload_json:
         payload = dict(json.loads(run.payload_json))
         # a worker killed mid-narration must not leave the UI polling a

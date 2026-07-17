@@ -24,7 +24,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
@@ -53,8 +53,8 @@ def _api_base() -> str:
     return os.environ.get("SKEPTIC_PUBLIC_API", "https://api.skeptic.fyi")
 
 
-def _export_inputs(run_id: str) -> tuple[dict[str, Any], dict[str, Any],
-                                         list[str] | None]:
+def _export_inputs(run_id: str, request: Request) -> tuple[dict[str, Any], dict[str, Any],
+                                                           list[str] | None]:
     """Everything both export formats render from: the merged display
     payload, the validated spec doc, and the F8 sweep-coverage notes
     (which live on the stored honesty report, frozen at completion, not
@@ -65,9 +65,10 @@ def _export_inputs(run_id: str) -> tuple[dict[str, Any], dict[str, Any],
     # direct call, not HTTP — FastAPI won't resolve get_run's Query-typed
     # min_trades default, so pass None explicitly (= the omitted-param
     # behavior: the user's stored evidence-bar setting re-grades the read,
-    # #98). The exports then show exactly what the app shows.
-    payload = get_run(run_id, min_trades=None)  # 404s for us; merges
-    # receipts + provenance
+    # #98). The exports then show exactly what the app shows — including
+    # the L1b ownership 404: an export of an owned run is the run.
+    payload = get_run(run_id, request, min_trades=None)  # 404s for us;
+    # merges receipts + provenance
     if payload.get("status") != "done":
         raise HTTPException(status_code=409,
                             detail="run not finished — nothing to export yet")
@@ -91,12 +92,12 @@ def _export_inputs(run_id: str) -> tuple[dict[str, Any], dict[str, Any],
 
 
 @router.get("/runs/{run_id}/notebook")
-def export_notebook(run_id: str) -> JSONResponse:
+def export_notebook(run_id: str, request: Request) -> JSONResponse:
     """The run's story as an .ipynb — provenance first, then the numbers,
     then the honesty gauntlet, then the pinned re-execution proof."""
     from app.notebook.builder import build_notebook
 
-    payload, spec_doc, sweep_notes = _export_inputs(run_id)
+    payload, spec_doc, sweep_notes = _export_inputs(run_id, request)
     notebook = build_notebook(
         run_id=run_id,
         name=payload.get("name") or "Skeptic run",
@@ -115,14 +116,14 @@ def export_notebook(run_id: str) -> JSONResponse:
 
 
 @router.get("/runs/{run_id}/report")
-def export_report(run_id: str) -> Response:
+def export_report(run_id: str, request: Request) -> Response:
     """The run's story as a standalone HTML document (owner ask
     2026-07-14: a format anyone can open) — same story as the notebook,
     static from the stored run, print-to-PDF clean. Served inline so a
     browser renders it; the filename rides along for saves."""
     from app.notebook.report import build_report
 
-    payload, spec_doc, sweep_notes = _export_inputs(run_id)
+    payload, spec_doc, sweep_notes = _export_inputs(run_id, request)
     document = build_report(
         run_id=run_id,
         name=payload.get("name") or "Skeptic run",
