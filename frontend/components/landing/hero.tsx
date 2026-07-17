@@ -19,7 +19,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import clsx from "clsx";
 
 import { useSpeechToText } from "@/lib/use-speech";
@@ -189,10 +188,19 @@ export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: Word
   );
 }
 
-export function LandingHero({ draw }: { theme: LandingTheme; draw: WordmarkDraw }) {
-  const router = useRouter();
+export function LandingHero({
+  draw,
+  onPitch,
+  onChartTeach,
+}: {
+  theme: LandingTheme;
+  draw: WordmarkDraw;
+  /* launch L4 (owner 2026-07-17): the run happens in a popup ON the
+     landing — never a redirect into the app shell */
+  onPitch: (pitch: string) => void;
+  onChartTeach: () => void;
+}) {
   const [text, setText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [focused, setFocused] = useState(false);
   const [phIndex, setPhIndex] = useState(0);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -239,21 +247,22 @@ export function LandingHero({ draw }: { theme: LandingTheme; draw: WordmarkDraw 
     return () => window.clearInterval(id);
   }, [rotationPaused]);
 
-  // "the app hydrates on first interaction" — warm /new on first focus/keystroke
+  // "the app hydrates on first interaction" — warm the flow chunk on first
+  // focus/keystroke so the popup opens without a cold dynamic-import wait
   const warm = () => {
     if (prefetchedRef.current) return;
     prefetchedRef.current = true;
-    router.prefetch("/new");
+    void import("@/components/run-flow");
   };
 
   // no anon-trial row yet (Turnstile/queue is a later backend chunk):
-  // submit hands off to the real run flow immediately
+  // submit opens the run popup — the device gate upstream decides whether
+  // it runs or asks for an account
   const submit = () => {
     const pitch = text.trim();
-    if (!pitch || submitting) return;
+    if (!pitch) return;
     if (speech.listening) speech.stop();
-    setSubmitting(true);
-    router.push(`/new?pitch=${encodeURIComponent(pitch)}`);
+    onPitch(pitch);
   };
 
   const scrollToArgue = () => {
@@ -359,29 +368,20 @@ export function LandingHero({ draw }: { theme: LandingTheme; draw: WordmarkDraw 
                 <button
                   type="button"
                   onClick={submit}
-                  disabled={!text.trim() || submitting}
+                  disabled={!text.trim()}
                   aria-label="Compile the strategy"
-                  title={submitting ? "Compiling…" : "Compile ↵"}
+                  title="Compile ↵"
                   className={clsx(
                     "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
-                    text.trim() && !submitting
+                    text.trim()
                       ? "bg-ink text-ground hover:bg-ink-2"
                       : "cursor-not-allowed bg-raised-2 text-ink-4",
                   )}
                 >
-                  {submitting ? (
-                    <span
-                      className={clsx(
-                        "inline-block h-[9px] w-[9px] animate-pin-pulse rounded-full bg-current",
-                        styles.motionSafe,
-                      )}
-                    />
-                  ) : (
-                    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2.5 8h11" />
-                      <path d="M9 3.5L13.5 8 9 12.5" />
-                    </svg>
-                  )}
+                  <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2.5 8h11" />
+                    <path d="M9 3.5L13.5 8 9 12.5" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -430,8 +430,12 @@ export function LandingHero({ draw }: { theme: LandingTheme; draw: WordmarkDraw 
               </div>
             </button>
           ))}
-          <Link
-            href="/new?mode=chart"
+          <button
+            type="button"
+            onClick={() => {
+              warm();
+              onChartTeach();
+            }}
             title="chart-teach mode"
             className="min-h-[44px] flex-1 rounded-[14px] border border-dashed border-line-hover px-4 py-2.5 text-left text-ink-3 md:flex-none"
           >
@@ -442,7 +446,7 @@ export function LandingHero({ draw }: { theme: LandingTheme; draw: WordmarkDraw 
             <div className="mt-[2px] font-mono text-[10.5px] tracking-[.04em] text-ink-4 md:text-[11px]">
               chart-teach →
             </div>
-          </Link>
+          </button>
         </div>
 
         <p

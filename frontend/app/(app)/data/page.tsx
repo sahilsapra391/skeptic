@@ -19,6 +19,7 @@ import { Fragment, useEffect, useState } from "react";
 import clsx from "clsx";
 
 import { getCoverage } from "@/lib/api";
+import { daysOnRecord, oldestDataFirst } from "@/lib/coverage-facts";
 import { minutesAgo, monthYear, shortDate, year } from "@/lib/format";
 import type { CoveragePayload } from "@/lib/types";
 
@@ -382,14 +383,18 @@ export default function DataPage() {
       >
         <div className="grid grid-cols-[180px_1fr_1fr] gap-3">
           <div className={clsx(PANEL, "text-center")}>
+            {/* owner 2026-07-17: counts from the OLDEST banked session
+                (chains reach Oct '09), not the young nightly streak */}
             <div className="font-mono text-[40px] font-semibold tracking-[.06em]">
-              {String(coverage.record_days).padStart(3, "0")}
+              {daysOnRecord(coverage)?.toLocaleString("en-US") ?? "—"}
             </div>
             <div className="mt-1 font-mono text-[9.5px] font-medium tracking-[.14em] text-ink-4">
               DAYS ON RECORD
             </div>
             <div className="mt-2 text-[11.5px] text-ink-3">
-              {recordFirst ? `since ${shortDate(recordFirst)}` : "collection starting"}
+              {oldestDataFirst(coverage)
+                ? `since ${shortDate(oldestDataFirst(coverage)!)}`
+                : "collection starting"}
             </div>
           </div>
 

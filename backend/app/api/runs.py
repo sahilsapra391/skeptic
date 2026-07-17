@@ -530,10 +530,14 @@ def backtest(req: BacktestRequest, tasks: BackgroundTasks) -> dict[str, Any]:
 
 
 def example_run_ids() -> tuple[str, ...]:
-    """The two showcase runs every visitor sees (owner picks, 2026-07-17):
-    one blessed with a real gain, one refused for too few trades. Env-
-    overridable so re-pinning never needs a deploy."""
-    raw = os.environ.get("SKEPTIC_EXAMPLE_RUN_IDS", "612905835dca,42ce700a376f")
+    """The showcase runs every visitor sees (owner picks, 2026-07-17): a
+    solid pass, a big winner, a destructive one, and a withheld verdict —
+    the instrument's full range, all real. Env-overridable so re-pinning
+    never needs a deploy."""
+    raw = os.environ.get(
+        "SKEPTIC_EXAMPLE_RUN_IDS",
+        "612905835dca,2a4f48d6178e,7bbf2837653f,42ce700a376f",
+    )
     return tuple(x.strip() for x in raw.split(",") if x.strip())
 
 

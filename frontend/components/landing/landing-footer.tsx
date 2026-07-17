@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { useEffect, useState } from "react";
 
 import { getCoverage } from "@/lib/api";
+import { daysOnRecord } from "@/lib/coverage-facts";
 import type { Theme } from "@/lib/settings";
 import type { LandingTheme } from "@/components/landing/use-landing-theme";
 
@@ -35,9 +36,9 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
     let alive = true;
     getCoverage()
       .then((c) => {
-        if (alive && Number.isFinite(c.record_days) && c.record_days > 0) {
-          setRecordDays(c.record_days);
-        }
+        // owner 2026-07-17: the counter runs from the OLDEST banked session
+        const days = daysOnRecord(c);
+        if (alive && days != null) setRecordDays(days);
       })
       .catch(() => {
         /* counter line omitted — no invented numbers */
@@ -76,7 +77,7 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
                 href="/data"
                 className="mt-3.5 hidden font-mono text-[11px] text-ink-4 transition-colors hover:text-ink-2 md:block"
               >
-                day {String(recordDays).padStart(3, "0")} of the nightly record →
+                day {recordDays.toLocaleString("en-US")} of the record →
               </Link>
             )}
           </div>

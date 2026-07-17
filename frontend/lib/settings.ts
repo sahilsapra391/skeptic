@@ -40,7 +40,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   slippage: 0.85,
   slippageSell: 0.9,
   minTrades: 15, // the standard evidence floor; below it verdicts disclose
-  verbiage: "institutional",
+  // plain-English verdicts for everyone (owner 2026-07-17) — institutional
+  // register stays one Settings toggle away
+  verbiage: "retail",
   // Market Hours is the default for everyone: light through the trading day,
   // dark after the close (owner directive 2026-07-04).
   theme: "market",
@@ -63,7 +65,9 @@ function clampSettings(s: AppSettings): AppSettings {
       10_000,
       Math.max(1, Math.round(Number.isFinite(s.minTrades) ? s.minTrades : 15)),
     ),
-    verbiage: s.verbiage === "retail" ? "retail" : "institutional",
+    // unknown/unset resolves to the retail default; an explicit
+    // institutional choice is preserved
+    verbiage: s.verbiage === "institutional" ? "institutional" : "retail",
     theme: s.theme === "light" ? "light" : s.theme === "dark" ? "dark" : "market",
     accent: ACCENTS.includes(s.accent) ? s.accent : "cyan",
   };

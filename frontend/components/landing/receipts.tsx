@@ -13,6 +13,7 @@ import clsx from "clsx";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { getCoverage } from "@/lib/api";
+import { daysOnRecord, oldestDataFirst } from "@/lib/coverage-facts";
 import { monthYear, shortDate } from "@/lib/format";
 import type { CoveragePayload, CoverageRange } from "@/lib/types";
 
@@ -107,10 +108,12 @@ export function Receipts() {
     : [];
   const chainsSince = chainYears.length > 0 ? String(Math.min(...chainYears)) : "—";
 
-  // record_days = sessions banked by OUR nightly EOD record — a young,
-  // honest number (the design's "379" was a different notion). Mirror the
-  // Data Observatory exactly: zero-padded value, "DAYS ON RECORD" label.
-  const recordDays = coverage ? String(coverage.record_days).padStart(3, "0") : "—";
+  // owner 2026-07-17: DAYS ON RECORD counts from the OLDEST banked session
+  // (QQQ chains reach Oct '09) and grows daily — computed from the payload,
+  // never a constant. The Observatory shows the same number.
+  const recordDaysN = coverage ? daysOnRecord(coverage) : null;
+  const recordDays = recordDaysN != null ? recordDaysN.toLocaleString("en-US") : "—";
+  const recordSince = coverage ? oldestDataFirst(coverage) : null;
 
   let chips: ReactNode;
   if (error) {
@@ -203,9 +206,9 @@ export function Receipts() {
             value={recordDays}
             label="DAYS ON RECORD"
             hint={
-              coverage?.record_first
-                ? `our own nightly close record, since ${shortDate(coverage.record_first)} — live from the lake`
-                : "our own nightly close record — live from the lake"
+              recordSince
+                ? `since the oldest banked session — ${shortDate(recordSince)}, growing daily`
+                : "since the oldest banked session — live from the lake"
             }
             hintAlign="right"
             className="hidden md:block"
@@ -213,7 +216,7 @@ export function Receipts() {
         </div>
         <div className="mt-5 hidden flex-wrap items-center gap-2 md:flex">{chips}</div>
         <div className="mt-[14px] font-mono text-[10.5px] leading-[1.7] text-ink-4 md:hidden">
-          {coverage ? `day ${String(coverage.record_days).padStart(3, "0")} on record · ` : ""}
+          {recordDaysN != null ? `day ${recordDaysN.toLocaleString("en-US")} of the record · ` : ""}
           nightly lake · every fallback disclosed · gaps stay gaps, never interpolated
         </div>
       </div>

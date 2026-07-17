@@ -1,4 +1,3 @@
-import Link from "next/link";
 import clsx from "clsx";
 
 import { TrustBandCard } from "@/components/verdict/trust-band";
@@ -17,6 +16,8 @@ import { TrustBandCard } from "@/components/verdict/trust-band";
 type Band = { left: string; width: string };
 
 type RangeRow = {
+  /* every row is a real pinned example run and opens the full-run popup */
+  runId: string;
   name: string;
   meta: string;
   /* warn is the only non-default meta color the design uses */
@@ -25,23 +26,32 @@ type RangeRow = {
   marker?: string;
   withheld?: boolean;
   quote: string;
-  /* rows without an href are display-only by design (runs not linked publicly) */
-  href?: string;
 };
 
+// the instrument's full range, all real (owner 2026-07-17): a solid pass,
+// a big winner, a destructive one, a withheld verdict. Geometry/quotes
+// verbatim from each run's stored summary.
 const RANGE_ROWS: RangeRow[] = [
   {
-    // run 612905835dca
+    runId: "612905835dca",
     name: "SPY .25Δ put credit spread",
     meta: "505 fills · 5/5 survived",
     band: { left: "70%", width: "30%" },
     marker: "90%",
     quote:
       "Your strategy’s profit depends on a handful of days — 126 days produced half of all gains.",
-    href: "/runs/612905835dca",
   },
   {
-    // run 7bbf2837653f
+    runId: "2a4f48d6178e",
+    name: "SPY .45Δ short put",
+    meta: "281 fills · 5/5 survived · +$71k",
+    band: { left: "70%", width: "30%" },
+    marker: "90%",
+    quote:
+      "In the worst 5% of reshuffled trade sequences, the account dropped by 85% at some point.",
+  },
+  {
+    runId: "7bbf2837653f",
     name: "SPY .50Δ long put",
     meta: "1/5 survived",
     metaWarn: true,
@@ -51,7 +61,7 @@ const RANGE_ROWS: RangeRow[] = [
       "This strategy loses money in every single test — it is not just bad, it is reliably destructive.",
   },
   {
-    // run 42ce700a376f
+    runId: "42ce700a376f",
     name: "SPY .15Δ short put",
     meta: "12 trades · withheld",
     band: null,
@@ -61,7 +71,7 @@ const RANGE_ROWS: RangeRow[] = [
   },
 ];
 
-function RangeRowCard({ row }: { row: RangeRow }) {
+function RangeRowCard({ row, onOpen }: { row: RangeRow; onOpen: (runId: string) => void }) {
   const body = (
     <>
       <div className="mb-1.5 flex items-baseline justify-between gap-3 md:mb-2">
@@ -88,21 +98,20 @@ function RangeRowCard({ row }: { row: RangeRow }) {
     </>
   );
   const shell =
-    "block rounded-[14px] border border-line bg-panel px-3.5 pb-2.5 pt-3 md:px-[18px] md:pb-3 md:pt-3.5";
-  /* hover affordance only on the row that actually links somewhere */
-  return row.href ? (
-    <Link
-      href={row.href}
+    "block w-full text-left rounded-[14px] border border-line bg-panel px-3.5 pb-2.5 pt-3 md:px-[18px] md:pb-3 md:pt-3.5";
+  /* every row opens the full stored run in the landing's popup */
+  return (
+    <button
+      onClick={() => onOpen(row.runId)}
+      title="open the full run"
       className={clsx(shell, "transition-colors hover:border-line-hover hover:bg-raised")}
     >
       {body}
-    </Link>
-  ) : (
-    <div className={shell}>{body}</div>
+    </button>
   );
 }
 
-export function VerdictShowcase() {
+export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => void }) {
   return (
     <section
       id="verdict"
@@ -163,12 +172,12 @@ export function VerdictShowcase() {
             </div>
             <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 font-mono text-[11px] text-ink-4">
               <span>SPY .15Δ short put · 12 trades in a 1-year window · ran Jul 14 ’26</span>
-              <Link
-                href="/runs/42ce700a376f"
+              <button
+                onClick={() => onOpenRun("42ce700a376f")}
                 className="text-ink-3 transition-colors hover:text-ink"
               >
                 read the full run →
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -178,7 +187,7 @@ export function VerdictShowcase() {
               THE RANGE — RECENT VERDICTS
             </div>
             {RANGE_ROWS.map((row) => (
-              <RangeRowCard key={row.name} row={row} />
+              <RangeRowCard key={row.runId} row={row} onOpen={onOpenRun} />
             ))}
             <div className="mt-1 font-mono text-[11px] leading-[1.7] text-ink-4">
               refused, damned, or blessed — whatever the evidence supports.
