@@ -107,9 +107,8 @@ _FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
           '00;600&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wgh'
           't@6..72,500&display=swap" rel="stylesheet">')
 
-DISCLAIMER = ("Personal research only — not financial advice. Backtests "
-              "overstate live performance; nothing here is a recommendation "
-              "to trade anything.")
+DISCLAIMER = ("Personal research only — not financial advice; nothing here "
+              "is a recommendation to trade anything.")
 
 
 def _esc(value: Any) -> str:

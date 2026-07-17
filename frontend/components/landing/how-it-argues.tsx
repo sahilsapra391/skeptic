@@ -27,7 +27,7 @@ const GAUNTLET_ROWS: { label: string; note: string; mobileSuffix?: string }[] = 
   { label: "Nudge the settings", note: "does it survive small changes?", mobileSuffix: " ±20%" },
 ];
 
-export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
+export function HowItArgues() {
   const [answered, setAnswered] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -50,7 +50,7 @@ export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
           Three moves. No guesses.
         </h2>
 
-        <div className="mt-[22px] grid items-start gap-[14px] md:mt-[38px] md:grid-cols-3 md:gap-[22px]">
+        <div className="mt-[22px] grid items-stretch gap-[14px] md:mt-[38px] md:grid-cols-3 md:gap-[22px]">
           {/* 01 — YOU PITCH */}
           <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-panel p-4 md:gap-[14px] md:p-5">
             <div className="flex justify-between font-mono text-[10.5px] tracking-[.12em] text-ink-3 md:text-[11px]">
@@ -58,13 +58,15 @@ export function HowItArgues({ resolved }: { resolved: "light" | "dark" }) {
               <span className="hidden text-ink-5 md:inline">english, or a chart</span>
             </div>
             <div className="overflow-hidden rounded-lg border border-line-soft">
-              {/* still is a light-mode capture; dark theme inverts it (design page logic) */}
+              {/* the still is a LIGHT capture — it follows the page: shown
+                  as-is on a light page, inverted (hue preserved) on a dark
+                  one. Driven off the painted <html data-theme>, NOT a React
+                  prop, so it can never mismatch the actual background. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src="/landing/chart-teach-v2.png"
                 alt="pin winning examples on the SPY chart"
-                className="block w-full"
-                style={{ filter: resolved === "dark" ? "invert(1) hue-rotate(180deg)" : "none" }}
+                className="block w-full [[data-theme=dark]_&]:[filter:invert(1)_hue-rotate(180deg)]"
               />
             </div>
             {/* "1993" = SPY inception per copy-deck §2 (flagged VERIFY there) */}

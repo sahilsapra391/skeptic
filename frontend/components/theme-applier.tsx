@@ -14,19 +14,20 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
+import { isPublicSurface } from "@/lib/public-surface";
 import { getSettings, resolveTheme, useSettings } from "@/lib/settings";
 
 export function ThemeApplier() {
   const { theme, accent } = useSettings();
   const pathname = usePathname();
   const printing = useRef(false);
-  // the landing owns data-theme on `/` (its footer control + own storage
-  // key, launch L4) — without this gate the app-settings writer here would
-  // win a 60s tug-of-war the landing can't see. Accent stays shared.
-  const onLanding = pathname === "/";
+  // the public surface (landing + auth + legal) owns data-theme via the
+  // landing preference — without this gate the app-settings writer here
+  // would win a 60s tug-of-war those pages can't see. Accent stays shared.
+  const onPublic = isPublicSurface(pathname);
   useEffect(() => {
     document.documentElement.dataset.accent = accent;
-    if (onLanding) return;
+    if (onPublic) return;
     const apply = () => {
       if (printing.current) return;
       document.documentElement.dataset.theme = resolveTheme(getSettings().theme);
@@ -48,6 +49,6 @@ export function ThemeApplier() {
       window.removeEventListener("afterprint", after);
       if (id !== undefined) window.clearInterval(id);
     };
-  }, [theme, accent, onLanding]);
+  }, [theme, accent, onPublic]);
   return null;
 }

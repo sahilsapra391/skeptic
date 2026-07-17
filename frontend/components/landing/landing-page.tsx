@@ -67,7 +67,7 @@ export function LandingPage() {
         onChartTeach={() => tryRun({ mode: "chart" })}
       />
       <main>
-        <HowItArgues resolved={theme.resolved} />
+        <HowItArgues />
         <VerdictShowcase onOpenRun={setViewRunId} />
         <Receipts />
         <CopilotDemo />

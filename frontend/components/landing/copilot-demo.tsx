@@ -303,8 +303,7 @@ export function CopilotDemo() {
         {/* this panel shows P&L — the legal rail says every results surface
             carries the disclaimer, mockup or not */}
         <div className="mt-2 font-mono text-[10.5px] text-ink-5 md:mt-1.5">
-          demo replay of a stored run · research tool, not financial advice — backtests
-          overstate live results
+          demo replay of a stored run · research tool, not financial advice
         </div>
       </div>
     </section>

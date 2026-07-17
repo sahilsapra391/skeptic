@@ -161,9 +161,8 @@ def _reproducibility_md(payload: dict[str, Any], grid: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-DISCLAIMER = ("*Personal research only — not financial advice. Backtests "
-              "overstate live performance; nothing here is a recommendation "
-              "to trade anything.*")
+DISCLAIMER = ("*Personal research only — not financial advice; nothing here "
+              "is a recommendation to trade anything.*")
 
 _SETUP_CODE = '''\
 # ── setup: the deployed Skeptic API serves every number in this notebook ──
@@ -295,7 +294,7 @@ for key in ("headline", "survived", "evidence", "breaks", "caveat"):
     if v.get(key):
         print(v[key])
 print()
-print("Not financial advice. Backtests overstate live performance.")
+print("Not financial advice.")
 '''
 
 _REPRODUCE_CODE = '''\

@@ -15,8 +15,8 @@ import { ApiError, signup, type AuthAccount } from "@/lib/api";
 import { nextTarget } from "@/lib/next-param";
 
 const FIELD =
-  "w-full rounded-[9px] border border-line bg-panel-deep px-3 py-2 text-[14px] " +
-  "text-ink focus:border-trust-border focus:outline-none";
+  "w-full rounded-[10px] border border-line-hover bg-panel px-3.5 py-2.5 text-[14.5px] " +
+  "text-ink transition-colors focus:border-trust focus:outline-none focus:ring-2 focus:ring-trust/25";
 const LABEL = "mb-1.5 block text-[12.5px] font-semibold text-ink-3";
 
 export function SignupForm() {

@@ -683,7 +683,7 @@ export function RunFlow({
             )}
           </div>
           <p className="mt-3.5 text-center text-[12.5px] text-ink-4">
-            Research tool, not financial advice. Backtests overstate live results.
+            Research tool, not financial advice.
           </p>
           <div className="mx-auto mt-7 flex max-w-[1300px] flex-wrap justify-center gap-2.5">
             {presets.map((p) => (

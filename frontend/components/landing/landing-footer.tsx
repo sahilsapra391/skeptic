@@ -141,14 +141,7 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
 
         <div className="mt-4 flex flex-col items-start gap-3.5 md:mt-[26px] md:flex-row md:items-center md:justify-between">
           <span className="order-2 font-mono text-[10px] text-ink-4 md:order-1 md:text-[10.5px]">
-            © 2026 Skeptic ·{" "}
-            <span className="md:hidden">
-              every number computed, none decorative
-            </span>
-            <span className="hidden md:inline">
-              skeptic.fyi · every number on this page is computed — none
-              decorative
-            </span>
+            © 2026 Skeptic · skeptic.fyi is owned and operated by SpecHawk Inc.
           </span>
           <div
             role="group"
