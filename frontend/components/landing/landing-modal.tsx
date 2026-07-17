@@ -16,15 +16,21 @@ export function LandingModal({
   label,
   wide = false,
   conversionCta,
+  hidden = false,
   children,
 }: {
   onClose: () => void;
   label: string; // a11y name + the header kicker
   wide?: boolean; // run/results panels want near-full width
   conversionCta?: string; // header CTA text → /signup (omit to hide)
+  // when hidden, the modal is display:none but its children STAY MOUNTED —
+  // a landing run keeps running with live progress while the popup is
+  // minimized to the background-run banner (owner 2026-07-17)
+  hidden?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
+    if (hidden) return; // minimized — don't trap ESC or lock scroll
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -35,14 +41,17 @@ export function LandingModal({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, [onClose, hidden]);
 
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      className="fixed inset-0 z-[90] flex items-center justify-center p-3 md:p-6"
+      className={clsx(
+        "fixed inset-0 z-[90] flex items-center justify-center p-3 md:p-6",
+        hidden && "hidden",
+      )}
     >
       <button
         aria-label="Close"

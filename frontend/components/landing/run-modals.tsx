@@ -46,18 +46,22 @@ export function RunFlowModal({
   mode,
   onRunStarted,
   onClose,
+  hidden = false,
 }: {
   pitch?: string;
   mode?: "chart";
   onRunStarted?: (runId: string, demo: boolean) => void;
   onClose: () => void;
+  // minimized to the banner while the run keeps going — children stay mounted
+  hidden?: boolean;
 }) {
   return (
     <LandingModal
       onClose={onClose}
       label="Your free backtest"
       wide
-      conversionCta="Create an account — keep this run + 5 free backtests"
+      hidden={hidden}
+      conversionCta="Create an account to keep this run + get 5 free backtests"
     >
       <RunFlow embedded initialPitch={pitch} initialMode={mode} onRunStarted={onRunStarted} />
     </LandingModal>

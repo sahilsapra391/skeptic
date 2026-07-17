@@ -15,7 +15,7 @@ import { useCallback, useState } from "react";
 
 import { useWordmarkDraw } from "@/components/landing/landing-wordmark";
 import { useLandingTheme } from "@/components/landing/use-landing-theme";
-import { getActiveRun, setActiveRun } from "@/lib/active-run";
+import { clearActiveRun, getActiveRun, setActiveRun } from "@/lib/active-run";
 import { fetchMe } from "@/lib/api";
 import { myRunIds } from "@/lib/my-runs";
 
@@ -38,8 +38,12 @@ export function LandingPage() {
   const draw = useWordmarkDraw();
 
   // the product opens in popups ON the landing (owner 2026-07-17) — a
-  // visitor is never redirected into the app shell
-  const [runReq, setRunReq] = useState<{ pitch?: string; mode?: "chart" } | null>(null);
+  // visitor is never redirected into the app shell.
+  // runFlow = the active run flow's input (kept MOUNTED from prompt
+  // submission until the visitor dismisses it, so the run keeps its live
+  // progress while minimized); runOpen = whether that popup is visible.
+  const [runFlow, setRunFlow] = useState<{ pitch?: string; mode?: "chart" } | null>(null);
+  const [runOpen, setRunOpen] = useState(false);
   const [viewRunId, setViewRunId] = useState<string | null>(null);
   const [gated, setGated] = useState(false);
   // the background run this browser is tracking (survives popup close +
@@ -55,19 +59,34 @@ export function LandingPage() {
     setActiveRunId(runId);
   }, []);
 
-  // one free run per DEVICE for anonymous visitors — a second attempt is
-  // asked to create an account instead (client-remembered; the signed
-  // anon token + Turnstile server armor lands with the anon chunk). A
-  // signed-in account holder is NEVER device-gated: they have credits and
-  // the landing popup is their run surface (review finding — the gate
-  // told account holders to make an account they already had).
+  // clear the run flow entirely — dismissed, or a phantom that self-healed
+  const clearRun = useCallback(() => {
+    setRunFlow(null);
+    setRunOpen(false);
+    setActiveRunId(null);
+    clearActiveRun();
+  }, []);
+
+  // one free run per DEVICE for anonymous visitors. Once a run is in flight
+  // this session (runFlow mounted) a second attempt does NOT start another —
+  // it brings the visitor back to the running popup (owner 2026-07-17). With
+  // no active flow, the device gate applies (a signed-in account holder is
+  // never gated — they have credits and the popup is their run surface).
   const tryRun = (req: { pitch?: string; mode?: "chart" }) => {
+    if (runFlow) {
+      setRunOpen(true); // a run is already going — take them to it
+      return;
+    }
     if (myRunIds().length === 0) {
-      setRunReq(req);
+      setRunFlow(req);
+      setRunOpen(true);
       return;
     }
     fetchMe()
-      .then(() => setRunReq(req)) // signed in — run it
+      .then(() => {
+        setRunFlow(req); // signed in — run it
+        setRunOpen(true);
+      })
       .catch(() => setGated(true)); // anonymous repeat — gate to signup
   };
 
@@ -89,22 +108,31 @@ export function LandingPage() {
       </main>
       <LandingFooter theme={theme} />
 
-      {/* the background-run banner: only when a run is tracked AND its popup
-          isn't currently open (the popup already shows live progress) */}
-      {activeRunId && !runReq && viewRunId !== activeRunId && (
+      {/* background-run banner: shown whenever a run is in flight/tracked
+          but its popup is minimized (or after a reload, when only the
+          persisted id survives). Clicking reopens the live popup if it's
+          still mounted, else opens a read-only view. */}
+      {(runFlow || activeRunId) && !runOpen && !(activeRunId && viewRunId === activeRunId) && (
         <ActiveRunBanner
           runId={activeRunId}
+          hasFlow={!!runFlow}
+          onReopen={() => setRunOpen(true)}
           onView={(id) => setViewRunId(id)}
-          onClear={() => setActiveRunId(null)}
+          onDismiss={clearRun}
+          onPhantom={clearRun}
         />
       )}
 
-      {runReq && (
+      {/* the run flow stays MOUNTED while runFlow is set; the popup X only
+          minimizes it (runOpen=false) so the run keeps going and the banner
+          takes over — the banner's dismiss fully clears it */}
+      {runFlow && (
         <RunFlowModal
-          pitch={runReq.pitch}
-          mode={runReq.mode}
+          pitch={runFlow.pitch}
+          mode={runFlow.mode}
+          hidden={!runOpen}
           onRunStarted={onRunStarted}
-          onClose={() => setRunReq(null)}
+          onClose={() => setRunOpen(false)}
         />
       )}
       {viewRunId && <RunViewModal runId={viewRunId} onClose={() => setViewRunId(null)} />}
