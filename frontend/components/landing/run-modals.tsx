@@ -45,12 +45,15 @@ export function RunFlowModal({
   pitch,
   mode,
   onRunStarted,
+  onTrialExhausted,
   onClose,
   hidden = false,
 }: {
   pitch?: string;
   mode?: "chart";
   onRunStarted?: (runId: string, demo: boolean) => void;
+  // the backend refused this device's free run (armor) — swap to the gate
+  onTrialExhausted?: () => void;
   onClose: () => void;
   // minimized to the banner while the run keeps going — children stay mounted
   hidden?: boolean;
@@ -63,7 +66,13 @@ export function RunFlowModal({
       hidden={hidden}
       conversionCta="Create an account to keep this run + get 5 free backtests"
     >
-      <RunFlow embedded initialPitch={pitch} initialMode={mode} onRunStarted={onRunStarted} />
+      <RunFlow
+        embedded
+        initialPitch={pitch}
+        initialMode={mode}
+        onRunStarted={onRunStarted}
+        onTrialExhausted={onTrialExhausted}
+      />
     </LandingModal>
   );
 }

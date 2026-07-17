@@ -123,6 +123,7 @@ def _me(user: db.User, *, claimed: int | None = None) -> dict[str, Any]:
 @router.post("/auth/signup")
 def signup(
     req: SignupRequest,
+    request: Request,
     response: Response,
     _: None = Depends(_signup_rate),
 ) -> dict[str, Any]:
@@ -146,7 +147,15 @@ def signup(
         # same email → sign in instead. This does reveal registration on
         # SIGNUP (unavoidable for a usable form); login stays uniform.
         raise HTTPException(status_code=409, detail="that email already has an account — sign in")
-    claimed = _claim_runs(user.id, req.claim_run_ids)
+    # the conversion moment: re-parent this device's pre-account runs. The
+    # anon token (server-side truth) is the primary source; the client's
+    # localStorage breadcrumb is a belt-and-suspenders fallback for the
+    # pre-armor path. Union, so neither can miss the visitor's first run.
+    from app import anon
+
+    anon_ids = anon.claim_anon_runs(request.cookies.get(anon.ANON_COOKIE), user.id)
+    breadcrumb = _claim_runs(user.id, req.claim_run_ids)
+    claimed = len(set(anon_ids)) + breadcrumb
     delivered = mailer.send_verification(user.email, pw.issue_verify_token(user.id))
     _set_session_cookie(response, pw.create_session(user.id))
     out = _me(user, claimed=claimed)

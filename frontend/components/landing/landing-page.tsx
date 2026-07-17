@@ -67,6 +67,16 @@ export function LandingPage() {
     clearActiveRun();
   }, []);
 
+  // the server armor refused this device's free run (a cleared-cookie repeat,
+  // or the global daily budget) — the client gate can't see that, so the run
+  // popup hands off to the create-an-account gate. No run started, so there's
+  // nothing to track.
+  const onTrialExhausted = useCallback(() => {
+    setRunFlow(null);
+    setRunOpen(false);
+    setGated(true);
+  }, []);
+
   // one free run per DEVICE for anonymous visitors. Once a run is in flight
   // this session (runFlow mounted) a second attempt does NOT start another —
   // it brings the visitor back to the running popup (owner 2026-07-17). With
@@ -132,6 +142,7 @@ export function LandingPage() {
           mode={runFlow.mode}
           hidden={!runOpen}
           onRunStarted={onRunStarted}
+          onTrialExhausted={onTrialExhausted}
           onClose={() => setRunOpen(false)}
         />
       )}
