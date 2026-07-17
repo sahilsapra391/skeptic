@@ -2165,3 +2165,30 @@ triggers); needs its own reference-magnitude design (candidate: the
 canonical 50% take-profit → 5pp), spun off as a follow-up chip.
 Suite 706 green post-fixes; canary flagged; frontend lint+typecheck
 clean.
+
+## 2026-07-16 — Brand kit v2: heavier cut, stem-E, tighter K
+
+Owner delivered an updated brand kit (~/Downloads/skeptic-brand-kit,
+parametric rebuild). Same four color tokens and file layout; the marks
+changed: the E gains its vertical stem (was three bare bars), the K
+arms pull in tighter, and the draw-on animation re-times to match (the
+three E bars shift to 0.32/0.38/0.44s; the C still starts last at
+0.78s + 0.75s, so BootSplash's ANIMATION_MS=1650 stays correct
+untouched). The S itself is unchanged — s-mark SVGs are byte-identical
+to what shipped, so the standalone mark and collapsed-rail icon were
+already current. Swapped in place, same filenames, no code changes:
+wordmark black/gray/white/white-slash-gray + both skeptic-draw SVGs in
+frontend/public/brand/, og-image, favicon tiles, favicon.ico.
+
+Caught before it shipped: every raster tile in the v2 kit has the S
+riding ~10% above vertical center again — the exact regression the
+2026-07-03 favicon audit fixed (kit source was never patched; measured
+glyph bbox center y=0.39 across 32/180/512, app's fixed tiles sit at
+0.50). Re-applied the same fix: white glyph re-centered by integer
+pixel shift on the kit's native renders (512/180 land exactly 0.500;
+32 lands 0.516, half a pixel, the best an odd-height glyph allows),
+favicon.ico rebuilt from the fixed tiles (16/48/64 Lanczos from the
+512, native 32 frame), all frames verified dark-tile + centered by
+measurement. Favicon stays the owner-picked ink-black tile (layout.tsx
+comment still true); the v2 kit README declares the gray tile primary
+for the brand at large — flagged to owner, not silently flipped.
