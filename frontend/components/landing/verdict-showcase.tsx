@@ -154,7 +154,12 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
                 The spec is valid. The engine ran it. But only 12 trades closed inside the 1-year
                 window — below the 15-trade evidence bar. Numbers shown, blessing withheld.
               </p>
-              <div className="mt-3.5 rounded-[10px] border border-dashed border-trust-border px-3 py-2.5 md:mt-auto md:px-3.5 md:py-3">
+              {/* spacer eats free height so the unlock box sits at the bottom
+                  when the card is the taller-column filler, while keeping a
+                  fixed gap when it isn't (review finding: bare mt-auto
+                  collapsed the gap to 0 if the card was the taller side) */}
+              <div className="hidden md:block md:flex-1" aria-hidden />
+              <div className="mt-3.5 rounded-[10px] border border-dashed border-trust-border px-3 py-2.5 md:mt-[18px] md:px-3.5 md:py-3">
                 <div className="mb-2 font-mono text-[10px] tracking-[.12em] text-trust md:mb-2.5 md:text-[11px]">
                   TWO HONEST WAYS TO A VERDICT
                 </div>

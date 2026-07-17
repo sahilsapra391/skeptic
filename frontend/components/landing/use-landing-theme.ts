@@ -47,16 +47,33 @@ export function useLandingTheme(): LandingTheme {
   }, []);
 
   useEffect(() => {
+    let printing = false;
     const apply = () => {
+      if (printing) return;
       const r = resolveTheme(pref);
       setResolved(r);
       document.documentElement.dataset.theme = r;
     };
     apply();
-    if (pref !== "market") return;
+    // printing always gets the paper palette (matches ThemeApplier) — a
+    // dark-mode visitor printing a legal page shouldn't get an ink page
+    const before = () => {
+      printing = true;
+      document.documentElement.dataset.theme = "light";
+    };
+    const after = () => {
+      printing = false;
+      apply();
+    };
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
     // market hours flips live at 8am/6pm ET — same cadence as ThemeApplier
-    const id = window.setInterval(apply, 60_000);
-    return () => window.clearInterval(id);
+    const id = pref === "market" ? window.setInterval(apply, 60_000) : undefined;
+    return () => {
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+      if (id !== undefined) window.clearInterval(id);
+    };
   }, [pref]);
 
   const set = (t: Theme) => {
