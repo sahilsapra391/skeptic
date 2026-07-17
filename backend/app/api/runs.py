@@ -347,18 +347,15 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                         parent.receipts_json = json.dumps(existing)
                     except Exception:
                         log.exception("receipt attach failed for %s", parent_run_id)
+            # L2 credit law: a refusal refunds — you only pay for a GRADED
+            # verdict. Written in THIS transaction (with status='done'), so the
+            # run becomes visible and refunded ATOMICALLY — a concurrent
+            # read-time re-grade can never catch it in an un-refunded window
+            # (the paywall SEAL keys on the refund). Idempotent + self-scoped
+            # (a no-op for anon / service runs that were never charged).
+            if bool(payload.get("verdict", {}).get("refusal")):
+                db.refund_run_tx(s, run_id)
             s.commit()
-        # launch L2 credit law: a refusal refunds — you only pay for a GRADED
-        # verdict. Decided once here at completion; the view-time SEAL keeps a
-        # refunded refusal from being unlocked at a lower bar. Idempotent +
-        # self-scoped (no-op for anon / service runs). ISOLATED: the run is
-        # already committed 'done' — a refund hiccup must never flip it to
-        # 'error' via the outer except, so swallow + log here.
-        if bool(payload.get("verdict", {}).get("refusal")):
-            try:
-                db.refund_run(run_id)
-            except Exception:
-                log.exception("refusal refund failed for %s", run_id)
     except Exception as exc:
         log.exception("run %s failed", run_id)
         with db.session() as s:
@@ -367,12 +364,9 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 run.status = "error"
                 run.error = f"{type(exc).__name__}: {exc}"
                 s.add(db.RunEvent(run_id=run_id, stage=run.stage, label="failed"))
+                # an our-fault failure refunds too — atomic with status='error'
+                db.refund_run_tx(s, run_id)
                 s.commit()
-        # our-fault failure refunds the credit too (idempotent / self-scoped)
-        try:
-            db.refund_run(run_id)
-        except Exception:
-            log.exception("error-path refund failed for %s", run_id)
     finally:
         # this run's daily-series memo, dropped on the store THIS run used
         # (it is cached for 30 minutes across runs — chains.STORE_TTL_SECONDS
@@ -927,6 +921,17 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
         if run is None or run.status != "done" or not run.spec_json:
             raise HTTPException(status_code=404, detail="no completed run to replay")
         spec_dict = json.loads(run.spec_json)
+    # a REFUNDED run's verdict is sealed (you got the credit back, not the
+    # verdict). Replaying it would spawn a fresh, never-charged receipt run
+    # that a lower-bar re-grade could unlock for free — the seal's escape
+    # hatch. Block it. (An uncharged anon/example refused run has no such
+    # paywall and can still be receipted.)
+    if db.was_refunded(run_id):
+        raise HTTPException(
+            status_code=409,
+            detail="nothing to replay — this run's verdict was withheld and "
+                   "its credit refunded; there is no blessed result to receipt",
+        )
     if not replay_eligible_spec(spec_dict):
         raise HTTPException(
             status_code=409,

@@ -210,10 +210,6 @@ def test_service_principal_is_not_charged(monkeypatch: pytest.MonkeyPatch) -> No
 # ------------------------------------------------- forced origin (no dodge)
 
 
-def _boom(*a: object, **k: object) -> bool:
-    raise RuntimeError("refund exploded")
-
-
 # ---------------------------------------------------- the paywall-bypass seal
 
 
@@ -281,19 +277,29 @@ def test_boot_sweep_refunds_interrupted_runs(monkeypatch: pytest.MonkeyPatch) ->
     assert _credits(client) == 5  # the interrupted run's credit was refunded
 
 
-def test_refund_failure_does_not_corrupt_a_completed_run(
-    refusing: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The refusal refund is isolated: a transient failure in refund_run must
-    NOT flip an already-committed 'done' run to 'error' via the outer except."""
+def test_refusal_refund_is_atomic_with_completion(refusing: TestClient) -> None:
+    """The refund is written in the SAME transaction as status='done', so a
+    run is never visible in an un-refunded window — closing the seal's TOCTOU
+    race (a concurrent ?min_trades=1 can't catch it un-refunded)."""
     email = _email()
     _signup(refusing, email)
-    monkeypatch.setattr(db, "refund_run", _boom)
-    r = refusing.post("/api/backtest", json={"spec": fx.SPEC})
-    assert r.status_code == 200
-    run_id = r.json()["run_id"]
+    run_id = refusing.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
     with db.session() as s:
-        assert s.get(db.Run, run_id).status == "done"  # not corrupted to error
+        assert s.get(db.Run, run_id).status == "done"
+    assert db.was_refunded(run_id) is True  # refunded the instant it became done
+
+
+def test_replay_of_a_refused_run_is_blocked(refusing: TestClient) -> None:
+    """A receipt verifies a BLESSED verdict — a refusal has nothing to receipt.
+    Blocking it closes the replay paywall bypass: a refunded refusal can't
+    spawn an uncharged receipt run that a lower-bar re-grade would unlock."""
+    email = _email()
+    _signup(refusing, email)
+    run_id = refusing.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
+    assert _verdict(refusing, run_id)["refusal"] is True
+    r = refusing.post(f"/api/runs/{run_id}/replay")
+    assert r.status_code == 409
+    assert "withheld" in r.json()["detail"]
 
 
 def test_session_caller_origin_is_forced_to_user(grading: TestClient) -> None:

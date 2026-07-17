@@ -230,30 +230,41 @@ def was_refunded(run_id: str) -> bool:
         )
 
 
+def refund_run_tx(s: Session, run_id: str) -> bool:
+    """Add the engine_refund row to the CALLER's transaction (no commit).
+    Idempotent + self-scoped: a no-op if the run was never charged (anon /
+    service / claimed-anon) or was already refunded. Used INSIDE the same
+    transaction that flips the run to done/error, so 'the run is visible'
+    implies 'the refund is visible' — a concurrent read-time re-grade can
+    never catch a refunded run in an un-refunded window (the paywall SEAL)."""
+    debit = (
+        s.query(CreditLedger)
+        .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "run_debit")
+        .first()
+    )
+    if debit is None:
+        return False  # never charged — nothing to refund
+    already = (
+        s.query(CreditLedger.id)
+        .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "engine_refund")
+        .first()
+    )
+    if already is not None:
+        return False  # idempotent — already refunded
+    s.add(CreditLedger(user_id=debit.user_id, delta=1, reason="engine_refund", run_id=run_id))
+    return True
+
+
 def refund_run(run_id: str) -> bool:
     """Give back the credit a run debited — the credit law (owner override):
     you only pay for a GRADED verdict, so a refusal or an our-fault failure
-    refunds. Idempotent and self-scoped: a no-op if the run was never charged
-    (anon-armor run / service / a claimed anon run) or was already refunded.
-    The engine_refund unique index is the DB backstop against a race."""
+    refunds. Standalone (own transaction) wrapper over refund_run_tx; the
+    engine_refund unique index is the DB backstop against a race."""
     from sqlalchemy.exc import IntegrityError
 
     with SessionLocal() as s:
-        debit = (
-            s.query(CreditLedger)
-            .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "run_debit")
-            .first()
-        )
-        if debit is None:
-            return False  # never charged — nothing to refund
-        already = (
-            s.query(CreditLedger.id)
-            .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "engine_refund")
-            .first()
-        )
-        if already is not None:
-            return False  # idempotent — already refunded
-        s.add(CreditLedger(user_id=debit.user_id, delta=1, reason="engine_refund", run_id=run_id))
+        if not refund_run_tx(s, run_id):
+            return False
         try:
             s.commit()
         except IntegrityError:  # a concurrent refund won the race — fine
