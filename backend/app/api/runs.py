@@ -794,6 +794,27 @@ def list_runs(
     return {"runs": runs, "demo": False}
 
 
+def _enforce_run_access(run: db.Run, run_id: str, request: Request) -> None:
+    """launch L1b: OWNED runs are private to their account (service and the
+    pinned examples excepted; unowned pre-account runs stay reachable by id —
+    that's how an anonymous device revisits its own run). 404, not 403 —
+    existence is nobody else's business. Shared by get_run / ask / replay so
+    reading, questioning, and receipting a run all enforce the SAME boundary
+    (ask + replay were missing it — a cross-user IDOR on paid graded runs)."""
+    if run.user_id is None or run_id in example_run_ids():
+        return
+    from app import auth
+
+    if auth.is_service(request):
+        return
+    try:
+        viewer = auth.resolve_user(request)
+    except auth.AccountsUnavailableError:
+        viewer = None
+    if viewer is None or viewer.id != run.user_id:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+
+
 @router.get("/runs/{run_id}")
 def get_run(
     run_id: str,
@@ -804,20 +825,7 @@ def get_run(
         run = s.get(db.Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
-    # launch L1b: OWNED runs are private to their account (service and the
-    # pinned examples excepted; unowned pre-account runs stay reachable by
-    # id — that's how an anonymous device revisits its own run). 404, not
-    # 403 — existence is nobody else's business.
-    if run.user_id is not None and run_id not in example_run_ids():
-        from app import auth
-
-        if not auth.is_service(request):
-            try:
-                viewer = auth.resolve_user(request)
-            except auth.AccountsUnavailableError:
-                viewer = None
-            if viewer is None or viewer.id != run.user_id:
-                raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    _enforce_run_access(run, run_id, request)
     if run.status == "done" and run.payload_json:
         payload = dict(json.loads(run.payload_json))
         # a worker killed mid-narration must not leave the UI polling a
@@ -909,7 +917,7 @@ class AskRequest(BaseModel):
 
 
 @router.post("/runs/{run_id}/replay")
-def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
+def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """On-demand verdict receipt (D3c, owner amendment 1): replay THIS
     daily run at the 5-minute clock, right now. The receipt attaches to
     the original when the replay completes; the stored verdict is never
@@ -920,6 +928,8 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
         run = s.get(db.Run, run_id)
         if run is None or run.status != "done" or not run.spec_json:
             raise HTTPException(status_code=404, detail="no completed run to replay")
+        _enforce_run_access(run, run_id, request)  # only the owner replays their run
+        parent_user_id = run.user_id
         spec_dict = json.loads(run.spec_json)
     # a REFUNDED run's verdict is sealed (you got the credit back, not the
     # verdict). Replaying it would spawn a fresh, never-charged receipt run
@@ -950,6 +960,10 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
                      seed=replay_spec.backtest.seed,
                      spec_json=replay_spec.model_dump_json(),
                      origin="receipt", parent_run_id=run_id,
+                     # inherit the parent's owner so the receipt is as private
+                     # as the run it verifies (a receipt of an owned run must
+                     # not be world-readable via its own id)
+                     user_id=parent_user_id,
                      provenance_json=creation_record(None, "receipt", run_id)))
         s.commit()
     # the receipt faces the same evidence bar its parent was scored at
@@ -1059,13 +1073,14 @@ def _execute_audit(run_id: str) -> None:
 
 
 @router.post("/runs/{run_id}/ask")
-def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
+def ask(run_id: str, req: AskRequest, request: Request) -> dict[str, Any]:
     if not req.question.strip():
         raise HTTPException(status_code=422, detail="empty question")
     with db.session() as s:
         run = s.get(db.Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    _enforce_run_access(run, run_id, request)  # a run's Q&A is as private as the run
     if run.status != "done" or not run.stats_json:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_STATS)
 

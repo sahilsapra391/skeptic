@@ -10,6 +10,7 @@ idempotent + DB-enforced once per run.
 
 from __future__ import annotations
 
+import itertools
 import uuid
 
 import pytest
@@ -65,8 +66,27 @@ def _email() -> str:
     return f"credit-{uuid.uuid4().hex[:10]}@example.com"
 
 
+# a distinct second octet from the other suites so per-IP signup/rate limits
+# never collide across modules in the shared session DB
+_ip_counter = itertools.count(1)
+
+
+def _fresh_ip() -> dict[str, str]:
+    n = next(_ip_counter)
+    return {"x-forwarded-for": f"10.55.{n // 250}.{n % 250}"}
+
+
+def new_device() -> TestClient:
+    """A different browser: a fresh cookie jar on the same app + store patch."""
+    return TestClient(app, base_url="https://testserver")
+
+
 def _signup(client: TestClient, email: str) -> dict:
-    r = client.post("/api/auth/signup", json={"email": email, "password": PASSWORD})
+    # a fresh IP per signup so the per-IP signup rate limit (10/hr) never trips
+    # as the suite grows — identity is the account, not the IP
+    r = client.post(
+        "/api/auth/signup", json={"email": email, "password": PASSWORD}, headers=_fresh_ip()
+    )
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -300,6 +320,24 @@ def test_replay_of_a_refused_run_is_blocked(refusing: TestClient) -> None:
     r = refusing.post(f"/api/runs/{run_id}/replay")
     assert r.status_code == 409
     assert "withheld" in r.json()["detail"]
+
+
+def test_run_access_is_enforced_on_read_ask_and_replay(grading: TestClient) -> None:
+    """A run is private to its owner across READ, ASK, and REPLAY (a receipt
+    of someone else's paid graded run was a cross-user IDOR + free-compute
+    leak). 404 — existence is nobody else's business."""
+    _signup(grading, _email())
+    run_id = grading.post(
+        "/api/backtest", json={"spec": fx.SPEC, "min_trades": 1}
+    ).json()["run_id"]
+    assert grading.get(f"/api/runs/{run_id}").status_code == 200  # the owner can read it
+
+    other = new_device()  # a different account, fresh cookie jar
+    _signup(other, _email())
+    assert other.get(f"/api/runs/{run_id}").status_code == 404
+    ask = other.post(f"/api/runs/{run_id}/ask", json={"question": "profitable?"})
+    assert ask.status_code == 404
+    assert other.post(f"/api/runs/{run_id}/replay").status_code == 404
 
 
 def test_session_caller_origin_is_forced_to_user(grading: TestClient) -> None:
