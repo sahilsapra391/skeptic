@@ -101,7 +101,13 @@ export function LandingPage() {
         setRunFlow(req); // signed in — run it
         setRunOpen(true);
       })
-      .catch(() => setGated(true)); // anonymous repeat — gate to signup
+      .catch(() => {
+        // anonymous repeat — the CLIENT device gate, always the "used this
+        // device's run" message. Clear any stale reason from a prior
+        // budget-402 so this gate never inherits the "busy" copy.
+        setGateReason(undefined);
+        setGated(true);
+      });
   };
 
   return (

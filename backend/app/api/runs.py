@@ -546,11 +546,15 @@ def backtest(
     # (VALID_ORIGINS, no service bearer) must be ARMORED, not waved through —
     # the only legitimate auto_unlock/receipt caller is the nightly principal,
     # which carries the service bearer and is excluded by not is_service.
-    is_anon = (
-        run_user is None
-        and not (accounts_down and session_seen)
-        and not auth.is_service(request)
-    )
+    is_anon = run_user is None and not auth.is_service(request)
+    # a session presented but unresolvable (accounts DB on the SQLite fallback)
+    # is a likely signed-in person we can't validate right now. The DB-free
+    # layers below (the human check + the fast-path constraint) STILL apply to
+    # them — so an outage is never a bot-flushable free-compute hole — but the
+    # per-device DB limits (token/IP/budget) relax, so we don't one-run-block a
+    # real account mid-outage. A bogus cookie under NORMAL operation resolves to
+    # None (no exception) → outage_session is False → the full armor applies.
+    outage_session = accounts_down and session_seen
     if is_anon:
         from app import anon
 
@@ -561,32 +565,33 @@ def backtest(
                 detail="the human check didn't pass — please try again",
             )
         anon.enforce_constraints(spec)  # daily clock + <=3y window, or 422
-        anon_token_h = anon.verified_hash(request.cookies.get(anon.ANON_COOKIE))
-        anon_ip_h = anon.ip_hash(ip)
-        verdict = anon.check_limits(anon_token_h, anon_ip_h)
-        if verdict == "budget":
-            raise HTTPException(
-                status_code=402,
-                detail="free trials are busy right now — create a free "
-                "account for 5 backtests, no card",
-            )
-        if verdict in ("used_token", "used_ip"):
-            raise HTTPException(
-                status_code=402,
-                detail="you've used this device's free backtest — create a "
-                "free account for 5 more, no card",
-            )
-        if anon_token_h is None:  # first run from this device — mint a token
-            raw_token, anon_token_h = anon.new_token()
-            response.set_cookie(
-                anon.ANON_COOKIE,
-                raw_token,
-                max_age=60 * 60 * 24 * 365,
-                httponly=True,
-                secure=True,
-                samesite="lax",
-                path="/",
-            )
+        if not outage_session:
+            anon_token_h = anon.verified_hash(request.cookies.get(anon.ANON_COOKIE))
+            anon_ip_h = anon.ip_hash(ip)
+            verdict = anon.check_limits(anon_token_h, anon_ip_h)
+            if verdict == "budget":
+                raise HTTPException(
+                    status_code=402,
+                    detail="free trials are busy right now — create a free "
+                    "account for 5 backtests, no card",
+                )
+            if verdict in ("used_token", "used_ip"):
+                raise HTTPException(
+                    status_code=402,
+                    detail="you've used this device's free backtest — create a "
+                    "free account for 5 more, no card",
+                )
+            if anon_token_h is None:  # first run from this device — mint a token
+                raw_token, anon_token_h = anon.new_token()
+                response.set_cookie(
+                    anon.ANON_COOKIE,
+                    raw_token,
+                    max_age=60 * 60 * 24 * 365,
+                    httponly=True,
+                    secure=True,
+                    samesite="lax",
+                    path="/",
+                )
 
     # the evidence bar: the caller's setting; automatic re-runs without one
     # inherit their parent's so an unlock never moves its own goalposts

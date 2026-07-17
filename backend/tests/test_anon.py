@@ -487,16 +487,19 @@ def test_armor_proceeds_on_the_sqlite_fallback(
     assert trials_for(run_id) == 1
 
 
-def test_session_bearing_request_during_outage_is_not_armored(
+def test_session_bearing_request_during_outage_relaxes_db_limits_only(
     anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A likely signed-in person whose session can't be validated mid-outage
-    (accounts DB on the SQLite fallback) must NOT be forced through the anon
-    armor — a session cookie is presented, so is_anon stays False. A run row
-    is created (unowned) with no anon cookie and no trial. (A bogus cookie
-    under NORMAL operation resolves to None and IS armored — see the other
-    tests — so this is not a bypass.)"""
+    (accounts DB on the SQLite fallback) is NOT one-run-limited: the per-device
+    DB layers relax, so no anon cookie is minted and no trial is recorded. But
+    the DB-FREE layers still hold — the human check and the fast-path
+    constraint — so an outage is never a bot-flushable free-compute hole. (A
+    bogus cookie under NORMAL operation resolves to None and gets the FULL
+    armor — see the other tests — so this is not a bypass.)"""
     monkeypatch.setattr(db, "FALLBACK_REASON", "neon unreachable (test)")
+
+    # a valid daily spec: proceeds, but with NO device counting
     client = new_device()
     client.cookies.set("skeptic_session", "opaque-token-we-cannot-validate-now")
     before = anon_trial_count()
@@ -505,3 +508,13 @@ def test_session_bearing_request_during_outage_is_not_armored(
     assert "skeptic_anon" not in r.headers.get("set-cookie", "")
     assert trials_for(r.json()["run_id"]) == 0
     assert anon_trial_count() == before
+
+    # …but the ≤3y window constraint STILL applies mid-outage — an oversized
+    # window is refused, so an outage can't be turned into free heavy compute
+    client2 = new_device()
+    client2.cookies.set("skeptic_session", "another-unvalidatable-token")
+    big = copy.deepcopy(fx.SPEC)
+    big["backtest"] = {**big["backtest"], "start": "2015-01-05", "end": None}
+    r2 = client2.post("/api/backtest", json={"spec": big}, headers=fresh_ip())
+    assert r2.status_code == 422
+    assert "3-year window" in r2.json()["detail"]
