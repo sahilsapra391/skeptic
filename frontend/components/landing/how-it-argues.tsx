@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 
 /**
@@ -19,17 +19,38 @@ const OPTIONS = ["whichever hits first", "profit target only", "time exit only"]
 
 // gauntlet stages; mobileSuffix folds the essential note into the label
 // below md, matching 2b rows 1 and 5
-const GAUNTLET_ROWS: { label: string; note: string; mobileSuffix?: string }[] = [
+// the gauntlet stages + the verdict, stepped through like the real app's
+// progress. mobileSuffix folds the essential note into the label below md.
+const ATTACK_ROWS: { label: string; note: string; mobileSuffix?: string; verdict?: boolean }[] = [
   { label: "Backtest", note: "real bid/ask, never mid", mobileSuffix: " — real bid/ask, never mid" },
   { label: "Test on data it never saw", note: "last 30% kept hidden" },
   { label: "Test each time period", note: "rolling ~2-month windows" },
   { label: "Reshuffle the trades 1,000×", note: "how much was luck?" },
   { label: "Nudge the settings", note: "does it survive small changes?", mobileSuffix: " ±20%" },
+  { label: "The honest verdict", note: "grounded in the numbers above", verdict: true },
 ];
+const STEP_MS = 900;
 
 export function HowItArgues() {
   const [answered, setAnswered] = useState(false);
   const [draft, setDraft] = useState("");
+
+  // step = completed stages (0..6); the active stage is `step`. It walks
+  // the gauntlet and loops, so the card reads as a live run, not a static
+  // checklist (owner 2026-07-17). Reduced motion pins it fully complete.
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setStep(ATTACK_ROWS.length);
+      return;
+    }
+    const id = window.setInterval(
+      () => setStep((s) => (s >= ATTACK_ROWS.length ? 0 : s + 1)),
+      STEP_MS,
+    );
+    return () => window.clearInterval(id);
+  }, []);
+  const pct = Math.round((step / ATTACK_ROWS.length) * 100);
 
   const answer = () => setAnswered(true);
   const reset = () => {
@@ -160,31 +181,54 @@ export function HowItArgues() {
               <span className="hidden text-ink-5 md:inline">then the verdict</span>
             </div>
             <div className="flex flex-col gap-[9px] font-mono text-[12px] md:gap-[10px] md:text-[13px]">
-              {GAUNTLET_ROWS.map((row) => (
-                <div
-                  key={row.label}
-                  className="flex items-baseline gap-[9px] text-ink-3 md:gap-[10px]"
-                >
-                  <span className="w-[14px] shrink-0 md:w-4">✓</span>
-                  <span className="flex-1">
-                    {row.label}
-                    {row.mobileSuffix && <span className="md:hidden">{row.mobileSuffix}</span>}
-                  </span>
-                  <span className="hidden text-[10.5px] text-ink-5 md:inline">{row.note}</span>
-                </div>
-              ))}
-              <div className="flex items-baseline gap-[9px] text-ink md:gap-[10px]">
-                <span className="w-[14px] shrink-0 md:w-4">▶</span>
-                <span className="flex-1">The honest verdict</span>
-                <span className="hidden text-[10.5px] text-ink-4 md:inline">
-                  grounded in the numbers above
-                </span>
-              </div>
+              {ATTACK_ROWS.map((row, i) => {
+                const done = i < step;
+                const active = i === step;
+                return (
+                  <div
+                    key={row.label}
+                    className={clsx(
+                      "flex items-baseline gap-[9px] transition-[color,opacity] duration-300 md:gap-[10px]",
+                      active
+                        ? "text-ink"
+                        : done
+                          ? row.verdict
+                            ? "text-ink"
+                            : "text-ink-3"
+                          : "text-ink-5 opacity-60",
+                    )}
+                  >
+                    <span className="flex w-[14px] shrink-0 justify-center md:w-4">
+                      {active ? (
+                        <span className="inline-block h-[7px] w-[7px] animate-pin-pulse rounded-full bg-trust motion-reduce:animate-none" />
+                      ) : done ? (
+                        <span className="text-trust">{row.verdict ? "▶" : "✓"}</span>
+                      ) : (
+                        <span>{row.verdict ? "▶" : "○"}</span>
+                      )}
+                    </span>
+                    <span className="flex-1">
+                      {row.label}
+                      {row.mobileSuffix && <span className="md:hidden">{row.mobileSuffix}</span>}
+                    </span>
+                    <span
+                      className={clsx(
+                        "hidden text-[10.5px] md:inline",
+                        active ? "text-trust" : "text-ink-5",
+                      )}
+                    >
+                      {row.note}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            {/* progress bar + footnote are desktop-only (absent from 2b);
-                83% = 5 of 6 stages done, matching the ▶ row. trust hue, not P/L */}
+            {/* progress bar walks the gauntlet with the step; trust hue, not P/L */}
             <div className="mt-[2px] hidden h-[6px] overflow-hidden rounded-[3px] bg-line-softer md:block">
-              <div className="h-full w-[83%] rounded-[3px] bg-trust" />
+              <div
+                className="h-full rounded-[3px] bg-trust transition-[width] duration-300 ease-out"
+                style={{ width: `${pct}%` }}
+              />
             </div>
             <div className="hidden font-mono text-[11px] text-ink-4 md:block">
               live numbers stream while it runs — never a loading bar

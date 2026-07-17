@@ -117,10 +117,14 @@ export function RunFlow({
   initialPitch,
   initialMode,
   embedded = false,
+  onRunStarted,
 }: {
   initialPitch?: string;
   initialMode?: "chart";
   embedded?: boolean;
+  // launch L4: the landing learns the run id the instant it's created, so
+  // its background-run banner can track the run even if this popup closes
+  onRunStarted?: (runId: string, demo: boolean) => void;
 }) {
   const [phase, setPhase] = useState<Phase>("compose");
   const [mode, setMode] = useState<Mode>("text");
@@ -378,9 +382,10 @@ export function RunFlow({
     setError(null);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
-      const { run_id } = await startBacktest(
+      const { run_id, demo } = await startBacktest(
         draft, parsedSpecRef.current, untouched, transcriptRef.current,
       );
+      onRunStarted?.(run_id, demo);
       setPhase("running");
       setRun(null);
       // self-scheduling poll: each tick AWAITS the prior response before
@@ -418,7 +423,7 @@ export function RunFlow({
     } finally {
       setBusy(false);
     }
-  }, [draft, busy]);
+  }, [draft, busy, onRunStarted]);
 
   const reset = useCallback(() => {
     pollCancelledRef.current = true;

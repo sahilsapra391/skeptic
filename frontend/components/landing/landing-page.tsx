@@ -11,13 +11,15 @@
  * the parent box — caged inside the hero section they'd scroll away with it.
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { useWordmarkDraw } from "@/components/landing/landing-wordmark";
 import { useLandingTheme } from "@/components/landing/use-landing-theme";
+import { getActiveRun, setActiveRun } from "@/lib/active-run";
 import { fetchMe } from "@/lib/api";
 import { myRunIds } from "@/lib/my-runs";
 
+import { ActiveRunBanner } from "@/components/landing/active-run-banner";
 import { CopilotDemo } from "@/components/landing/copilot-demo";
 import { LandingHero, LandingTopbar } from "@/components/landing/hero";
 import { HowItArgues } from "@/components/landing/how-it-argues";
@@ -40,6 +42,18 @@ export function LandingPage() {
   const [runReq, setRunReq] = useState<{ pitch?: string; mode?: "chart" } | null>(null);
   const [viewRunId, setViewRunId] = useState<string | null>(null);
   const [gated, setGated] = useState(false);
+  // the background run this browser is tracking (survives popup close +
+  // reloads) — the banner watches it to "ready" and back to viewing
+  const [activeRunId, setActiveRunId] = useState<string | null>(() => getActiveRun());
+
+  // the run flow reports its id the instant the backtest is created; a real
+  // run becomes the tracked background run (demo-fallback runs don't persist
+  // and are skipped — they'd 404 and wrongly burn the free run)
+  const onRunStarted = useCallback((runId: string, demo: boolean) => {
+    if (demo) return;
+    setActiveRun(runId);
+    setActiveRunId(runId);
+  }, []);
 
   // one free run per DEVICE for anonymous visitors — a second attempt is
   // asked to create an account instead (client-remembered; the signed
@@ -75,7 +89,24 @@ export function LandingPage() {
       </main>
       <LandingFooter theme={theme} />
 
-      {runReq && <RunFlowModal pitch={runReq.pitch} mode={runReq.mode} onClose={() => setRunReq(null)} />}
+      {/* the background-run banner: only when a run is tracked AND its popup
+          isn't currently open (the popup already shows live progress) */}
+      {activeRunId && !runReq && viewRunId !== activeRunId && (
+        <ActiveRunBanner
+          runId={activeRunId}
+          onView={(id) => setViewRunId(id)}
+          onClear={() => setActiveRunId(null)}
+        />
+      )}
+
+      {runReq && (
+        <RunFlowModal
+          pitch={runReq.pitch}
+          mode={runReq.mode}
+          onRunStarted={onRunStarted}
+          onClose={() => setRunReq(null)}
+        />
+      )}
       {viewRunId && <RunViewModal runId={viewRunId} onClose={() => setViewRunId(null)} />}
       {gated && <DeviceGateModal onClose={() => setGated(false)} />}
     </div>

@@ -31,6 +31,19 @@ export function rememberRun(id: string): void {
   }
 }
 
+/** Drop a single id — used when a remembered run turns out to be a phantom
+ * (a 404 on view: a demo-fallback run that didn't persist, or a lost run).
+ * Removing it releases the device's one-free-run gate so the visitor isn't
+ * stuck "used" with nothing to show for it (owner 2026-07-17). */
+export function forgetRun(id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(myRunIds().filter((x) => x !== id)));
+  } catch {
+    /* private mode */
+  }
+}
+
 /** Signup claimed these ids server-side — ownership is DB truth now, and a
  * stale breadcrumb would keep riding `include=` (and a future signup from
  * this browser would try to re-claim runs that already have an owner). */

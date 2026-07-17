@@ -44,10 +44,12 @@ const ResultsView = dynamic(
 export function RunFlowModal({
   pitch,
   mode,
+  onRunStarted,
   onClose,
 }: {
   pitch?: string;
   mode?: "chart";
+  onRunStarted?: (runId: string, demo: boolean) => void;
   onClose: () => void;
 }) {
   return (
@@ -57,7 +59,7 @@ export function RunFlowModal({
       wide
       conversionCta="Create an account — keep this run + 5 free backtests"
     >
-      <RunFlow embedded initialPitch={pitch} initialMode={mode} />
+      <RunFlow embedded initialPitch={pitch} initialMode={mode} onRunStarted={onRunStarted} />
     </LandingModal>
   );
 }
