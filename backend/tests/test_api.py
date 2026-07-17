@@ -2,8 +2,6 @@
 run routes are explicit 501s (nothing pretends to be an engine), and the
 bearer middleware guards everything but health."""
 
-import threading
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -24,17 +22,23 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     ):
         monkeypatch.delenv(var, raising=False)
     # importing app.main starts a coverage-warmer thread whenever local R2
-    # creds exist (backend/.env / collector/.env). A warmed coverage._CACHE
-    # answers /api/data/coverage without ever touching env vars, so the 503
-    # refusal tested below flakes to 200 whenever slower modules run first
-    # and the warmer wins the race. Join any in-flight build (it dies fast:
-    # with the vars deleted above, its next bucket() read raises), THEN
-    # start cold — clearing before the join would let the build repopulate
-    # the cache mid-test. setitem restores the warmed snapshot on teardown.
-    for t in threading.enumerate():
-        if t.name in ("coverage-warmer", "coverage-refresh"):
-            t.join(timeout=60)
-    monkeypatch.setitem(coverage._CACHE, "snap", (0.0, None))
+    # creds exist (backend/.env / collector/.env), and a warmed
+    # coverage._CACHE answers /api/data/coverage without touching env vars —
+    # the 503 refusal tested below would flake to 200 whenever slower
+    # modules run first. Every _CACHE["snap"] write happens under
+    # _build_lock (the foreground build holds it; the refresh worker
+    # inherits it across its spawn), so clearing while holding the lock is
+    # a complete barrier: an in-flight build lands before the clear, and
+    # one starting after dies at r2_client() — the vars are already
+    # deleted — before it can write. Bounded acquire: a wedged or leaked
+    # lock must fail THIS test loudly, never hang the suite. setitem
+    # restores the warmed snapshot on teardown, before env is restored.
+    if not coverage._build_lock.acquire(timeout=120):
+        pytest.fail("coverage._build_lock held >120s — wedged or leaked build")
+    try:
+        monkeypatch.setitem(coverage._CACHE, "snap", (0.0, None))
+    finally:
+        coverage._build_lock.release()
     return TestClient(app)
 
 
