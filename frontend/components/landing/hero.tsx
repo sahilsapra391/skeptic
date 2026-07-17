@@ -59,10 +59,13 @@ const PLACEHOLDERS = [
 ];
 
 // scroll-morph constants (component-specs §2): scrub window 0→260px,
-// translate(tx·q, -28px·q) scale(1 − 0.8q), q = smoothstep
+// translate(tx·q, -28px·q) scale(1 − MORPH_SCALE·q), q = smoothstep.
+// End scale lands the mark at ~28px tall — the SAME size as the app
+// rail's nav wordmark (owner 2026-07-17: the two must match), not the
+// design note's ~92px-wide guess: 460px × 152/704 ≈ 99px tall × 0.282.
 const MORPH_SCROLL_PX = 260;
 const MORPH_TY = -28;
-const MORPH_SCALE = 0.8;
+const MORPH_SCALE = 0.718;
 const MORPH_TX_FALLBACK = -630; // 1440 shell constant until measured
 
 export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: WordmarkDraw }) {
@@ -156,7 +159,9 @@ export function LandingTopbar({ theme, draw }: { theme: LandingTheme; draw: Word
         className="sticky top-0 z-30 hidden h-16 items-center justify-end gap-[18px] px-11 transition-colors duration-200 md:flex"
       >
         {/* empty left slot the wordmark morphs into — measured, never styled */}
-        <div ref={slotRef} aria-hidden className="mr-auto h-9 w-[92px]" />
+        {/* the slot the wordmark lands in — sized to the app rail's mark
+            (h-28px ⇒ ~130px wide at the brand aspect) */}
+        <div ref={slotRef} aria-hidden className="mr-auto h-9 w-[130px]" />
         <Link href="/signin" className="py-[2px] text-[12.5px] text-ink-4 hover:text-ink-3">
           Sign in
         </Link>
