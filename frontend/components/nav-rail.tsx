@@ -245,13 +245,15 @@ export function NavRail() {
       )}
       <div className={clsx("mt-auto flex flex-col gap-2", !open && "items-center")}>
         <AccountSection open={open} />
+      {/* a small arrow-only toggle — tucked against the rail's right edge when
+          open, centered when collapsed; no longer a full-width labelled row */}
       <button
         onClick={toggle}
         aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
         title={open ? "Collapse sidebar" : "Expand sidebar"}
         className={clsx(
-          "flex h-[38px] items-center rounded-[10px] text-ink-4 hover:bg-raised-2 hover:text-ink",
-          open ? "w-full gap-3 px-2.5" : "w-[38px] justify-center",
+          "flex h-[30px] w-[30px] items-center justify-center rounded-[8px] text-ink-4 hover:bg-raised-2 hover:text-ink",
+          open && "self-end",
         )}
       >
         <svg
@@ -267,7 +269,6 @@ export function NavRail() {
         >
           <path d="M8 6l4 4-4 4" />
         </svg>
-        {open && <span className="text-[13px] font-semibold">Collapse</span>}
       </button>
       </div>
       <div
