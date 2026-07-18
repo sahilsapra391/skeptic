@@ -25,6 +25,16 @@ log = logging.getLogger("billing")
 # client_reference_id on the same account (defense-in-depth)
 CHECKOUT_PURPOSE = "backtest_credits"
 
+# Refund / dispute events that claw back a purchase's credits (launch L3
+# money-exposure fix): charge.refunded fires on a Stripe refund; the dispute
+# event fires when a cardholder files a chargeback. Both carry a payment_intent
+# that links back to the granting purchase row, so the webhook can reverse it.
+# We reverse the moment a dispute is OPENED (charge.dispute.created) rather than
+# waiting for funds_withdrawn — protecting the credits the instant the buyer
+# contests the charge. Idempotency lives per-payment in db.reverse_purchase, so
+# a refund and a dispute on the same charge still reverse only once.
+REVERSAL_EVENTS = frozenset({"charge.refunded", "charge.dispute.created"})
+
 
 def _secret_key() -> str:
     return os.environ.get("STRIPE_SECRET_KEY", "")
