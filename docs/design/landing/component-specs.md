@@ -10,7 +10,7 @@ Reference implementation for all of these is live in `Skeptic Landing.dc.html` o
 - Min hit target 44px on all mobile controls.
 
 ## 2. Scroll-morphing wordmark
-- Hero wordmark = brand `skeptic-draw-white.svg` (design system) inside a `position:sticky` wrapper — draw-on via pathLength dash (~1.65s), theme-recolored via currentColor, once per visit via sessionStorage; click replays.
+- Hero wordmark = brand `skeptic-draw-white.svg` (design system) inside a `position:sticky` wrapper — draw-on via pathLength dash + SMIL clip-wipe wedges for the K diagonals and the slash (~1.65s), theme-recolored via currentColor, once per visit via sessionStorage; click replays.
 - On scroll it translates+scales into the empty nav-left slot. Scrub-linked: progress p = clamp(scrollTop/260), eased smoothstep, transform-only (60fps), fully reversible.
 - Desktop constants (1440 shell): translate(-630px·q, -28px·q) scale(1 − 0.8q); nav border-bottom fades in with q.
 - Mobile (2b): static nav s-mark; morph optional later (constants: translate(-132px·q, -26px·q) scale(1 − 0.7q) at 390).
