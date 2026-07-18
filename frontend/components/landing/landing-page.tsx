@@ -88,6 +88,10 @@ export function LandingPage() {
   const onTrialExhausted = useCallback((reason?: string) => {
     setRunFlow(null);
     setRunOpen(false);
+    // the flow is gone — drop its run id too, or the next mounted flow
+    // inherits it (a stale flowRunId makes an idle chart look like it holds
+    // the tracked run: hasFlow/idleChartFlow misfire)
+    setFlowRunId(null);
     setGateReason(reason);
     setGated(true);
   }, []);
@@ -110,6 +114,10 @@ export function LandingPage() {
       flowGen.current += 1;
       setRunFlow(req);
       setRunOpen(true);
+      // a freshly mounted flow has started no run yet — null the id so it
+      // can't inherit a prior flow's run (the flowRunId===null invariant an
+      // idle flow relies on)
+      setFlowRunId(null);
     };
     if (req.mode === "chart") {
       // chart-teach opens ungated — pinning examples is browsing, not

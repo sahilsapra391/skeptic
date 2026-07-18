@@ -116,7 +116,10 @@ export function ActiveRunBanner({
   if (status === "error") {
     return (
       <Pill onDismiss={dismiss}>
-        <button onClick={onReopen} className="text-left text-ink-3">
+        <button
+          onClick={() => (hasFlow ? onReopen() : runId && onView(runId))}
+          className="text-left text-ink-3"
+        >
           Your run hit a problem on our end — open it →
         </button>
       </Pill>
