@@ -347,6 +347,14 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                         parent.receipts_json = json.dumps(existing)
                     except Exception:
                         log.exception("receipt attach failed for %s", parent_run_id)
+            # L2 credit law: a refusal refunds — you only pay for a GRADED
+            # verdict. Written in THIS transaction (with status='done'), so the
+            # run becomes visible and refunded ATOMICALLY — a concurrent
+            # read-time re-grade can never catch it in an un-refunded window
+            # (the paywall SEAL keys on the refund). Idempotent + self-scoped
+            # (a no-op for anon / service runs that were never charged).
+            if bool(payload.get("verdict", {}).get("refusal")):
+                db.refund_run_tx(s, run_id)
             s.commit()
     except Exception as exc:
         log.exception("run %s failed", run_id)
@@ -356,6 +364,8 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 run.status = "error"
                 run.error = f"{type(exc).__name__}: {exc}"
                 s.add(db.RunEvent(run_id=run_id, stage=run.stage, label="failed"))
+                # an our-fault failure refunds too — atomic with status='error'
+                db.refund_run_tx(s, run_id)
                 s.commit()
     finally:
         # this run's daily-series memo, dropped on the store THIS run used
@@ -534,6 +544,12 @@ def backtest(
 
     if req.origin not in VALID_ORIGINS:
         raise HTTPException(status_code=422, detail=f"unknown origin {req.origin!r}")
+    # a signed-in caller's run is ALWAYS origin="user" (launch L2): the
+    # automation origins (auto_unlock / receipt) belong to the nightly
+    # principal, which carries the service bearer. Forcing it server-side also
+    # stops a session caller from dodging the credit debit by declaring an
+    # automation origin (the field is client-supplied).
+    origin = "user" if run_user is not None else req.origin
 
     # launch L4 anon armor: the anonymous free-run path is defended so a
     # doctored client can't turn the engine into free compute. Signed-in
@@ -597,14 +613,36 @@ def backtest(
     # inherit their parent's so an unlock never moves its own goalposts
     if req.min_trades is not None:
         min_trades = req.min_trades
-    elif req.origin in ("auto_unlock", "receipt"):
+    elif origin in ("auto_unlock", "receipt"):
         min_trades = _inherit_min_trades(req.parent_run_id)
     else:
         min_trades = MIN_TRADES
 
+    # launch L2 credits: a signed-in caller spends 1 credit per run. The anon
+    # path is defended by the armor (no credits); the service principal is
+    # never charged. Hard block at 0 (L3 adds top-ups).
+    charge_credit = run_user is not None and not auth.is_service(request)
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
     with db.session() as s:
+        if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
+            uid = run_user.id
+            # lock THIS account's row (Postgres) so two simultaneous runs
+            # can't both spend the last credit, then recompute the balance
+            # under the lock and debit + create in ONE transaction — a crash
+            # between them leaves NEITHER (the atomicity guarantee). On the
+            # SQLite fallback with_for_update is a no-op, so a concurrent
+            # overdraft of 1 credit is possible there; acceptable, as the
+            # fallback is degraded single-node mode and prod is Postgres.
+            s.query(db.User).filter(db.User.id == uid).with_for_update().first()
+            if db.credit_balance_tx(s, uid) <= 0:
+                raise HTTPException(
+                    status_code=402,
+                    detail="you're out of backtest credits — top-ups are coming soon",
+                )
+            s.add(
+                db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
+            )
         s.add(
             db.Run(
                 id=run_id,
@@ -612,11 +650,11 @@ def backtest(
                 stage=0,
                 seed=spec.backtest.seed,
                 spec_json=spec.model_dump_json(),
-                origin=req.origin,
+                origin=origin,
                 parent_run_id=req.parent_run_id,
                 user_id=run_user.id if run_user is not None else None,
                 provenance_json=creation_record(
-                    req.provenance, req.origin, req.parent_run_id, note
+                    req.provenance, origin, req.parent_run_id, note
                 ),
             )
         )
@@ -756,6 +794,27 @@ def list_runs(
     return {"runs": runs, "demo": False}
 
 
+def _enforce_run_access(run: db.Run, run_id: str, request: Request) -> None:
+    """launch L1b: OWNED runs are private to their account (service and the
+    pinned examples excepted; unowned pre-account runs stay reachable by id —
+    that's how an anonymous device revisits its own run). 404, not 403 —
+    existence is nobody else's business. Shared by get_run / ask / replay so
+    reading, questioning, and receipting a run all enforce the SAME boundary
+    (ask + replay were missing it — a cross-user IDOR on paid graded runs)."""
+    if run.user_id is None or run_id in example_run_ids():
+        return
+    from app import auth
+
+    if auth.is_service(request):
+        return
+    try:
+        viewer = auth.resolve_user(request)
+    except auth.AccountsUnavailableError:
+        viewer = None
+    if viewer is None or viewer.id != run.user_id:
+        raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+
+
 @router.get("/runs/{run_id}")
 def get_run(
     run_id: str,
@@ -766,20 +825,7 @@ def get_run(
         run = s.get(db.Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
-    # launch L1b: OWNED runs are private to their account (service and the
-    # pinned examples excepted; unowned pre-account runs stay reachable by
-    # id — that's how an anonymous device revisits its own run). 404, not
-    # 403 — existence is nobody else's business.
-    if run.user_id is not None and run_id not in example_run_ids():
-        from app import auth
-
-        if not auth.is_service(request):
-            try:
-                viewer = auth.resolve_user(request)
-            except auth.AccountsUnavailableError:
-                viewer = None
-            if viewer is None or viewer.id != run.user_id:
-                raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    _enforce_run_access(run, run_id, request)
     if run.status == "done" and run.payload_json:
         payload = dict(json.loads(run.payload_json))
         # a worker killed mid-narration must not leave the UI polling a
@@ -802,14 +848,22 @@ def get_run(
         # re-grades at read time against the caller's bar (both ways:
         # a 13-trade refusal unlocks at bar 1, a graded run re-caps at
         # 300). Per-request view; the stored row is never mutated.
+        # L2 SEAL: a REFUNDED refusal must NOT unlock at a lower bar — the
+        # credit was given back, so blessing it now would be a free graded
+        # verdict (submit at min_trades=10000 to force a refund, then view at
+        # ?min_trades=1 to unlock it — a full paywall bypass). Only a stored
+        # refusal can be unlocked downward, so the ledger check is scoped to
+        # that case (graded and anon/unpaid runs re-grade freely).
         if min_trades is not None and run.stats_json:
             from app.api.payload import regrade_for_min_trades
 
-            try:
-                stats = json.loads(run.stats_json)
-            except Exception:
-                stats = None
-            payload = regrade_for_min_trades(payload, stats, min_trades)
+            stored_refusal = bool(payload.get("verdict", {}).get("refusal"))
+            if not (stored_refusal and db.was_refunded(run_id)):
+                try:
+                    stats = json.loads(run.stats_json)
+                except Exception:
+                    stats = None
+                payload = regrade_for_min_trades(payload, stats, min_trades)
         spec_dict = json.loads(run.spec_json) if run.spec_json else {}
         # UX Chunk A: the setup story. Stored records merge verbatim; rows
         # predating the column get a READ-TIME derivation from stored fields
@@ -863,7 +917,7 @@ class AskRequest(BaseModel):
 
 
 @router.post("/runs/{run_id}/replay")
-def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
+def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """On-demand verdict receipt (D3c, owner amendment 1): replay THIS
     daily run at the 5-minute clock, right now. The receipt attaches to
     the original when the replay completes; the stored verdict is never
@@ -874,7 +928,20 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
         run = s.get(db.Run, run_id)
         if run is None or run.status != "done" or not run.spec_json:
             raise HTTPException(status_code=404, detail="no completed run to replay")
+        _enforce_run_access(run, run_id, request)  # only the owner replays their run
+        parent_user_id = run.user_id
         spec_dict = json.loads(run.spec_json)
+    # a REFUNDED run's verdict is sealed (you got the credit back, not the
+    # verdict). Replaying it would spawn a fresh, never-charged receipt run
+    # that a lower-bar re-grade could unlock for free — the seal's escape
+    # hatch. Block it. (An uncharged anon/example refused run has no such
+    # paywall and can still be receipted.)
+    if db.was_refunded(run_id):
+        raise HTTPException(
+            status_code=409,
+            detail="nothing to replay — this run's verdict was withheld and "
+                   "its credit refunded; there is no blessed result to receipt",
+        )
     if not replay_eligible_spec(spec_dict):
         raise HTTPException(
             status_code=409,
@@ -893,6 +960,10 @@ def replay_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
                      seed=replay_spec.backtest.seed,
                      spec_json=replay_spec.model_dump_json(),
                      origin="receipt", parent_run_id=run_id,
+                     # inherit the parent's owner so the receipt is as private
+                     # as the run it verifies (a receipt of an owned run must
+                     # not be world-readable via its own id)
+                     user_id=parent_user_id,
                      provenance_json=creation_record(None, "receipt", run_id)))
         s.commit()
     # the receipt faces the same evidence bar its parent was scored at
@@ -1002,13 +1073,14 @@ def _execute_audit(run_id: str) -> None:
 
 
 @router.post("/runs/{run_id}/ask")
-def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
+def ask(run_id: str, req: AskRequest, request: Request) -> dict[str, Any]:
     if not req.question.strip():
         raise HTTPException(status_code=422, detail="empty question")
     with db.session() as s:
         run = s.get(db.Run, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+    _enforce_run_access(run, run_id, request)  # a run's Q&A is as private as the run
     if run.status != "done" or not run.stats_json:
         raise HTTPException(status_code=501, detail=_PENDING_ASK_STATS)
 
@@ -1016,7 +1088,10 @@ def ask(run_id: str, req: AskRequest) -> dict[str, Any]:
     from app.honesty.ask import answer_question
 
     stats = json.loads(run.stats_json)
-    if req.min_trades is not None:
+    # L2 seal: a refunded run (always a refusal) is NOT re-graded down — the
+    # answer stays consistent with the sealed screen and can't verbally bless
+    # a run whose credit was refunded (the paywall-bypass vector get_run seals)
+    if req.min_trades is not None and not db.was_refunded(run_id):
         # same re-gate the displayed payload got — answers and screen agree,
         # and the bar number itself is grounded (it rides the sample dump)
         stats = regrade_stats_for_min_trades(stats, req.min_trades)

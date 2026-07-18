@@ -69,6 +69,12 @@ def _sweep_orphaned_runs() -> None:
                 )
                 s.add(db.RunEvent(run_id=run.id, stage=run.stage or 0,
                                   label="interrupted by service restart"))
+                # L2 credit law: an interrupted run is an our-fault failure —
+                # refund the credit it debited, ATOMIC with status='error'
+                # (idempotent + self-scoped: a no-op for anon / service runs).
+                # Without this, a redeploy or OOM mid-run would permanently
+                # charge a signed-in user for nothing.
+                db.refund_run_tx(s, run.id)
             if stuck:
                 s.commit()
     except Exception:  # a sweep failure must never block boot
