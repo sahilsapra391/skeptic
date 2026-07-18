@@ -136,13 +136,6 @@ export function NavRail() {
     }
   }, []);
 
-  const toggle = () =>
-    setWidth((w) => {
-      const next = w >= COLLAPSE_AT ? RAIL_W : lastOpenW.current;
-      saveNavState(next, lastOpenW.current);
-      return next;
-    });
-
   // fully imperative drag: listeners attach synchronously in the same
   // pointerdown and the settle uses the event's own coordinates, so no
   // effect timing or stale state can lose the snap
@@ -190,7 +183,7 @@ export function NavRail() {
     <nav
       style={{ width }}
       className={clsx(
-        "relative flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg py-3.5 print:hidden",
+        "relative flex flex-none flex-col gap-2 border-r border-line-softer bg-navbg pt-3.5 pb-1.5 print:hidden",
         !dragging && "transition-[width] duration-150",
         open ? "px-2.5" : "items-center",
         dragging && "select-none",
@@ -246,32 +239,10 @@ export function NavRail() {
           </div>
         </div>
       )}
-      <div className={clsx("mt-auto flex flex-col gap-2", !open && "items-center")}>
+      {/* account slot at the bottom; the rail still collapses/expands by
+          dragging the right-edge handle below */}
+      <div className={clsx("mt-auto", !open && "flex flex-col items-center")}>
         <AccountSection open={open} />
-      <button
-        onClick={toggle}
-        aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-        title={open ? "Collapse sidebar" : "Expand sidebar"}
-        className={clsx(
-          "flex h-[38px] items-center rounded-[10px] text-ink-4 hover:bg-raised-2 hover:text-ink",
-          open ? "w-full gap-3 px-2.5" : "w-[38px] justify-center",
-        )}
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 20 20"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={clsx("flex-none transition-transform", open && "rotate-180")}
-        >
-          <path d="M8 6l4 4-4 4" />
-        </svg>
-        {open && <span className="text-[13px] font-semibold">Collapse</span>}
-      </button>
       </div>
       <div
         onPointerDown={startDrag}

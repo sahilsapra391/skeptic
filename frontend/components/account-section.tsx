@@ -34,6 +34,28 @@ function PersonIcon() {
   );
 }
 
+function SignOutIcon() {
+  // door frame + arrow leaving to the right (a standard log-out glyph),
+  // sized + weighted to sit alongside the top-rail nav icons
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="flex-none"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  );
+}
+
 export function AccountSection({ open }: { open: boolean }) {
   const pathname = usePathname();
   // undefined = first check still in flight (render nothing rather than
@@ -116,11 +138,23 @@ export function AccountSection({ open }: { open: boolean }) {
 
   if (!open) {
     return (
-      <div
-        title={me.email}
-        className="flex h-[38px] w-[38px] items-center justify-center text-ink-3"
-      >
-        <PersonIcon />
+      <div className="flex flex-col items-center gap-1.5">
+        <div
+          title={me.email}
+          className="flex h-[38px] w-[38px] items-center justify-center text-ink-3"
+        >
+          <PersonIcon />
+        </div>
+        {/* the sign-out icon stays reachable even when the rail is collapsed */}
+        <button
+          onClick={signOut}
+          disabled={signingOut}
+          title="Sign out"
+          aria-label="Sign out"
+          className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] text-ink-4 hover:bg-raised-2 hover:text-ink disabled:opacity-60"
+        >
+          <SignOutIcon />
+        </button>
       </div>
     );
   }
@@ -148,11 +182,20 @@ export function AccountSection({ open }: { open: boolean }) {
       {buyMsg && (
         <p className="px-2.5 pb-0.5 font-mono text-[10.5px] leading-[1.5] text-ink-4">{buyMsg}</p>
       )}
+      {me.admin && (
+        <Link
+          href="/admin"
+          className="flex h-[30px] w-full items-center rounded-[10px] px-2.5 text-[12.5px] font-semibold text-ink-3 hover:bg-raised-2 hover:text-ink"
+        >
+          Admin
+        </Link>
+      )}
       <button
         onClick={signOut}
         disabled={signingOut}
-        className="flex h-[30px] w-full items-center rounded-[10px] px-2.5 text-[12.5px] font-semibold text-ink-4 hover:bg-raised-2 hover:text-ink disabled:opacity-60"
+        className="flex h-[34px] w-full items-center gap-2.5 rounded-[10px] px-2.5 text-[12.5px] font-semibold text-ink-4 hover:bg-raised-2 hover:text-ink disabled:opacity-60"
       >
+        <SignOutIcon />
         {signingOut ? "Signing out…" : "Sign out"}
       </button>
     </div>
