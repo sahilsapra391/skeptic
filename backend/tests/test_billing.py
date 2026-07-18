@@ -71,14 +71,31 @@ def _event(
     paid: bool = True,
     etype: str = "checkout.session.completed",
     purpose: str | None = "backtest_credits",
+    payment_intent: str | None = None,
 ) -> dict:
     obj: dict = {
         "client_reference_id": uid,
         "payment_status": "paid" if paid else "unpaid",
+        # a real Checkout carries the payment_intent; default it per-event so
+        # distinct grants get distinct payment ids (a later refund keys on it)
+        "payment_intent": payment_intent or f"pi_{event_id}",
     }
     if purpose is not None:
         obj["metadata"] = {"purpose": purpose}
     return {"id": event_id, "type": etype, "data": {"object": obj}}
+
+
+def _reversal(
+    payment_intent: str, event_id: str, *, etype: str = "charge.refunded"
+) -> dict:
+    """A refund (charge.refunded → a Charge) or a dispute (charge.dispute.created
+    → a Dispute) webhook. Both objects expose the payment_intent that links back
+    to the granting purchase row."""
+    return {
+        "id": event_id,
+        "type": etype,
+        "data": {"object": {"payment_intent": payment_intent}},
+    }
 
 
 # ----------------------------------------------------------------- checkout
@@ -233,3 +250,127 @@ def test_grant_purchase_is_idempotent_per_event(monkeypatch: pytest.MonkeyPatch)
     assert db.grant_purchase(uid, 50, "evt_A") is False  # same event → no double grant
     assert db.grant_purchase(uid, 50, "evt_B") is True  # a different event grants
     assert _credits(client) == 5 + 100
+
+
+# ----------------------------------------------------- refund / dispute reversal
+
+
+def _buy(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, uid: str, pi: str
+) -> None:
+    """Grant credits through a paid Checkout webhook carrying payment_intent pi."""
+    monkeypatch.setattr(
+        billing, "verify_webhook_event", lambda p, s: _event(uid, f"buy_{pi}", payment_intent=pi)
+    )
+    r = client.post("/api/stripe/webhook", content=b"{}", headers={"stripe-signature": "x"})
+    assert r.status_code == 200
+
+
+def _deliver(client: TestClient, monkeypatch: pytest.MonkeyPatch, event: dict) -> None:
+    monkeypatch.setattr(billing, "verify_webhook_event", lambda p, s: event)
+    r = client.post("/api/stripe/webhook", content=b"{}", headers={"stripe-signature": "x"})
+    assert r.status_code == 200
+
+
+def test_refund_reverses_the_grant_and_redelivery_is_a_noop(
+    stripe_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    pi = f"pi_{uuid.uuid4().hex[:12]}"
+    _buy(client, monkeypatch, uid, pi)
+    assert _credits(client) == 5 + billing.purchase_credits()
+    # the buyer gets a refund — the credits it granted are clawed back. Stripe
+    # redelivers the event; the reversal must still happen exactly once.
+    for _ in range(3):
+        _deliver(client, monkeypatch, _reversal(pi, "evt_refund"))
+    assert _credits(client) == 5
+
+
+def test_dispute_created_reverses_the_grant(
+    stripe_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    pi = f"pi_{uuid.uuid4().hex[:12]}"
+    _buy(client, monkeypatch, uid, pi)
+    _deliver(client, monkeypatch, _reversal(pi, "evt_disp", etype="charge.dispute.created"))
+    assert _credits(client) == 5
+
+
+def test_refund_and_dispute_on_same_charge_reverse_only_once(
+    stripe_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refund and a dispute can both land for one charge (two event ids). The
+    money left our account once, so the credits are clawed back only once —
+    idempotency is per PAYMENT, not per event."""
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    pi = f"pi_{uuid.uuid4().hex[:12]}"
+    _buy(client, monkeypatch, uid, pi)
+    _deliver(client, monkeypatch, _reversal(pi, "evt_refund"))
+    assert _credits(client) == 5
+    _deliver(client, monkeypatch, _reversal(pi, "evt_disp", etype="charge.dispute.created"))
+    assert _credits(client) == 5  # not clawed back a second time
+
+
+def test_unrelated_dispute_does_not_reverse(
+    stripe_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    pi = f"pi_{uuid.uuid4().hex[:12]}"
+    _buy(client, monkeypatch, uid, pi)
+    # a dispute for some OTHER payment we never granted for — must not touch this
+    # account's balance
+    _deliver(
+        client, monkeypatch, _reversal("pi_not_ours", "evt_x", etype="charge.dispute.created")
+    )
+    assert _credits(client) == 5 + billing.purchase_credits()
+
+
+def test_chargeback_can_drive_the_balance_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The buyer spends the credits, THEN files a chargeback — balance goes
+    negative and they can't run again until they re-buy. That's correct."""
+    monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    tag = uuid.uuid4().hex[:12]
+    pi = f"pi_{tag}"
+    assert db.grant_purchase(uid, 50, f"evt_g_{tag}", payment_intent=pi) is True
+    assert _credits(client) == 55
+    with db.session() as s:  # spend everything (5 signup + 50 bought)
+        s.add(db.CreditLedger(user_id=uid, delta=-55, reason="run_debit", run_id=f"r_{tag}"))
+        s.commit()
+    assert _credits(client) == 0
+    assert db.reverse_purchase(pi, f"evt_cb_{tag}") is True
+    assert _credits(client) == -50
+
+
+def test_reverse_purchase_is_idempotent_per_payment_and_exact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    tag = uuid.uuid4().hex[:12]
+    pi = f"pi_{tag}"
+    # a promo-sized grant (30, not the 50 constant) — the reversal must match it
+    assert db.grant_purchase(uid, 30, f"evt_g_{tag}", payment_intent=pi) is True
+    assert _credits(client) == 35
+    assert db.reverse_purchase(pi, f"evt_cb1_{tag}") is True  # reverses exactly 30
+    assert db.reverse_purchase(pi, f"evt_cb2_{tag}") is False  # same payment → no double
+    assert db.reverse_purchase(f"pi_unknown_{tag}", f"evt_cb3_{tag}") is False  # no purchase
+    assert _credits(client) == 5

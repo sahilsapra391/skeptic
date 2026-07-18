@@ -84,12 +84,45 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
             and session.get("payment_status") == "paid"
             and purpose == billing.CHECKOUT_PURPOSE
         ):
-            granted = db.grant_purchase(user_id, billing.purchase_credits(), event["id"])
+            # payment_intent links this grant to a future refund/dispute event
+            granted = db.grant_purchase(
+                user_id,
+                billing.purchase_credits(),
+                event["id"],
+                payment_intent=session.get("payment_intent"),
+            )
             if granted:
                 log.info(
                     "purchase: +%d credits to %s (event %s)",
                     billing.purchase_credits(), user_id, event["id"],
                 )
+                if not session.get("payment_intent"):
+                    # no PI on the session → this grant can't be auto-reversed by
+                    # a later refund/dispute; the owner would need a manual
+                    # admin_adjust. Standard card Checkout always has one.
+                    log.warning(
+                        "purchase event %s granted with no payment_intent — "
+                        "not auto-reversible on refund/dispute",
+                        event["id"],
+                    )
             else:
                 log.info("purchase event %s already processed — idempotent skip", event["id"])
+    elif event["type"] in billing.REVERSAL_EVENTS:
+        # a refund or a filed dispute — claw back the credits that payment
+        # granted. Both event objects (a Charge or a Dispute) carry the
+        # payment_intent that links back to the granting purchase row.
+        obj = event["data"]["object"]
+        payment_intent = obj.get("payment_intent")
+        if payment_intent:
+            reversed_grant = db.reverse_purchase(payment_intent, event["id"])
+            if reversed_grant:
+                log.info(
+                    "chargeback: reversed purchase for payment %s (event %s, %s)",
+                    payment_intent, event["id"], event["type"],
+                )
+            else:
+                log.info(
+                    "chargeback event %s (%s) — no matching purchase or already reversed",
+                    event["id"], event["type"],
+                )
     return {"received": True}
