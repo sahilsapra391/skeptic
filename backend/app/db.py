@@ -149,17 +149,38 @@ class CreditLedger(Base):
             sqlite_where=text("reason = 'purchase'"),
             postgresql_where=text("reason = 'purchase'"),
         ),
+        # at most one chargeback per PAYMENT (launch L3 money-exposure fix):
+        # a refund or a dispute claws back the credits a purchase granted, but
+        # the money only leaves our account ONCE — so the reversal is idempotent
+        # on the Stripe payment_intent, not the event. That backstops BOTH a
+        # redelivered event AND a refund arriving alongside a dispute on the
+        # same charge (two different event ids, one payment) — neither can
+        # double-reverse.
+        Index(
+            "uq_credit_ledger_chargeback",
+            "payment_ref",
+            unique=True,
+            sqlite_where=text("reason = 'chargeback'"),
+            postgresql_where=text("reason = 'chargeback'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(40), index=True)
     delta: Mapped[int] = mapped_column(Integer)
-    # "signup_grant" | "purchase" | "run_debit" | "engine_refund" | "admin_adjust"
+    # "signup_grant" | "purchase" | "run_debit" | "engine_refund"
+    #   | "admin_adjust" | "chargeback"
     reason: Mapped[str] = mapped_column(String(20))
     run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # external idempotency key — the Stripe EVENT id for a purchase row (L3);
-    # the partial unique index above makes the grant exactly-once per event
+    # the partial unique index above makes the grant exactly-once per event.
+    # For a chargeback row it holds the refund/dispute event id, for audit.
     ext_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # the Stripe payment_intent id (L3): stamped on a purchase row so a later
+    # refund/dispute event (which carries the payment_intent, not our event id)
+    # can find the grant to reverse; and on the chargeback row itself, where
+    # the partial unique index makes the reversal exactly-once per payment.
+    payment_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
@@ -208,7 +229,9 @@ class AnonTrial(Base):
     )
 
 
-LEDGER_REASONS = {"signup_grant", "purchase", "run_debit", "engine_refund", "admin_adjust"}
+LEDGER_REASONS = {
+    "signup_grant", "purchase", "run_debit", "engine_refund", "admin_adjust", "chargeback",
+}
 
 
 def credit_balance(user_id: str) -> int:
@@ -287,23 +310,83 @@ def refund_run(run_id: str) -> bool:
     return True
 
 
-def grant_purchase(user_id: str, credits: int, stripe_event_id: str) -> bool:
+def grant_purchase(
+    user_id: str, credits: int, stripe_event_id: str, payment_intent: str | None = None
+) -> bool:
     """Grant purchased credits (launch L3). Idempotent per Stripe EVENT id —
     Stripe redelivers webhook events, so a redelivered checkout.session.completed
     must not double-grant. Returns True if THIS call granted; False if the event
     was already processed (the uq_credit_ledger_purchase index is the backstop).
-    Only ever ADDS a row — balance stays SUM over the append-only ledger."""
+    Only ever ADDS a row — balance stays SUM over the append-only ledger.
+
+    payment_intent (the Stripe charge/PI id) is stamped on the row so a later
+    refund or dispute can find this grant and reverse it (reverse_purchase)."""
     from sqlalchemy.exc import IntegrityError
 
     with SessionLocal() as s:
         s.add(
             CreditLedger(
-                user_id=user_id, delta=credits, reason="purchase", ext_ref=stripe_event_id
+                user_id=user_id,
+                delta=credits,
+                reason="purchase",
+                ext_ref=stripe_event_id,
+                payment_ref=payment_intent,
             )
         )
         try:
             s.commit()
         except IntegrityError:  # this event already granted — idempotent
+            s.rollback()
+            return False
+    return True
+
+
+def reverse_purchase(payment_intent: str, stripe_event_id: str) -> bool:
+    """Claw back the credits a purchase granted (launch L3 refund/dispute).
+
+    A charge.refunded or charge.dispute.created webhook means the buyer got
+    their money back — so we reverse the credits by APPENDING a negative
+    'chargeback' row (the ledger is append-only; we never mutate the grant).
+    The reversal is exactly-once per PAYMENT: the money left our account once,
+    so a redelivered event, or a refund arriving alongside a dispute on the
+    same charge, must reverse only once — the uq_credit_ledger_chargeback index
+    (on payment_ref) is the DB backstop.
+
+    Reverses the EXACT credits that payment granted (summed from its purchase
+    rows), not a constant — a promo grant of a different size is reversed to
+    match. Returns True if THIS call reversed; False if there's no matching
+    purchase (an unrelated charge → reverse nothing) or it was already reversed.
+
+    The balance may go NEGATIVE if the buyer already spent the credits — that's
+    correct: they can't run again until they re-buy."""
+    from sqlalchemy.exc import IntegrityError
+
+    with SessionLocal() as s:
+        grants = (
+            s.query(CreditLedger)
+            .filter(
+                CreditLedger.payment_ref == payment_intent,
+                CreditLedger.reason == "purchase",
+            )
+            .all()
+        )
+        if not grants:
+            return False  # no purchase for this charge — unrelated, reverse nothing
+        granted = sum(g.delta for g in grants)
+        if granted <= 0:
+            return False  # nothing was granted for this payment — nothing to claw back
+        s.add(
+            CreditLedger(
+                user_id=grants[0].user_id,
+                delta=-granted,
+                reason="chargeback",
+                ext_ref=stripe_event_id,
+                payment_ref=payment_intent,
+            )
+        )
+        try:
+            s.commit()
+        except IntegrityError:  # already reversed for this payment — idempotent
             s.rollback()
             return False
     return True
@@ -387,11 +470,15 @@ def _ensure_columns() -> None:
                              ("user_id", "VARCHAR(40)")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
-    # launch L3: the Stripe-event idempotency key on the live credit_ledger
+    # launch L3: the Stripe idempotency keys on the live credit_ledger —
+    # ext_ref (event id, the purchase grant) and payment_ref (payment_intent,
+    # the refund/dispute reversal link)
     ledger_cols = {c["name"] for c in inspect(_engine).get_columns("credit_ledger")}
-    if "ext_ref" not in ledger_cols:
-        with _engine.begin() as conn:
+    with _engine.begin() as conn:
+        if "ext_ref" not in ledger_cols:
             conn.execute(text("ALTER TABLE credit_ledger ADD COLUMN ext_ref VARCHAR(80)"))
+        if "payment_ref" not in ledger_cols:
+            conn.execute(text("ALTER TABLE credit_ledger ADD COLUMN payment_ref VARCHAR(80)"))
     _ensure_indexes()
 
 
@@ -411,6 +498,12 @@ def _ensure_indexes() -> None:
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_purchase "
             "ON credit_ledger (ext_ref) WHERE reason = 'purchase'"
+        ))
+        # launch L3 refund/dispute: one chargeback per payment_intent — a refund
+        # AND a dispute on the same charge (or a redelivered event) reverse once
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_chargeback "
+            "ON credit_ledger (payment_ref) WHERE reason = 'chargeback'"
         ))
 
 
