@@ -63,7 +63,7 @@ const RAIL_W = 56;
 const COLLAPSE_AT = 120;
 const SNAP_OPEN = 172;
 const MAX_W = 380;
-const DEFAULT_W = 196;
+const DEFAULT_W = 184;
 
 const STORE_KEY = "skeptic-nav-width";
 

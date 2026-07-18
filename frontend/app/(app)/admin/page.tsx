@@ -178,6 +178,7 @@ export default function AdminPage() {
               Revenue &amp; credits
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="Net USD" value={`$${metrics.revenue.net_usd.toLocaleString()}`} />
               <Stat label="Gross USD" value={`$${metrics.revenue.gross_usd.toLocaleString()}`} />
               <Stat label="Purchases" value={metrics.revenue.purchases} />
               <Stat label="Chargebacks" value={metrics.revenue.chargebacks} />

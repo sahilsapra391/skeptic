@@ -434,7 +434,7 @@ export type AdminMetrics = {
     charged_back: number;
     outstanding: number;
   };
-  revenue: { purchases: number; chargebacks: number; gross_usd: number };
+  revenue: { purchases: number; chargebacks: number; gross_usd: number; net_usd: number };
   anon_trials: { total: number; today: number };
 };
 
