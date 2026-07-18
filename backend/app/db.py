@@ -138,6 +138,17 @@ class CreditLedger(Base):
             sqlite_where=text("reason = 'engine_refund'"),
             postgresql_where=text("reason = 'engine_refund'"),
         ),
+        # exactly one purchase grant per Stripe event (launch L3): Stripe
+        # redelivers webhook events, so the credit grant is idempotent on the
+        # event id, DB-enforced — a redelivered checkout.session.completed can
+        # never double-grant credits.
+        Index(
+            "uq_credit_ledger_purchase",
+            "ext_ref",
+            unique=True,
+            sqlite_where=text("reason = 'purchase'"),
+            postgresql_where=text("reason = 'purchase'"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -146,6 +157,9 @@ class CreditLedger(Base):
     # "signup_grant" | "purchase" | "run_debit" | "engine_refund" | "admin_adjust"
     reason: Mapped[str] = mapped_column(String(20))
     run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # external idempotency key — the Stripe EVENT id for a purchase row (L3);
+    # the partial unique index above makes the grant exactly-once per event
+    ext_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
@@ -273,6 +287,28 @@ def refund_run(run_id: str) -> bool:
     return True
 
 
+def grant_purchase(user_id: str, credits: int, stripe_event_id: str) -> bool:
+    """Grant purchased credits (launch L3). Idempotent per Stripe EVENT id —
+    Stripe redelivers webhook events, so a redelivered checkout.session.completed
+    must not double-grant. Returns True if THIS call granted; False if the event
+    was already processed (the uq_credit_ledger_purchase index is the backstop).
+    Only ever ADDS a row — balance stays SUM over the append-only ledger."""
+    from sqlalchemy.exc import IntegrityError
+
+    with SessionLocal() as s:
+        s.add(
+            CreditLedger(
+                user_id=user_id, delta=credits, reason="purchase", ext_ref=stripe_event_id
+            )
+        )
+        try:
+            s.commit()
+        except IntegrityError:  # this event already granted — idempotent
+            s.rollback()
+            return False
+    return True
+
+
 class TrialCounter(Base):
     """Per-strategy-family test count for the deflated Sharpe correction
     (TECH-SPEC §6.5). Family = underlying + structure; every run and every
@@ -351,6 +387,11 @@ def _ensure_columns() -> None:
                              ("user_id", "VARCHAR(40)")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
+    # launch L3: the Stripe-event idempotency key on the live credit_ledger
+    ledger_cols = {c["name"] for c in inspect(_engine).get_columns("credit_ledger")}
+    if "ext_ref" not in ledger_cols:
+        with _engine.begin() as conn:
+            conn.execute(text("ALTER TABLE credit_ledger ADD COLUMN ext_ref VARCHAR(80)"))
     _ensure_indexes()
 
 
@@ -365,6 +406,11 @@ def _ensure_indexes() -> None:
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_refund "
             "ON credit_ledger (run_id) WHERE reason = 'engine_refund'"
+        ))
+        # launch L3: one purchase grant per Stripe event id (idempotent webhook)
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_purchase "
+            "ON credit_ledger (ext_ref) WHERE reason = 'purchase'"
         ))
 
 

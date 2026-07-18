@@ -16,6 +16,11 @@ dependencies = [
     # launch L1b: self-rolled credentials (owner decision — no third party
     # in the login path); argon2id via passlib
     "passlib[argon2]>=1.7",
+    # launch L3: Stripe is the payment processor — its SDK is the canonical
+    # client for Checkout sessions and, critically, webhook signature
+    # verification (construct_event does the HMAC + timestamp/replay check;
+    # hand-rolling that is where webhook bugs hide)
+    "stripe>=10",
 ]
 
 [dependency-groups]

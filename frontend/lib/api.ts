@@ -457,6 +457,13 @@ export function logout(): Promise<{ ok: boolean }> {
   return request<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
 }
 
+/** Launch L3: start a Stripe Checkout for the signed-in account and return
+ * the hosted URL to redirect the browser to. Credits are granted by the
+ * signature-verified webhook AFTER payment — never by the return redirect. */
+export function startCheckout(): Promise<{ url: string }> {
+  return request<{ url: string }>("/api/checkout", { method: "POST" });
+}
+
 export function verifyEmail(token: string): Promise<AuthAccount> {
   return request<AuthAccount>("/api/auth/verify", {
     method: "POST",
