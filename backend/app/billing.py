@@ -12,8 +12,10 @@ same way it runs without the mailer or Turnstile.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from typing import Any, cast
 
 import stripe
 
@@ -85,11 +87,26 @@ def create_checkout_session(user_id: str, success_url: str, cancel_url: str) -> 
     return url
 
 
-def verify_webhook_event(payload: bytes, sig_header: str) -> stripe.Event:
-    """Verify + parse a Stripe webhook. construct_event does the HMAC-SHA256
-    signature check AND the timestamp/replay window — raising on a forged or
-    stale payload. This is the ONLY trust boundary for granting credits."""
-    # the stripe SDK ships no type stubs — construct_event is untyped
-    return stripe.Webhook.construct_event(  # type: ignore[no-untyped-call, no-any-return]
-        payload, sig_header, _webhook_secret()
+def verify_webhook_event(payload: bytes, sig_header: str) -> dict[str, Any]:
+    """Verify a Stripe webhook and return its event as a plain dict.
+
+    verify_header does the HMAC-SHA256 signature check AND the timestamp/replay
+    window — raising SignatureVerificationError on a forged or stale payload.
+    This is the ONLY trust boundary for granting credits.
+
+    We deliberately do NOT use stripe.Webhook.construct_event: it additionally
+    builds a typed StripeObject Event, and (a) that object's API is version-
+    variant — stripe-python 15.x dropped dict.get(), so `session.get(...)` on it
+    raised AttributeError and 500'd the live webhook — and (b) constructing it
+    can itself raise on unusual-but-valid payloads. The bytes we just verified
+    are authentic, so json.loads over the same payload is safe and version-proof.
+    """
+    # verify_header signs `f"{ts}.{payload}"`; handed bytes it interpolates the
+    # b'...' repr and every signature mismatches (a 400) — decode to the exact
+    # UTF-8 body Stripe signed first. (This is what construct_event does inside.)
+    body = payload.decode("utf-8")
+    # the stripe SDK ships no type stubs — verify_header is untyped
+    stripe.WebhookSignature.verify_header(  # type: ignore[no-untyped-call]
+        body, sig_header, _webhook_secret(), stripe.Webhook.DEFAULT_TOLERANCE
     )
+    return cast("dict[str, Any]", json.loads(body))

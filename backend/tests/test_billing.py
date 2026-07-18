@@ -9,7 +9,11 @@ wiring + idempotency + trust boundary are.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import itertools
+import json
+import time
 import uuid
 
 import pytest
@@ -374,3 +378,79 @@ def test_reverse_purchase_is_idempotent_per_payment_and_exact(
     assert db.reverse_purchase(pi, f"evt_cb2_{tag}") is False  # same payment → no double
     assert db.reverse_purchase(f"pi_unknown_{tag}", f"evt_cb3_{tag}") is False  # no purchase
     assert _credits(client) == 5
+
+
+# ------------------------------------------ real signed events (no stub)
+#
+# Every webhook test above monkeypatches billing.verify_webhook_event and so
+# NEVER runs the real stripe.Webhook.construct_event — which returns a
+# StripeObject whose API differs by SDK version. In stripe-python 15.x,
+# StripeObject dropped dict.get(), so session.get(...) raised AttributeError and
+# 500'd the LIVE grant + reversal in prod. These tests drive the real verify
+# path end-to-end so that regression can't ship again.
+
+
+def _sign(payload: bytes, secret: str = "whsec_x") -> dict[str, str]:
+    """A genuine Stripe signature header for `payload` (t=<ts>,v1=<hmac>)."""
+    ts = int(time.time())
+    sig = hmac.new(secret.encode(), f"{ts}.".encode() + payload, hashlib.sha256).hexdigest()
+    return {"stripe-signature": f"t={ts},v1={sig}"}
+
+
+def _checkout_payload(uid: str, event_id: str, payment_intent: str) -> bytes:
+    return json.dumps(
+        {
+            "id": event_id,
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "client_reference_id": uid,
+                    "payment_status": "paid",
+                    "payment_intent": payment_intent,
+                    "metadata": {"purpose": "backtest_credits"},
+                }
+            },
+        }
+    ).encode()
+
+
+def test_real_signed_checkout_grants(stripe_env: None) -> None:
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    assert _credits(client) == 5
+    tag = uuid.uuid4().hex[:12]
+    payload = _checkout_payload(uid, f"evt_{tag}", f"pi_{tag}")
+    r = client.post("/api/stripe/webhook", content=payload, headers=_sign(payload))
+    assert r.status_code == 200, r.text
+    assert _credits(client) == 5 + billing.purchase_credits()
+
+
+def test_real_signed_refund_reverses(stripe_env: None) -> None:
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    tag = uuid.uuid4().hex[:12]
+    pi = f"pi_{tag}"
+    buy = _checkout_payload(uid, f"evt_buy_{tag}", pi)
+    assert client.post("/api/stripe/webhook", content=buy, headers=_sign(buy)).status_code == 200
+    assert _credits(client) == 5 + billing.purchase_credits()
+    refund = json.dumps(
+        {"id": f"evt_ref_{tag}", "type": "charge.refunded",
+         "data": {"object": {"payment_intent": pi}}}
+    ).encode()
+    r = client.post("/api/stripe/webhook", content=refund, headers=_sign(refund))
+    assert r.status_code == 200, r.text
+    assert _credits(client) == 5
+
+
+def test_real_signed_bad_signature_is_400(stripe_env: None) -> None:
+    client = _client()
+    _signup(client, _email())
+    payload = _checkout_payload("u1", "evt_bad", "pi_bad")
+    r = client.post(
+        "/api/stripe/webhook", content=payload, headers={"stripe-signature": "t=1,v1=deadbeef"}
+    )
+    assert r.status_code == 400
