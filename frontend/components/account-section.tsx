@@ -148,6 +148,14 @@ export function AccountSection({ open }: { open: boolean }) {
       {buyMsg && (
         <p className="px-2.5 pb-0.5 font-mono text-[10.5px] leading-[1.5] text-ink-4">{buyMsg}</p>
       )}
+      {me.admin && (
+        <Link
+          href="/admin"
+          className="flex h-[30px] w-full items-center rounded-[10px] px-2.5 text-[12.5px] font-semibold text-ink-3 hover:bg-raised-2 hover:text-ink"
+        >
+          Admin
+        </Link>
+      )}
       <button
         onClick={signOut}
         disabled={signingOut}

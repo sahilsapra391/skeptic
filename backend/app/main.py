@@ -39,6 +39,7 @@ def _warm_lake() -> None:
 
 _warm_lake()
 
+from app.api import admin_routes as admin_api  # noqa: E402
 from app.api import auth_routes as auth_api  # noqa: E402
 from app.api import billing_routes as billing_api  # noqa: E402
 from app.api import data as data_api  # noqa: E402
@@ -168,6 +169,7 @@ app.include_router(notebook_api.router, prefix="/api", tags=["notebook"])
 app.include_router(me_api.router, prefix="/api", tags=["me"])
 app.include_router(auth_api.router, prefix="/api", tags=["auth"])
 app.include_router(billing_api.router, prefix="/api", tags=["billing"])
+app.include_router(admin_api.router, prefix="/api", tags=["admin"])
 
 
 @app.exception_handler(HTTPException)

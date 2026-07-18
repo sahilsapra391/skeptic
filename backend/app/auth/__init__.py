@@ -41,7 +41,9 @@ __all__ = [
     "OPEN_PATH_PREFIXES",
     "USER_PATH_PREFIXES",
     "gate_allows",
+    "is_admin",
     "is_service",
+    "require_admin",
     "require_user",
     "resolve_user",
 ]
@@ -184,3 +186,27 @@ def require_user(request: Request) -> db.User:
             "account surfaces",
         )
     raise HTTPException(status_code=401, detail="sign in required")
+
+
+def _admin_emails() -> set[str]:
+    """The admin allowlist (launch L5) — a comma-separated env var the owner
+    sets on the backend. Empty = no admins (the portal is inert until set),
+    so a misconfigured deploy fails CLOSED, never open."""
+    raw = os.environ.get("SKEPTIC_ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_admin(user: db.User | None) -> bool:
+    """True when this account's email is on the admin allowlist. No DB flag —
+    admin is an env-controlled property of the email, so there is no
+    self-serve path to becoming one."""
+    return user is not None and user.email.lower() in _admin_emails()
+
+
+def require_admin(request: Request) -> db.User:
+    """FastAPI dependency for the admin surface. 404 (not 403) for a non-admin
+    — the admin routes' existence is nobody else's business."""
+    user = require_user(request)  # 401/503 first if not even signed in
+    if not is_admin(user):
+        raise HTTPException(status_code=404, detail="not found")
+    return user

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from app import db
-from app.auth import require_user
+from app.auth import is_admin, require_user
 from app.ratelimit import rate_limited
 
 router = APIRouter()
@@ -34,4 +34,7 @@ def me(
         "credits": db.credit_balance(user.id),
         "verified": user.verified_at is not None,
         "createdAt": user.created_at.isoformat() if user.created_at else None,
+        # launch L5: drives the admin-only nav link + /admin page gate. Derived
+        # from the env allowlist, so it flips off the instant the email leaves it.
+        "admin": is_admin(user),
     }

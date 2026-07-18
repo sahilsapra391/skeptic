@@ -402,10 +402,44 @@ export type MePayload = {
   credits: number;
   verified: boolean;
   createdAt: string | null;
+  admin: boolean; // launch L5: on the SKEPTIC_ADMIN_EMAILS allowlist
 };
 
 export function fetchMe(): Promise<MePayload> {
   return request<MePayload>("/api/me");
+}
+
+/** Launch L5 admin surface. Award (or claw back, negative) a user's credits —
+ * the web equivalent of scripts/grant_credits.py. 404 for non-admins. */
+export function adminGrantCredits(
+  email: string,
+  credits: number,
+): Promise<{ email: string; before: number; after: number; delta: number }> {
+  return request("/api/admin/grant-credits", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, credits }),
+  });
+}
+
+export type AdminMetrics = {
+  accounts: { total: number; verified: number; signups_7d: number };
+  runs: { total: number; by_status: Record<string, number>; signed_in: number; last_7d: number };
+  credits: {
+    spent: number;
+    signup_granted: number;
+    purchased: number;
+    admin_adjusted: number;
+    refunded: number;
+    charged_back: number;
+    outstanding: number;
+  };
+  revenue: { purchases: number; chargebacks: number; gross_usd: number };
+  anon_trials: { total: number; today: number };
+};
+
+export function adminMetrics(): Promise<AdminMetrics> {
+  return request<AdminMetrics>("/api/admin/metrics");
 }
 
 /** Launch L1b (self-rolled auth): what signup/login return. The session
