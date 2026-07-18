@@ -24,6 +24,7 @@ import {
   startBacktest,
 } from "@/lib/api";
 import { HEADLINES } from "@/lib/headlines";
+import { myRunIds } from "@/lib/my-runs";
 import { turnstileConfigured } from "@/lib/turnstile";
 import { notifyCreditsChanged } from "@/lib/credits-events";
 import { TurnstileWidget } from "@/components/landing/turnstile-widget";
@@ -735,7 +736,11 @@ export function RunFlow({
         </div>
       )}
 
-      <div className="mb-4 flex justify-center">{modeChips}</div>
+      {/* the landing's chart-teach popup is chart-only (owner 2026-07-17) —
+          no Describe It escape hatch; the composer lives on the hero */}
+      {!(embedded && initialMode === "chart") && (
+        <div className="mb-4 flex justify-center">{modeChips}</div>
+      )}
 
       {renderedMode === "text" ? (
         <div
@@ -848,6 +853,18 @@ export function RunFlow({
         >
           <ChartTeach
             onCompile={(d) => {
+              // the deferred device gate (owner 2026-07-17): opening the
+              // chart is browsing — the free-run check lands HERE, when
+              // "That's the idea" turns the pins into a run attempt. Only a
+              // CONFIRMED anonymous visitor gates client-side; unresolved
+              // identity (null — /me still in flight or hiccuped) falls
+              // through to the backend armor at RUN, which is the authority
+              // — a signed-in user with a stale my-runs breadcrumb must
+              // never be shown the create-an-account gate.
+              if (embedded && isAnon === true && myRunIds().length > 0) {
+                onTrialExhausted?.(undefined);
+                return;
+              }
               // a chart draft supersedes any earlier chat parse — clear the
               // verbatim-spec refs so a stale spec can never ride along
               // (and the abandoned conversation, so it can't enter the
