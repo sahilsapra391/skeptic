@@ -147,8 +147,26 @@ def test_metrics_shape(admin_client: TestClient) -> None:
     assert m["accounts"]["total"] >= 1 and "verified" in m["accounts"]
     assert "by_status" in m["runs"] and "signed_in" in m["runs"]
     assert "outstanding" in m["credits"] and "spent" in m["credits"]
-    assert m["revenue"]["gross_usd"] == m["revenue"]["purchases"] * 10
+    rev = m["revenue"]
+    assert rev["gross_usd"] == rev["purchases"] * 10
+    assert rev["net_usd"] == (rev["purchases"] - rev["chargebacks"]) * 10
     assert "today" in m["anon_trials"]
+
+
+def test_revenue_net_usd_subtracts_chargebacks(admin_client: TestClient) -> None:
+    """net_usd nets out reversals: a Stripe refund/dispute (recorded as a
+    'chargeback' row) drops net revenue by $10 while gross stays put."""
+    before = admin_client.get("/api/admin/metrics").json()["revenue"]
+    with db.session() as s:
+        uid = s.query(db.User.id).first()[0]
+        s.add(db.CreditLedger(user_id=uid, delta=50, reason="purchase", ext_ref="evt_rev1"))
+        s.add(db.CreditLedger(user_id=uid, delta=-50, reason="chargeback", ext_ref="pi_rev1"))
+        s.commit()
+    after = admin_client.get("/api/admin/metrics").json()["revenue"]
+    assert after["purchases"] == before["purchases"] + 1
+    assert after["chargebacks"] == before["chargebacks"] + 1
+    assert after["gross_usd"] == before["gross_usd"] + 10  # gross counts the sale
+    assert after["net_usd"] == before["net_usd"]  # ...but the reversal cancels it net
 
 
 def test_unverified_allowlisted_email_is_not_admin(monkeypatch: pytest.MonkeyPatch) -> None:

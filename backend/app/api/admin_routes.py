@@ -18,6 +18,10 @@ from app.auth import require_admin
 
 router = APIRouter()
 
+# the launch price: $10 per purchase (STRIPE_PRICE_ID). Used only to turn the
+# purchase/chargeback COUNTS into dollars for the revenue tiles.
+PURCHASE_USD = 10
+
 # admin auth as a dependency → it resolves BEFORE the request body is parsed,
 # so an unauthenticated caller gets the 404/401 and never a body-schema 422
 _admin = Depends(require_admin)
@@ -81,6 +85,7 @@ def metrics(_: db.User = _admin) -> dict[str, Any]:
             .all()
         }
         purchases = count(db.CreditLedger.id, db.CreditLedger.reason == "purchase")
+        chargebacks = count(db.CreditLedger.id, db.CreditLedger.reason == "chargeback")
         return {
             "accounts": {
                 "total": count(db.User.id),
@@ -107,11 +112,14 @@ def metrics(_: db.User = _admin) -> dict[str, Any]:
                 ),
             },
             "revenue": {
-                # each purchase is one $10 checkout; chargebacks are counted so
-                # gross vs net is honest
+                # each purchase is one $10 checkout; each chargeback reverses one
+                # $10 payment (a Stripe refund OR a dispute — both land as a
+                # 'chargeback' row), so net revenue = (purchases − chargebacks).
+                # (engine credit-refunds aren't money — they're in credits above.)
                 "purchases": purchases,
-                "chargebacks": count(db.CreditLedger.id, db.CreditLedger.reason == "chargeback"),
-                "gross_usd": purchases * 10,
+                "chargebacks": chargebacks,
+                "gross_usd": purchases * PURCHASE_USD,
+                "net_usd": (purchases - chargebacks) * PURCHASE_USD,
             },
             "anon_trials": {
                 "total": count(db.AnonTrial.id),
