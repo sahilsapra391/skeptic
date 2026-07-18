@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 import { AccountSection } from "@/components/account-section";
+import { DRAW_MS, LandingWordmark } from "@/components/landing/landing-wordmark";
 import { listRuns } from "@/lib/api";
 import { useResolvedTheme } from "@/lib/settings";
 import type { RunSummary } from "@/lib/types";
@@ -83,6 +84,36 @@ export function NavRail() {
   const [width, setWidth] = useState(DEFAULT_W);
   const [dragging, setDragging] = useState(false);
   const [recent, setRecent] = useState<RunSummary[]>([]);
+  // 0 = finished mark (never animates on mount); each click replays the
+  // brand draw-on, same mechanism as the landing hero. The rail logo
+  // unmounts when the sidebar collapses, so once a replay has played we
+  // return `run` to 0 — otherwise the next expand would remount mid-`run>0`
+  // and redraw unbidden. (Under reduced motion the bump is already inert,
+  // the component renders static.)
+  const [markRun, setMarkRun] = useState(0);
+  useEffect(() => {
+    if (markRun === 0) return;
+    const t = setTimeout(() => setMarkRun(0), DRAW_MS);
+    return () => clearTimeout(t);
+  }, [markRun]);
+  // memoized so the per-pointermove NavRail re-renders during a sidebar drag
+  // don't reconcile the ~20-node inline wordmark every frame; it inherits
+  // var(--ink) from the shared .mark style, so it re-inks with the theme
+  const logo = useMemo(
+    () => (
+      <button
+        type="button"
+        onClick={() => setMarkRun((n) => n + 1)}
+        aria-label="Skeptic — replay the wordmark draw-on"
+        className="cursor-pointer"
+      >
+        {/* w-[133px]: the draw box is 704×152 with a 100-unit glyph, matching
+            the old wordmark img's rendered glyph height at h-[28px] */}
+        <LandingWordmark run={markRun} className="block w-[133px]" />
+      </button>
+    ),
+    [markRun],
+  );
   const lastOpenW = useRef(DEFAULT_W);
   const open = width >= COLLAPSE_AT;
 
@@ -164,8 +195,7 @@ export function NavRail() {
     >
       <div className={clsx("mb-4 flex h-[40px] items-center", open && "px-1.5")}>
         {open ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={`/brand/wordmark-${markSuffix}.svg`} alt="Skeptic" className="h-[28px] w-auto" draggable={false} />
+          logo
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={`/brand/s-mark-${markSuffix}.svg`} alt="Skeptic" className="h-[32px] w-auto" draggable={false} />
