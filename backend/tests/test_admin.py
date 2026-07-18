@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import itertools
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app import db
 from app.main import app
 
 PASSWORD = "correct-horse-battery"
@@ -44,16 +46,26 @@ def _credits(client: TestClient) -> int:
     return int(client.get("/api/me").json()["credits"])
 
 
+def _mark_verified(email: str) -> None:
+    with db.session() as s:
+        u = s.query(db.User).filter(db.User.email == email.lower()).one()
+        u.verified_at = datetime.now(UTC)
+        s.commit()
+
+
 @pytest.fixture()
 def admin_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """A signed-in ADMIN. Each test gets a unique admin email placed on the
-    allowlist (the session DB is shared, so a fixed email would 409 on reuse).
-    Whitespace + a second entry prove the allowlist is parsed, not matched raw."""
+    """A signed-in, VERIFIED admin. Each test gets a unique admin email placed
+    on the allowlist (the session DB is shared, so a fixed email would 409 on
+    reuse). Whitespace + a second entry prove the allowlist is parsed, not
+    matched raw. Verified because admin power is bound to proven mailbox
+    control (an allowlisted-but-unverified email is NOT an admin)."""
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")  # dev gate open
     email = f"owner-{uuid.uuid4().hex[:8]}@skeptic.fyi"
     monkeypatch.setenv("SKEPTIC_ADMIN_EMAILS", f" {email} , second-admin@x.com ")
     c = _client()
     _signup(c, email)
+    _mark_verified(email)
     return c
 
 
@@ -120,6 +132,16 @@ def test_anon_is_401_on_admin(admin_client: TestClient) -> None:
     assert anon.get("/api/admin/metrics").status_code == 401
 
 
+def test_admin_auth_precedes_body_validation(admin_client: TestClient) -> None:
+    """require_admin is a Depends → it resolves BEFORE the body is parsed, so an
+    unauthenticated caller gets 401, never a 422 that would echo the schema."""
+    anon = _client()  # no signup
+    r = anon.post(
+        "/api/admin/grant-credits", json={"email": "x@x.com", "credits": 9_999_999}
+    )
+    assert r.status_code == 401  # auth first, not a schema-leaking 422
+
+
 def test_metrics_shape(admin_client: TestClient) -> None:
     m = admin_client.get("/api/admin/metrics").json()
     assert m["accounts"]["total"] >= 1 and "verified" in m["accounts"]
@@ -127,6 +149,23 @@ def test_metrics_shape(admin_client: TestClient) -> None:
     assert "outstanding" in m["credits"] and "spent" in m["credits"]
     assert m["revenue"]["gross_usd"] == m["revenue"]["purchases"] * 10
     assert "today" in m["anon_trials"]
+
+
+def test_unverified_allowlisted_email_is_not_admin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The squat defense: an allowlisted email that signed up but is NOT
+    verified is not an admin — so an attacker can't claim an allowlisted-but-
+    unregistered email and get instant admin. Verifying flips it on."""
+    monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
+    email = f"squatter-{uuid.uuid4().hex[:8]}@skeptic.fyi"
+    monkeypatch.setenv("SKEPTIC_ADMIN_EMAILS", email)
+    c = _client()
+    _signup(c, email)  # signed up, NOT verified
+    assert c.get("/api/me").json()["admin"] is False
+    assert c.get("/api/admin/metrics").status_code == 404
+
+    _mark_verified(email)  # proven mailbox control → admin turns on
+    assert c.get("/api/me").json()["admin"] is True
+    assert c.get("/api/admin/metrics").status_code == 200
 
 
 def test_no_admin_when_allowlist_unset(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
@@ -17,6 +17,10 @@ from app import db
 from app.auth import require_admin
 
 router = APIRouter()
+
+# admin auth as a dependency → it resolves BEFORE the request body is parsed,
+# so an unauthenticated caller gets the 404/401 and never a body-schema 422
+_admin = Depends(require_admin)
 
 
 class GrantRequest(BaseModel):
@@ -27,10 +31,9 @@ class GrantRequest(BaseModel):
 
 
 @router.post("/admin/grant-credits")
-def grant_credits(req: GrantRequest, request: Request) -> dict[str, Any]:
+def grant_credits(req: GrantRequest, _: db.User = _admin) -> dict[str, Any]:
     """Award (or claw back, negative) a user's credits — the web equivalent of
     scripts/grant_credits.py. One audited admin_adjust ledger row."""
-    require_admin(request)
     if req.credits == 0:
         raise HTTPException(status_code=422, detail="credits must be non-zero")
     email = req.email.strip().lower()
@@ -50,9 +53,8 @@ def grant_credits(req: GrantRequest, request: Request) -> dict[str, Any]:
 
 
 @router.get("/admin/metrics")
-def metrics(request: Request) -> dict[str, Any]:
+def metrics(_: db.User = _admin) -> dict[str, Any]:
     """Launch telemetry — accounts, runs, the credit economy, anon trials."""
-    require_admin(request)
     now = datetime.now(UTC)
     week_ago = now - timedelta(days=7)
     day_ago = now - timedelta(hours=24)

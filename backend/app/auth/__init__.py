@@ -197,10 +197,18 @@ def _admin_emails() -> set[str]:
 
 
 def is_admin(user: db.User | None) -> bool:
-    """True when this account's email is on the admin allowlist. No DB flag —
-    admin is an env-controlled property of the email, so there is no
-    self-serve path to becoming one."""
-    return user is not None and user.email.lower() in _admin_emails()
+    """True when this account's email is on the admin allowlist AND the email
+    is VERIFIED. No DB flag — admin is an env-controlled property of the email.
+    The verified gate binds admin power to proven mailbox control: without it,
+    an allowlisted email that isn't registered yet could be SQUATTED (sign up
+    with it → instant admin). An owner with no mail sender still verifies via
+    the link the mailer logs. (SKEPTIC_REQUIRE_VERIFIED only gates runs, not
+    this — the admin surface always requires it.)"""
+    return (
+        user is not None
+        and user.verified_at is not None
+        and user.email.lower() in _admin_emails()
+    )
 
 
 def require_admin(request: Request) -> db.User:
