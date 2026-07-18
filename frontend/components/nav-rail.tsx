@@ -105,11 +105,14 @@ export function NavRail() {
         type="button"
         onClick={() => setMarkRun((n) => n + 1)}
         aria-label="Skeptic — replay the wordmark draw-on"
-        className="cursor-pointer"
+        className="block w-full min-w-0 cursor-pointer"
       >
-        {/* w-[133px]: the draw box is 704×152 with a 100-unit glyph, matching
-            the old wordmark img's rendered glyph height at h-[28px] */}
-        <LandingWordmark run={markRun} className="block w-[133px]" />
+        {/* caps at 133px (the draw box is 704×152 with a 100-unit glyph,
+            matching the old wordmark img's glyph height at h-[28px]) but
+            SCALES DOWN via w-full when the resizable rail is dragged narrower
+            than the mark — the svg is width-driven (aspect-ratio in .mark), so
+            it shrinks to fit instead of clipping the trailing "/C" */}
+        <LandingWordmark run={markRun} className="block w-full max-w-[133px]" />
       </button>
     ),
     [markRun],
@@ -193,7 +196,7 @@ export function NavRail() {
         dragging && "select-none",
       )}
     >
-      <div className={clsx("mb-4 flex h-[40px] items-center", open && "px-1.5")}>
+      <div className={clsx("mb-4 flex h-[40px] items-center", open && "min-w-0 px-1.5")}>
         {open ? (
           logo
         ) : (
