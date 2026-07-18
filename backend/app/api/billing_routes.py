@@ -74,9 +74,16 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("client_reference_id")
-        # only credit a fully-PAID session (Checkout can complete unpaid for
-        # async payment methods); client_reference_id is the account we set
-        if user_id and session.get("payment_status") == "paid":
+        purpose = (session.get("metadata") or {}).get("purpose")
+        # grant only for a fully-PAID session THAT WE created for credits
+        # (Checkout can complete unpaid for async methods; the purpose marker
+        # means a different future Stripe product can't mint credits here);
+        # client_reference_id is the account we set at checkout, not the browser
+        if (
+            user_id
+            and session.get("payment_status") == "paid"
+            and purpose == billing.CHECKOUT_PURPOSE
+        ):
             granted = db.grant_purchase(user_id, billing.purchase_credits(), event["id"])
             if granted:
                 log.info(

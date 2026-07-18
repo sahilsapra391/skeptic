@@ -19,6 +19,12 @@ import stripe
 
 log = logging.getLogger("billing")
 
+# stamped on every Checkout session we create and REQUIRED by the webhook
+# before it grants — so only OUR credit purchases mint credits, never some
+# other future Stripe product or integration that happens to set a
+# client_reference_id on the same account (defense-in-depth)
+CHECKOUT_PURPOSE = "backtest_credits"
+
 
 def _secret_key() -> str:
     return os.environ.get("STRIPE_SECRET_KEY", "")
@@ -59,6 +65,7 @@ def create_checkout_session(user_id: str, success_url: str, cancel_url: str) -> 
         mode="payment",
         line_items=[{"price": _price_id(), "quantity": 1}],
         client_reference_id=user_id,
+        metadata={"purpose": CHECKOUT_PURPOSE},
         success_url=success_url,
         cancel_url=cancel_url,
     )

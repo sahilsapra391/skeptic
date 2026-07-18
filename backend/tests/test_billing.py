@@ -64,16 +64,21 @@ def stripe_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_x")
 
 
-def _event(uid: str, event_id: str = "evt_1", *, paid: bool = True,
-           etype: str = "checkout.session.completed") -> dict:
-    return {
-        "id": event_id,
-        "type": etype,
-        "data": {"object": {
-            "client_reference_id": uid,
-            "payment_status": "paid" if paid else "unpaid",
-        }},
+def _event(
+    uid: str,
+    event_id: str = "evt_1",
+    *,
+    paid: bool = True,
+    etype: str = "checkout.session.completed",
+    purpose: str | None = "backtest_credits",
+) -> dict:
+    obj: dict = {
+        "client_reference_id": uid,
+        "payment_status": "paid" if paid else "unpaid",
     }
+    if purpose is not None:
+        obj["metadata"] = {"purpose": purpose}
+    return {"id": event_id, "type": etype, "data": {"object": obj}}
 
 
 # ----------------------------------------------------------------- checkout
@@ -189,6 +194,23 @@ def test_webhook_ignores_unpaid_and_unrelated_events(
         "/api/stripe/webhook", content=b"{}", headers={"stripe-signature": "x"}
     ).status_code == 200
     assert _credits(client) == 5
+
+
+def test_webhook_ignores_a_paid_session_without_our_marker(
+    stripe_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense-in-depth: a paid session from some OTHER Stripe product/integration
+    that happens to set a client_reference_id must NOT mint credits — only a
+    session we created (carrying the purpose marker) grants."""
+    client = _client()
+    email = _email()
+    _signup(client, email)
+    uid = _uid(email)
+    monkeypatch.setattr(
+        billing, "verify_webhook_event", lambda p, s: _event(uid, "evt_nomark", purpose=None)
+    )
+    client.post("/api/stripe/webhook", content=b"{}", headers={"stripe-signature": "x"})
+    assert _credits(client) == 5  # no marker → no grant
 
 
 def test_webhook_503_when_secret_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
