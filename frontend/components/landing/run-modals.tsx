@@ -19,8 +19,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
-import { getRun } from "@/lib/api";
-import { myRunIds } from "@/lib/my-runs";
+import { ApiError, getRun } from "@/lib/api";
+import { forgetRun, myRunIds } from "@/lib/my-runs";
 import type { RunPayload } from "@/lib/types";
 
 import { LandingModal } from "./landing-modal";
@@ -84,13 +84,30 @@ export function RunViewModal({ runId, onClose }: { runId: string; onClose: () =>
 
   useEffect(() => {
     let alive = true;
+    // decided before any parallel pruner (the banner's own 404 poll) can
+    // edit the list under us — the copy must not depend on who pruned first
+    const mine = myRunIds().includes(runId);
     getRun(runId)
       .then((p) => {
         if (!alive) return;
         if (p.status !== "done") setError("this run isn't viewable right now");
         else setRun(p);
       })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : "run unavailable"));
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 404) {
+          // a remembered run that's gone server-side is a phantom — forget
+          // it (even if the modal already closed) so the device's stale
+          // breadcrumb releases instead of pointing at a run that can't be
+          // shown (owner 2026-07-17). No promise about the free run: the
+          // backend armor owns the spend decision and may still refuse.
+          if (mine) forgetRun(runId);
+          if (!alive) return;
+          setError("that run no longer exists on our end");
+          return;
+        }
+        if (!alive) return;
+        setError(e instanceof Error ? e.message : "run unavailable");
+      });
     return () => {
       alive = false;
     };
