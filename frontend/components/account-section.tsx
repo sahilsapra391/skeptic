@@ -14,8 +14,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
-import { fetchMe, logout, type MePayload } from "@/lib/api";
-import { CREDITS_CHANGED } from "@/lib/credits-events";
+import { ApiError, fetchMe, logout, startCheckout, type MePayload } from "@/lib/api";
+import { CREDITS_CHANGED, notifyCreditsChanged } from "@/lib/credits-events";
 
 function PersonIcon() {
   return (
@@ -40,6 +40,10 @@ export function AccountSection({ open }: { open: boolean }) {
   // flash "Sign in" at a signed-in user); null = signed out
   const [me, setMe] = useState<MePayload | null | undefined>(undefined);
   const [signingOut, setSigningOut] = useState(false);
+  // launch L3: "Add credits" → Stripe Checkout. buying while redirecting;
+  // buyMsg carries the honest "coming soon" when Stripe isn't configured yet.
+  const [buying, setBuying] = useState(false);
+  const [buyMsg, setBuyMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -56,6 +60,32 @@ export function AccountSection({ open }: { open: boolean }) {
       window.removeEventListener(CREDITS_CHANGED, refresh);
     };
   }, [pathname]);
+
+  // returning from a completed Checkout — the webhook grants credits async,
+  // so nudge the balance a few times until the purchase lands
+  useEffect(() => {
+    if (!/[?&]purchase=success/.test(window.location.search)) return;
+    const timers = [1500, 4000, 8000].map((ms) =>
+      window.setTimeout(notifyCreditsChanged, ms),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
+  const buyCredits = () => {
+    setBuying(true);
+    setBuyMsg(null);
+    startCheckout()
+      .then(({ url }) => location.assign(url)) // hand off to Stripe's hosted page
+      .catch((e) => {
+        setBuying(false);
+        // 503 before the owner wires Stripe keys → the honest backend message
+        setBuyMsg(
+          e instanceof ApiError && e.status === 503
+            ? e.detail
+            : "couldn't start checkout, try again",
+        );
+      });
+  };
 
   if (me === undefined) return null;
 
@@ -108,6 +138,16 @@ export function AccountSection({ open }: { open: boolean }) {
           </div>
         </div>
       </div>
+      <button
+        onClick={buyCredits}
+        disabled={buying}
+        className="flex h-[30px] w-full items-center rounded-[10px] px-2.5 text-[12.5px] font-semibold text-trust hover:bg-trust/10 disabled:opacity-60"
+      >
+        {buying ? "Opening checkout…" : "Add credits — $10 / 50"}
+      </button>
+      {buyMsg && (
+        <p className="px-2.5 pb-0.5 font-mono text-[10.5px] leading-[1.5] text-ink-4">{buyMsg}</p>
+      )}
       <button
         onClick={signOut}
         disabled={signingOut}

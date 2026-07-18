@@ -46,8 +46,10 @@ __all__ = [
     "resolve_user",
 ]
 
-# reachable without ANY principal: probes + the doorway itself
-OPEN_PATH_PREFIXES: tuple[str, ...] = ("/api/health", "/api/auth")
+# reachable without ANY principal: probes, the doorway itself, and the Stripe
+# webhook (launch L3 — Stripe posts to it directly, no proxy / session; the
+# signature verification inside the handler is its auth)
+OPEN_PATH_PREFIXES: tuple[str, ...] = ("/api/health", "/api/auth", "/api/stripe")
 
 # the surface a signed-in user may reach — the app (launch L1b widened
 # this from just /api/me: the product is account-gated now)
