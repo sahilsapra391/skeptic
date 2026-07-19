@@ -27,7 +27,7 @@ import { HEADLINES } from "@/lib/headlines";
 import { myRunIds } from "@/lib/my-runs";
 import { turnstileConfigured } from "@/lib/turnstile";
 import { notifyCreditsChanged } from "@/lib/credits-events";
-import { TurnstileWidget } from "@/components/landing/turnstile-widget";
+import { TurnstileWidget, type TurnstileHandle } from "@/components/landing/turnstile-widget";
 import type {
   ParseQuestion,
   ProvenanceEvent,
@@ -177,10 +177,10 @@ export function RunFlow({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   // ---- launch L4 anon armor (embedded popup only) --------------------
-  // The human-check token from Turnstile, kept in a ref so its arrival
-  // doesn't re-render the composer mid-typing. null when Turnstile isn't
-  // configured (dev) or hasn't solved yet.
-  const turnstileTokenRef = useRef<string | null>(null);
+  // The Turnstile widget: we mint the human-check token at RUN time (not at
+  // mount) via this handle, so the first run always rides a fresh single-use
+  // token instead of a stale/consumed one that would need a retry.
+  const turnstileRef = useRef<TurnstileHandle>(null);
   // null = unknown (still resolving), true = anonymous visitor (armor
   // applies), false = signed-in (backend skips the armor). Drives whether
   // the trial disclosure + human check show. Only meaningful when embedded.
@@ -188,8 +188,6 @@ export function RunFlow({
   // the honest "N runs ahead of you" + the trial's stated limits, shown
   // once the anon run is created
   const [trialNote, setTrialNote] = useState<{ queue: number; constraint: string } | null>(null);
-  // bump to force the human check to re-solve after its token is consumed
-  const [turnstileReset, setTurnstileReset] = useState(0);
 
   useEffect(() => {
     if (!embedded) return;
@@ -210,10 +208,6 @@ export function RunFlow({
       alive = false;
     };
   }, [embedded]);
-
-  const onTurnstileVerify = useCallback((token: string | null) => {
-    turnstileTokenRef.current = token;
-  }, []);
 
   // the human check is a real gate only for an anonymous visitor with
   // Turnstile configured; everyone else runs without a token
@@ -423,18 +417,26 @@ export function RunFlow({
   const runGauntlet = useCallback(async () => {
     // exit AND data window are required choices — never defaults
     if (!draft?.exit || !draft.window || busy) return;
-    // the anon human check must have produced a token before we spend the
-    // engine on a free run — the widget solves in the background, so this
-    // only bites if they click RUN in the first instant
-    if (humanCheckOn && !turnstileTokenRef.current) {
-      setError("just finishing a quick human check — hit run once more in a second");
-      return;
+    // claim the run synchronously — the human-check refresh below is awaited,
+    // and without this a second click would slip past the busy guard and
+    // start a duplicate run during that await
+    setBusy(true);
+    setError(null);
+    // mint a FRESH human-check token for THIS run (not one from mount) so the
+    // first run isn't rejected on a stale token; null means the widget can't
+    // produce one yet — nudge instead of spending the engine on a free run
+    let turnstileToken: string | null = null;
+    if (humanCheckOn) {
+      turnstileToken = (await turnstileRef.current?.refresh()) ?? null;
+      if (!turnstileToken) {
+        setBusy(false);
+        setError("just finishing a quick human check — hit run once more in a second");
+        return;
+      }
     }
     // a narration-upgrade poll may still be armed for the PREVIOUS run —
     // kill it so its stale closure can't overwrite the new run's state
     if (pollRef.current) clearTimeout(pollRef.current);
-    setBusy(true);
-    setError(null);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
       const { run_id, demo, queuePosition, trialConstraint } = await startBacktest(
@@ -442,7 +444,7 @@ export function RunFlow({
         parsedSpecRef.current,
         untouched,
         transcriptRef.current,
-        turnstileTokenRef.current,
+        turnstileToken,
       );
       if (trialConstraint != null) {
         setTrialNote({ queue: queuePosition ?? 0, constraint: trialConstraint });
@@ -512,8 +514,8 @@ export function RunFlow({
         return;
       }
       if (e instanceof ApiError && e.status === 403) {
-        turnstileTokenRef.current = null;
-        setTurnstileReset((n) => n + 1); // mint a fresh token for the retry
+        // refresh() already mints a fresh token on the next run, so no reset
+        // bookkeeping here — just tell the visitor to run again
         setError("the human check didn't pass — give it a moment and run again");
       } else {
         setError(e instanceof Error ? e.message : "backtest failed");
@@ -675,7 +677,7 @@ export function RunFlow({
             here so it has solved by the time RUN is clicked */}
         {embedded && isAnon !== false && (
           <div className="mt-3">
-            <TurnstileWidget onVerify={onTurnstileVerify} resetKey={turnstileReset} />
+            <TurnstileWidget ref={turnstileRef} />
           </div>
         )}
         {error && (

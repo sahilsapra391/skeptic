@@ -140,10 +140,27 @@ def verify_turnstile(token: str | None, ip: str) -> bool:
             data={"secret": secret, "response": token, "remoteip": ip},
             timeout=10,
         )
-        return bool(r.status_code == 200 and r.json().get("success"))
     except requests.RequestException:
-        log.exception("turnstile verify failed")
+        # a transport failure (cold DNS/TLS, Cloudflare unreachable) — logged
+        # distinctly from a real reject so the two are separable in prod logs
+        log.exception("turnstile verify failed (transport)")
         return False
+    if r.status_code != 200:
+        log.warning("turnstile reject: http status=%s", r.status_code)
+        return False
+    try:
+        body = r.json()
+    except ValueError:
+        log.warning("turnstile reject: 200 with non-JSON body")
+        return False
+    if body.get("success"):
+        return True
+    # surface WHY Cloudflare rejected: machine codes like timeout-or-duplicate
+    # (token already redeemed / expired) or invalid-input-response. Discarding
+    # these left prod 403s unexplained — logging them makes a first-click
+    # failure diagnosable without weakening the gate (still fail-closed).
+    log.warning("turnstile reject: error-codes=%s", body.get("error-codes"))
+    return False
 
 
 # ----------------------------------------------------------- constraints
