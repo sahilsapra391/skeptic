@@ -347,6 +347,70 @@ def test_turnstile_failure_blocks_the_anon_run(
     assert anon_trial_count() == before  # a failed human check burns nothing
 
 
+class _FakeResp:
+    """A stand-in for a requests.Response in the siteverify unit test."""
+
+    def __init__(self, status_code: int, payload: object) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> object:
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+def test_verify_turnstile_internals(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The one canonical siteverify: a real success passes, and EVERY failure
+    mode fails closed while logging a distinguishable reason — so a prod
+    first-click 403 is diagnosable (Cloudflare error-codes were discarded
+    before). Never returns True without a genuine success."""
+    # no secret → the human check is skipped (dev / pre-launch)
+    monkeypatch.delenv("TURNSTILE_SECRET", raising=False)
+    assert anon.verify_turnstile("anything", "1.2.3.4") is True
+
+    monkeypatch.setenv("TURNSTILE_SECRET", "ts-secret")
+    # a missing/empty token never even calls out
+    assert anon.verify_turnstile(None, "1.2.3.4") is False
+    assert anon.verify_turnstile("", "1.2.3.4") is False
+
+    # 200 + success → the only True path
+    monkeypatch.setattr(anon.requests, "post", lambda *a, **k: _FakeResp(200, {"success": True}))
+    assert anon.verify_turnstile("good", "1.2.3.4") is True
+
+    # 200 + reject → fail closed, and the Cloudflare error-codes are logged
+    monkeypatch.setattr(
+        anon.requests,
+        "post",
+        lambda *a, **k: _FakeResp(200, {"success": False, "error-codes": ["timeout-or-duplicate"]}),
+    )
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="anon"):
+        assert anon.verify_turnstile("stale", "1.2.3.4") is False
+    assert "timeout-or-duplicate" in caplog.text
+
+    # non-200 → fail closed
+    monkeypatch.setattr(anon.requests, "post", lambda *a, **k: _FakeResp(503, {}))
+    assert anon.verify_turnstile("x", "1.2.3.4") is False
+
+    # 200 with a non-JSON body → fail closed (never escapes as an exception)
+    monkeypatch.setattr(anon.requests, "post", lambda *a, **k: _FakeResp(200, ValueError("no json")))
+    assert anon.verify_turnstile("x", "1.2.3.4") is False
+
+    # a transport failure (cold DNS/TLS, Cloudflare down) → fail closed, and it
+    # is logged distinctly from a real reject
+    def _boom(*a: object, **k: object) -> object:
+        raise anon.requests.RequestException("dns")
+
+    monkeypatch.setattr(anon.requests, "post", _boom)
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="anon"):
+        assert anon.verify_turnstile("x", "1.2.3.4") is False
+    assert "transport" in caplog.text
+
+
 def test_signup_is_gated_by_the_human_check(
     anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

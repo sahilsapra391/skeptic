@@ -8,13 +8,13 @@
  * honors ?next= (the account gate stamps it), falling back to /new.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { ApiError, signup, type AuthAccount } from "@/lib/api";
 import { nextTarget } from "@/lib/next-param";
 import { turnstileConfigured } from "@/lib/turnstile";
-import { TurnstileWidget } from "@/components/landing/turnstile-widget";
+import { TurnstileWidget, type TurnstileHandle } from "@/components/landing/turnstile-widget";
 
 const FIELD =
   "w-full rounded-[10px] border border-line-hover bg-panel px-3.5 py-2.5 text-[14.5px] " +
@@ -32,33 +32,30 @@ export function SignupForm() {
   const [search, setSearch] = useState("");
   useEffect(() => setSearch(window.location.search), []);
 
-  // the Turnstile human-check token (null until solved). Kept in a ref so its
-  // arrival doesn't re-render the form; a bump on resetKey re-solves after the
-  // token is consumed (a 403 retry).
-  const turnstileTokenRef = useRef<string | null>(null);
-  const [turnstileReset, setTurnstileReset] = useState(0);
-  const onTurnstileVerify = useCallback((token: string | null) => {
-    turnstileTokenRef.current = token;
-  }, []);
+  // the Turnstile widget: we mint the human-check token at SUBMIT (not at
+  // mount) so the first click always rides a fresh, single-use token — a
+  // token minted at mount goes stale/consumed and made the first click fail
+  // with a retry needed.
+  const turnstileRef = useRef<TurnstileHandle>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // the human check must have produced a token before we submit — the
-    // widget solves in the background, so this only bites on an instant submit
-    if (turnstileConfigured() && !turnstileTokenRef.current) {
-      setError(new ApiError(0, "just finishing a quick human check, try again in a second"));
-      return;
-    }
     setBusy(true);
     setError(null);
-    try {
-      setDone(await signup(email, password, turnstileTokenRef.current));
-    } catch (err) {
-      // a failed human check (403) consumes the token — re-mint one for the retry
-      if (err instanceof ApiError && err.status === 403) {
-        turnstileTokenRef.current = null;
-        setTurnstileReset((n) => n + 1);
+    let token: string | null = null;
+    if (turnstileConfigured()) {
+      token = (await turnstileRef.current?.refresh()) ?? null;
+      // no fresh token yet (widget still loading / a challenge to finish) —
+      // nudge instead of sending an empty response the backend would reject
+      if (!token) {
+        setBusy(false);
+        setError(new ApiError(0, "just finishing a quick human check, try again in a second"));
+        return;
       }
+    }
+    try {
+      setDone(await signup(email, password, token));
+    } catch (err) {
       setError(
         err instanceof ApiError
           ? err
@@ -144,9 +141,10 @@ export function SignupForm() {
         </p>
       )}
       {/* the human check — invisible unless Cloudflare challenges; renders
-          nothing when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (dev) */}
+          nothing when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (dev). The token
+          is minted at submit via the ref, not here. */}
       <div className="mt-5">
-        <TurnstileWidget onVerify={onTurnstileVerify} resetKey={turnstileReset} />
+        <TurnstileWidget ref={turnstileRef} />
       </div>
       <button
         type="submit"
