@@ -396,7 +396,9 @@ def test_verify_turnstile_internals(
     assert anon.verify_turnstile("x", "1.2.3.4") is False
 
     # 200 with a non-JSON body → fail closed (never escapes as an exception)
-    monkeypatch.setattr(anon.requests, "post", lambda *a, **k: _FakeResp(200, ValueError("no json")))
+    monkeypatch.setattr(
+        anon.requests, "post", lambda *a, **k: _FakeResp(200, ValueError("no json"))
+    )
     assert anon.verify_turnstile("x", "1.2.3.4") is False
 
     # a transport failure (cold DNS/TLS, Cloudflare down) → fail closed, and it
