@@ -189,6 +189,57 @@ How each lane reports failure after the move:
   `.env`, done. They are deliberately separate from the EOD tile, whose
   meaning ("tonight's lake is whole") must stay single-purpose.
 
+### The cross-host lock
+
+`concurrency: group: collector` used to keep the scheduled jobs off each
+other's toes. It only covers Actions runs, so the move here quietly removed
+it: a manual `collect-eod` or `alpaca-backfill` dispatch could land on top of
+the VM's nightly chain, and both sides spend the same Alpaca account (one
+200 req/min budget, which `alpaca.py` paces against at 185 assuming it is
+alone) and write the same R2 lake. Nothing corrupts — both sides just crawl,
+and this chain has a 45-min wall to crawl into.
+
+`collector/lock.py` is the lease both hosts honour, one JSON object at
+`state/collector.lock`:
+
+| Who | Takes the lease | TTL | On refusal |
+|---|---|---|---|
+| `collect-eod.sh` (VM) | before step 1, releases on an EXIT/TERM trap | 3000s (the unit's 2700s wall + margin) | logs, pings `HEALTHCHECK_URL/fail` naming the holder, exits non-zero |
+| `collect-eod.yml` (dispatch) | first step after `uv`, releases under `if: always()` | 3000s (its 45-min job wall + margin) | the job fails, red, naming the holder |
+| `alpaca-backfill.yml` (dispatch) | same | `max_minutes + 20` min — the budget it was actually given, not the 350-min job wall | same |
+
+Three things worth knowing:
+
+- **TTL is the only recovery from a holder that died without releasing** (a
+  SIGKILL at the wall, a vanished runner, a reboot), which is why each caller
+  passes a TTL that covers its own wall and no more. Nothing renews mid-run:
+  a renewer that starved would drop the lease *under* a live holder and hand
+  the lane away silently, which is worse than the bounded wait it saves.
+- **Wedged lane?** `cd /opt/skeptic/collector && uv run --env-file .env
+  python lock.py status` shows who holds it and for how much longer;
+  `python lock.py release --force` takes it back when you know that holder is
+  dead. Neither needs the VM — any checkout with R2 credentials will do.
+- **An unreadable lease counts as free.** Fail-open is deliberate: a corrupt
+  object that stopped collection every night until someone read a journal
+  would be a worse outage than the overlap the lock prevents.
+
+- **The lock stops the overlap; it does not decide who wins.** A lease is
+  held for the holder's whole run, so a backfill *started* at 18:00 with a
+  5-hour budget still owns the lane at 21:30 and the nightly chain refuses.
+  That trades "both crawl" for "the chain collects nothing", which is the
+  wrong way round — the chain is the lane that matters and the backfill is
+  resumable by design. Nothing in the code can tell those two apart at
+  21:30, so it is a scheduling rule, not a lock feature: size `max_minutes`
+  to land before ~21:25 UTC, or dispatch after the night's tile goes green.
+  (Both nightly slots refuse independently, so a blocked 21:30 still gets a
+  fresh attempt at 22:30.)
+
+Dispatching a backfill *inside* 21:00–24:00 UTC is now safe: it fails fast,
+naming the holder, instead of quietly halving the night's throughput. And a
+refusal at 22:30 turns the tile red even when the 21:30 chain already banked
+the night — that is deliberate. It is a real event worth reading, not a false
+alarm, and the body says which.
+
 Remaining known gaps (owner decisions, deliberately not half-wired here):
 
 - **The Saturday weekly pass kept its GitHub cron** (needs repo write for the
@@ -196,12 +247,6 @@ Remaining known gaps (owner decisions, deliberately not half-wired here):
   no dead-man check. A repeat billing block silences it in the exact shape
   the Jul 27–31 outage took. Give it its own Healthchecks check (ping at the
   end of the weekly step) or accept a silent-failure window of ≤1 week.
-- **No cross-host lock.** The workflows' `concurrency: group: collector`
-  only serializes Actions runs against each other, so a manual
-  `alpaca-backfill` or `collect-eod` dispatch can now run *while* the VM's
-  chain does, splitting the shared 200 req/min Alpaca budget. Avoid
-  dispatching inside 21:00–24:00 UTC on weekdays; a real fix is an R2 lease
-  object both hosts acquire.
 
 ## Self-update (how merged code reaches the VM)
 

@@ -73,15 +73,26 @@ Frontend (Vercel project, root `frontend/`):
   ```
   A tile that goes quiet with **no** `/fail` ping means the job never ran at
   all (timer disabled, VM down, unit failed to start) rather than that the run
-  errored — three separate things ping `/fail` on the VM: `collect.py` on any
+  errored — four separate things ping `/fail` on the VM: `collect.py` on any
   error it survives to see, `collect-eod.sh` when a later step fails (the body
-  names which), and the unit's `ExecStopPost=` hook when the run is *killed*
+  names which), `collect-eod.sh` again when it cannot take the collector lease
+  (body: `did not start: the collector lane is leased elsewhere` — a dispatch
+  is mid-run; see the next bullet), and the unit's `ExecStopPost=` hook when
+  the run is *killed*
   (45-min wall, OOM, reboot). So a red tile tells you it broke; a silent tile
   tells you nothing started. That silent shape is what the 2026-07-27 Actions
   billing block looked like, and it is why the tile is the load-bearing alarm.
 - Re-run a missed night: `sudo systemctl start skeptic-collect-eod.service`
   (the frontier state in R2 makes it idempotent). If the VM is the problem,
   Actions → collect-eod → Run workflow still works.
+- Both hosts hold a lease in R2 (`state/collector.lock`) before spending the
+  shared 200 req/min Alpaca budget, so a dispatch and the VM chain can no
+  longer collide — whichever is second refuses, naming the first. If a lane
+  looks stuck, `cd /opt/skeptic/collector && uv run --env-file .env python -m
+  lock status` says who holds it and for how long; `python lock.py release
+  --force` takes it back when that holder is known dead. Every lease also
+  self-expires (the chain's is 3000s), so a wedge is bounded, never overnight.
+  Full design: `collector/deploy/README.md` → "The cross-host lock".
 - Quality flags: `/api/data/coverage` (or the Data Observatory page) shows
   per-source ranges, quarantines and blind spots. DoltHub quarantine list
   lives in `collector/state/dolthub_backfill.json` (flag-and-exclude —

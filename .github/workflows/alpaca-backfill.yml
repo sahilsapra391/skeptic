@@ -4,11 +4,20 @@ name: alpaca-backfill
 # lake, 2024-02 -> present. Re-dispatching continues from the persisted
 # frontier (state/alpaca_backfill.json); completed ticker-months are skipped.
 # The `collector` concurrency group only serializes against OTHER Actions
-# runs — since 2026-08-04 the nightly chain runs on the collector VM, so no
-# cross-host lock exists. Avoid dispatching this inside 21:00–24:00 UTC
-# (Mon–Fri): overlap with the VM's EOD run just splits the shared
-# 200 req/min Alpaca budget and both sides crawl (429s are retried, not
-# fatal, but the EOD chain may overrun its 45-min wall).
+# runs, and since 2026-08-04 the nightly chain runs on the collector VM. The
+# R2 lease (collector/lock.py) is what keeps the two hosts apart: this job
+# takes it before the first Alpaca call and refuses to start while the VM's
+# EOD chain holds it, rather than splitting the shared 200 req/min budget and
+# leaving both sides to crawl.
+#
+# The lease stops the overlap; it does not decide who wins. It is held for
+# the whole run, so a long backfill STARTED before 21:30 UTC still owns the
+# lane through the EOD window and the nightly chain refuses instead of
+# crawling. That is louder (red tile, named holder) but it collects nothing,
+# and the chain is the lane that matters — this one is resumable by design.
+# So: size `max_minutes` to finish before ~21:25 UTC, or dispatch after the
+# night's Healthchecks tile goes green. Starting one INSIDE the window is now
+# safe and cheap: it fails fast naming the holder instead of overlapping.
 
 on:
   workflow_dispatch:
@@ -44,6 +53,31 @@ jobs:
       - name: Install uv
         run: pip install uv
 
+      # Refuses while the VM's nightly chain (or another dispatch) holds the
+      # lane. The TTL tracks the budget this run was actually given, not the
+      # 350-min job wall: a 30-min backfill that dies without releasing must
+      # not lock the lane out of tonight's EOD chain for six hours.
+      - name: Acquire the collector lease (cross-host mutex)
+        id: lease
+        working-directory: collector
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          HOLDER: github-actions/${{ github.workflow }}#${{ github.run_id }}
+          MAX_MINUTES: ${{ inputs.max_minutes }}
+        run: |
+          # Read through the environment and validate: this input is free text.
+          # The upper clamp is the job's own wall — a typo of 3300 for 330
+          # would otherwise mint a 55-hour lease and refuse every nightly
+          # chain until someone ran `release --force`.
+          case "$MAX_MINUTES" in ''|*[!0-9]*) MAX_MINUTES=330 ;; esac
+          if [ "$MAX_MINUTES" -gt 350 ]; then MAX_MINUTES=350; fi
+          uv run python lock.py acquire \
+            --holder "$HOLDER" --ttl "$(( (MAX_MINUTES + 20) * 60 ))" \
+            --token-file "$RUNNER_TEMP/collector.lock.token"
+
       - name: Run minute-bar backfill
         working-directory: collector
         env:
@@ -60,7 +94,7 @@ jobs:
           --max-minutes "${{ inputs.max_minutes }}"
 
       - name: Coverage report
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -68,3 +102,17 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: uv run python coverage.py
+
+      # Unconditional: this job's 350-min wall and any cancellation have to
+      # hand the lane back, or tonight's EOD chain refuses to start.
+      - name: Release the collector lease
+        if: always()
+        working-directory: collector
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          [ -f "$RUNNER_TEMP/collector.lock.token" ] || exit 0
+          uv run python lock.py release --token-file "$RUNNER_TEMP/collector.lock.token"

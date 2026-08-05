@@ -26,6 +26,12 @@
 #   - every derivation ran under `if: always()`: one failure never skipped the
 #     rest, but the job still ended red. Same here, via $rc.
 #
+# One thing here does NOT mirror the old workflow: the chain takes a
+# cross-host lease in R2 before step 1 (see "the cross-host lease" below).
+# `concurrency: group: collector` used to keep the dispatchable workflows off
+# this job's back, and it stopped covering anything the moment the schedule
+# moved to this host.
+#
 # NOT `set -e`: a failing derivation must not abort the chain behind it.
 set -uo pipefail
 
@@ -51,7 +57,95 @@ step() {   # step <label> <script> [args...]
     fi
 }
 
+ping_fail() {   # ping_fail <body>   — flip the Healthchecks tile red
+    local body=$1
+    local url
+    # Read the URL through the SAME parser every other consumer uses (uv's
+    # --env-file, then collect.py's own rstrip("/")). A hand-rolled grep|cut
+    # kept surrounding quotes, `export ` prefixes and CR line endings, so a
+    # .env that pings fine from collect.py could silently fail to page here.
+    url=$("$UV" run --env-file .env python -c \
+        'import os; print(os.environ.get("HEALTHCHECK_URL", "").rstrip("/"))' 2>/dev/null)
+    if [ -z "${url}" ]; then
+        echo "!! nothing paged (HEALTHCHECK_URL unset): ${body}"
+        return 0
+    fi
+    curl -fsS -m 10 --retry 3 --data-raw "${body}" "${url}/fail" >/dev/null 2>&1 \
+        && echo "== pinged Healthchecks /fail (${body}) ==" \
+        || echo "!! /fail ping itself failed — journal is the only record"
+}
+
 echo "===== $(date -u +%FT%TZ) collect-eod start ====="
+
+# ---------------------------- the cross-host lease -------------------------
+# `concurrency: group: collector` in the workflows only serializes Actions
+# runs against EACH OTHER. Once the schedule moved here, a manual dispatch of
+# collect-eod.yml or alpaca-backfill.yml could run at the same time as this
+# chain — same Alpaca account (one shared 200 req/min budget, which alpaca.py
+# paces against assuming it is alone), same R2 lake. Nothing corrupts; both
+# sides just crawl, and this one has a 45-min wall to crawl into. lock.py is
+# the mutex both hosts honour.
+#
+# It is NOT a `step`: the lease is infrastructure, so it stays out of the
+# chain's workflow-parity guard (which reads what `step` runs).
+LOCK_TTL="${SKEPTIC_LOCK_TTL:-3000}"   # the unit's 2700s wall + 5 min margin
+LOCK_TOKEN_FILE=$(mktemp "${TMPDIR:-/tmp}/skeptic-collector-lock.XXXXXX") || {
+    # Pages on the way out: hc-fail.sh skips SERVICE_RESULT=exit-code on the
+    # assumption the script already reported for itself, so exiting here
+    # without a ping would be a SILENT stop — the one shape this chain must
+    # never have. (mktemp failing means a full disk, which on a 1 GB box with
+    # an append-only log is the realistic version of this.)
+    echo "!! mktemp for the lease token failed — not starting the chain"
+    ping_fail "collect-eod did not start: could not create the lease token file (disk full?)"
+    exit 1
+}
+lease_held=0
+
+release_lease() {
+    [ "$lease_held" -eq 1 ] || { rm -f "$LOCK_TOKEN_FILE"; return 0; }
+    lease_held=0
+    "$UV" run --env-file .env python lock.py release --token-file "$LOCK_TOKEN_FILE" \
+        || echo "!! releasing the lease failed — the lane stays locked for up to ${LOCK_TTL}s"
+    rm -f "$LOCK_TOKEN_FILE"
+}
+trap release_lease EXIT
+# The EXIT trap above is what actually hands the lease back on the signal
+# path too: bash runs exit traps before re-raising a fatal signal (verified —
+# an untrapped SIGTERM still fires them). This one is for the JOURNAL. Without
+# it the 45-min wall kills the chain with no line saying so, and "collect-eod
+# start" with no matching "done" is a worse thing to read at 3 AM than one
+# that says it was signalled. It also pins the status at 143 rather than
+# leaving it to the re-raise.
+trap 'echo "!! collect-eod terminated by a signal"; exit 143' TERM INT
+
+acq=0
+# Captured, not streamed, so the holder's identity can ride the ping body —
+# a tile that says only "leased elsewhere" costs an SSH at 3 AM. Echoed back
+# immediately so the journal still has everything.
+acq_out=$("$UV" run --env-file .env python lock.py acquire \
+    --holder "vm-collect-eod" --ttl "$LOCK_TTL" \
+    --token-file "$LOCK_TOKEN_FILE" 2>&1) || acq=$?
+echo "${acq_out}"
+if [ "$acq" -ne 0 ]; then
+    # Loud on purpose. A night the chain never ran has to look exactly like a
+    # night it ran and failed — the Jul 27-31 outage was invisible precisely
+    # because a job that never starts reports nothing.
+    #
+    # 75 (EX_TEMPFAIL) is a refusal: someone holds the lane, and the fix is to
+    # wait or release it. Anything else is the lock ITSELF failing (R2 down,
+    # bad credentials), which is a different page and a different fix — the
+    # tile body is all the owner gets at 21:30, so it has to say which.
+    if [ "$acq" -eq 75 ]; then
+        holder=$(printf '%s\n' "${acq_out}" | grep -m1 "REFUSING" || true)
+        reason="the collector lane is leased elsewhere — ${holder:-holder unknown, see the journal}"
+    else
+        reason="the lease could not be read or written (rc=${acq})"
+    fi
+    echo "!! not starting the chain: ${reason}"
+    ping_fail "collect-eod did not start: ${reason}"
+    exit "$acq"
+fi
+lease_held=1
 
 # 1. The collector proper. Pings Healthchecks on the way out, either way.
 step "collector (collect.py --mode all)" collect.py --mode all
@@ -82,20 +176,7 @@ step "coverage ledger"                  ledger.py
 # the tile ourselves: a /fail ping after the success ping wins (last signal
 # counts), naming the failed steps in the body for the dashboard.
 if [ "$rc" -ne 0 ]; then
-    # Read the URL through the SAME parser every other consumer uses (uv's
-    # --env-file, then collect.py's own rstrip("/")). A hand-rolled grep|cut
-    # kept surrounding quotes, `export ` prefixes and CR line endings, so a
-    # .env that pings fine from collect.py could silently fail to page here.
-    HC_URL=$("$UV" run --env-file .env python -c \
-        'import os; print(os.environ.get("HEALTHCHECK_URL", "").rstrip("/"))' 2>/dev/null)
-    if [ -n "${HC_URL}" ]; then
-        curl -fsS -m 10 --retry 3 --data-raw "collect-eod chain failed: ${failed_steps}" \
-            "${HC_URL}/fail" >/dev/null 2>&1 \
-            && echo "== pinged Healthchecks /fail (${failed_steps}) ==" \
-            || echo "!! /fail ping itself failed — journal is the only record"
-    else
-        echo "!! chain failed but HEALTHCHECK_URL is unset — nothing paged"
-    fi
+    ping_fail "collect-eod chain failed: ${failed_steps}"
 fi
 
 echo "===== $(date -u +%FT%TZ) collect-eod done (rc=${rc}) ====="
