@@ -12,9 +12,16 @@ reordered or half-migrated chain would be exactly as quiet.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
+import shlex
+import shutil
 import subprocess
+import sys
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -54,6 +61,10 @@ VM_REQUIRED_VARS = [
     "SKEPTIC_API_URL",
     "SKEPTIC_ACCESS_TOKEN",
 ]
+
+# Path component of the throwaway check the chain gets pointed at below. Stands
+# where the production check's UUID sits in the real HEALTHCHECK_URL.
+HC_PATH = "/hc-test-check"
 
 
 def _read(rel: Path) -> str:
@@ -159,56 +170,133 @@ def test_saturday_weekly_pass_runs_after_the_vm_scan() -> None:
     assert (gh_h, gh_m) > (vm_h, vm_m), "the GitHub weekly pass must trail the VM scan"
 
 
-def _run_chain(tmp_path: Path, failing: frozenset[str] = frozenset()) -> tuple[int, list[str]]:
+@contextlib.contextmanager
+def _healthchecks_stub() -> Iterator[tuple[str, list[tuple[str, str]]]]:
+    """A loopback stand-in for healthchecks.io, yielding (url, pings).
+
+    The chain's failure tail curls `$HEALTHCHECK_URL/fail`, and it reads that
+    URL out of `collector/.env` after cd-ing there. Run in place, the two
+    failure-injecting tests below therefore paged the owner against the REAL
+    production check on every local pytest — confirmed 2026-08-05, when a run
+    from a populated checkout flipped the production tile to DOWN. CI never
+    caught it because `.env` is absent there, which made a false DOWN a
+    developer-only tripwire on a dashboard whose entire job is to be trusted.
+
+    So the tests own both ends now: the synthetic `.env` in `_run_chain`, and
+    this server to receive what it points at. Nothing leaves the loopback
+    interface, and the ping the chain would have sent becomes assertable.
+    """
+    pings: list[tuple[str, str]] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802
+            length = int(self.headers.get("Content-Length") or 0)
+            pings.append((self.path, self.rfile.read(length).decode()))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+
+        def log_message(self, fmt: str, *args: object) -> None:
+            """Silence the default stderr line per request."""
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{srv.server_address[1]}{HC_PATH}", pings
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def _run_chain(
+    tmp_path: Path, failing: frozenset[str] = frozenset()
+) -> tuple[int, list[str], list[tuple[str, str]]]:
     """Drive collect-eod.sh against a stub `uv` that records every script it is
-    asked to run and exits non-zero for the named ones."""
+    asked to run and exits non-zero for the named ones.
+
+    The script is copied into a synthetic collector dir and run from there. It
+    does `cd "$(dirname "$0")/.."` and resolves `.env` relative to that, so the
+    copy is what keeps it off the developer's real `.env` and off the real
+    Healthchecks endpoint (see `_healthchecks_stub`). The bytes under test are
+    still the repo's — only the directory they land in is ours.
+    """
+    collector = tmp_path / "collector"
+    shutil.copytree(DEPLOY, collector / "deploy")
+
     calls = tmp_path / "calls.log"
     stub = tmp_path / "uv"
     fail_arm = f'    {"|".join(sorted(failing))}) exit 3 ;;\n' if failing else ""
     stub.write_text(
         "#!/usr/bin/env bash\n"
+        "# Stands in for `uv run --env-file <file> python ...`.\n"
         'script=""\n'
         'for a in "$@"; do case "$a" in *.py) script="$a" ;; esac; done\n'
-        f'echo "$script" >> "{calls}"\n'
+        'if [ -z "$script" ]; then\n'
+        "    # Not a chain step. The failure tail may also read HEALTHCHECK_URL\n"
+        "    # by shelling out to `python -c`, so emulate --env-file rather than\n"
+        "    # returning empty — an empty URL would quietly turn the ping\n"
+        "    # assertions below into assertions that nothing pings at all.\n"
+        '    envfile=""; code=""; prev=""\n'
+        '    for a in "$@"; do\n'
+        '        case "$prev" in --env-file) envfile="$a" ;; -c) code="$a" ;; esac\n'
+        '        prev="$a"\n'
+        "    done\n"
+        '    [ -z "$code" ] && exit 0\n'
+        '    set -a; [ -f "$envfile" ] && . "$envfile"; set +a\n'
+        f'    exec {shlex.quote(sys.executable)} -c "$code"\n'
+        "fi\n"
+        f'echo "$script" >> {shlex.quote(str(calls))}\n'
         'case "$script" in\n'
         f"{fail_arm}"
         "    *) exit 0 ;;\n"
         "esac\n"
     )
     stub.chmod(0o755)
-    proc = subprocess.run(
-        ["bash", str(DEPLOY / "collect-eod.sh")],
-        env={**os.environ, "UV": str(stub)},
-        capture_output=True,
-        text=True,
-    )
+
+    with _healthchecks_stub() as (hc_url, pings):
+        (collector / ".env").write_text(f"HEALTHCHECK_URL={hc_url}\n")
+        proc = subprocess.run(
+            ["bash", str(collector / "deploy" / "collect-eod.sh")],
+            env={**os.environ, "UV": str(stub)},
+            capture_output=True,
+            text=True,
+        )
     ran = calls.read_text().split() if calls.exists() else []
-    return proc.returncode, ran
+    return proc.returncode, ran, pings
 
 
 def test_chain_runs_every_step_in_order_when_all_pass(tmp_path: Path) -> None:
-    rc, ran = _run_chain(tmp_path)
+    rc, ran, pings = _run_chain(tmp_path)
     assert rc == 0
     assert ran == EXPECTED_CHAIN
+    # collect.py owns the success ping. A clean chain adding one of its own
+    # would double-report the tile.
+    assert pings == []
 
 
 def test_collector_failure_skips_only_the_minute_top_up(tmp_path: Path) -> None:
     """alpaca.py sat behind a custom `if:` on Actions, which GitHub implicitly
     ANDs with success(), so it was skipped when the collector failed. Every
     derivation still ran, because those carried `if: always()`."""
-    rc, ran = _run_chain(tmp_path, frozenset({"collect.py"}))
+    rc, ran, pings = _run_chain(tmp_path, frozenset({"collect.py"}))
     assert rc != 0
     assert "alpaca.py" not in ran
     assert ran == [s for s in EXPECTED_CHAIN if s != "alpaca.py"]
+    assert pings == [
+        (f"{HC_PATH}/fail", "collect-eod chain failed: collector (collect.py --mode all)")
+    ]
 
 
 def test_a_failing_derivation_never_truncates_the_chain(tmp_path: Path) -> None:
     """The regression `set -e` would cause: everything after the first failure
     silently disappears, and the healthcheck stays green because collect.py
     already pinged success long before."""
-    rc, ran = _run_chain(tmp_path, frozenset({"derive_ivs_signals.py"}))
+    rc, ran, pings = _run_chain(tmp_path, frozenset({"derive_ivs_signals.py"}))
     assert rc != 0
     assert ran == EXPECTED_CHAIN
+    # The body is what the owner reads on the dashboard at 3am, so pin the
+    # wording: it must name the step that actually failed.
+    assert pings == [(f"{HC_PATH}/fail", "collect-eod chain failed: IVS signal derivation")]
 
 
 def test_unit_execstart_paths_exist_in_the_repo() -> None:
