@@ -185,26 +185,38 @@ def test_saturday_weekly_pass_runs_after_the_vm_scan() -> None:
 HC_TEST_URL = "http://127.0.0.1:9/hc-test"
 
 
+def _stage_deploy(tmp_path: Path, url: str = HC_TEST_URL) -> Path:
+    """Copy the WHOLE deploy/ dir into tmp_path next to a fabricated .env, and
+    return the staged dir.
+
+    Hermetic on purpose: these scripts do `cd "$(dirname "$0")/.."`, so run
+    from the real deploy/ they read the developer's own .env and POST a
+    fabricated failure to the LIVE Healthchecks endpoint on every local
+    pytest — a passing suite that pages the owner (measured: two real /fail
+    posts per run before this was staged).
+
+    The whole directory rather than the one script under test, so a chain
+    script that calls a sibling (collect-eod.sh and hc-fail.sh already live
+    side by side) keeps working without anyone remembering to update this.
+    """
+    (tmp_path / ".env").write_text(f"HEALTHCHECK_URL={url}\n")
+    deploy = tmp_path / "deploy"
+    deploy.mkdir(exist_ok=True)
+    for src in DEPLOY.glob("*.sh"):
+        dst = deploy / src.name
+        dst.write_text(_read(src))
+        dst.chmod(0o755)
+    return deploy
+
+
 def _run_chain(
     tmp_path: Path, failing: frozenset[str] = frozenset()
 ) -> tuple[int, list[str], list[str]]:
     """Drive collect-eod.sh against a stub `uv` that records every script it is
-    asked to run and exits non-zero for the named ones.
-
-    Hermetic on purpose: the script is COPIED into tmp_path/deploy/ so its
-    `cd "$(dirname "$0")/.."` lands on a throwaway directory with a fabricated
-    .env, and `curl` is stubbed on PATH. Run against the real deploy/ dir it
-    would read the developer's own .env and post a fake failure to the LIVE
-    Healthchecks endpoint on every test run.
-    """
+    asked to run and exits non-zero for the named ones."""
     calls = tmp_path / "calls.log"
     pings = tmp_path / "pings.log"
-    (tmp_path / ".env").write_text(f"HEALTHCHECK_URL={HC_TEST_URL}\n")
-    deploy = tmp_path / "deploy"
-    deploy.mkdir()
-    script = deploy / "collect-eod.sh"
-    script.write_text(_read(DEPLOY / "collect-eod.sh"))
-    script.chmod(0o755)
+    script = _stage_deploy(tmp_path) / "collect-eod.sh"
 
     stub = tmp_path / "uv"
     fail_arm = f'    {"|".join(sorted(failing))}) exit 3 ;;\n' if failing else ""
@@ -331,12 +343,7 @@ def test_vm_required_vars_are_documented_uncommented() -> None:
 
 def _run_hc_fail(tmp_path: Path, result: str, url: str = HC_TEST_URL) -> list[str]:
     """Drive hc-fail.sh (the ExecStopPost= hook) with a stubbed uv + curl."""
-    (tmp_path / ".env").write_text(f"HEALTHCHECK_URL={url}\n")
-    deploy = tmp_path / "deploy"
-    deploy.mkdir(exist_ok=True)
-    script = deploy / "hc-fail.sh"
-    script.write_text(_read(DEPLOY / "hc-fail.sh"))
-    script.chmod(0o755)
+    script = _stage_deploy(tmp_path, url) / "hc-fail.sh"
     pings = tmp_path / "pings.log"
     pings.unlink(missing_ok=True)  # callers reuse tmp_path across results
 
