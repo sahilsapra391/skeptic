@@ -1,8 +1,9 @@
 name: quality-weekly
 
+# Scheduling moved to the collector VM on 2026-08-04 (systemd
+# skeptic-quality.timer, same Saturday 13:00 UTC slot). See collect-eod.yml for
+# why. Manual fallback only from here.
 on:
-  schedule:
-    - cron: "0 13 * * 6" # Saturday 13:00 UTC, after the week's collection
   workflow_dispatch: {}
 
 permissions:

@@ -3,8 +3,12 @@ name: alpaca-backfill
 # One-shot (resumable) M1.5 bulk backfill of the Alpaca minute-bar options
 # lake, 2024-02 -> present. Re-dispatching continues from the persisted
 # frontier (state/alpaca_backfill.json); completed ticker-months are skipped.
-# Shares the `collector` concurrency group so it never competes with the
-# nightly job for the 200 req/min account budget.
+# The `collector` concurrency group only serializes against OTHER Actions
+# runs — since 2026-08-04 the nightly chain runs on the collector VM, so no
+# cross-host lock exists. Avoid dispatching this inside 21:00–24:00 UTC
+# (Mon–Fri): overlap with the VM's EOD run just splits the shared
+# 200 req/min Alpaca budget and both sides crawl (429s are retried, not
+# fatal, but the EOD chain may overrun its 45-min wall).
 
 on:
   workflow_dispatch:

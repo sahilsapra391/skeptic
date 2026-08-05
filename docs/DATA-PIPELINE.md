@@ -148,19 +148,41 @@ started BEFORE the app, because history only accrues forward.*
    Uptime is best-effort (Mac must be awake); coverage reports gaps
    honestly.
 
-## 2. Scheduling: GitHub Actions
+## 2. Scheduling: the collector VM (systemd timers)
 
-- `collect-eod.yml`: cron `30 21 * * 1-5` (UTC) ≈ 4:30–5:30 pm ET across DST.
-  GH cron can be delayed or occasionally skipped; the job is idempotent
-  (object keys include the trading date; re-runs overwrite same-day data
-  safely) and ends with a Healthchecks.io ping. A second cron `30 22 * * 1-5`
-  runs the same job as a catch-up; it no-ops if the day's record objects
-  already exist.
-- Manual `workflow_dispatch` enabled on everything for testing.
-- Secrets (repo-level): `ALPHAVANTAGE_API_KEY`, `R2_ACCOUNT_ID`,
-  `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `HEALTHCHECK_URL`,
-  `APCA_API_KEY_ID`, `APCA_API_SECRET_KEY` (Alpaca paper keys; SDK-default
-  env names).
+Moved off GitHub Actions 2026-08-04. Private-repo Actions minutes bill against
+the account, and a billing block refused to **start** the nightly job at all:
+both scheduled runs died in under 5 s, before `collect.py` could ping success
+or `/fail`, so the only signal was the Healthchecks tile going quiet. The
+always-on VM that already hosts the intraday recorder has no such dependency.
+
+- `skeptic-collect-eod.timer` → `deploy/collect-eod.sh`: `Mon-Fri 21:30 UTC`
+  plus a `22:30 UTC` catch-up. Deliberately the same UTC slots the crons held,
+  so the Healthchecks check needed no dashboard edit. ≈ 4:30–5:30 pm ET across
+  DST, always ≥30 min after the close. The job is idempotent (object keys
+  include the trading date; re-runs overwrite same-day data safely) and
+  `collect.py` ends with a Healthchecks.io ping. The catch-up no-ops if the
+  day's record objects already exist. Deliberately **not** `Persistent=`: a
+  boot-time replay fires at any hour, and mid-session it would write a partial
+  chain as if it were the close.
+- `skeptic-quality.timer`: `Sat 13:00 UTC`, `collect.py --mode quality`.
+- `skeptic-improve.timer`: `Tue-Sat 07:00 UTC`, the ENGINE-V3 D3 unlock scan.
+- **Still on GitHub Actions:** the *Saturday* half of `nightly-improve.yml`
+  (`30 7 * * 6`) — the calibration + priorities pass opens a proposal PR, which
+  needs repo write, and the VM holds a read-only deploy key by design. The
+  30-min offset preserves the original scan-then-weekly order across the two
+  hosts.
+- Manual `workflow_dispatch` stays enabled on every workflow as the fallback
+  for when the VM is down. Re-adding a cron to `collect-eod.yml` or
+  `quality-weekly.yml` would double-run the chain against the same lake;
+  `collector/tests/test_deploy_schedules.py` fails if anyone does.
+- Credentials now live in `/opt/skeptic/collector/.env` on the VM, not only in
+  repo secrets: `ALPHAVANTAGE_API_KEY`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `HEALTHCHECK_URL`, `APCA_API_KEY_ID`,
+  `APCA_API_SECRET_KEY` (Alpaca paper keys; SDK-default env names), plus
+  `DATABASE_URL`, `SKEPTIC_API_URL`, `SKEPTIC_ACCESS_TOKEN` for the unlock
+  scan. See `collector/.env.example`. `autoupdate.sh` can never deliver a
+  secret, so every one of these is a manual edit on the box.
 
 ## 3. R2 lake layout
 

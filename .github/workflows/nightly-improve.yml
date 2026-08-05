@@ -1,15 +1,22 @@
 name: nightly-improve
 
 # ENGINE-V3 D3: the auto-improvement pass. Runs OFF-PEAK (07:00 UTC =
-# 02:00–03:00 ET), after the nightly collectors and the coverage ledger,
-# Tue–Sat (following Mon–Fri sessions). The scan decides WHAT should
-# re-run; the Railway backend executes via POST /api/backtest (this
-# workflow never runs the engine). Capped re-runs per night — see
-# backend/scripts/nightly_improve.py.
+# 02:00–03:00 ET), after the nightly collectors and the coverage ledger.
+# The scan decides WHAT should re-run; the Railway backend executes via
+# POST /api/backtest (this workflow never runs the engine). Capped re-runs
+# per night — see backend/scripts/nightly_improve.py.
+#
+# SPLIT ACROSS TWO HOSTS on 2026-08-04 (after the Jul 27–31 billing block). The Tue–Sat nightly scan moved to the
+# collector VM (systemd skeptic-improve.timer, 07:00 UTC). Only the Saturday
+# weekly pass stayed here, because it opens a proposal PR and that needs repo
+# write — the VM holds a read-only deploy key by deliberate design, and an
+# always-on box should not gain push access to the repo that deploys prod.
 
 on:
   schedule:
-    - cron: "0 7 * * 2-6"
+    # Saturday only, 30 min behind the VM's 07:00 UTC scan so the original
+    # scan-then-weekly ordering survives the split across hosts.
+    - cron: "30 7 * * 6"
   workflow_dispatch:
     inputs:
       execute:
@@ -47,6 +54,11 @@ jobs:
         run: pip install uv
 
       - name: Unlock scan (+ capped auto re-runs)
+        # Manual runs only. On the Saturday schedule the VM already scanned at
+        # 07:00 UTC, and running it again here would double-submit that night's
+        # capped re-runs. A skipped step does not fail the job, so the weekly
+        # pass below still runs on schedule.
+        if: github.event_name == 'workflow_dispatch'
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -57,7 +69,7 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
-          EXECUTE="${{ github.event_name == 'schedule' && 'true' || inputs.execute }}"
+          EXECUTE="${{ inputs.execute }}"
           if [ "$EXECUTE" = "true" ]; then
             PYTHONPATH=. uv run python scripts/nightly_improve.py --execute
           else

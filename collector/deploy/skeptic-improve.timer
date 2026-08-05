@@ -1,0 +1,25 @@
+[Unit]
+Description=Skeptic nightly unlock scan (Tue-Sat 07:00 UTC, off-peak after the collectors)
+
+[Timer]
+# Same slot the GitHub cron used ("0 7 * * 2-6") = 02:00-03:00 ET, after the
+# nightly collectors and the coverage ledger.
+#
+# Only the SCAN moved here. The Saturday calibration + priorities pass stays on
+# GitHub Actions (now "30 7 * * 6") because it opens a proposal PR, and that
+# needs repo write — this VM's deploy key is read-only by deliberate design.
+# The 30-minute offset preserves the workflow's original scan-then-weekly order
+# across the two hosts on Saturdays.
+# 07:15, not the cron's old 07:00: skeptic-autoupdate fires at 03:00
+# America/New_York with RandomizedDelaySec=600, which under EDT is 07:00-07:10
+# UTC — the identical slot. It git-merges /opt/skeptic and runs `uv sync`, so
+# an overlapping scan could read a half-updated tree. 07:15 clears that window
+# and still lands well before the Saturday GitHub weekly pass at 07:30 (the
+# scan-then-weekly order this split has to preserve). The flock in the service
+# unit is the belt to this suspenders.
+OnCalendar=Tue-Sat *-*-* 07:15:00 UTC
+# Safe to replay: the scan is idempotent and its re-runs are capped per night.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

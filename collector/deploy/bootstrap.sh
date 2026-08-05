@@ -55,9 +55,19 @@ else
 fi
 chown -R "$SVC_USER" "$DEST"
 
-echo "== python env =="
+echo "== python env (collector) =="
 cd "$DEST/collector"
 sudo -u "$SVC_USER" env HOME=/home/"$SVC_USER" /usr/local/bin/uv sync
+
+# The nightly unlock scan runs out of backend/ and imports app.db (sqlalchemy +
+# psycopg2), which the collector venv does not carry. Sync it here so the timer
+# never pays for a first-run resolve inside its own TimeoutStartSec. On the 1 GB
+# E2.1.Micro this is the step most likely to OOM — the 2 GB swapfile from the
+# Provision section above is what makes it fit.
+echo "== python env (backend) =="
+cd "$DEST/backend"
+sudo -u "$SVC_USER" env HOME=/home/"$SVC_USER" /usr/local/bin/uv sync
+cd "$DEST/collector"
 
 # .env is supplied out of band and NEVER committed. It carries R2_* and the
 # vendor keys, plus optional ALERT_WEBHOOK for the heartbeat page.
@@ -74,20 +84,52 @@ fi
 chown "$SVC_USER" "$DEST/collector/.env"
 chmod 600 "$DEST/collector/.env"
 
+# Existence was enough when .env only had to satisfy the recorder. Now the VM
+# owns the scheduled lanes, and each missing var fails in a DIFFERENT quiet
+# way: no ALPHAVANTAGE_API_KEY and the chain's first step dies; no
+# HEALTHCHECK_URL and nothing watches it (the exact hole the move exists to
+# close); no DATABASE_URL and the improve scan silently falls back to an empty
+# local SQLite and reports success. A pre-existing VM's .env predates all of
+# them, so check content, not just presence.
+missing=""
+for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET \
+           ALPHAVANTAGE_API_KEY HEALTHCHECK_URL APCA_API_KEY_ID \
+           APCA_API_SECRET_KEY DATABASE_URL SKEPTIC_API_URL SKEPTIC_ACCESS_TOKEN; do
+    grep -qE "^[[:space:]]*(export[[:space:]]+)?${var}=.*[^[:space:]=]" \
+        "$DEST/collector/.env" || missing="${missing} ${var}"
+done
+if [ -n "$missing" ]; then
+    cat >&2 <<EOF
+
+!! $DEST/collector/.env is missing (or left empty):${missing}
+
+   The VM owns the scheduled collection lanes now, and every one of those
+   vars is load-bearing for one of them — see collector/deploy/README.md
+   ("Secrets are the one thing neither path can deliver"). Copy the values
+   from the GitHub repo secrets, then re-run this script.
+EOF
+    exit 1
+fi
+
 echo "== systemd units =="
-install -m644 deploy/skeptic-intraday.service /etc/systemd/system/
-install -m644 deploy/skeptic-heartbeat.service /etc/systemd/system/
-install -m644 deploy/skeptic-heartbeat.timer   /etc/systemd/system/
-install -m644 deploy/skeptic-autoupdate.service /etc/systemd/system/
-install -m644 deploy/skeptic-autoupdate.timer   /etc/systemd/system/
-install -m644 deploy/skeptic-keepwarm.service /etc/systemd/system/
-install -m644 deploy/skeptic-keepwarm.timer   /etc/systemd/system/
-chmod +x deploy/autoupdate.sh
+# Install by GLOB, matching autoupdate.sh. The hand-listed version there
+# silently skipped skeptic-keepwarm when it landed in #109, and this list was
+# drifting the same way as the collect-eod/quality/improve units arrived.
+# Enabling stays explicit below: a unit deliberately disabled must not come
+# back just because someone re-ran bootstrap.
+install -m644 deploy/skeptic-*.service /etc/systemd/system/
+install -m644 deploy/skeptic-*.timer   /etc/systemd/system/
+chmod +x deploy/autoupdate.sh deploy/collect-eod.sh deploy/hc-fail.sh
 systemctl daemon-reload
 systemctl enable --now skeptic-intraday.service
 systemctl enable --now skeptic-heartbeat.timer
 systemctl enable --now skeptic-autoupdate.timer
 systemctl enable --now skeptic-keepwarm.timer
+# Scheduled collection moved off GitHub Actions 2026-08-04 (billing block took
+# the EOD job down silently). See "Scheduled jobs" in README.md.
+systemctl enable --now skeptic-collect-eod.timer
+systemctl enable --now skeptic-quality.timer
+systemctl enable --now skeptic-improve.timer
 
 echo
 echo "== recorder status =="
