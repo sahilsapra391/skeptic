@@ -392,20 +392,25 @@ def run_eod(tickers: list[str]) -> int:
                 log.info("eod %s %s: %s rows", ticker, day, written.get(str(day), 0))
             except RuntimeError as exc:
                 if "OPRA" in str(exc):
-                    # known condition (DECIDED 2026-07-02): run stays green;
-                    # top-up resumes automatically if the entitlement appears
-                    log.error("known condition: OPRA entitlement missing — "
-                              "minute top-up skipped for tonight")
-                    failures = 0
-                    break
+                    # known condition (DECIDED 2026-07-02): the entitlement
+                    # 403 fires on the JUST-CLOSED session only — historical
+                    # days serve fine (every night's lookback proves it). So
+                    # skip THIS day and keep going; it self-heals via
+                    # tomorrow's lookback. The old `break` here fell through
+                    # the for/else into the OUTER break, aborting the whole
+                    # top-up on SPY's current session — which silently froze
+                    # QQQ/IWM for a month while the run stayed green (found
+                    # 2026-08-04). Still not counted as a failure, but it no
+                    # longer erases earlier REAL failures either (the old
+                    # `failures = 0` reset did).
+                    log.error("known condition: OPRA entitlement missing for "
+                              "%s %s — day skipped, top-up continues", ticker, day)
+                    continue
                 log.exception("eod top-up failed for %s %s", ticker, day)
                 failures += 1
             except Exception:
                 log.exception("eod top-up failed for %s %s", ticker, day)
                 failures += 1
-        else:
-            continue
-        break
     # refresh current month's underlying minute bars
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     start, end = month_bounds(month)
