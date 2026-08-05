@@ -391,20 +391,34 @@ def run_eod(tickers: list[str]) -> int:
                 written = write_sessions(s3, ticker, frame)
                 log.info("eod %s %s: %s rows", ticker, day, written.get(str(day), 0))
             except RuntimeError as exc:
-                if "OPRA" in str(exc):
+                if "OPRA" in str(exc) and day == sessions[-1]:
                     # known condition (DECIDED 2026-07-02): the entitlement
                     # 403 fires on the JUST-CLOSED session only — historical
-                    # days serve fine (every night's lookback proves it). So
-                    # skip THIS day and keep going; it self-heals via
-                    # tomorrow's lookback. The old `break` here fell through
-                    # the for/else into the OUTER break, aborting the whole
-                    # top-up on SPY's current session — which silently froze
+                    # days serve fine, which every night's lookback proves by
+                    # writing them seconds before this error. Skip THIS day
+                    # and keep going; tomorrow's lookback picks it up.
+                    #
+                    # The old handler `break`-ed here, which fell through the
+                    # for/else into the OUTER break and aborted the whole
+                    # top-up on SPY's current session — silently freezing
                     # QQQ/IWM for a month while the run stayed green (found
-                    # 2026-08-04). Still not counted as a failure, but it no
-                    # longer erases earlier REAL failures either (the old
-                    # `failures = 0` reset did).
+                    # 2026-08-04). It also reset `failures = 0`, erasing real
+                    # earlier failures; both are gone.
                     log.error("known condition: OPRA entitlement missing for "
-                              "%s %s — day skipped, top-up continues", ticker, day)
+                              "%s %s (just-closed session) — day skipped, "
+                              "top-up continues", ticker, day)
+                    continue
+                if "OPRA" in str(exc):
+                    # An OPRA 403 on a HISTORICAL day contradicts the model
+                    # above: it means the entitlement is gone account-wide,
+                    # not that today's data is unpublished. Treating that as
+                    # benign is exactly how the lake froze unnoticed, so fail
+                    # the run and let the dead-man go red.
+                    log.error("OPRA entitlement missing for %s %s — a "
+                              "HISTORICAL session, so this is not the "
+                              "known just-closed condition; failing the run",
+                              ticker, day)
+                    failures += 1
                     continue
                 log.exception("eod top-up failed for %s %s", ticker, day)
                 failures += 1

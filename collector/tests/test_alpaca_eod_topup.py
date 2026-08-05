@@ -83,10 +83,13 @@ def test_current_session_opra_skips_the_day_not_the_run(
     assert rc == 0
 
 
-def test_opra_mid_lookback_still_attempts_later_days(
+def test_opra_on_a_historical_day_fails_the_run(
     lake: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An OPRA day is skipped in place — later days of the same ticker run."""
+    """The benign skip is scoped to the just-closed session, because that is
+    the only day the entitlement model explains. A 403 on an already-published
+    day means the entitlement is gone account-wide — treating THAT as benign is
+    how the lake froze unnoticed for a month, so it must go red."""
 
     def bars(symbols, start_iso, end_iso):
         if start_iso.startswith(str(OLDER)):
@@ -101,9 +104,10 @@ def test_opra_mid_lookback_still_attempts_later_days(
 
     rc = alpaca.run_eod(["SPY"])
 
+    # still no truncation: the later day is attempted and written
     assert lake["universe"] == [("SPY", OLDER), ("SPY", CURRENT)]
-    assert lake["written"] == ["SPY"]  # the non-OPRA day still landed
-    assert rc == 0
+    assert lake["written"] == ["SPY"]
+    assert rc == 1  # but the run is NOT green
 
 
 def test_opra_skip_does_not_erase_real_failures(
