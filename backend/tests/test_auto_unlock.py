@@ -6,6 +6,7 @@ bump the family trial counter (same spec + more data ≠ a new try)."""
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -142,3 +143,39 @@ class TestExecuteUnlocks:
             s.query(db.Run).filter(db.Run.id.like("exec%")).delete(
                 synchronize_session=False)
             s.commit()
+
+
+class TestDatabaseUrlGuard:
+    """A scan pointed at the wrong database is a SUCCESS-shaped no-op: db.py
+    falls back to a local SQLite file when DATABASE_URL is unset, so every
+    night logs 'no refused runs waiting' and exits 0 against an empty schema,
+    indistinguishable from a genuinely quiet night. That is the same silent-
+    green class as the Actions billing block that moved this job to the VM
+    (whose .env predates the var), so main() must refuse instead of guessing.
+    """
+
+    def test_main_refuses_without_database_url(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from scripts import nightly_improve as ni
+
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setattr(sys, "argv", ["nightly_improve.py"])
+        # would raise if the guard let execution reach the scan
+        monkeypatch.setattr(ni.db, "init_db", lambda: pytest.fail("scanned anyway"))
+
+        with caplog.at_level("ERROR", logger="nightly"):
+            assert ni.main() == 1
+        assert "DATABASE_URL" in caplog.text
+
+    def test_main_proceeds_when_database_url_is_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from scripts import nightly_improve as ni
+
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+        monkeypatch.setattr(sys, "argv", ["nightly_improve.py"])
+        monkeypatch.setattr(ni, "scan_unlocks", lambda: [])
+        monkeypatch.setattr(ni, "drain_receipts", lambda execute: 0)
+
+        assert ni.main() == 0
