@@ -120,14 +120,33 @@ not `enable` anything — a unit you disabled on purpose must not come back on a
 pull. So a NEW timer needs one manual enable after the code lands:
 
 ```
-sudo systemctl start skeptic-autoupdate.service     # pull main now
+sudo systemctl start skeptic-autoupdate.service     # pull now — see the guard note
+sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync --project /opt/skeptic/backend
 sudo systemctl enable --now skeptic-collect-eod.timer skeptic-quality.timer skeptic-improve.timer
 systemctl list-timers "skeptic-*"                   # confirm next elapse
 ```
 
+Three things that will bite you on the cutover day, in order:
+
+1. **Merging deletes the Actions crons immediately.** Until the enable below
+   lands there is no scheduler on either host, so finish this before the next
+   slot — 21:30 UTC for the EOD chain. The `workflow_dispatch` fallback covers
+   a night you miss.
+2. **`systemctl start skeptic-autoupdate.service` exits 0 without pulling
+   inside the session guard** (30 min before the open through close+15 min).
+   That is a *silent* no-op — the only evidence is `guard said 'skip'` in
+   `/var/log/skeptic/autoupdate.log`. Run the cutover outside that window, and
+   confirm with `git -C /opt/skeptic log -1` before enabling.
+3. **`backend/`'s venv does not exist on a VM provisioned before this change**
+   (bootstrap's backend sync is new here, and the *old* autoupdate on the box
+   at cutover time has no backend step). Hence the explicit `uv sync` above —
+   without it the first improve run pays for a cold resolve inside its own
+   `TimeoutStartSec`, which is the most OOM-prone thing this 1 GB box does.
+
 Prefer that over re-running `bootstrap.sh` when the VM is already provisioned:
 bootstrap also re-enables everything in its list, which will switch
-`skeptic-keepwarm.timer` back on if you had turned it off.
+`skeptic-keepwarm.timer` back on if you had turned it off. (Bootstrap *is*
+the better path if you also want its new `.env` completeness check.)
 
 Secrets are the one thing neither path can deliver. The three jobs need
 `ALPHAVANTAGE_API_KEY`, `APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`,
@@ -154,21 +173,35 @@ Set `ALERT_WEBHOOK` in `collector/.env` to page on a stalled session. Any of:
 Without it, the heartbeat still logs to the journal (`journalctl -u
 skeptic-heartbeat`), but nothing pushes to your phone.
 
-Known monitoring gaps after the move (owner decisions, deliberately not
-half-wired here):
+How each lane reports failure after the move:
 
-- **`skeptic-improve` / `skeptic-quality` failures alert nowhere.** On Actions
-  a red scheduled run emailed; a failed oneshot unit is only visible in
-  `systemctl --failed`. The clean fix is one Healthchecks check per lane
-  (create the check, put its URL in `.env`, ping it from the unit) — do that
-  rather than pointing them at the EOD tile, whose meaning ("tonight's lake
-  is whole") must stay single-purpose. The EOD chain itself DOES page: 
-  `collect-eod.sh` pings `/fail` when any step fails.
+- **The EOD chain pages on both paths.** `collect-eod.sh` pings `<url>/fail`
+  (naming the failed steps) when a *step* fails, and
+  `skeptic-collect-eod.service` carries an `ExecStopPost=` running
+  `hc-fail.sh`, which is the only hook that survives the unit being *killed* —
+  the 45-min wall, an OOM kill, a reboot. That second path matters because
+  `collect.py` pings SUCCESS as step 1 of 11: without it a chain killed at
+  minute 44 would leave a green tile over derivations that never ran.
+- **`skeptic-improve` / `skeptic-quality` page only if you create their
+  checks.** Both units call the same `hc-fail.sh` against
+  `HEALTHCHECK_URL_IMPROVE` / `HEALTHCHECK_URL_QUALITY`; blank (the default)
+  means log-only. Create two checks on healthchecks.io, drop the URLs in
+  `.env`, done. They are deliberately separate from the EOD tile, whose
+  meaning ("tonight's lake is whole") must stay single-purpose.
+
+Remaining known gaps (owner decisions, deliberately not half-wired here):
+
 - **The Saturday weekly pass kept its GitHub cron** (needs repo write for the
   proposal PR) and therefore kept the billing-failure exposure — and it has
   no dead-man check. A repeat billing block silences it in the exact shape
   the Jul 27–31 outage took. Give it its own Healthchecks check (ping at the
   end of the weekly step) or accept a silent-failure window of ≤1 week.
+- **No cross-host lock.** The workflows' `concurrency: group: collector`
+  only serializes Actions runs against each other, so a manual
+  `alpaca-backfill` or `collect-eod` dispatch can now run *while* the VM's
+  chain does, splitting the shared 200 req/min Alpaca budget. Avoid
+  dispatching inside 21:00–24:00 UTC on weekdays; a real fix is an R2 lease
+  object both hosts acquire.
 
 ## Self-update (how merged code reaches the VM)
 

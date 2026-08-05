@@ -71,11 +71,14 @@ Frontend (Vercel project, root `frontend/`):
   journalctl -u skeptic-collect-eod -n 200
   tail -100 /var/log/skeptic/collect-eod.log
   ```
-  A tile that goes quiet with **no** `/fail` ping means `collect.py` never ran
-  at all (timer disabled, VM down, unit failed to start) rather than that the
-  run errored — `collect.py` pings `/fail` itself on any error it survives to
-  see. That silent shape is what the 2026-07-27 Actions billing block looked
-  like, and it is why the tile is the load-bearing alarm.
+  A tile that goes quiet with **no** `/fail` ping means the job never ran at
+  all (timer disabled, VM down, unit failed to start) rather than that the run
+  errored — three separate things ping `/fail` on the VM: `collect.py` on any
+  error it survives to see, `collect-eod.sh` when a later step fails (the body
+  names which), and the unit's `ExecStopPost=` hook when the run is *killed*
+  (45-min wall, OOM, reboot). So a red tile tells you it broke; a silent tile
+  tells you nothing started. That silent shape is what the 2026-07-27 Actions
+  billing block looked like, and it is why the tile is the load-bearing alarm.
 - Re-run a missed night: `sudo systemctl start skeptic-collect-eod.service`
   (the frontier state in R2 makes it idempotent). If the VM is the problem,
   Actions → collect-eod → Run workflow still works.

@@ -257,6 +257,19 @@ def main() -> int:
                     help="submit capped re-runs via the API (default: dry-run)")
     args = ap.parse_args()
 
+    # A scan against the wrong database is a SUCCESS-shaped no-op: db.py falls
+    # back to a local SQLite file when DATABASE_URL is unset, so every night
+    # would log "no refused runs waiting" and exit 0 against an empty schema,
+    # with nothing to distinguish it from a genuinely quiet night. That is the
+    # same silent-green class as the outage that moved this job to the VM (the
+    # VM's .env predates this var), so refuse instead of guessing.
+    if not os.environ.get("DATABASE_URL"):
+        log.error("DATABASE_URL is not set — refusing to scan a fallback SQLite "
+                  "database and report it as a clean night. Set it in the "
+                  "environment (VM: /opt/skeptic/collector/.env, see "
+                  "collector/.env.example).")
+        return 1
+
     db.init_db()
     decisions = scan_unlocks()
     if not decisions:

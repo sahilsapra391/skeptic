@@ -5,7 +5,10 @@
 #
 # Fail-safe by construction: any failure (fetch, non-ff merge, uv sync) exits
 # non-zero and leaves the currently-deployed code running untouched — the
-# heartbeat keeps guarding the outcome that matters (snapshots landing).
+# heartbeat keeps guarding the outcome that matters (snapshots landing). And
+# because the "already deployed" gate reads a marker written only after the
+# FULL chain succeeds, a failed run is retried the next night rather than
+# latching a half-applied deploy behind an "up to date" message.
 #
 # Never touches the recorder inside or near the options session: the timer
 # fires at 3 AM ET, but Persistent=true replays a missed run at boot, which
@@ -60,9 +63,22 @@ BRANCH=$(git -C "$DEST" rev-parse --abbrev-ref HEAD)
 before=$(git -C "$DEST" rev-parse HEAD)
 git -C "$DEST" fetch origin "$BRANCH"
 after=$(git -C "$DEST" rev-parse "origin/$BRANCH")
-if [ "$before" = "$after" ]; then
-    echo "up to date at ${before:0:9}"
+# Gate on the last FULLY-DEPLOYED sha, not on HEAD. The ff-merge below moves
+# HEAD before the syncs, unit install and restart run, so any failure after it
+# used to latch permanently: the next night saw HEAD == origin, printed "up to
+# date", and exited — leaving units never installed and the recorder never
+# restarted, with nothing paging (the heartbeat only watches snapshots). Every
+# step here is idempotent, so re-running the whole chain until it succeeds once
+# is always safe.
+MARKER=/var/lib/skeptic/last-deployed
+mkdir -p "$(dirname "$MARKER")"
+deployed=$(cat "$MARKER" 2>/dev/null || echo "")
+if [ "$after" = "$deployed" ]; then
+    echo "up to date at ${after:0:9} (fully deployed)"
     exit 0
+fi
+if [ "$before" = "$after" ] && [ -n "$deployed" ]; then
+    echo "code at ${after:0:9} but last full deploy was ${deployed:0:9} — re-running the deploy chain"
 fi
 
 echo "updating ${before:0:9} -> ${after:0:9}"
@@ -71,11 +87,17 @@ chown -R skeptic "$DEST"
 sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync
 # backend/ deps too: the improve scan imports app.* from $DEST/backend, and
 # bootstrap.sh only syncs it once at provision. Without this, the first
-# backend dependency change that lands via a nightly pull makes the 07:00
-# improve timer pay for a cold `uv sync` inside its own TimeoutStartSec —
-# the most OOM-prone operation on this 1 GB box. Pay it here instead, at
-# 3 AM ET with the session guard already passed and swap available.
-(cd "$DEST/backend" && sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync)
+# backend dependency change that lands via a nightly pull makes the improve
+# timer pay for a cold `uv sync` inside its own TimeoutStartSec — the most
+# OOM-prone operation on this 1 GB box. Pay it here instead, at 3 AM ET with
+# the session guard already passed and swap available.
+#
+# NON-FATAL on purpose (hence the `|| echo` under `set -e`): the improve unit
+# runs through `uv run`, which re-syncs on its own, so a backend-only hiccup
+# must not block the unit install and recorder restart below — that ordering
+# is what turned a single OOM into a stuck deploy.
+(cd "$DEST/backend" && sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync) \
+    || echo "!! backend uv sync failed — skeptic-improve's own 'uv run' will self-heal at 07:15"
 
 # Units may have changed in the pull; reinstall them ALL — by glob, because
 # the hand-listed version silently skipped units added after it was written
@@ -89,4 +111,7 @@ systemctl daemon-reload
 # restart only the long-lived recorder (the heartbeat is a fresh process
 # every fire, and the keep-warm ping is a oneshot)
 systemctl restart skeptic-intraday.service
+# Only NOW is the deploy complete; anything above failing means tomorrow
+# re-runs the whole chain instead of declaring itself up to date.
+echo "$after" > "$MARKER"
 echo "deployed ${after:0:9}; recorder restarted"

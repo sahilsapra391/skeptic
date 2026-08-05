@@ -1,6 +1,6 @@
 """Guards for the scheduled jobs that moved off GitHub Actions onto the
-collector VM (2026-07-27, after a billing block refused to start the nightly
-EOD job at all).
+collector VM (2026-08-04, after a billing block refused to start the nightly
+EOD job at all for the whole Jul 27-31 trading week).
 
 The failure these prevent is drift. The VM chain and the workflow it replaced
 are now two descriptions of the same nightly job in different files, and
@@ -61,11 +61,16 @@ def _read(rel: Path) -> str:
 
 
 def _on_block(text: str) -> str:
-    """The indented body under a workflow's top-level `on:` key, so prose in
-    surrounding comments can't be mistaken for a live trigger."""
-    m = re.search(r"^on:\n((?:[ \t].*\n|\n)*)", text, re.M)
+    """The body under a workflow's top-level `on:` key, with comments stripped,
+    so prose in comments can't be mistaken for a live trigger.
+
+    Column-0 comment lines have to be CAPTURED (a YAML comment does not end a
+    block mapping, so a cron re-added below one is still live and the old
+    regex stopped reading right before it) and only then removed.
+    """
+    m = re.search(r"^on:\n((?:[ \t].*\n|#.*\n|\n)*)", text, re.M)
     assert m, "no on: block found"
-    return m.group(1)
+    return re.sub(r"^\s*#.*\n", "", m.group(1), flags=re.M)
 
 
 def _oncalendar(unit: str) -> list[str]:
@@ -111,7 +116,25 @@ def test_collect_eod_timer_does_not_replay_at_boot() -> None:
 
 def test_quality_and_improve_timers_keep_their_slots() -> None:
     assert _oncalendar("skeptic-quality.timer") == ["Sat *-*-* 13:00:00 UTC"]
-    assert _oncalendar("skeptic-improve.timer") == ["Tue-Sat *-*-* 07:00:00 UTC"]
+    # 07:15, not the old cron's 07:00 — see the next test.
+    assert _oncalendar("skeptic-improve.timer") == ["Tue-Sat *-*-* 07:15:00 UTC"]
+
+
+def test_improve_timer_clears_the_autoupdate_window() -> None:
+    """skeptic-autoupdate fires at 03:00 America/New_York with up to 10 min of
+    jitter — 07:00-07:10 UTC under EDT, the improve cron's original slot. It
+    git-merges /opt/skeptic and runs `uv sync`, so an overlapping scan can read
+    a half-updated tree. The scan must start after that window closes."""
+    autoupdate = _read(DEPLOY / "skeptic-autoupdate.timer")
+    jitter = int(re.search(r"^RandomizedDelaySec=(\d+)$", autoupdate, re.M).group(1))
+    # the autoupdate slot is local-time; EDT (UTC-4) is the worst case
+    window_end_utc_min = 3 * 60 + 4 * 60 + jitter // 60
+    scan = _oncalendar("skeptic-improve.timer")[0]
+    h, m = (int(x) for x in re.search(r"(\d{2}):(\d{2}):00 UTC", scan).groups())
+    assert h * 60 + m > window_end_utc_min, (
+        f"improve scan at {h:02d}:{m:02d} UTC lands inside the autoupdate "
+        f"window (ends {window_end_utc_min // 60:02d}:{window_end_utc_min % 60:02d} UTC under EDT)"
+    )
 
 
 def test_timers_are_enableable() -> None:
@@ -159,14 +182,39 @@ def test_saturday_weekly_pass_runs_after_the_vm_scan() -> None:
     assert (gh_h, gh_m) > (vm_h, vm_m), "the GitHub weekly pass must trail the VM scan"
 
 
-def _run_chain(tmp_path: Path, failing: frozenset[str] = frozenset()) -> tuple[int, list[str]]:
+HC_TEST_URL = "http://127.0.0.1:9/hc-test"
+
+
+def _run_chain(
+    tmp_path: Path, failing: frozenset[str] = frozenset()
+) -> tuple[int, list[str], list[str]]:
     """Drive collect-eod.sh against a stub `uv` that records every script it is
-    asked to run and exits non-zero for the named ones."""
+    asked to run and exits non-zero for the named ones.
+
+    Hermetic on purpose: the script is COPIED into tmp_path/deploy/ so its
+    `cd "$(dirname "$0")/.."` lands on a throwaway directory with a fabricated
+    .env, and `curl` is stubbed on PATH. Run against the real deploy/ dir it
+    would read the developer's own .env and post a fake failure to the LIVE
+    Healthchecks endpoint on every test run.
+    """
     calls = tmp_path / "calls.log"
+    pings = tmp_path / "pings.log"
+    (tmp_path / ".env").write_text(f"HEALTHCHECK_URL={HC_TEST_URL}\n")
+    deploy = tmp_path / "deploy"
+    deploy.mkdir()
+    script = deploy / "collect-eod.sh"
+    script.write_text(_read(DEPLOY / "collect-eod.sh"))
+    script.chmod(0o755)
+
     stub = tmp_path / "uv"
     fail_arm = f'    {"|".join(sorted(failing))}) exit 3 ;;\n' if failing else ""
     stub.write_text(
         "#!/usr/bin/env bash\n"
+        # the chain reads HEALTHCHECK_URL back through `uv run … python -c`;
+        # answer that like the real thing instead of recording it as a step
+        'for a in "$@"; do [ "$a" = "-c" ] && { '
+        f'grep -E "^HEALTHCHECK_URL=" "{tmp_path}/.env" | cut -d= -f2-; exit 0; }} \n'
+        "done\n"
         'script=""\n'
         'for a in "$@"; do case "$a" in *.py) script="$a" ;; esac; done\n'
         f'echo "$script" >> "{calls}"\n'
@@ -176,27 +224,39 @@ def _run_chain(tmp_path: Path, failing: frozenset[str] = frozenset()) -> tuple[i
         "esac\n"
     )
     stub.chmod(0o755)
+
+    curl_stub = tmp_path / "curl"
+    curl_stub.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "$*" >> "{pings}"\n'
+        "exit 0\n"
+    )
+    curl_stub.chmod(0o755)
+
     proc = subprocess.run(
-        ["bash", str(DEPLOY / "collect-eod.sh")],
-        env={**os.environ, "UV": str(stub)},
+        ["bash", str(script)],
+        env={**os.environ, "UV": str(stub), "PATH": f"{tmp_path}:{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
     ran = calls.read_text().split() if calls.exists() else []
-    return proc.returncode, ran
+    pinged = pings.read_text().splitlines() if pings.exists() else []
+    return proc.returncode, ran, pinged
 
 
 def test_chain_runs_every_step_in_order_when_all_pass(tmp_path: Path) -> None:
-    rc, ran = _run_chain(tmp_path)
+    rc, ran, pinged = _run_chain(tmp_path)
     assert rc == 0
     assert ran == EXPECTED_CHAIN
+    # a clean chain must never touch /fail — collect.py's own success ping stands
+    assert pinged == []
 
 
 def test_collector_failure_skips_only_the_minute_top_up(tmp_path: Path) -> None:
     """alpaca.py sat behind a custom `if:` on Actions, which GitHub implicitly
     ANDs with success(), so it was skipped when the collector failed. Every
     derivation still ran, because those carried `if: always()`."""
-    rc, ran = _run_chain(tmp_path, frozenset({"collect.py"}))
+    rc, ran, _ = _run_chain(tmp_path, frozenset({"collect.py"}))
     assert rc != 0
     assert "alpaca.py" not in ran
     assert ran == [s for s in EXPECTED_CHAIN if s != "alpaca.py"]
@@ -206,24 +266,59 @@ def test_a_failing_derivation_never_truncates_the_chain(tmp_path: Path) -> None:
     """The regression `set -e` would cause: everything after the first failure
     silently disappears, and the healthcheck stays green because collect.py
     already pinged success long before."""
-    rc, ran = _run_chain(tmp_path, frozenset({"derive_ivs_signals.py"}))
+    rc, ran, _ = _run_chain(tmp_path, frozenset({"derive_ivs_signals.py"}))
     assert rc != 0
     assert ran == EXPECTED_CHAIN
 
 
+def test_a_failing_minute_top_up_flips_the_chain_red(tmp_path: Path) -> None:
+    """alpaca.py can exit non-zero again (its OPRA handler no longer resets
+    `failures` and swallows the whole top-up). The chain must surface that
+    rather than riding collect.py's earlier success ping."""
+    rc, ran, pinged = _run_chain(tmp_path, frozenset({"alpaca.py"}))
+    assert rc != 0
+    assert ran == EXPECTED_CHAIN  # a failed top-up never truncates the derives
+    assert any("alpaca" in p for p in pinged)
+
+
+def test_a_failed_step_flips_the_healthcheck_tile_red(tmp_path: Path) -> None:
+    """collect.py pings SUCCESS as step 1 of 11, so without this the tile would
+    stay green over a chain whose derivations all failed — the silent shape the
+    move off Actions exists to eliminate. The named steps ride the ping body so
+    the dashboard says which link broke."""
+    rc, _, pinged = _run_chain(
+        tmp_path, frozenset({"derive_cboe_eod.py", "ledger.py"})
+    )
+    assert rc != 0
+    assert len(pinged) == 1, pinged
+    ping = pinged[0]
+    assert f"{HC_TEST_URL}/fail" in ping
+    # the body carries the human step LABELS, which is what the dashboard shows
+    assert "CBOE close chain derivation" in ping and "coverage ledger" in ping
+
+
 def test_unit_execstart_paths_exist_in_the_repo() -> None:
     for unit in sorted(DEPLOY.glob("skeptic-*.service")):
-        for line in re.findall(r"^ExecStart=(.*)$", _read(unit), re.M):
+        text = _read(unit)
+        # WorkingDirectory anchors the RELATIVE ExecStart tokens below; an
+        # absolute-only check silently skipped `scripts/nightly_improve.py`
+        # and `collect.py`, so a rename would sail through this test.
+        wd = re.search(r"^WorkingDirectory=(/opt/skeptic/.*)$", text, re.M)
+        wd_rel = wd.group(1)[len("/opt/skeptic/") :] if wd else None
+        if wd_rel is not None:
+            assert (REPO / wd_rel).is_dir(), f"{unit.name}: WorkingDirectory {wd.group(1)}"
+        for line in re.findall(r"^Exec(?:Start|StopPost)=(.*)$", text, re.M):
             for tok in line.split():
-                if not tok.startswith("/opt/skeptic/"):
-                    continue
-                rel = tok[len("/opt/skeptic/") :]
-                if rel.endswith(".env"):
-                    # gitignored and supplied out of band; the template is what
-                    # the repo can actually guarantee.
-                    assert (REPO / f"{rel}.example").is_file(), f"{unit.name}: {tok}"
-                    continue
-                assert (REPO / rel).exists(), f"{unit.name}: {tok}"
+                if tok.startswith("/opt/skeptic/"):
+                    rel = tok[len("/opt/skeptic/") :]
+                    if rel.endswith(".env"):
+                        # gitignored and supplied out of band; the template is
+                        # what the repo can actually guarantee.
+                        assert (REPO / f"{rel}.example").is_file(), f"{unit.name}: {tok}"
+                        continue
+                    assert (REPO / rel).exists(), f"{unit.name}: {tok}"
+                elif tok.endswith(".py") and wd_rel is not None:
+                    assert (REPO / wd_rel / tok).is_file(), f"{unit.name}: {tok} (rel to {wd_rel})"
 
 
 def test_vm_required_vars_are_documented_uncommented() -> None:
@@ -232,3 +327,68 @@ def test_vm_required_vars_are_documented_uncommented() -> None:
     example = _read(REPO / "collector" / ".env.example")
     for var in VM_REQUIRED_VARS:
         assert re.search(rf"^{var}=", example, re.M), f"{var} missing or commented out"
+
+
+def _run_hc_fail(tmp_path: Path, result: str, url: str = HC_TEST_URL) -> list[str]:
+    """Drive hc-fail.sh (the ExecStopPost= hook) with a stubbed uv + curl."""
+    (tmp_path / ".env").write_text(f"HEALTHCHECK_URL={url}\n")
+    deploy = tmp_path / "deploy"
+    deploy.mkdir(exist_ok=True)
+    script = deploy / "hc-fail.sh"
+    script.write_text(_read(DEPLOY / "hc-fail.sh"))
+    script.chmod(0o755)
+    pings = tmp_path / "pings.log"
+    pings.unlink(missing_ok=True)  # callers reuse tmp_path across results
+
+    stub = tmp_path / "uv"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'for a in "$@"; do [ "$a" = "-c" ] && { '
+        f'grep -E "^${{SK_HC_VAR}}=" "{tmp_path}/.env" | cut -d= -f2- '
+        "| sed 's:/*$::'; exit 0; }\n"
+        "done\nexit 0\n"
+    )
+    stub.chmod(0o755)
+    curl_stub = tmp_path / "curl"
+    curl_stub.write_text(f'#!/usr/bin/env bash\necho "$*" >> "{pings}"\n')
+    curl_stub.chmod(0o755)
+
+    subprocess.run(
+        ["bash", str(script), "skeptic-collect-eod"],
+        env={
+            **os.environ,
+            "UV": str(stub),
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "SERVICE_RESULT": result,
+        },
+        capture_output=True,
+        text=True,
+    )
+    return pings.read_text().splitlines() if pings.exists() else []
+
+
+def test_hc_fail_hook_stays_silent_when_the_unit_reported_for_itself(
+    tmp_path: Path,
+) -> None:
+    """A clean run already pinged success; a step-failure run already pinged
+    /fail from inside the script with the step names. Double-pinging would
+    only overwrite the more informative body."""
+    assert _run_hc_fail(tmp_path, "success") == []
+    assert _run_hc_fail(tmp_path, "exit-code") == []
+
+
+def test_hc_fail_hook_pages_when_the_unit_is_killed(tmp_path: Path) -> None:
+    """The case the in-script /fail block can NEVER cover: the 45-min wall, an
+    OOM kill, a reboot. collect.py pinged success as step 1 of 11, so without
+    this the tile stays green over a chain that never finished."""
+    for result in ("timeout", "oom-kill", "signal", "core-dump"):
+        pinged = _run_hc_fail(tmp_path, result)
+        assert len(pinged) == 1, f"{result}: {pinged}"
+        assert f"{HC_TEST_URL}/fail" in pinged[0]
+        assert result in pinged[0]
+
+
+def test_hc_fail_hook_is_a_noop_without_a_configured_url(tmp_path: Path) -> None:
+    """The per-lane vars are optional; an unset one must log, never crash the
+    unit's stop path."""
+    assert _run_hc_fail(tmp_path, "timeout", url="") == []

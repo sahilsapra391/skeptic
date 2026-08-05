@@ -12,6 +12,12 @@ User=skeptic
 Environment=HOME=/home/skeptic
 WorkingDirectory=/opt/skeptic/collector
 ExecStart=/usr/bin/bash /opt/skeptic/collector/deploy/collect-eod.sh
+# The script flips the tile red itself when a STEP fails, but it can't run at
+# all when the unit is killed (the wall below, an OOM kill, a reboot) — and
+# collect.py already pinged SUCCESS as step 1 of 11. ExecStopPost= is the only
+# hook that survives that, so an abnormal death still pages instead of leaving
+# a green tile over a chain that never finished.
+ExecStopPost=/usr/bin/bash /opt/skeptic/collector/deploy/hc-fail.sh skeptic-collect-eod
 # The workflow capped at 45 min; keep the same wall so a wedged AV or R2 call
 # can never overlap the 22:30 catch-up or reach the 03:00 ET autoupdate.
 TimeoutStartSec=2700

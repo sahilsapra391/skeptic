@@ -9,10 +9,17 @@
 # caught it. An always-on VM removes the billing dependency from the one job
 # that feeds the lake every night.
 #
-# Step order and failure semantics mirror the workflow this replaces exactly,
-# so the Healthchecks tile keeps meaning what it always meant:
+# Step order and failure semantics mirror the workflow this replaces exactly:
 #   - collect.py pings Healthchecks itself (success, or <url>/fail on error).
-#     It is the ONLY step the tile observes; derivations are out of its scope.
+#     NEW here: because collect.py pings success as step 1 of 11, the chain
+#     ALSO flips the tile to /fail if any LATER step fails (see the exit
+#     block), naming the failed steps. On Actions a failed derivation ended
+#     the run red and GitHub emailed; nothing observes a failed oneshot, so
+#     the tile has to observe the whole chain now, not just collect.py.
+#     Abnormal death (the 45-min wall, OOM, reboot) can't reach that block at
+#     all — skeptic-collect-eod.service carries an ExecStopPost= that pings
+#     /fail on any non-success $SERVICE_RESULT, which is the only hook that
+#     survives a SIGKILL.
 #   - alpaca.py ran under a custom `if:` in the workflow, and GitHub implicitly
 #     ANDs a custom `if:` with success() — so it was skipped when the collector
 #     failed. Same here.
@@ -75,7 +82,12 @@ step "coverage ledger"                  ledger.py
 # the tile ourselves: a /fail ping after the success ping wins (last signal
 # counts), naming the failed steps in the body for the dashboard.
 if [ "$rc" -ne 0 ]; then
-    HC_URL=$(grep -E '^HEALTHCHECK_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-)
+    # Read the URL through the SAME parser every other consumer uses (uv's
+    # --env-file, then collect.py's own rstrip("/")). A hand-rolled grep|cut
+    # kept surrounding quotes, `export ` prefixes and CR line endings, so a
+    # .env that pings fine from collect.py could silently fail to page here.
+    HC_URL=$("$UV" run --env-file .env python -c \
+        'import os; print(os.environ.get("HEALTHCHECK_URL", "").rstrip("/"))' 2>/dev/null)
     if [ -n "${HC_URL}" ]; then
         curl -fsS -m 10 --retry 3 --data-raw "collect-eod chain failed: ${failed_steps}" \
             "${HC_URL}/fail" >/dev/null 2>&1 \

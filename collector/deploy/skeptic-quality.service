@@ -13,6 +13,10 @@ WorkingDirectory=/opt/skeptic/collector
 # for eod/backfill/all), so this job stays outside the EOD tile's scope, exactly
 # as it was on Actions. Its findings surface via /api/data/coverage.
 ExecStart=/usr/local/bin/uv run --env-file .env python collect.py --mode quality
+# Optional per-lane tile (see skeptic-improve.service): set
+# HEALTHCHECK_URL_QUALITY in collector/.env to page on a failed/killed scan;
+# until then this logs. Never the EOD tile — see the comment above.
+ExecStopPost=/usr/bin/bash /opt/skeptic/collector/deploy/hc-fail.sh skeptic-quality HEALTHCHECK_URL_QUALITY
 TimeoutStartSec=1200
 StandardOutput=append:/var/log/skeptic/quality.log
 StandardError=append:/var/log/skeptic/quality.log

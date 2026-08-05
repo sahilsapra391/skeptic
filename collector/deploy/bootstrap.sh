@@ -84,6 +84,33 @@ fi
 chown "$SVC_USER" "$DEST/collector/.env"
 chmod 600 "$DEST/collector/.env"
 
+# Existence was enough when .env only had to satisfy the recorder. Now the VM
+# owns the scheduled lanes, and each missing var fails in a DIFFERENT quiet
+# way: no ALPHAVANTAGE_API_KEY and the chain's first step dies; no
+# HEALTHCHECK_URL and nothing watches it (the exact hole the move exists to
+# close); no DATABASE_URL and the improve scan silently falls back to an empty
+# local SQLite and reports success. A pre-existing VM's .env predates all of
+# them, so check content, not just presence.
+missing=""
+for var in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET \
+           ALPHAVANTAGE_API_KEY HEALTHCHECK_URL APCA_API_KEY_ID \
+           APCA_API_SECRET_KEY DATABASE_URL SKEPTIC_API_URL SKEPTIC_ACCESS_TOKEN; do
+    grep -qE "^[[:space:]]*(export[[:space:]]+)?${var}=.*[^[:space:]=]" \
+        "$DEST/collector/.env" || missing="${missing} ${var}"
+done
+if [ -n "$missing" ]; then
+    cat >&2 <<EOF
+
+!! $DEST/collector/.env is missing (or left empty):${missing}
+
+   The VM owns the scheduled collection lanes now, and every one of those
+   vars is load-bearing for one of them — see collector/deploy/README.md
+   ("Secrets are the one thing neither path can deliver"). Copy the values
+   from the GitHub repo secrets, then re-run this script.
+EOF
+    exit 1
+fi
+
 echo "== systemd units =="
 # Install by GLOB, matching autoupdate.sh. The hand-listed version there
 # silently skipped skeptic-keepwarm when it landed in #109, and this list was
@@ -92,7 +119,7 @@ echo "== systemd units =="
 # back just because someone re-ran bootstrap.
 install -m644 deploy/skeptic-*.service /etc/systemd/system/
 install -m644 deploy/skeptic-*.timer   /etc/systemd/system/
-chmod +x deploy/autoupdate.sh deploy/collect-eod.sh
+chmod +x deploy/autoupdate.sh deploy/collect-eod.sh deploy/hc-fail.sh
 systemctl daemon-reload
 systemctl enable --now skeptic-intraday.service
 systemctl enable --now skeptic-heartbeat.timer
