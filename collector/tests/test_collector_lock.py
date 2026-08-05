@@ -23,12 +23,15 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import lock
 import pytest
+
+import lock
 
 REPO = Path(__file__).resolve().parents[2]
 DEPLOY = REPO / "collector" / "deploy"
@@ -195,7 +198,7 @@ def test_a_lease_that_vanishes_under_us_is_not_treated_as_a_win(s3):
 
 def test_release_frees_the_lane_for_the_next_run(s3):
     lease = lock.acquire(s3, "vm-collect-eod", settle_seconds=0, now=NOW)
-    assert lock.release(s3, lease["token"]) == "released"
+    assert lock.release(s3, lease["token"], now=NOW) == "released"
     assert not lock.is_live(lock.read_lease(s3), NOW)
     # the object survives with its forensics; the next acquire simply takes it
     assert _stored(s3)["holder"] == "vm-collect-eod"
@@ -220,8 +223,36 @@ def test_release_with_no_token_is_not_a_free_pass(s3):
 def test_release_is_idempotent_and_survives_a_missing_lease(s3):
     assert lock.release(s3, "whatever") == "absent"
     lease = lock.acquire(s3, "vm-collect-eod", settle_seconds=0, now=NOW)
-    assert lock.release(s3, lease["token"]) == "released"
-    assert lock.release(s3, lease["token"]) == "already-released"
+    assert lock.release(s3, lease["token"], now=NOW) == "released"
+    assert lock.release(s3, lease["token"], now=NOW) == "already-released"
+
+
+def test_releasing_our_own_expired_lease_writes_nothing(s3):
+    """The run outlived its own TTL. The lane is already free, so a tombstone
+    buys nothing — and it can LOSE something: between the read and the write
+    another host can legitimately acquire, and stamping our stale copy would
+    erase their live lease and let a third run in. Not writing closes it,
+    because that race needs exactly this precondition."""
+    lease = lock.acquire(s3, "vm-collect-eod", ttl_seconds=3000,
+                         settle_seconds=0, now=NOW)
+    before = s3.objects[lock.LOCK_KEY]
+
+    assert lock.release(s3, lease["token"],
+                        now=NOW + timedelta(seconds=3001)) == "expired"
+    assert s3.objects[lock.LOCK_KEY] == before, "released an already-expired lease"
+
+
+def test_a_lease_that_lapsed_and_was_retaken_is_never_touched(s3):
+    """The same window, one step later: the other host already has it."""
+    lease = lock.acquire(s3, "vm-collect-eod", settle_seconds=0, now=NOW)
+    later = NOW + timedelta(seconds=3001)
+    theirs = lock.acquire(s3, "github-actions/alpaca-backfill#9",
+                          settle_seconds=0, now=later)
+
+    assert lock.release(s3, lease["token"], now=later) == "foreign"
+    still = lock.read_lease(s3)
+    assert still["token"] == theirs["token"], "we clobbered a live lease"
+    assert lock.is_live(still, later)
 
 
 def test_force_release_recovers_a_wedged_lane(s3):
@@ -257,8 +288,11 @@ def test_cli_refusal_exits_75_and_says_who_holds_the_lane(s3, tmp_path, capsys):
     assert rc == lock.EXIT_HELD == 75
     err = capsys.readouterr().err
     assert "REFUSING" in err and "vm-collect-eod" in err
-    # no token file means the release step has nothing to undo
-    assert not token_file.exists()
+    # The token file is written BEFORE the claim (so a death mid-acquire is
+    # still releasable), so a refusal leaves one behind. What matters is that
+    # releasing with it cannot touch the holder's lease.
+    assert lock.main(["release", "--token-file", str(token_file)], s3=s3) == 0
+    assert lock.is_live(lock.read_lease(s3)), "a refused run released the holder's lease"
 
 
 def test_cli_release_of_a_foreign_lease_stays_quiet_and_exits_zero(s3, capsys):
@@ -268,6 +302,100 @@ def test_cli_release_of_a_foreign_lease_stays_quiet_and_exits_zero(s3, capsys):
     assert lock.main(["release", "--token", "ours"], s3=s3) == 0
     assert "NOT releasing" in capsys.readouterr().err
     assert lock.is_live(lock.read_lease(s3), NOW)
+
+
+def test_bytes_that_are_not_json_at_all_read_as_a_free_lane(s3):
+    """r2_get_json only handles NoSuchKey, so a truncated write or an empty
+    body raises out of every subcommand — including the `release --force`
+    the RUNBOOK sends you to run to clear exactly that object."""
+    for junk in (b'{"host": "vm", "started_at": "2026-08-', b"", b"\xff\xfe\x00",
+                 b'{"started_at": "2026-08-04T21:30:00Z", "ttl_seconds": NaN}',
+                 b'{"started_at": "9999-12-31T23:59:59Z", "ttl_seconds": 1e18}'):
+        s3.objects[lock.LOCK_KEY] = junk
+        assert lock.read_lease(s3) is None or not lock.is_live(lock.read_lease(s3), NOW)
+        assert lock.acquire(s3, "vm-collect-eod", settle_seconds=0, now=NOW)
+        assert lock.main(["release", "--force"], s3=s3) == 0
+
+
+def test_a_ttl_beyond_the_ceiling_is_clamped_not_honoured(s3, capsys):
+    """A fat-fingered max_minutes (3300 for 330) would otherwise mint a
+    55-hour lease and refuse every nightly chain until someone forced it."""
+    lease = lock.acquire(s3, "github-actions/alpaca-backfill#9",
+                         ttl_seconds=198000, settle_seconds=0, now=NOW)
+    assert lease["ttl_seconds"] == lock.MAX_TTL_SECONDS
+    assert "clamping" in capsys.readouterr().err
+    assert not lock.is_live(lease, NOW + timedelta(seconds=lock.MAX_TTL_SECONDS + 1))
+
+
+def test_the_token_reaches_disk_before_the_claim_reaches_r2(s3, tmp_path):
+    """A process that dies between the claim landing and the token being
+    written leaves a live lease nobody can release — up to six hours for a
+    backfill. The ordering is the fix, so pin the ordering."""
+    token_file = tmp_path / "collector.lock.token"
+    seen = {}
+    s3.on_put = lambda store: seen.update(
+        exists=token_file.exists(),
+        token=token_file.read_text() if token_file.exists() else None)
+
+    lock.main(["acquire", "--holder", "vm-collect-eod", "--settle", "0",
+               "--token-file", str(token_file)], s3=s3)
+
+    assert seen["exists"], "the claim landed before its token was on disk"
+    assert seen["token"] == _stored(s3)["token"]
+
+
+def test_a_retried_acquire_recognises_its_own_claim(s3, tmp_path, monkeypatch):
+    """A transient failure on the read-back must not leave the retry refusing
+    against the lease it just wrote — that pages 'leased elsewhere' naming
+    ourselves and wedges the lane for the whole TTL over a lease we own."""
+    calls = {"n": 0}
+    real = lock.read_lease
+
+    def flaky(store):
+        calls["n"] += 1
+        if calls["n"] == 2:                      # the read-back
+            raise RuntimeError("R2 reset the connection")
+        return real(store)
+
+    monkeypatch.setattr(lock, "read_lease", flaky)
+    monkeypatch.setattr(lock.time, "sleep", lambda s: None)
+    token_file = tmp_path / "t"
+
+    rc = lock.main(["acquire", "--holder", "vm-collect-eod", "--settle", "0",
+                    "--token-file", str(token_file)], s3=s3)
+
+    assert rc == 0, "the retry refused against its own claim"
+    assert real(s3)["token"] == token_file.read_text()
+
+
+# ----------------------------- CLI: recovery -------------------------------
+
+def test_cli_status_reports_who_holds_the_lane(s3, capsys):
+    """What the RUNBOOK tells the owner to run on a lane that looks stuck."""
+    assert lock.main(["status"], s3=s3) == 0
+    assert "free" in capsys.readouterr().out
+
+    _write_lease(s3, started_at=lock._iso(lock._now()))
+    assert lock.main(["status"], s3=s3) == 0
+    out = capsys.readouterr().out
+    assert "LEASED" in out and "vm-collect-eod" in out
+
+
+def test_cli_force_release_actually_forces(s3, capsys):
+    """The other half of the documented recovery. Without --force wired
+    through, this silently no-ops and the owner finds out mid-incident."""
+    _write_lease(s3, started_at=lock._iso(lock._now()), ttl_seconds=21000)
+    assert lock.main(["release", "--force"], s3=s3) == 0
+    assert not lock.is_live(lock.read_lease(s3))
+
+
+def test_cli_release_with_an_empty_token_file_frees_nothing(s3, tmp_path):
+    """An empty token file must not read as 'no token, so force it'."""
+    _write_lease(s3, started_at=lock._iso(lock._now()))
+    empty = tmp_path / "t"
+    empty.write_text("")
+    assert lock.main(["release", "--token-file", str(empty)], s3=s3) == 0
+    assert lock.is_live(lock.read_lease(s3))
 
 
 # --------------------- the VM chain honours the lease ----------------------
@@ -286,12 +414,19 @@ def _stage(tmp_path: Path) -> Path:
     return deploy
 
 
-def _run_chain(tmp_path: Path, acquire_rc: int = 0) -> dict:
-    """Drive collect-eod.sh against a stub `uv` that answers the lock CLI."""
+def _run_chain(tmp_path: Path, acquire_rc: int = 0,
+               failing: frozenset[str] = frozenset()) -> dict:
+    """Drive collect-eod.sh against a stub `uv` that answers the lock CLI.
+
+    `failing` names data steps that should exit non-zero, so the release can
+    be asserted on a RED chain — the case where keeping the lane would take
+    the 22:30 catch-up down with it.
+    """
     script = _stage(tmp_path) / "collect-eod.sh"
     calls, locks, pings = (tmp_path / n for n in ("calls.log", "locks.log", "pings.log"))
 
     stub = tmp_path / "uv"
+    fail_arm = f'  {"|".join(sorted(failing))}) exit 3 ;;\n' if failing else ""
     stub.write_text(
         "#!/usr/bin/env bash\n"
         'args=("$@")\n'
@@ -299,19 +434,23 @@ def _run_chain(tmp_path: Path, acquire_rc: int = 0) -> dict:
         '  case "${args[i]}" in\n'
         # the HEALTHCHECK_URL read-back, same shape as the real thing
         f'    -c) grep -E "^HEALTHCHECK_URL=" "{tmp_path}/.env" | cut -d= -f2-; exit 0 ;;\n'
-        '    -m) if [ "${args[i+1]:-}" = "lock" ]; then\n'
-        f'          echo "${{args[i+2]:-?}}" >> "{locks}"\n'
-        '          case "${args[i+2]:-}" in\n'
-        f'            acquire) exit {acquire_rc} ;;\n'
-        "            *) exit 0 ;;\n"
-        "          esac\n"
-        "        fi ;;\n"
+        # the lease is infrastructure, not a data step: answer it and get out
+        # before the chain-step recorder below ever sees it
+        '    lock.py)\n'
+        f'      echo "${{args[i+1]:-?}}" >> "{locks}"\n'
+        '      case "${args[i+1]:-}" in\n'
+        f'        acquire) exit {acquire_rc} ;;\n'
+        "        *) exit 0 ;;\n"
+        "      esac ;;\n"
         "  esac\n"
         "done\n"
         'script=""\n'
         'for a in "${args[@]}"; do case "$a" in *.py) script="$a" ;; esac; done\n'
         f'echo "$script" >> "{calls}"\n'
-        "exit 0\n"
+        'case "$script" in\n'
+        f"{fail_arm}"
+        "  *) exit 0 ;;\n"
+        "esac\n"
     )
     stub.chmod(0o755)
 
@@ -373,13 +512,65 @@ def test_a_broken_lock_pages_differently_from_a_busy_lane(tmp_path):
 def test_the_chain_releases_the_lease_even_when_a_step_fails(tmp_path):
     """The release rides an EXIT trap, not the happy path: a chain that fails
     and keeps the lane would take tonight's catch-up down with it."""
-    result = _run_chain(tmp_path)
-    sh = (DEPLOY / "collect-eod.sh").read_text()
-    assert "trap release_lease EXIT" in sh
-    # bash skips the EXIT trap on an untrapped signal, which is precisely the
-    # 2700s-wall case
-    assert re.search(r"^trap .*TERM INT$", sh, re.M)
-    assert result["lock"][-1] == "release"
+    result = _run_chain(tmp_path, failing=frozenset({"derive_ivs_signals.py"}))
+    assert result["rc"] != 0
+    assert result["lock"] == ["acquire", "release"]
+
+
+def test_the_chain_releases_the_lease_when_the_collector_itself_fails(tmp_path):
+    """The other shape: collect.py dies at step 1, the minute top-up is
+    skipped, the derivations still run — and the lane still comes back."""
+    result = _run_chain(tmp_path, failing=frozenset({"collect.py"}))
+    assert result["rc"] != 0
+    assert "alpaca.py" not in result["ran"]
+    assert result["lock"] == ["acquire", "release"]
+
+
+def test_the_chain_hands_the_lease_back_when_a_signal_kills_it(tmp_path):
+    """The systemd-wall case. Bash runs EXIT traps on an untrapped signal
+    only if a handler exists for it, so without the TERM trap the 2700s kill
+    — the one death most likely to leave a lease behind — would keep the lane
+    for the rest of the TTL. Asserted by sending the signal, not by grepping
+    for the trap line."""
+    script = _stage(tmp_path) / "collect-eod.sh"
+    locks = tmp_path / "locks.log"
+    stub = tmp_path / "uv"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'args=("$@")\n'
+        'for ((i=0; i<${#args[@]}; i++)); do\n'
+        '  case "${args[i]}" in\n'
+        f'    -c) echo "{HC_TEST_URL}"; exit 0 ;;\n'
+        f'    lock.py) echo "${{args[i+1]:-?}}" >> "{locks}"; exit 0 ;;\n'
+        # the first data step hangs, so the signal lands mid-chain
+        '    collect.py) sleep 30; exit 0 ;;\n'
+        "  esac\n"
+        "done\n"
+        "exit 0\n"
+    )
+    stub.chmod(0o755)
+    curl = tmp_path / "curl"
+    curl.write_text("#!/usr/bin/env bash\nexit 0\n")
+    curl.chmod(0o755)
+
+    proc = subprocess.Popen(
+        ["bash", str(script)],
+        env={**os.environ, "UV": str(stub), "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    deadline = time.time() + 10
+    while time.time() < deadline and not locks.exists():
+        time.sleep(0.05)
+    time.sleep(0.3)                       # let the chain reach the hanging step
+    # the whole process group, the way systemd's default KillMode does it —
+    # bash defers a trap while a foreground child runs, so signalling only
+    # the shell would just wait out the child
+    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    proc.wait(timeout=20)
+
+    assert locks.read_text().split() == ["acquire", "release"], \
+        "a signalled chain kept the lane"
 
 
 def test_the_vm_ttl_covers_the_units_own_wall(tmp_path):
@@ -408,13 +599,13 @@ def test_the_workflow_leases_the_lane_before_it_touches_the_account(workflow):
     names = [n for n, _ in steps]
     bodies = dict(steps)
 
-    acquire = next(i for i, (_, b) in enumerate(steps) if "-m lock acquire" in b)
+    acquire = next(i for i, (_, b) in enumerate(steps) if "lock.py acquire" in b)
     assert "id: lease" in steps[acquire][1]
     work = [i for i, (_, b) in enumerate(steps)
-            if "uv run python" in b and "-m lock" not in b]
+            if "uv run python" in b and "lock.py" not in b]
     assert work and min(work) > acquire, f"{workflow}: work runs before the lease"
 
-    release = next(n for n, b in steps if "-m lock release" in b)
+    release = next(n for n, b in steps if "lock.py release" in b)
     assert "if: always()" in bodies[release], f"{workflow}: a cancelled job keeps the lane"
     assert names[-1] == release, f"{workflow}: release must be the last step"
 
@@ -425,7 +616,7 @@ def test_no_always_step_outruns_a_refused_lease(workflow):
     when the failure IS the refusal. Ungated, every derivation would still
     write the lake the holder is writing, which is the overlap this prevents."""
     for name, body in _steps((WORKFLOWS / workflow).read_text()):
-        if "-m lock release" in body:
+        if "lock.py release" in body:
             continue
         # only real conditions, never the prose in a comment above one
         for cond in re.findall(r"^\s+if: (.+)$", body, re.M):
@@ -449,6 +640,98 @@ def test_the_backfill_ttl_tracks_the_budget_it_was_given():
     assert re.search(r"--ttl \"\$\(\( \(MAX_MINUTES \+ \d+\) \* 60 \)\)\"", text)
     assert re.search(r"case \"\$MAX_MINUTES\" in ''\|\*\[!0-9\]\*\)", text), \
         "max_minutes is free text from a dispatch form — validate before arithmetic"
+    clamp = re.search(r'if \[ "\$MAX_MINUTES" -gt (\d+) \]; then MAX_MINUTES=(\d+)', text)
+    assert clamp and clamp.group(1) == clamp.group(2), \
+        "digits-only is not enough: 99999 is digits and mints a two-year lease"
+    wall = int(re.search(r"^\s*timeout-minutes: (\d+)$", text, re.M).group(1))
+    assert int(clamp.group(1)) <= wall
+
+
+def _lock_argv(text: str) -> list[list[str]]:
+    """Every `python lock.py …` invocation in a caller, as argv.
+
+    Shell variables are substituted with a plausible value: what is under
+    test is the FLAGS, and `--ttl "$(( … ))"` must survive as a number.
+    """
+    joined = text.replace("\\\n", " ")             # shell line continuations
+    joined = re.sub(r"\n\s+(--)", r" \1", joined)  # YAML `run: >` folded lines
+    invocations = []
+    for line in joined.splitlines():
+        m = re.search(r"python lock\.py (.+)", line)
+        if not m:
+            continue
+        # whatever the caller computes the TTL from ("$LOCK_TTL", "$(( … ))"),
+        # the parser must see an int — the flag is what is under test
+        raw = re.sub(r'(--ttl\s+)("[^"]*"|\S+)', r"\g<1>3000", m.group(1))
+        raw = re.sub(r'"[^"]*\$\{?\w+\}?[^"]*"', "substituted", raw)  # "$HOLDER", "$X/y"
+        raw = re.sub(r"\s*(\|\||&&|;|2>&1).*$", "", raw)              # shell tails
+        invocations.append(raw.split())
+    return invocations
+
+
+@pytest.mark.parametrize("caller", [
+    DEPLOY / "collect-eod.sh",
+    WORKFLOWS / "collect-eod.yml",
+    WORKFLOWS / "alpaca-backfill.yml",
+])
+def test_every_caller_speaks_the_cli_the_module_actually_implements(caller):
+    """A renamed flag in a caller is otherwise a green suite and a chain that
+    will not start tonight: the chain tests stub `uv` wholesale so they never
+    see the flags, and the CLI tests build their own argv. This runs the REAL
+    argv through the REAL parser."""
+    invocations = _lock_argv(caller.read_text())
+    assert len(invocations) == 2, f"{caller.name}: expected acquire + release, got {invocations}"
+    # a set, not a sequence: collect-eod.sh defines release_lease() above the
+    # acquire it guards, so file order is not call order
+    assert {inv[0] for inv in invocations} == {"acquire", "release"}
+    for argv in invocations:
+        lock.build_parser().parse_args(argv)   # SystemExit on an unknown flag
+
+
+def test_no_caller_disables_the_settle_window():
+    """settle=0 makes acquire a bare read-then-write, which is the race the
+    read-back exists to resolve. Every test passes 0 for speed, so nothing
+    else would notice a production caller doing the same."""
+    assert lock.SETTLE_SECONDS >= 1
+    for caller in (DEPLOY / "collect-eod.sh", WORKFLOWS / "collect-eod.yml",
+                   WORKFLOWS / "alpaca-backfill.yml"):
+        assert "--settle" not in caller.read_text(), caller.name
+
+
+def test_acquire_waits_for_the_settle_window_before_reading_back(s3, monkeypatch):
+    """The one thing that makes two near-simultaneous claims resolve to a
+    single winner against a real R2 round trip."""
+    slept: list[float] = []
+    order: list[str] = []
+    monkeypatch.setattr(lock.time, "sleep", lambda s: (slept.append(s), order.append("slept")))
+    real_put, real_read = lock.r2_put_json, lock.read_lease
+    monkeypatch.setattr(lock, "r2_put_json",
+                        lambda *a, **k: (order.append("put"), real_put(*a, **k))[1])
+    monkeypatch.setattr(lock, "read_lease",
+                        lambda *a, **k: (order.append("read"), real_read(*a, **k))[1])
+
+    lock.acquire(s3, "vm-collect-eod", now=NOW)   # default settle
+
+    assert slept == [lock.SETTLE_SECONDS]
+    assert order == ["read", "put", "slept", "read"]
+
+
+def test_the_ttl_clears_the_catch_up_slot_it_must_not_swallow():
+    """The comment on DEFAULT_TTL_SECONDS claims a hard-killed 21:30 holder
+    frees the lane before the 22:30 catch-up. That is a property of the gap
+    between the timer's two slots, not of TimeoutStartSec — they agree today
+    by five minutes, and nothing else would notice them diverging."""
+    slots = re.findall(r"^OnCalendar=.*?(\d{2}):(\d{2}):00 UTC$",
+                       (DEPLOY / "skeptic-collect-eod.timer").read_text(), re.M)
+    assert len(slots) == 2, slots
+    (h1, m1), (h2, m2) = ((int(h), int(m)) for h, m in slots)
+    gap = (h2 * 60 + m2 - h1 * 60 - m1) * 60
+    ttl = int(re.search(r'LOCK_TTL="\$\{SKEPTIC_LOCK_TTL:-(\d+)\}"',
+                        (DEPLOY / "collect-eod.sh").read_text()).group(1))
+    assert ttl < gap, (
+        f"a hard-killed 21:30 chain holds the lane for {ttl}s, past the "
+        f"catch-up {gap}s later — the catch-up would refuse over a dead holder")
+    assert lock.DEFAULT_TTL_SECONDS == ttl
 
 
 def test_the_advisory_comment_is_gone_from_the_backfill_workflow():

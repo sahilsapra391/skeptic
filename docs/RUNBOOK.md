@@ -89,7 +89,7 @@ Frontend (Vercel project, root `frontend/`):
   shared 200 req/min Alpaca budget, so a dispatch and the VM chain can no
   longer collide — whichever is second refuses, naming the first. If a lane
   looks stuck, `cd /opt/skeptic/collector && uv run --env-file .env python -m
-  lock status` says who holds it and for how long; `python -m lock release
+  lock status` says who holds it and for how long; `python lock.py release
   --force` takes it back when that holder is known dead. Every lease also
   self-expires (the chain's is 3000s), so a wedge is bounded, never overnight.
   Full design: `collector/deploy/README.md` → "The cross-host lock".

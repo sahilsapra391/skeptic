@@ -8,8 +8,16 @@ name: alpaca-backfill
 # R2 lease (collector/lock.py) is what keeps the two hosts apart: this job
 # takes it before the first Alpaca call and refuses to start while the VM's
 # EOD chain holds it, rather than splitting the shared 200 req/min budget and
-# leaving both sides to crawl. Dispatching inside 21:00–24:00 UTC (Mon–Fri)
-# is now safe — it just fails fast, naming the holder, instead of overlapping.
+# leaving both sides to crawl.
+#
+# The lease stops the overlap; it does not decide who wins. It is held for
+# the whole run, so a long backfill STARTED before 21:30 UTC still owns the
+# lane through the EOD window and the nightly chain refuses instead of
+# crawling. That is louder (red tile, named holder) but it collects nothing,
+# and the chain is the lane that matters — this one is resumable by design.
+# So: size `max_minutes` to finish before ~21:25 UTC, or dispatch after the
+# night's Healthchecks tile goes green. Starting one INSIDE the window is now
+# safe and cheap: it fails fast naming the holder instead of overlapping.
 
 on:
   workflow_dispatch:
@@ -61,8 +69,12 @@ jobs:
           MAX_MINUTES: ${{ inputs.max_minutes }}
         run: |
           # Read through the environment and validate: this input is free text.
+          # The upper clamp is the job's own wall — a typo of 3300 for 330
+          # would otherwise mint a 55-hour lease and refuse every nightly
+          # chain until someone ran `release --force`.
           case "$MAX_MINUTES" in ''|*[!0-9]*) MAX_MINUTES=330 ;; esac
-          uv run python -m lock acquire \
+          if [ "$MAX_MINUTES" -gt 350 ]; then MAX_MINUTES=350; fi
+          uv run python lock.py acquire \
             --holder "$HOLDER" --ttl "$(( (MAX_MINUTES + 20) * 60 ))" \
             --token-file "$RUNNER_TEMP/collector.lock.token"
 
@@ -103,4 +115,4 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           [ -f "$RUNNER_TEMP/collector.lock.token" ] || exit 0
-          uv run python -m lock release --token-file "$RUNNER_TEMP/collector.lock.token"
+          uv run python lock.py release --token-file "$RUNNER_TEMP/collector.lock.token"

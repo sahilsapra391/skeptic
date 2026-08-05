@@ -64,7 +64,7 @@ jobs:
         # runner that dies without releasing frees the lane before the VM's
         # 22:30 catch-up rather than wedging the night.
         run: >
-          uv run python -m lock acquire
+          uv run python lock.py acquire
           --holder "$HOLDER" --ttl 3000
           --token-file "$RUNNER_TEMP/collector.lock.token"
 
@@ -202,4 +202,4 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           [ -f "$RUNNER_TEMP/collector.lock.token" ] || exit 0
-          uv run python -m lock release --token-file "$RUNNER_TEMP/collector.lock.token"
+          uv run python lock.py release --token-file "$RUNNER_TEMP/collector.lock.token"

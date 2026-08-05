@@ -86,11 +86,17 @@ echo "===== $(date -u +%FT%TZ) collect-eod start ====="
 # sides just crawl, and this one has a 45-min wall to crawl into. lock.py is
 # the mutex both hosts honour.
 #
-# `python -m lock`, not `lock.py`: the chain's drift guard reads every `*.py`
-# handed to uv as a chain step, and the lease is not a step.
+# It is NOT a `step`: the lease is infrastructure, so it stays out of the
+# chain's workflow-parity guard (which reads what `step` runs).
 LOCK_TTL="${SKEPTIC_LOCK_TTL:-3000}"   # the unit's 2700s wall + 5 min margin
 LOCK_TOKEN_FILE=$(mktemp "${TMPDIR:-/tmp}/skeptic-collector-lock.XXXXXX") || {
+    # Pages on the way out: hc-fail.sh skips SERVICE_RESULT=exit-code on the
+    # assumption the script already reported for itself, so exiting here
+    # without a ping would be a SILENT stop — the one shape this chain must
+    # never have. (mktemp failing means a full disk, which on a 1 GB box with
+    # an append-only log is the realistic version of this.)
     echo "!! mktemp for the lease token failed — not starting the chain"
+    ping_fail "collect-eod did not start: could not create the lease token file (disk full?)"
     exit 1
 }
 lease_held=0
@@ -98,20 +104,28 @@ lease_held=0
 release_lease() {
     [ "$lease_held" -eq 1 ] || { rm -f "$LOCK_TOKEN_FILE"; return 0; }
     lease_held=0
-    "$UV" run --env-file .env python -m lock release --token-file "$LOCK_TOKEN_FILE" \
+    "$UV" run --env-file .env python lock.py release --token-file "$LOCK_TOKEN_FILE" \
         || echo "!! releasing the lease failed — the lane stays locked for up to ${LOCK_TTL}s"
     rm -f "$LOCK_TOKEN_FILE"
 }
 trap release_lease EXIT
-# Bash exits on an untrapped signal WITHOUT running the EXIT trap, and the
-# signal path (systemd's wall, a reboot) is exactly when the lease most needs
-# handing back. `exit` inside this handler runs the EXIT trap.
+# The EXIT trap above is what actually hands the lease back on the signal
+# path too: bash runs exit traps before re-raising a fatal signal (verified —
+# an untrapped SIGTERM still fires them). This one is for the JOURNAL. Without
+# it the 45-min wall kills the chain with no line saying so, and "collect-eod
+# start" with no matching "done" is a worse thing to read at 3 AM than one
+# that says it was signalled. It also pins the status at 143 rather than
+# leaving it to the re-raise.
 trap 'echo "!! collect-eod terminated by a signal"; exit 143' TERM INT
 
 acq=0
-"$UV" run --env-file .env python -m lock acquire \
+# Captured, not streamed, so the holder's identity can ride the ping body —
+# a tile that says only "leased elsewhere" costs an SSH at 3 AM. Echoed back
+# immediately so the journal still has everything.
+acq_out=$("$UV" run --env-file .env python lock.py acquire \
     --holder "vm-collect-eod" --ttl "$LOCK_TTL" \
-    --token-file "$LOCK_TOKEN_FILE" || acq=$?
+    --token-file "$LOCK_TOKEN_FILE" 2>&1) || acq=$?
+echo "${acq_out}"
 if [ "$acq" -ne 0 ]; then
     # Loud on purpose. A night the chain never ran has to look exactly like a
     # night it ran and failed — the Jul 27-31 outage was invisible precisely
@@ -122,7 +136,8 @@ if [ "$acq" -ne 0 ]; then
     # bad credentials), which is a different page and a different fix — the
     # tile body is all the owner gets at 21:30, so it has to say which.
     if [ "$acq" -eq 75 ]; then
-        reason="the collector lane is leased elsewhere (see the log for the holder)"
+        holder=$(printf '%s\n' "${acq_out}" | grep -m1 "REFUSING" || true)
+        reason="the collector lane is leased elsewhere — ${holder:-holder unknown, see the journal}"
     else
         reason="the lease could not be read or written (rc=${acq})"
     fi

@@ -216,15 +216,29 @@ Three things worth knowing:
   a renewer that starved would drop the lease *under* a live holder and hand
   the lane away silently, which is worse than the bounded wait it saves.
 - **Wedged lane?** `cd /opt/skeptic/collector && uv run --env-file .env
-  python -m lock status` shows who holds it and for how much longer;
-  `python -m lock release --force` takes it back when you know that holder is
+  python lock.py status` shows who holds it and for how much longer;
+  `python lock.py release --force` takes it back when you know that holder is
   dead. Neither needs the VM — any checkout with R2 credentials will do.
 - **An unreadable lease counts as free.** Fail-open is deliberate: a corrupt
   object that stopped collection every night until someone read a journal
   would be a worse outage than the overlap the lock prevents.
 
-Dispatching a backfill inside 21:00–24:00 UTC is now safe. It fails fast,
-naming the holder, instead of quietly halving the night's throughput.
+- **The lock stops the overlap; it does not decide who wins.** A lease is
+  held for the holder's whole run, so a backfill *started* at 18:00 with a
+  5-hour budget still owns the lane at 21:30 and the nightly chain refuses.
+  That trades "both crawl" for "the chain collects nothing", which is the
+  wrong way round — the chain is the lane that matters and the backfill is
+  resumable by design. Nothing in the code can tell those two apart at
+  21:30, so it is a scheduling rule, not a lock feature: size `max_minutes`
+  to land before ~21:25 UTC, or dispatch after the night's tile goes green.
+  (Both nightly slots refuse independently, so a blocked 21:30 still gets a
+  fresh attempt at 22:30.)
+
+Dispatching a backfill *inside* 21:00–24:00 UTC is now safe: it fails fast,
+naming the holder, instead of quietly halving the night's throughput. And a
+refusal at 22:30 turns the tile red even when the 21:30 chain already banked
+the night — that is deliberate. It is a real event worth reading, not a false
+alarm, and the body says which.
 
 Remaining known gaps (owner decisions, deliberately not half-wired here):
 
