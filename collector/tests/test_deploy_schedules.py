@@ -251,7 +251,16 @@ def _run_chain(
         capture_output=True,
         text=True,
     )
-    ran = calls.read_text().split() if calls.exists() else []
+    invoked = calls.read_text().split() if calls.exists() else []
+    # Only the DATA steps carry the workflow-parity meaning asserted below.
+    # The chain may also invoke infrastructure scripts that the workflow never
+    # had — a cross-host lock acquire/release around the chain is the live
+    # example — and those must not have to be bolted onto EXPECTED_CHAIN,
+    # which is defined as "the exact order collect-eod.yml ran these in".
+    # Ordering/skip/truncation regressions in the data steps still fail here;
+    # a step added to or dropped from the chain SOURCE is caught by
+    # test_collect_eod_chain_matches_the_workflow_it_replaced.
+    ran = [s for s in invoked if s in set(EXPECTED_CHAIN)]
     pinged = pings.read_text().splitlines() if pings.exists() else []
     return proc.returncode, ran, pinged
 
@@ -399,3 +408,55 @@ def test_hc_fail_hook_is_a_noop_without_a_configured_url(tmp_path: Path) -> None
     """The per-lane vars are optional; an unset one must log, never crash the
     unit's stop path."""
     assert _run_hc_fail(tmp_path, "timeout", url="") == []
+
+
+def test_infrastructure_calls_do_not_disturb_the_chain_assertions(
+    tmp_path: Path,
+) -> None:
+    """The chain may need to invoke scripts the replaced workflow never had —
+    a cross-host lock acquire/release wrapping the run is the live example.
+    Those are infrastructure, not data steps, so they must NOT be forced into
+    EXPECTED_CHAIN (defined as the workflow's own order) just to keep the
+    runtime tests passing. This pins that: an injected lock call around the
+    chain leaves every ordering assertion intact.
+    """
+    deploy = _stage_deploy(tmp_path)
+    script = deploy / "collect-eod.sh"
+    body = script.read_text()
+    # wrap the chain the way a lock would: acquire before, release after
+    body = body.replace(
+        '\nstep "collector (collect.py --mode all)" collect.py --mode all',
+        '\n"$UV" run --env-file .env python lock.py acquire\n'
+        'step "collector (collect.py --mode all)" collect.py --mode all',
+        1,
+    )
+    body += '\n"$UV" run --env-file .env python lock.py release\n'
+    script.write_text(body)
+
+    calls = tmp_path / "calls.log"
+    stub = tmp_path / "uv"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'for a in "$@"; do [ "$a" = "-c" ] && { '
+        f'grep -E "^HEALTHCHECK_URL=" "{tmp_path}/.env" | cut -d= -f2-; exit 0; }}\n'
+        "done\n"
+        'script=""\n'
+        'for a in "$@"; do case "$a" in *.py) script="$a" ;; esac; done\n'
+        f'echo "$script" >> "{calls}"\nexit 0\n'
+    )
+    stub.chmod(0o755)
+    curl_stub = tmp_path / "curl"
+    curl_stub.write_text("#!/usr/bin/env bash\nexit 0\n")
+    curl_stub.chmod(0o755)
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        env={**os.environ, "UV": str(stub), "PATH": f"{tmp_path}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    invoked = calls.read_text().split()
+    assert proc.returncode == 0
+    assert "lock.py" in invoked, "the injected infrastructure call should have run"
+    # ...and the data chain still reads exactly as the workflow ordered it
+    assert [s for s in invoked if s in set(EXPECTED_CHAIN)] == EXPECTED_CHAIN
