@@ -1,0 +1,18 @@
+[Unit]
+Description=Skeptic nightly unlock scan (Tue-Sat 07:00 UTC, off-peak after the collectors)
+
+[Timer]
+# Same slot the GitHub cron used ("0 7 * * 2-6") = 02:00-03:00 ET, after the
+# nightly collectors and the coverage ledger.
+#
+# Only the SCAN moved here. The Saturday calibration + priorities pass stays on
+# GitHub Actions (now "30 7 * * 6") because it opens a proposal PR, and that
+# needs repo write — this VM's deploy key is read-only by deliberate design.
+# The 30-minute offset preserves the workflow's original scan-then-weekly order
+# across the two hosts on Saturdays.
+OnCalendar=Tue-Sat *-*-* 07:00:00 UTC
+# Safe to replay: the scan is idempotent and its re-runs are capped per night.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

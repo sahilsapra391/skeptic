@@ -69,6 +69,13 @@ echo "updating ${before:0:9} -> ${after:0:9}"
 git -C "$DEST" merge --ff-only "$after"   # non-ff (drift/force-push) = loud failure
 chown -R skeptic "$DEST"
 sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync
+# backend/ deps too: the improve scan imports app.* from $DEST/backend, and
+# bootstrap.sh only syncs it once at provision. Without this, the first
+# backend dependency change that lands via a nightly pull makes the 07:00
+# improve timer pay for a cold `uv sync` inside its own TimeoutStartSec —
+# the most OOM-prone operation on this 1 GB box. Pay it here instead, at
+# 3 AM ET with the session guard already passed and swap available.
+(cd "$DEST/backend" && sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync)
 
 # Units may have changed in the pull; reinstall them ALL — by glob, because
 # the hand-listed version silently skipped units added after it was written

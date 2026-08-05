@@ -6,8 +6,9 @@ strategy-spec.schema.json. Product context: the PRD and PoC in docs/.*
 
 ```
                     ┌─────────────────────────────────────────┐
-                    │  GitHub Actions (cron)                  │
-                    │  collect-eod.yml  backfill-drip.yml     │
+                    │  Collector VM (systemd timers)          │
+                    │  collect-eod.sh · intraday recorder     │
+                    │  (GH Actions = dispatch-only fallback)  │
                     └──────────────┬──────────────────────────┘
                                    │ Parquet writes
                                    ▼

@@ -1,0 +1,18 @@
+[Unit]
+Description=Skeptic weekly data-quality scan (missing sessions, null quotes, crossed markets)
+Documentation=https://github.com/sahilsapra391/skeptic/blob/main/docs/DATA-PIPELINE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=skeptic
+Environment=HOME=/home/skeptic
+WorkingDirectory=/opt/skeptic/collector
+# --mode quality deliberately does NOT ping Healthchecks (collect.py pings only
+# for eod/backfill/all), so this job stays outside the EOD tile's scope, exactly
+# as it was on Actions. Its findings surface via /api/data/coverage.
+ExecStart=/usr/local/bin/uv run --env-file .env python collect.py --mode quality
+TimeoutStartSec=1200
+StandardOutput=append:/var/log/skeptic/quality.log
+StandardError=append:/var/log/skeptic/quality.log

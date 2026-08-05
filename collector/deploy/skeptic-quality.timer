@@ -1,0 +1,12 @@
+[Unit]
+Description=Skeptic weekly data-quality scan (Saturday 13:00 UTC, after the week's collection)
+
+[Timer]
+# Same slot the GitHub cron used ("0 13 * * 6").
+OnCalendar=Sat *-*-* 13:00:00 UTC
+# Safe to replay here, unlike collect-eod: the quality scan only reads the lake
+# and reports, so a boot-time catch-up at an odd hour cannot write bad data.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

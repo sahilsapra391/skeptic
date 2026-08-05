@@ -1,0 +1,23 @@
+[Unit]
+Description=Skeptic nightly unlock scan (ENGINE-V3 D3, capped auto re-runs)
+Documentation=https://github.com/sahilsapra391/skeptic/blob/main/backend/scripts/nightly_improve.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=skeptic
+Environment=HOME=/home/skeptic
+# nightly_improve.py imports `app.*` from the backend package root, which the
+# workflow supplied as PYTHONPATH=. from working-directory: backend.
+Environment=PYTHONPATH=/opt/skeptic/backend
+WorkingDirectory=/opt/skeptic/backend
+# backend/ has its own venv and no .env of its own. app.config.load_local_env()
+# would find collector/.env on its own, but pass it explicitly so the unit does
+# not depend on that fallback staying put.
+ExecStart=/usr/local/bin/uv run --env-file /opt/skeptic/collector/.env python scripts/nightly_improve.py --execute
+# The scan only DECIDES what to re-run; the Railway backend executes via
+# POST /api/backtest. Re-runs are capped in the script, so this stays short.
+TimeoutStartSec=1200
+StandardOutput=append:/var/log/skeptic/improve.log
+StandardError=append:/var/log/skeptic/improve.log

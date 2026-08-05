@@ -1,9 +1,16 @@
 name: collect-eod
 
+# Scheduling moved to the collector VM on 2026-08-04 (systemd
+# skeptic-collect-eod.timer holds the same 21:30 + 22:30 UTC slots, so the
+# Healthchecks check is unchanged). Private-repo Actions minutes bill against
+# the account, and a billing block refused to start this job outright: both
+# scheduled runs died in under 5s, before collect.py could ping success OR
+# /fail, and only the silent Healthchecks tile caught it.
+#
+# This stays as the manual fallback for when the VM is down. It costs nothing
+# while idle. Do NOT re-add a cron here without first disabling the VM timer,
+# or both hosts run the chain against the same lake.
 on:
-  schedule:
-    - cron: "30 21 * * 1-5" # main nightly run, ~4:30-5:30pm ET across DST
-    - cron: "30 22 * * 1-5" # catch-up; no-ops if the day's record already exists
   workflow_dispatch:
     inputs:
       mode:

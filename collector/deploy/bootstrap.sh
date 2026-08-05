@@ -55,9 +55,19 @@ else
 fi
 chown -R "$SVC_USER" "$DEST"
 
-echo "== python env =="
+echo "== python env (collector) =="
 cd "$DEST/collector"
 sudo -u "$SVC_USER" env HOME=/home/"$SVC_USER" /usr/local/bin/uv sync
+
+# The nightly unlock scan runs out of backend/ and imports app.db (sqlalchemy +
+# psycopg2), which the collector venv does not carry. Sync it here so the timer
+# never pays for a first-run resolve inside its own TimeoutStartSec. On the 1 GB
+# E2.1.Micro this is the step most likely to OOM — the 2 GB swapfile from the
+# Provision section above is what makes it fit.
+echo "== python env (backend) =="
+cd "$DEST/backend"
+sudo -u "$SVC_USER" env HOME=/home/"$SVC_USER" /usr/local/bin/uv sync
+cd "$DEST/collector"
 
 # .env is supplied out of band and NEVER committed. It carries R2_* and the
 # vendor keys, plus optional ALERT_WEBHOOK for the heartbeat page.
@@ -75,19 +85,24 @@ chown "$SVC_USER" "$DEST/collector/.env"
 chmod 600 "$DEST/collector/.env"
 
 echo "== systemd units =="
-install -m644 deploy/skeptic-intraday.service /etc/systemd/system/
-install -m644 deploy/skeptic-heartbeat.service /etc/systemd/system/
-install -m644 deploy/skeptic-heartbeat.timer   /etc/systemd/system/
-install -m644 deploy/skeptic-autoupdate.service /etc/systemd/system/
-install -m644 deploy/skeptic-autoupdate.timer   /etc/systemd/system/
-install -m644 deploy/skeptic-keepwarm.service /etc/systemd/system/
-install -m644 deploy/skeptic-keepwarm.timer   /etc/systemd/system/
-chmod +x deploy/autoupdate.sh
+# Install by GLOB, matching autoupdate.sh. The hand-listed version there
+# silently skipped skeptic-keepwarm when it landed in #109, and this list was
+# drifting the same way as the collect-eod/quality/improve units arrived.
+# Enabling stays explicit below: a unit deliberately disabled must not come
+# back just because someone re-ran bootstrap.
+install -m644 deploy/skeptic-*.service /etc/systemd/system/
+install -m644 deploy/skeptic-*.timer   /etc/systemd/system/
+chmod +x deploy/autoupdate.sh deploy/collect-eod.sh
 systemctl daemon-reload
 systemctl enable --now skeptic-intraday.service
 systemctl enable --now skeptic-heartbeat.timer
 systemctl enable --now skeptic-autoupdate.timer
 systemctl enable --now skeptic-keepwarm.timer
+# Scheduled collection moved off GitHub Actions 2026-08-04 (billing block took
+# the EOD job down silently). See "Scheduled jobs" in README.md.
+systemctl enable --now skeptic-collect-eod.timer
+systemctl enable --now skeptic-quality.timer
+systemctl enable --now skeptic-improve.timer
 
 echo
 echo "== recorder status =="

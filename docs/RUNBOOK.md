@@ -60,19 +60,35 @@ Frontend (Vercel project, root `frontend/`):
 
 ## Collector operations
 
-- Nightly EOD: `.github/workflows/collect-eod.yml` (cron + catch-up +
-  `workflow_dispatch` for manual runs). Backfill drip: `backfill-drip.yml`.
-- Healthchecks.io tiles ping on success — a silent tile means the workflow
-  didn't complete; check the Actions log first.
-- Re-run a missed night: Actions → collect-eod → Run workflow (defaults are
-  correct; the frontier state in R2 makes it idempotent).
+- Nightly EOD: `skeptic-collect-eod.timer` on the collector VM (21:30 UTC +
+  22:30 UTC catch-up, Mon–Fri), running `collector/deploy/collect-eod.sh`.
+  Moved off Actions 2026-08-04; `collect-eod.yml` still exists but is
+  `workflow_dispatch`-only, the fallback for when the VM itself is down.
+- Healthchecks.io tiles ping on success — a silent tile means the run didn't
+  complete. Check the VM first now, not the Actions log:
+  ```
+  systemctl list-timers "skeptic-*"
+  journalctl -u skeptic-collect-eod -n 200
+  tail -100 /var/log/skeptic/collect-eod.log
+  ```
+  A tile that goes quiet with **no** `/fail` ping means `collect.py` never ran
+  at all (timer disabled, VM down, unit failed to start) rather than that the
+  run errored — `collect.py` pings `/fail` itself on any error it survives to
+  see. That silent shape is what the 2026-07-27 Actions billing block looked
+  like, and it is why the tile is the load-bearing alarm.
+- Re-run a missed night: `sudo systemctl start skeptic-collect-eod.service`
+  (the frontier state in R2 makes it idempotent). If the VM is the problem,
+  Actions → collect-eod → Run workflow still works.
 - Quality flags: `/api/data/coverage` (or the Data Observatory page) shows
   per-source ranges, quarantines and blind spots. DoltHub quarantine list
   lives in `collector/state/dolthub_backfill.json` (flag-and-exclude —
   objects are never deleted).
-- The intraday minute recorder is a launchd agent on the owner's Mac
-  (`com.skeptic.intraday`), log at `~/Library/Logs/skeptic-intraday.log`.
-  It is independent of the production deploy.
+- The intraday minute recorder runs on the same collector VM
+  (`skeptic-intraday.service`, `Restart=always`), log at
+  `/var/log/skeptic/intraday.log`. It is independent of the production
+  deploy — and of GitHub entirely, which is why it sailed through the
+  Jul 27–31 Actions billing block. (The old Mac launchd agent was retired
+  2026-07-14; its plist is archived in `collector/deploy/retired/`.)
 
 ## Neon (runs DB)
 
