@@ -44,6 +44,30 @@ jobs:
       - name: Install uv
         run: pip install uv
 
+      # The `concurrency` group above only serializes this against OTHER
+      # Actions runs. The nightly chain runs on the collector VM now, so the
+      # lease in R2 is the only thing standing between a dispatch and a
+      # head-on collision with it over one 200 req/min Alpaca budget.
+      # Everything below is gated on this step succeeding — including the
+      # `always()` derivations, which would otherwise run anyway and write the
+      # same lake the holder is writing.
+      - name: Acquire the collector lease (cross-host mutex)
+        id: lease
+        working-directory: collector
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          HOLDER: github-actions/${{ github.workflow }}#${{ github.run_id }}
+        # --ttl covers this job's own 45-min wall (2700s) plus margin, so a
+        # runner that dies without releasing frees the lane before the VM's
+        # 22:30 catch-up rather than wedging the night.
+        run: >
+          uv run python -m lock acquire
+          --holder "$HOLDER" --ttl 3000
+          --token-file "$RUNNER_TEMP/collector.lock.token"
+
       - name: Run collector
         working-directory: collector
         env:
@@ -75,7 +99,7 @@ jobs:
         run: uv run python alpaca.py --mode eod
 
       - name: Coverage report
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -85,7 +109,7 @@ jobs:
         run: uv run python coverage.py
 
       - name: CBOE close chain derivation (forward record — incremental)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -95,7 +119,7 @@ jobs:
         run: uv run python derive_cboe_eod.py
 
       - name: In-house signal derivation (forward record — incremental)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -105,7 +129,7 @@ jobs:
         run: uv run python derive_inhouse_signals.py
 
       - name: IVS signal derivation (ENGINE-V4 F4 — incremental)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -115,7 +139,7 @@ jobs:
         run: uv run python derive_ivs_signals.py
 
       - name: Flow signal derivation (ENGINE-V4 F2/F3 — incremental)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -125,7 +149,7 @@ jobs:
         run: uv run python derive_flow_signals.py
 
       - name: In-house flow family (forward record — incremental)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -135,7 +159,7 @@ jobs:
         run: uv run python derive_flow_inhouse.py
 
       - name: Cross-source validation (ENGINE-V4 F7 — incremental)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -145,7 +169,7 @@ jobs:
         run: uv run python derive_cross_validation.py
 
       - name: Fill-model calibration (D3d — no-op once the frozen tape is derived)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -155,7 +179,7 @@ jobs:
         run: uv run python derive_fill_calibration.py
 
       - name: Coverage ledger (ENGINE-V3 D3, data-arrival hook)
-        if: always()
+        if: ${{ always() && steps.lease.outcome == 'success' }}
         working-directory: collector
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -163,3 +187,19 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: uv run python ledger.py
+
+      # Unconditional: a cancelled or timed-out job must hand the lane back
+      # too, or the VM's chain refuses to start tonight. No token file means
+      # the lease was never taken (we refused, or died before it) — nothing
+      # to release, and nothing to say about it.
+      - name: Release the collector lease
+        if: always()
+        working-directory: collector
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          [ -f "$RUNNER_TEMP/collector.lock.token" ] || exit 0
+          uv run python -m lock release --token-file "$RUNNER_TEMP/collector.lock.token"
