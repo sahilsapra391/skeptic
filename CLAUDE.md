@@ -60,6 +60,27 @@ class of bug in this codebase.
 6. **Data coverage is honest.** Any surface that shows results also shows the
    data window they were computed on.
 
+## README currency (owner directive 2026-08-05, non-negotiable)
+
+The README is public and is how the project is judged. **Every major change to
+the application ships with the README update in the SAME change.** Not a
+follow-up, not a TODO.
+
+A change is "major" if it alters any of: what the app does, a guardrail it
+promises, the architecture or data flow, a data source, the honesty/gauntlet
+stages, the API surface, or how the system is operated and monitored. Refactors
+with no behavioural difference, test-only work, typos, and dependency bumps are
+not major.
+
+When it is major, update the affected README sections AND any Mermaid diagram
+the change contradicts. A diagram that no longer matches the code is worse than
+no diagram.
+
+This is enforced, not remembered: `.claude/hooks/readme-currency.sh` runs as a
+PreToolUse hook on `git commit` and escalates to a user prompt when application
+surface is staged without `README.md`. Do not work around it by staging the
+README with a cosmetic edit.
+
 ## Engineering conventions
 
 - Python: uv, ruff, mypy (strict on `engine/` and `honesty/`), pydantic v2
