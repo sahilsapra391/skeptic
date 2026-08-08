@@ -9,6 +9,11 @@ import clsx from "clsx";
  * copy-deck §6 incl. the OWNER OVERRIDE (Jul 16): "not enough evidence"
  * REFUNDS the credit. Primary CTA anchors back to the live composer
  * (#composer lives on the hero's composer block).
+ *
+ * Owner 2026-08-08: the $10 pack isn't built, so its cell wears a COMING
+ * SOON strip and drops to panel-deep. Neutral ink only. The trust hue is
+ * the verdict family and never advertises an unshipped feature, and `warn`
+ * would read as a fault. Drop `comingSoon` when the pack ships.
  */
 
 type PriceRow = {
@@ -19,6 +24,8 @@ type PriceRow = {
   sub: string;
   /* 2b single-line form */
   mobile: string;
+  /* not purchasable yet: dims the cell and adds the COMING SOON strip */
+  comingSoon?: boolean;
 };
 
 const ROWS: PriceRow[] = [
@@ -41,6 +48,7 @@ const ROWS: PriceRow[] = [
     main: "one-time, fifty more",
     sub: "no subscription, no tiers",
     mobile: "one-time — no subscription, no tiers",
+    comingSoon: true,
   },
 ];
 
@@ -65,20 +73,55 @@ export function Pricing() {
             <div
               key={row.value}
               className={clsx(
-                "flex items-baseline gap-3.5 px-5 py-[18px] md:block md:px-7 md:py-[26px]",
                 i > 0 && "border-t border-line-softer md:border-l md:border-t-0",
+                row.comingSoon && "bg-panel-deep",
               )}
             >
-              <span className="min-w-[86px] shrink-0 whitespace-nowrap font-mono text-[24px] font-semibold md:block md:min-w-0 md:text-[30px]">
-                {row.value}
-              </span>
-              <span className="text-[13.5px] text-ink-2 md:mt-1.5 md:block md:text-[14.5px]">
-                <span className="md:hidden">{row.mobile}</span>
-                <span className="hidden md:inline">{row.main}</span>
-              </span>
-              <span className="hidden font-mono text-[11.5px] leading-[1.6] text-ink-4 md:mt-2.5 md:block">
-                {row.sub}
-              </span>
+              {/* flush strip at the cell's top edge; the panel's own
+                  overflow-hidden clips it into the rounded corner. Its label
+                  sits left of the content indent so it hugs the column
+                  divider and reads as a band, not a fourth content line. */}
+              {row.comingSoon && (
+                <div className="border-b border-line-softer py-1 pl-3 pr-5 font-mono text-[11.5px] font-medium tracking-[.14em] text-ink-3 md:py-1.5 md:pl-4 md:pr-7 md:text-[13px]">
+                  COMING SOON
+                </div>
+              )}
+              {/* the strip's height comes OUT of this block's padding so the
+                  cell's natural height still matches its siblings. Desktop
+                  cells are grid siblings, so any growth here stretches all
+                  three (owner 2026-08-08). */}
+              <div
+                className={clsx(
+                  "flex items-baseline gap-3.5 px-5 md:block md:px-7",
+                  row.comingSoon ? "py-[13px] md:py-[9px]" : "py-[18px] md:py-[26px]",
+                )}
+              >
+                <span
+                  className={clsx(
+                    "min-w-[86px] shrink-0 whitespace-nowrap font-mono text-[24px] font-semibold md:block md:min-w-0 md:text-[30px]",
+                    row.comingSoon && "text-ink-3",
+                  )}
+                >
+                  {row.value}
+                </span>
+                <span
+                  className={clsx(
+                    "text-[13.5px] md:mt-1.5 md:block md:text-[14.5px]",
+                    row.comingSoon ? "text-ink-4" : "text-ink-2",
+                  )}
+                >
+                  <span className="md:hidden">{row.mobile}</span>
+                  <span className="hidden md:inline">{row.main}</span>
+                </span>
+                <span
+                  className={clsx(
+                    "hidden font-mono text-[11.5px] leading-[1.6] md:mt-2.5 md:block",
+                    row.comingSoon ? "text-ink-5" : "text-ink-4",
+                  )}
+                >
+                  {row.sub}
+                </span>
+              </div>
             </div>
           ))}
         </div>
