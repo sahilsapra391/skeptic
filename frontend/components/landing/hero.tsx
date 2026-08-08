@@ -12,9 +12,14 @@
  *
  * The composer is a visual clone of the app's (app/(app)/new/page.tsx) —
  * same classes, same speech wiring, same auto-grow — but it never parses:
- * submit hands off to /new?pitch=… so the clarify/spec machinery,
- * provenance transcript and cancel path all live in one place (guardrail:
- * no silent parser guesses duplicated here).
+ * submit raises onPitch, and landing-page.tsx opens the run flow in a modal
+ * so the clarify/spec machinery, provenance transcript and cancel path all
+ * live in one place (guardrail: no silent parser guesses duplicated here).
+ * It stays ON the landing on purpose: the free anon run is promised without
+ * an account, and every app/(app) route is account-gated at the edge
+ * (middleware.ts), so handing off to /new would bounce anon users to
+ * /signin. Corrected 2026-08-08; this line used to claim a /new?pitch=
+ * handoff that the code has not done for some time.
  */
 
 import { useEffect, useRef, useState } from "react";
