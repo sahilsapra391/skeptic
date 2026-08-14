@@ -312,7 +312,18 @@ export default function SettingsPage() {
           <Row label="NL parser" value={health?.parser ?? "—"} />
           <Row label="Verdict narration" value={health?.verdict_llm ?? "—"} />
           <Row label="Grounded Q&A" value={health?.ask ?? "—"} />
-          <Row label="Model" value={health?.model ?? "—"} dim />
+          {/* One model runs the parser AND narration since 2026-08-14, so a
+              single row is the honest reading. Each half still has its own env
+              override, so if a prod value pulls them apart, say which is which
+              rather than showing one and implying it covers both. */}
+          {health && health.parser_model && health.parser_model !== health.model ? (
+            <>
+              <Row label="Model · parser" value={health.parser_model} dim />
+              <Row label="Model · narration" value={health.model ?? "—"} dim />
+            </>
+          ) : (
+            <Row label="Model" value={health?.model ?? "—"} dim />
+          )}
           <Row label="Numeric validation" value="on — no un-computed numbers" />
           <Row label="Seeds" value="fixed & logged per run" />
         </div>

@@ -141,6 +141,19 @@ flowchart TB
 Frontend on Vercel. Backend on Railway. Data in R2, queried with DuckDB.
 Collection on a VM that is always on, for reasons the next sections explain.
 
+Three jobs need a language model: turning a plain-English strategy into a
+validated spec, writing the verdict, and answering questions about a finished
+run. All three go to DeepSeek V4 Pro through OpenRouter. It used to be two
+models, a cheaper one for the writing and a stronger one for the parsing, and
+collapsing that to one means there is a single behaviour to reason about
+instead of a boundary to remember. The parser is the reason the stronger model
+won: the cheap one invented an exit condition on a strategy that specified
+none, which is precisely what guardrail 3 forbids.
+
+None of the guardrails below depend on that choice. The verdict validator
+checks numbers against computed stats no matter which model wrote the
+sentence, and swapping the model is an environment variable, not a deploy.
+
 ---
 
 ## The nightly data pipeline
