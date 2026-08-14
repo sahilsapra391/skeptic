@@ -24,13 +24,24 @@ from app.honesty.report import HonestyReport
 log = logging.getLogger("verdict")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Two models on purpose (owner decision 2026-07-06). The NARRATION calls
-# (verdict, ask, health) use the cheaper/faster flash model — their numeric
-# validator + English guard + template fallback keep them honest. The PARSER
-# stays on the pro model: flash fabricated an exit on the no-exit ladder case
-# in the parser eval (guardrail #3), so it does not clear the parser gate.
-# Each is overridable by its own env var; a prod value still wins.
-DEFAULT_MODEL = "deepseek/deepseek-v4-flash"  # verdict · ask · health (OPENROUTER_MODEL)
+# ONE model everywhere (owner decision 2026-08-14): deepseek-v4-pro for the
+# parser AND for narration (verdict, ask, health).
+#
+# This replaces the 2026-07-06 split, which put narration on flash to save
+# cost and kept the parser on pro because flash fabricated an exit on the
+# no-exit ladder case in the parser eval (guardrail #3). Narration was always
+# the safer half to economize on — numeric validator, English guard and
+# template fallback all sit downstream of it — but the owner's call is to
+# stop running two models and take the quality of the stronger one on every
+# call. Cost moves with it: pro lists at ~6x flash per token
+# ($0.435/$0.87 vs $0.0679/$0.168 per 1M in/out at time of change), and
+# narration is the high-volume path.
+#
+# The two constants stay separate on purpose. They hold the same value today,
+# but each keeps its own env override (OPENROUTER_MODEL,
+# OPENROUTER_PARSER_MODEL) so the split can be restored from config without a
+# deploy, and a prod value still wins over both.
+DEFAULT_MODEL = "deepseek/deepseek-v4-pro"  # verdict · ask · health (OPENROUTER_MODEL)
 PARSER_MODEL = "deepseek/deepseek-v4-pro"  # parser only (OPENROUTER_PARSER_MODEL)
 
 

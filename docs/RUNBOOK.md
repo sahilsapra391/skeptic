@@ -25,7 +25,8 @@ Backend (Railway service):
 |---|---|
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | market lake (same values the collector uses) |
 | `OPENROUTER_API_KEY` | parser, verdict narration, grounded Q&A (absent → parser 501s, template verdicts) |
-| `OPENROUTER_MODEL` | optional; default `deepseek/deepseek-v4-pro` |
+| `OPENROUTER_MODEL` | optional; narration (verdict · ask · health). Default `deepseek/deepseek-v4-pro` |
+| `OPENROUTER_PARSER_MODEL` | optional; parser only. Default `deepseek/deepseek-v4-pro` |
 | `SKEPTIC_ACCESS_TOKEN` | bearer auth for every /api route except /api/health |
 | `DATABASE_URL` | Neon Postgres; omit or unreachable → local SQLite (ephemeral on Railway — runs vanish on redeploy) |
 

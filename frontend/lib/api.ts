@@ -388,7 +388,11 @@ export function getHealth(): Promise<{
   db?: string;
   verdict_llm?: string;
   ask?: string;
+  // narration (verdict · ask · health) and the parser. One model powers both
+  // since 2026-08-14, but each keeps its own env override, so Settings reads
+  // BOTH and says so when a prod override has pulled them apart.
   model?: string;
+  parser_model?: string;
   min_trades?: number;
 }> {
   return request("/api/health");
