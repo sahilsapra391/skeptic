@@ -24,6 +24,7 @@ import {
   startBacktest,
 } from "@/lib/api";
 import { HEADLINES } from "@/lib/headlines";
+import { getSettings } from "@/lib/settings";
 import { myRunIds } from "@/lib/my-runs";
 import { turnstileConfigured } from "@/lib/turnstile";
 import { notifyCreditsChanged } from "@/lib/credits-events";
@@ -46,6 +47,33 @@ import { SpecScreen } from "@/components/spec/spec-screen";
 
 type Phase = "compose" | "clarify" | "spec" | "running" | "results";
 type Mode = "text" | "chart";
+
+/**
+ * V-36: Settings are DEFAULTS at parse time and inert after confirmation.
+ *
+ * Fill costs and the seed used to be applied at submit, reaching past whatever
+ * the user confirmed on the spec screen. They are stamped onto the draft here
+ * instead — once, the moment a draft first exists — so the FILLS tile shows
+ * the values that will actually run and `startBacktest` has nothing left to
+ * override. A draft that already carries them (a variant, prefilled from its
+ * parent) keeps its own.
+ */
+function confirmDefaults(
+  draft: SpecDraft,
+  parsedSpec: Record<string, unknown> | null | undefined,
+): SpecDraft {
+  const s = getSettings();
+  const parsedBacktest = (parsedSpec?.backtest ?? {}) as Record<string, unknown>;
+  return {
+    ...draft,
+    costs: draft.costs ?? {
+      commission_per_contract: s.commission,
+      slippage_half_spread_fraction: s.slippage,
+      slippage_half_spread_fraction_sell: s.slippageSell,
+    },
+    seed: draft.seed ?? (parsedBacktest.seed as number | undefined) ?? 42,
+  };
+}
 
 /** Starter strategies. Ordered by what the library says the user actually
  * runs (structure counts from past runs), most-used first. */
@@ -355,9 +383,10 @@ export function RunFlow({
           if (!withAnswers) setAnswers({});
           setPhase("clarify");
         } else {
+          const draft = confirmDefaults(res.draft, res.spec);
           parsedSpecRef.current = res.spec ?? null;
-          parsedDraftRef.current = JSON.stringify(res.draft);
-          setDraft(res.draft);
+          parsedDraftRef.current = JSON.stringify(draft);
+          setDraft(draft);
           setPhase("spec");
         }
       } catch (e) {
@@ -874,7 +903,7 @@ export function RunFlow({
               parsedSpecRef.current = null;
               parsedDraftRef.current = null;
               transcriptRef.current = [];
-              setDraft(d);
+              setDraft(confirmDefaults(d, null));
               setPhase("spec");
             }}
           />

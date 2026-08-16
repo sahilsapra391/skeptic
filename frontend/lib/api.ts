@@ -233,13 +233,12 @@ export function startBacktest(
   const spec = {
     ...(untouched && parsedSpec ? parsedSpec : draftToSpec(draft, parsedSpec)),
   } as Record<string, unknown>;
-  // cost settings apply to EVERY run — the edit in Settings is the edit here
-  const { commission, slippage, slippageSell } = getSettings();
-  spec.costs = {
-    commission_per_contract: commission,
-    slippage_half_spread_fraction: slippage,
-    slippage_half_spread_fraction_sell: slippageSell,
-  };
+  // V-36: costs come from the CONFIRMED spec, never from Settings at submit.
+  // Settings seed draft.costs once at parse time (run-flow), before the user
+  // confirms; after that they are inert. A confirmed spec that runtime can
+  // still overwrite is a suggestion, not a contract. Applied on the verbatim
+  // branch too, because the FILLS tile showed these to the user either way.
+  if (draft.costs) spec.costs = { ...draft.costs };
   // pre-run dials apply to EVERY run too (2026-07-06): the confirmed data
   // window (required), contracts, cadence and capital — like costs, they
   // override even a verbatim parsed spec, because the screen showed them
@@ -249,6 +248,7 @@ export function startBacktest(
     start: dates.start,
     end: dates.end,
     ...(draft.capital != null ? { initial_capital: draft.capital } : {}),
+    ...(draft.seed != null ? { seed: draft.seed } : {}),
   };
   if (draft.sizeValue != null && draft.sizeMethod) {
     spec.sizing = { method: draft.sizeMethod, value: draft.sizeValue };

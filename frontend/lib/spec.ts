@@ -362,7 +362,8 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
     start: null,
     end: null,
     initial_capital: draft.capital ?? 25000,
-    seed: 42,
+    // V-36: the confirmed seed wins. 42 is the last resort, not the rule.
+    seed: draft.seed ?? (baseBacktest.seed as number | undefined) ?? 42,
   };
   if (intraday) backtest.clock = "5min";
   const resolution =
@@ -409,11 +410,14 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
       method: draft.sizeMethod ?? "fixed_contracts",
       value: draft.sizeValue ?? 1,
     },
-    costs: {
-      commission_per_contract: 0.65,
-      slippage_half_spread_fraction: 0.85,
-      slippage_half_spread_fraction_sell: 0.9,
-    },
+    // V-36: the confirmed costs win, then the parsed spec's, then the D3d
+    // defaults. startBacktest no longer reaches back to Settings at submit.
+    costs: draft.costs ??
+      (base?.costs as Json | undefined) ?? {
+        commission_per_contract: 0.65,
+        slippage_half_spread_fraction: 0.85,
+        slippage_half_spread_fraction_sell: 0.9,
+      },
     backtest,
   };
   spec.spec_version = computeSpecVersion(spec);

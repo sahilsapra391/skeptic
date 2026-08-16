@@ -62,6 +62,16 @@ export interface SpecDraft {
   sizeMethod?: "fixed_contracts" | "risk_pct_of_equity";
   sizeValue?: number;
   capital?: number;
+  /** V-36: fill costs are part of the CONFIRMED spec, not something runtime
+   * reaches back to Settings for at submit. Settings seed this once at parse
+   * time and are inert afterwards. */
+  costs?: {
+    commission_per_contract: number;
+    slippage_half_spread_fraction: number;
+    slippage_half_spread_fraction_sell: number;
+  };
+  /** V-36: likewise the seed. Confirmed here, never re-hardcoded downstream. */
+  seed?: number;
   clock?: "daily" | "5min";
   /** FX.5 (spec v4 dials): continuous scanning + per-session resolution.
    * Unset = the defaults (once per session · 5-min grid). */
