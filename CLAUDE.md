@@ -38,10 +38,14 @@ skeptic/
     builds fresh and is unaffected. A documented command that errors gets
     worked around by running a subset, which in a repo this guardrail-heavy is
     how a green-looking partial run happens (V-83).
-  - **Same for mypy**: `uv run python -m mypy app`, not `uv run mypy app`. The
-    bare form reports 43 errors from the wrong interpreter's stubs; the module
-    form reports none. Both numbers look like real results, which is what
-    makes this worth writing down rather than rediscovering.
+  - **The rule, not the instances (V-153):** on this machine, invoke Python
+    tooling as `python -m <tool>`. Console-script entry points (`pytest`,
+    `mypy`, `uvicorn`, and presumably the next one) resolve to a 3.13
+    interpreter while the project pins 3.12. The failures do not look alike —
+    pytest raises `ModuleNotFoundError: fastapi`, mypy reports 43 phantom
+    errors from the wrong stubs, uvicorn fails to spawn at all — so each one
+    reads as its own bug until you know the pattern. CI builds fresh and is
+    unaffected.
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.

@@ -446,6 +446,11 @@ def init_db() -> None:
     try:
         Base.metadata.create_all(_engine)
         _ensure_columns()
+    except RemoteMigrationRefused:
+        # V-149: this is a REFUSAL, not an outage. Falling back to local SQLite
+        # here would be worse than the accident it prevents — the server would
+        # come up healthy on the wrong database and nobody would know.
+        raise
     except Exception as exc:  # unreachable/refusing DB — degrade, loudly
         reason = str(exc).strip().split("\n")[0][:200]
         log.error("configured database unavailable (%s) — falling back to local SQLite", reason)
@@ -456,16 +461,63 @@ def init_db() -> None:
         _ensure_columns()
 
 
+def target_line() -> str:
+    """V-150: what this process actually connected to, in plain terms.
+
+    A whole cycle was spent discovering after the fact which engine was in
+    play. Same reasoning as V-85: the thing that ran announces what it ran
+    against, at the moment it runs.
+    """
+    url = _database_url()
+    if url.startswith("sqlite"):
+        return f"LOCAL SQLite — {url.split('sqlite:///', 1)[-1]}"
+    host = url.split("@", 1)[-1].split("/", 1)[0]
+    return f"REMOTE postgres — {host}"
+
+
 def status() -> str:
     if FALLBACK_REASON:
         return f"local SQLite fallback — configured DB unavailable: {FALLBACK_REASON}"
     return "postgres (Neon)" if not _database_url().startswith("sqlite") else "local SQLite"
 
 
+def _is_local_target(url: str) -> bool:
+    """SQLite anywhere, or Postgres on this machine. Everything else is
+    somebody's real database."""
+    if url.startswith("sqlite"):
+        return True
+    host = url.split("@", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+    return host in {"localhost", "127.0.0.1", "::1", ""}
+
+
+class RemoteMigrationRefused(RuntimeError):
+    """V-149: a schema change against a remote database that nobody asked for."""
+
+
 def _ensure_columns() -> None:
     """Additive micro-migration: create_all never alters existing tables,
-    so columns added after first deploy are patched in here."""
+    so columns added after first deploy are patched in here.
+
+    V-149: REFUSES to run against a remote database unless
+    SKEPTIC_ALLOW_REMOTE_MIGRATION is set. Local SQLite and localhost Postgres
+    proceed silently; the deploy path sets the flag deliberately.
+
+    This is not about any particular migration. It is that a dev server booting
+    with the wrong DATABASE_URL should not be able to reshape production on its
+    way up — a schema change should be something someone CHOSE. Today's
+    additions were additive and nullable, so the accident was harmless; the
+    next one might not be.
+    """
     from sqlalchemy import inspect, text
+
+    url = _database_url()
+    if not _is_local_target(url) and not os.environ.get("SKEPTIC_ALLOW_REMOTE_MIGRATION"):
+        host = url.split("@", 1)[-1].split("/", 1)[0]
+        raise RemoteMigrationRefused(
+            f"refusing to migrate a remote database ({host}). Set "
+            "SKEPTIC_ALLOW_REMOTE_MIGRATION=1 if you mean it — the deploy "
+            "path does."
+        )
 
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:

@@ -47,6 +47,7 @@ from app.api import me as me_api  # noqa: E402
 from app.api import notebook as notebook_api  # noqa: E402
 from app.api import runs as runs_api  # noqa: E402
 from app.db import init_db  # noqa: E402
+from app.db import target_line as db_target_line  # noqa: E402
 
 
 def _sweep_orphaned_runs() -> None:
@@ -86,6 +87,12 @@ def _sweep_orphaned_runs() -> None:
 
 
 app = FastAPI(title="Skeptic", version="0.1.0")
+# V-150: announce the resolved database BEFORE touching it. Discovering after
+# the fact which engine you were on costs a debugging cycle and, worse, makes
+# an accidental write to the wrong database something you find out later.
+import logging as _logging  # noqa: E402
+
+_logging.getLogger("main").warning("DATABASE TARGET: %s", db_target_line())
 init_db()
 _sweep_orphaned_runs()
 
