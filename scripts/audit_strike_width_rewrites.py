@@ -70,41 +70,84 @@ def _database_url() -> str:
     return os.environ.get("DATABASE_URL", _DEFAULT_SQLITE)
 
 
-def _exclusive_upper(until: str) -> str:
-    """`--until 2026-08-16` means "through the whole of the 16th".
+def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
+    """V-92: the ONE derivation of this script's boundary semantics.
 
-    `created_at <= '2026-08-16'` compares a timestamp against a bare date and
-    silently drops every run that day, because '2026-08-16 18:53' sorts after
-    '2026-08-16'. A bare date therefore becomes an EXCLUSIVE bound at the next
-    midnight. An explicit timestamp is taken literally.
+        --until <date>            INCLUSIVE of that entire day
+        --until <full timestamp>  INCLUSIVE of that exact instant
+
+    Both the query and the printed banner read this result, so the window
+    reported is by construction the window queried. This logic has been written
+    three times and been wrong twice (a bare date silently dropping its own
+    day, then every input flipping to exclusive and dropping a named instant),
+    so it is pinned by backend/tests/test_audit_script_windows.py.
+
+    A bare date needs the exclusive next-midnight form because `created_at <=
+    '2026-07-17'` compares a timestamp against a date and drops the whole day:
+    '2026-07-17 18:53' sorts after '2026-07-17'. A full timestamp needs `<=`
+    to keep the inclusive meaning it had before PR-0.
     """
+    window: dict[str, Any] = {
+        "since": since,
+        "until": until,
+        "until_value": None,
+        "until_op": None,
+        "until_form": None,
+        "bounded": bool(since or until),
+    }
+    if until is None:
+        return window
     try:
-        return (date.fromisoformat(until) + timedelta(days=1)).isoformat()
+        window["until_value"] = (
+            date.fromisoformat(until) + timedelta(days=1)
+        ).isoformat()
+        window["until_op"] = "<"
+        window["until_form"] = "date"
     except ValueError:
-        return until  # a full timestamp — the caller meant exactly that instant
+        window["until_value"] = until
+        window["until_op"] = "<="
+        window["until_form"] = "timestamp"
+    return window
 
 
-def _rows(url: str, since: str | None, until: str | None) -> list[tuple[Any, ...]]:
+def _rows(url: str, window: dict[str, Any]) -> list[tuple[Any, ...]]:
     """SELECT only. Read-only at the connection level where the driver allows."""
-    if url.startswith("sqlite"):
-        # sqlite:///abs/path -> file:abs/path?mode=ro
-        path = url.split("sqlite:///", 1)[1]
-        url = f"sqlite:///file:{path}?mode=ro&uri=true"
-    engine = create_engine(url)
+    engine = create_engine(_read_only_url(url))
     where: list[str] = []
     params: dict[str, str] = {}
-    if since:
+    if window["since"]:
         where.append("created_at >= :since")
-        params["since"] = since
-    if until:
-        where.append("created_at < :until")
-        params["until"] = _exclusive_upper(until)
+        params["since"] = window["since"]
+    if window["until_value"]:
+        # until_op comes from resolve_window's closed set {"<", "<="} only
+        where.append(f"created_at {window['until_op']} :until")
+        params["until"] = window["until_value"]
     clause = (" where " + " and ".join(where)) if where else ""
     sql = f"select id, created_at, spec_json, provenance_json from runs{clause}"
     with engine.connect() as conn:
         if not url.startswith("sqlite"):
             conn.execute(text("set transaction read only"))
         return list(conn.execute(text(sql), params))
+
+
+def _read_only_url(url: str) -> str:
+    if url.startswith("sqlite"):
+        # sqlite:///abs/path -> file:abs/path?mode=ro
+        path = url.split("sqlite:///", 1)[1]
+        return f"sqlite:///file:{path}?mode=ro&uri=true"
+    return url
+
+
+def _newest_in_database(url: str) -> str | None:
+    """V-91: window-INDEPENDENT by definition. A cutoff derived from a bounded
+    scan is what makes runs that predate the fix read as new instances after
+    it, so the follow-up guidance reads this, never the windowed maximum."""
+    engine = create_engine(_read_only_url(url))
+    with engine.connect() as conn:
+        if not url.startswith("sqlite"):
+            conn.execute(text("set transaction read only"))
+        row = conn.execute(text("select max(created_at) from runs")).first()
+    return str(row[0]) if row and row[0] is not None else None
 
 
 def _lead_method(spec_json: str | None) -> str | None:
@@ -134,8 +177,9 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
     eligible: list[str] = []
     detected: list[dict[str, Any]] = []
     newest: str | None = None
+    window = resolve_window(since, until)
 
-    for run_id, created_at, spec_json, provenance_json in _rows(url, since, until):
+    for run_id, created_at, spec_json, provenance_json in _rows(url, window):
         total += 1
         stamp = str(created_at)
         if newest is None or stamp > newest:
@@ -157,21 +201,35 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
             )
 
     return {
-        "window": {
-            "since": since,
-            "until": until,
-            # V-85: the bound actually applied, so the V-71 comparison never
-            # depends on remembering which flags were passed a week earlier
-            "resolved_until_exclusive": _exclusive_upper(until) if until else None,
-            "bounded": bool(since or until),
-        },
-        "newest_run_seen": newest,
+        # V-85 / V-92: the resolved window, and the SAME object the query used
+        "window": window,
+        "newest_in_window": newest,
+        # V-91: window-independent, so the V-71 cutoff cannot be skewed by a
+        # bounded baseline
+        "newest_in_database": _newest_in_database(url),
         "total_runs": total,
         "runs_with_any_provenance": with_provenance,
         "eligible_runs": len(eligible),
         "not_inspectable": total - len(eligible),
         "detected": detected,
     }
+
+
+def follow_up_invocations(result: dict[str, Any]) -> dict[str, str]:
+    """V-90: byte-for-byte runnable commands, every flag resolved to a concrete
+    value. A printed command that differs from the one that produced it carries
+    authority it has not earned — an omitted --since is exactly how the V-71
+    sanity check ends up comparing two different windows and calling the
+    difference a change in detection."""
+    w = result["window"]
+    base = "uv run --project backend python scripts/audit_strike_width_rewrites.py"
+    flags = []
+    if w["since"]:
+        flags.append(f"--since {w['since']}")
+    if w["until"]:
+        flags.append(f"--until {w['until']}")
+    sanity = " ".join([base, *flags]) if flags else base
+    return {"sanity": sanity, "actual": base}
 
 
 def _print_text(result: dict[str, Any]) -> None:
@@ -185,15 +243,24 @@ def _print_text(result: dict[str, Any]) -> None:
     print()
     print("WINDOW APPLIED")
     if w["since"]:
-        print(f"  since (inclusive)   : {w['since']}   [from --since {w['since']}]")
+        print(f"  since               : {w['since']} (inclusive)   [--since {w['since']}]")
     else:
-        print("  since (inclusive)   : beginning of time   [default, no --since]")
+        print("  since               : beginning of time   [default, no --since]")
     if w["until"]:
-        print(f"  until (exclusive)   : {w['resolved_until_exclusive']}   "
-              f"[from --until {w['until']}, resolved to cover that whole day]")
+        shape = (
+            f"covers all of {w['until']}"
+            if w["until_form"] == "date"
+            else f"inclusive of {w['until']}"
+        )
+        print(f"  until               : created_at {w['until_op']} {w['until_value']}"
+              f"   [--until {w['until']}, {shape}]")
     else:
         print("  until               : unbounded   [default, no --until]")
-    print(f"  newest run seen     : {result['newest_run_seen'] or 'none'}")
+    # V-91: both, labelled. The database-wide figure is the one the V-71
+    # cutoff uses, because a bounded scan's maximum would make runs that
+    # predate the fix look like new instances after it.
+    print(f"  newest in window    : {result['newest_in_window'] or 'none'}")
+    print(f"  newest in DATABASE  : {result['newest_in_database'] or 'none'}")
 
     # V-66: the denominator comes BEFORE the count. A bare "0 detected" is
     # unreadable when the detection rule can only see runs that recorded a
@@ -232,19 +299,21 @@ def _print_text(result: dict[str, Any]) -> None:
     # leaving them to be reconstructed.
     print()
     print("V-71 FOLLOW-UP — run BOTH after PR-0 merges")
-    newest = result["newest_run_seen"]
-    if newest:
-        end = newest[:10]
-        print("  (a) SANITY CHECK, bounded to this same end date:")
-        print(f"        --until {end}")
-        print("      Must be IDENTICAL to this run. A difference means detection")
-        print("      itself changed, not that the bug did.")
-        print("  (b) THE ACTUAL TEST, unbounded:")
-        print("        (no flags)")
-        print(f"      Any detection with created_at after {newest} is a NEW instance")
-        print("      arising after the fix, which means the fix did not hold.")
+    cmds = follow_up_invocations(result)
+    cutoff = result["newest_in_database"]
+    print("  (a) SANITY CHECK — this exact command, unchanged:")
+    print(f"        {cmds['sanity']}")
+    print("      Must be IDENTICAL to this run. A difference means detection")
+    print("      itself changed, not that the bug did.")
+    print("  (b) THE ACTUAL TEST — unbounded:")
+    print(f"        {cmds['actual']}")
+    if cutoff:
+        print(f"      Any detection with created_at after {cutoff} is a NEW")
+        print("      instance arising after the fix, so the fix did not hold.")
+        print("      That cutoff is the newest run in the DATABASE, not in this")
+        print("      window, so bounding the baseline cannot skew it.")
     else:
-        print("  No runs in window, so there is no baseline to compare against yet.")
+        print("      The database is empty, so there is no cutoff to compare against.")
 
     # V-82: an A1 planning input, not just an audit line.
     if total:

@@ -161,6 +161,11 @@ function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
  * dial rebuilds them — but the spread width is a separate value the user did
  * not touch, and `legs()` only knows the hardcoded $5. So the rebuilt wings
  * keep their structural `reference_leg` and inherit the base's real width.
+ *
+ * PRECONDITION: `base` must already be detached (draftToSpec deep-copies it on
+ * entry). This returns base sub-objects BY REFERENCE, so passing a raw
+ * parsedSpec here re-creates the shared-mutable-state bug. Same for
+ * strikeUntouched and tenorUntouched.
  */
 function positionLegs(draft: SpecDraft, base?: Json | null): Json[] {
   if (strikeUntouched(draft, base)) {
@@ -337,6 +342,15 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   if (!draft.exit) {
     throw new Error("exit is unset — the spec screen must ask, never default");
   }
+  // V-93: the same check startBacktest applies, so both sites agree on whether
+  // a draft without confirmed costs is legal. Enforcement stays in both places
+  // rather than moving here wholesale; making spec construction the single
+  // authority is V-61, which is a phase, not a fix.
+  if (!draft.costs) {
+    throw new Error(
+      "confirmed fill costs are unset. The spec screen must ask, never default.",
+    );
+  }
   // Detach ONCE at the boundary. Everything below inherits sub-objects from
   // the base (legs, the tenor band, costs, the ladder, extra conditions), and
   // `base` is the caller's retained parsedSpec, reused for every rebuild and
@@ -483,14 +497,10 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
       method: draft.sizeMethod ?? "fixed_contracts",
       value: draft.sizeValue ?? 1,
     },
-    // V-36: the confirmed costs win, then the parsed spec's, then the D3d
-    // defaults. startBacktest no longer reaches back to Settings at submit.
-    costs: draft.costs ??
-      (base?.costs as Json | undefined) ?? {
-        commission_per_contract: 0.65,
-        slippage_half_spread_fraction: 0.85,
-        slippage_half_spread_fraction_sell: 0.9,
-      },
+    // V-36: the confirmed costs, full stop. The guard at the top of this
+    // function makes them present, so there is no fallback rung here to drift
+    // out of step with startBacktest's.
+    costs: { ...draft.costs },
     backtest,
   };
   spec.spec_version = computeSpecVersion(spec);

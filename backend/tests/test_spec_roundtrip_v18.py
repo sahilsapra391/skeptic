@@ -201,6 +201,21 @@ def _canonical(spec: dict[str, Any]) -> str:
     return json.dumps(spec, sort_keys=True, separators=(",", ":"), default=str)
 
 
+def _draft_for(spec: dict[str, Any]) -> dict[str, Any]:
+    """The dial surface as the user would confirm it having changed nothing.
+
+    `spec_to_draft` projects the dials but not costs or the seed; in the real
+    flow `confirmDefaults` stamps those on before the spec screen renders, and
+    V-93 makes a draft without them illegal at spec-build. Here they are the
+    parser's own values, which is what "confirmed exactly what was proposed"
+    means and what keeps the round trip byte-identical.
+    """
+    draft = spec_to_draft(spec, spec["meta"]["description_raw"])
+    draft["costs"] = dict(spec["costs"])
+    draft["seed"] = (spec.get("backtest") or {}).get("seed", 42)
+    return draft
+
+
 def _rebuild_all(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Push every (draft, base) pair through the real draftToSpec via node."""
     node = shutil.which("node")
@@ -254,8 +269,7 @@ def rebuilt() -> dict[str, dict[str, Any]]:
     cases = []
     for name in names:
         spec = _validated(CORPUS[name])
-        draft = spec_to_draft(spec, spec["meta"]["description_raw"])
-        cases.append({"draft": draft, "base": spec})
+        cases.append({"draft": _draft_for(spec), "base": spec})
     results = _rebuild_all(cases)
     assert len(results) == len(names), "harness dropped cases"
     out: dict[str, dict[str, Any]] = {}
@@ -286,7 +300,7 @@ def test_one_edited_dial_changes_only_what_it_owns() -> None:
     """The other half of the rule. Moving the DTE dial must move the tenor and
     NOTHING else — not the $10 spread width, not the strike method."""
     spec = _validated(CORPUS["custom_spread_width"])
-    draft = spec_to_draft(spec, spec["meta"]["description_raw"])
+    draft = _draft_for(spec)
     draft["dte"] = 30  # the single user edit
 
     rebuilt = _rebuild_all([{"draft": draft, "base": spec}])[0]
@@ -307,7 +321,7 @@ def test_the_guard_actually_detects_a_rewrite() -> None:
     """A guard that cannot fail is not a guard. Force the pre-V-17 condition —
     a strike dial the user DID move — and prove the diff reports it."""
     spec = _validated(CORPUS["offset_pct_strike"])
-    draft = spec_to_draft(spec, spec["meta"]["description_raw"])
+    draft = _draft_for(spec)
     # moving the STRIKE dial nulls the label, exactly as the select does
     draft["strikeLabel"] = None
     draft["strikeDelta"] = 25
@@ -339,7 +353,7 @@ def test_v78_a_name_only_difference_is_unreachable() -> None:
     rather than letting the run through.
     """
     spec = _validated(CORPUS["canonical"])
-    draft = spec_to_draft(spec, spec["meta"]["description_raw"])
+    draft = _draft_for(spec)
     draft["strikeDelta"] = 20  # the only name-regenerating move a variant has
 
     res = _rebuild_all([{"draft": draft, "base": spec}])[0]
