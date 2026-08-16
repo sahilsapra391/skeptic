@@ -69,6 +69,90 @@ function legs(draft: SpecDraft): Json[] {
   }
 }
 
+/** Python's round() is half-to-even; JS Math.round is half-up. The delta a
+ * draft carries was produced by spec_to_draft, so the projection below has to
+ * match its rounding exactly or a .5 case reads as an edit that never happened. */
+function roundHalfEven(x: number): number {
+  const f = Math.floor(x);
+  const diff = x - f;
+  if (diff > 0.5) return f + 1;
+  if (diff < 0.5) return f;
+  return f % 2 === 0 ? f : f + 1;
+}
+
+/**
+ * V-17: is the STRIKE dial still showing exactly what the parser produced?
+ *
+ * `legs()` can only emit `method: "delta"` at a hardcoded $5 spread width, so
+ * rebuilding a spec whose strike rule it cannot express silently rewrites that
+ * rule — an offset_pct strike becomes delta 0.30, a $10-wide spread becomes $5.
+ * When the dial is untouched there is nothing to rebuild FROM, so the base legs
+ * pass through whole, exactly as the ladder and extra conditions already do.
+ *
+ * Untouched means the structure still matches AND either:
+ *  - `strikeLabel` is still set (a non-delta parser strike; the STRIKE select
+ *    nulls this label the instant it is touched), or
+ *  - the dial's delta still equals what spec_to_draft projects from the base's
+ *    lead leg — which is what catches a custom width behind a normal delta.
+ */
+function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
+  const position = (base?.position ?? null) as Json | null;
+  const baseLegs = position?.legs as Json[] | undefined;
+  if (!position || !baseLegs?.length) return false;
+  if (position.structure !== draft.structure) return false;
+  if (draft.strikeLabel != null) return true;
+
+  const sel = (baseLegs[0]?.strike_selection ?? {}) as Json;
+  if (sel.method !== "delta" || typeof sel.value !== "number") return false;
+  // mirrors backend/app/parser/parse.py spec_to_draft
+  const projected = roundHalfEven((Math.abs(sel.value) * 100) / 5) * 5 || 5;
+  return projected === draft.strikeDelta;
+}
+
+/**
+ * V-17: the legs that actually ship.
+ *
+ * An untouched strike dial passes the base legs through whole. A MOVED strike
+ * dial rebuilds them — but the spread width is a separate value the user did
+ * not touch, and `legs()` only knows the hardcoded $5. So the rebuilt wings
+ * keep their structural `reference_leg` and inherit the base's real width.
+ */
+function positionLegs(draft: SpecDraft, base?: Json | null): Json[] {
+  if (strikeUntouched(draft, base)) {
+    return ((base?.position as Json).legs as Json[]).map((l) => ({ ...l }));
+  }
+  const rebuilt = legs(draft);
+  const position = (base?.position ?? null) as Json | null;
+  const baseLegs = position?.legs as Json[] | undefined;
+  if (
+    !position ||
+    !baseLegs ||
+    position.structure !== draft.structure ||
+    baseLegs.length !== rebuilt.length
+  ) {
+    return rebuilt;
+  }
+  return rebuilt.map((leg, i) => {
+    const bsel = (baseLegs[i]?.strike_selection ?? {}) as Json;
+    const rsel = (leg.strike_selection ?? {}) as Json;
+    if (bsel.method === "width_from_leg" && rsel.method === "width_from_leg") {
+      return { ...leg, strike_selection: { ...rsel, value: bsel.value } };
+    }
+    return leg;
+  });
+}
+
+/** V-17: the DTE dial owns `target_dte` and nothing else, so while it still
+ * reads what the parser produced, the parser's own min/max band is the truth
+ * and the target-10 / target+15 recomputation must not overwrite it. */
+function tenorUntouched(draft: SpecDraft, base?: Json | null): boolean {
+  const sel = ((base?.position ?? {}) as Json).expiration_selection as
+    | Json
+    | undefined;
+  if (!sel || typeof sel.target_dte !== "number") return false;
+  return sel.target_dte === draft.dte;
+}
+
 function schedule(draft: SpecDraft): Json {
   // the structured dial wins when present (pre-run cadence tile)
   if (draft.cadenceSel) {
@@ -296,22 +380,28 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
     underlying: { ticker: draft.ticker },
     position: {
       structure: draft.structure,
-      legs: legs(draft),
+      legs: positionLegs(draft, base),
       ...(((base?.position ?? {}) as Json).max_vega_per_contract != null
         ? {
             max_vega_per_contract: ((base?.position ?? {}) as Json)
               .max_vega_per_contract,
           }
         : {}),
-      // 0DTE band matches the parser's convention (max 1: same-day intent,
-      // next-day fallback only — review: band drift between ingresses)
-      expiration_selection: zeroDte
-        ? { target_dte: 0, min_dte: 0, max_dte: 1 }
-        : {
-            target_dte: draft.dte,
-            min_dte: Math.max(intraday ? 0 : 1, draft.dte - 10),
-            max_dte: Math.min(120, draft.dte + 15),
-          },
+      // V-17: same rule for the tenor band. The dial owns target_dte only, so
+      // while it still reads what the parser produced, the parser's min/max
+      // band survives instead of being recomputed as target-10 / target+15.
+      expiration_selection: tenorUntouched(draft, base)
+        ? ((base?.position as Json).expiration_selection as Json)
+        : zeroDte
+          ? // 0DTE band matches the parser's convention (max 1: same-day
+            // intent, next-day fallback only — review: band drift between
+            // ingresses)
+            { target_dte: 0, min_dte: 0, max_dte: 1 }
+          : {
+              target_dte: draft.dte,
+              min_dte: Math.max(intraday ? 0 : 1, draft.dte - 10),
+              max_dte: Math.min(120, draft.dte + 15),
+            },
     },
     entry,
     exit,
