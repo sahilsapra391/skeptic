@@ -298,9 +298,10 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
         # which only exists when the parser emitted a NON-delta strike. Without
         # this, "0 of 26 eligible" reads as "the bug did not fire" when it may
         # mean "nothing was ever exposed to it" — a different claim entirely.
-        if draft.get("strikeLabel") is not None:
+        exposed = draft.get("strikeLabel") is not None
+        if exposed:
             at_risk += 1
-        if draft.get("strikeLabel") is not None and _lead_method(spec_json) == "delta":
+        if exposed and _lead_method(spec_json) == "delta":
             detected.append(
                 {
                     "run_id": run_id,
@@ -385,11 +386,13 @@ def _print_text(result: dict[str, Any]) -> None:
     print()
     print(f"total runs in window            : {total}")
     print(f"  with any provenance record    : {result['runs_with_any_provenance']}")
-    print(f"  with a confirmed.draft        : {eligible}   <- the eligible set")
-    print(f"  not inspectable               : {result['not_inspectable']}")
-    print()
     at_risk = result["at_risk_runs"]
-    print(f"  of those, AT RISK             : {at_risk}   <- parser emitted a non-delta strike")
+    print(f"  with a confirmed.draft        : {eligible}   <- the eligible set")
+    # directly under its own denominator: at_risk is a subset of ELIGIBLE, and
+    # printing it after "not inspectable" made "of those" read as referring to
+    # the wrong number, in the one line whose whole job is readability
+    print(f"    of those, AT RISK           : {at_risk}   <- parser emitted a non-delta strike")
+    print(f"  not inspectable               : {result['not_inspectable']}")
     print()
     print(f"DETECTED strike rewrites        : {len(detected)} of {at_risk} at risk")
     for d in detected:
