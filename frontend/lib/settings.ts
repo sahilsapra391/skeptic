@@ -1,9 +1,15 @@
 "use client";
 
 /**
- * App settings — persisted locally, applied at submit time. Costs are
- * stamped onto EVERY spec the client sends (parsed or dial-built), so a
- * settings edit is reflected in the next analysis with zero server state.
+ * App settings — persisted locally, with zero server state.
+ *
+ * V-36: costs are DEFAULTS here, not a submit-time override. They seed the
+ * draft once at parse time (lib/confirm.ts) and are inert after the user
+ * confirms a spec, so a settings edit reaches the next analysis the user
+ * STARTS rather than reaching past a spec they already confirmed. The
+ * evidence bar (minTrades) is different by design: it is a view-time policy
+ * that also re-grades saved runs.
+ *
  * Verbiage switches the language register of results across the app.
  */
 

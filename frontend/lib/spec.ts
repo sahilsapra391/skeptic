@@ -372,10 +372,23 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
       : (baseBacktest.resolution as string | undefined);
   if (resolution === "finest" && intraday) backtest.resolution = "finest";
 
+  // V-17: the generated name reads off ticker + strike + structure. While all
+  // three still say what the parser produced, the parser's own name stands —
+  // otherwise editing an unrelated dial silently renames the run in the
+  // library. Once one of them moves, a stale ".30Δ" label on a .20Δ run would
+  // be worse than a regenerated one.
+  const baseName = ((base?.meta ?? {}) as Json).name;
+  const keepName =
+    typeof baseName === "string" &&
+    strikeUntouched(draft, base) &&
+    ((base?.underlying ?? {}) as Json).ticker === draft.ticker;
+
   const spec: Json = {
     spec_version: 1,
     meta: {
-      name: `${draft.ticker} .${draft.strikeDelta}Δ ${draft.structure.replace(/_/g, " ")}`.slice(0, 80),
+      name: keepName
+        ? baseName
+        : `${draft.ticker} .${draft.strikeDelta}Δ ${draft.structure.replace(/_/g, " ")}`.slice(0, 80),
       description_raw: draft.quote,
     },
     underlying: { ticker: draft.ticker },
