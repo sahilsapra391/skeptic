@@ -26,6 +26,7 @@ boundary, so a fourth rewrite fails loudly instead of depending on care.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -296,3 +297,79 @@ def test_follow_up_invocation_is_byte_for_byte_runnable(
     assert f"--until {BOUNDARY_DAY}" in sanity
     # and it reproduces the same window when fed back in
     assert audit_mod.audit(db, "2026-07-16", BOUNDARY_DAY)["total_runs"] == 2
+
+
+# --- V-116: the at-risk population, which is what makes the count readable ---
+
+
+def _db_with(tmp_path: Path, rows: list[tuple[str, str, str, str | None]]) -> str:
+    path = tmp_path / "at_risk.db"
+    con = sqlite3.connect(path)
+    con.execute(
+        "create table runs (id text primary key, created_at text, "
+        "spec_json text, provenance_json text)"
+    )
+    con.executemany("insert into runs values (?, ?, ?, ?)", rows)
+    con.commit()
+    con.close()
+    return f"sqlite:///{path}"
+
+
+def _spec(method: str) -> str:
+    return json.dumps(
+        {"position": {"legs": [{"strike_selection": {"method": method}}]}}
+    )
+
+
+def _prov(strike_label: str | None) -> str:
+    return json.dumps({"confirmed": {"draft": {"strikeLabel": strike_label}}})
+
+
+def test_at_risk_counts_only_drafts_with_a_non_delta_strike_label(
+    audit_mod: Any, tmp_path: Path
+) -> None:
+    """Eligible means "has a stored draft". At risk means "that draft records a
+    strike rule the dials could not express". Conflating them is what made
+    "0 of 26 eligible" unreadable."""
+    url = _db_with(
+        tmp_path,
+        [
+            ("plain", "2026-07-16 09:00:00", _spec("delta"), _prov(None)),
+            ("exposed", "2026-07-16 10:00:00", _spec("delta"), _prov("2% below spot")),
+            ("nodraft", "2026-07-16 11:00:00", _spec("delta"), None),
+        ],
+    )
+    result = audit_mod.audit(url, None, None)
+    assert result["eligible_runs"] == 2, "both runs with a stored draft are eligible"
+    assert result["at_risk_runs"] == 1, "only the one carrying a strikeLabel is at risk"
+    # and that one IS the detected rewrite, since its final method is delta
+    assert [d["run_id"] for d in result["detected"]] == ["exposed"]
+
+
+def test_empty_at_risk_population_says_nothing_was_exposed(
+    audit_mod: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """V-116's whole point: 0 detected among 0 at risk must not read as "the bug
+    did not fire". The output has to say which claim it is making."""
+    url = _db_with(
+        tmp_path, [("plain", "2026-07-16 09:00:00", _spec("delta"), _prov(None))]
+    )
+    audit_mod._print_text(audit_mod.audit(url, None, None))
+    out = capsys.readouterr().out
+    assert "at-risk population is EMPTY" in out
+    assert "'nothing was exposed'" in out
+    assert "VACUOUS RESULT" not in out, "eligible is non-zero, so that block is wrong here"
+
+
+def test_at_risk_line_sits_under_the_set_it_counts(
+    audit_mod: Any, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """at_risk is a subset of ELIGIBLE, so its line follows the eligible line.
+    Printed after "not inspectable", "of those" pointed at the wrong number."""
+    url = _db_with(
+        tmp_path, [("plain", "2026-07-16 09:00:00", _spec("delta"), _prov(None))]
+    )
+    audit_mod._print_text(audit_mod.audit(url, None, None))
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+    eligible_at = next(i for i, ln in enumerate(lines) if "the eligible set" in ln)
+    assert "AT RISK" in lines[eligible_at + 1], "the at-risk line must follow eligible"
