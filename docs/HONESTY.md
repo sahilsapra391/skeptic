@@ -536,6 +536,27 @@ intelligence lives in the parser's QUESTIONS, never in silent defaults:
   silently DROPPED the whole ladder — silent strategy corruption, the
   wrong-answer-no-error class). The client mirrors the server's
   vocabulary→version computation; the server remains the authority.
+- **A dial changes only what that dial owns (V-17, 2026-08-16).** The same
+  bug class survived in the parts of the spec the rebuild ALWAYS
+  regenerated rather than passed through. `position.legs` were rebuilt from
+  the structure + delta dials, which can only express `method: "delta"` at a
+  hardcoded $5 spread width, so an `offset_pct` strike silently became delta
+  0.30 and a $10-wide spread became $5-wide the moment ANY unrelated dial
+  moved; `expiration_selection` was recomputed as target-10 / target+15,
+  discarding the parser's band; and `meta.name` was regenerated, quietly
+  renaming the run in the Library. All three now pass through while their
+  dial reads what the parser produced. A MOVED strike dial rebuilds the
+  strike the user chose but still inherits the width they did not touch.
+  Proven by a round-trip guard that runs the real client builder and refuses
+  to skip (`backend/tests/test_spec_roundtrip_v18.py`).
+- **Runtime never reaches past the confirmed spec (V-36, 2026-08-16).** Fill
+  costs and the seed used to be applied at SUBMIT, from local Settings and a
+  hardcoded 42, overwriting what the user had already confirmed on the spec
+  screen. Settings are now DEFAULTS at parse time and inert after
+  confirmation, so the FILLS tile shows what will actually run. A confirmed
+  spec that runtime can still overwrite is a suggestion, not a contract.
+  The evidence bar is the deliberate exception and stays a view-time policy
+  (see the 2026-07-14 section below).
 - **The 0DTE dial refusal is lifted**: DTE 0 on the spec screen now emits
   an intraday spec (clock 5min, DTE band 0–2, the intraday slice) instead
   of blocking the run — the minute engine milestone it was waiting on has
