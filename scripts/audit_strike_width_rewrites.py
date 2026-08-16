@@ -191,24 +191,16 @@ def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
     }
 
 
-def _rows(url: str, window: dict[str, Any]) -> list[tuple[Any, ...]]:
-    """SELECT only. Read-only at the connection level where the driver allows."""
-    engine = create_engine(_read_only_url(url))
-    where: list[str] = []
-    params: dict[str, str] = {}
-    if window["since"]:
-        where.append("created_at >= :since")
-        params["since"] = window["since"]
-    if window["until_value"]:
-        # until_op comes from resolve_window's closed set {"<", "<="} only
-        where.append(f"created_at {window['until_op']} :until")
-        params["until"] = window["until_value"]
-    clause = (" where " + " and ".join(where)) if where else ""
-    sql = f"select id, created_at, spec_json, provenance_json from runs{clause}"
-    with engine.connect() as conn:
-        if not url.startswith("sqlite"):
-            conn.execute(text("set transaction read only"))
-        return list(conn.execute(text(sql), params))
+# V-100: the comparison operator is chosen from a fixed table keyed by the
+# validated form, so no caller-supplied string is ever interpolated into SQL.
+# "fine for every current caller" is the argument that ends with a script
+# pointed at production interpolating something a caller supplied; V-62 made
+# the write path structurally impossible and the read path gets the same
+# treatment rather than a convention in a comment.
+_UNTIL_CLAUSE = {
+    "date": "created_at < :until",
+    "timestamp": "created_at <= :until",
+}
 
 
 def _read_only_url(url: str) -> str:
@@ -219,16 +211,39 @@ def _read_only_url(url: str) -> str:
     return url
 
 
-def _newest_in_database(url: str) -> str | None:
-    """V-91: window-INDEPENDENT by definition. A cutoff derived from a bounded
-    scan is what makes runs that predate the fix read as new instances after
-    it, so the follow-up guidance reads this, never the windowed maximum."""
+def _read(url: str, window: dict[str, Any]) -> tuple[list[tuple[Any, ...]], str | None]:
+    """SELECT only, on ONE read-only connection (V-101).
+
+    Returns the windowed rows AND the database-wide newest timestamp. The
+    latter is deliberately window-INDEPENDENT (V-91): a cutoff derived from a
+    bounded scan is what would make runs predating the fix read as new
+    instances after it.
+    """
+    where: list[str] = []
+    params: dict[str, str] = {}
+    if window["since"]:
+        where.append("created_at >= :since")
+        params["since"] = window["since"]
+    if window["until_form"]:
+        where.append(_UNTIL_CLAUSE[window["until_form"]])
+        params["until"] = window["until_value"]
+    clause = (" where " + " and ".join(where)) if where else ""
+
     engine = create_engine(_read_only_url(url))
     with engine.connect() as conn:
         if not url.startswith("sqlite"):
             conn.execute(text("set transaction read only"))
-        row = conn.execute(text("select max(created_at) from runs")).first()
-    return str(row[0]) if row and row[0] is not None else None
+        rows = list(
+            conn.execute(
+                text(
+                    "select id, created_at, spec_json, provenance_json "
+                    f"from runs{clause}"
+                ),
+                params,
+            )
+        )
+        newest = conn.execute(text("select max(created_at) from runs")).first()
+    return rows, (str(newest[0]) if newest and newest[0] is not None else None)
 
 
 def _lead_method(spec_json: str | None) -> str | None:
@@ -260,7 +275,8 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
     newest: str | None = None
     window = resolve_window(since, until)
 
-    for run_id, created_at, spec_json, provenance_json in _rows(url, window):
+    rows, newest_in_database = _read(url, window)
+    for run_id, created_at, spec_json, provenance_json in rows:
         total += 1
         stamp = str(created_at)
         if newest is None or stamp > newest:
@@ -287,7 +303,7 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
         "newest_in_window": newest,
         # V-91: window-independent, so the V-71 cutoff cannot be skewed by a
         # bounded baseline
-        "newest_in_database": _newest_in_database(url),
+        "newest_in_database": newest_in_database,
         "total_runs": total,
         "runs_with_any_provenance": with_provenance,
         "eligible_runs": len(eligible),

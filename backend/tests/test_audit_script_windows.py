@@ -1,17 +1,26 @@
-"""V-92: boundary semantics for the V-24 audit script get ONE derivation and a
-test, not two call sites and a convention.
+"""V-92 / V-97 / V-98: boundary semantics for the V-24 audit script.
 
-This date handling has been written three times and been wrong twice: first
-`created_at <= '<date>'` silently dropped the whole boundary day, then the fix
-flipped every input to `<` and silently made a full-timestamp bound exclusive
-where it had been inclusive. The rule it settles on:
+This date handling has been wrong three separate times, so those three defects
+ARE the specification and each has a named regression test below:
 
-    --until <date>            INCLUSIVE of that entire day
-    --until <full timestamp>  INCLUSIVE of that exact instant (unchanged by
-                              PR-0 — the semantics it always had)
+  1. `created_at <= '<date>'` compared a timestamp to a date and dropped every
+     run on the boundary day.
+  2. The fix for (1) flipped EVERY input to `<`, silently making a named
+     instant exclusive.
+  3. The fix for (2) inferred "timestamp" from a failed date parse, so
+     `--until 2026-7-16` was used verbatim in a string comparison and silently
+     matched everything while the banner claimed a bound.
 
-Both forms are tested against a fixture holding a run at exactly the boundary,
-so the fourth rewrite fails loudly instead of depending on care.
+All three shared one root cause: the window was derived by guessing from what
+a parser happened to reject. The rule it now settles on, with rejection before
+any parsing:
+
+    YYYY-MM-DD                     that whole day, inclusive
+    YYYY-MM-DD HH:MM:SS[.ffffff]   that exact instant, inclusive
+    anything else                  refused, non-zero exit, no banner
+
+Both accepted forms are tested against a fixture holding a run at exactly the
+boundary, so a fourth rewrite fails loudly instead of depending on care.
 """
 
 from __future__ import annotations
@@ -73,7 +82,7 @@ def db(tmp_path: Path) -> str:
 
 
 def _ids(mod: Any, url: str, since: str | None, until: str | None) -> set[str]:
-    rows = mod._rows(url, mod.resolve_window(since, until))
+    rows, _newest = mod._read(url, mod.resolve_window(since, until))
     return {r[0] for r in rows}
 
 
