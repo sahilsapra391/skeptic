@@ -18,6 +18,7 @@ import {
   fetchMe,
   getCoverage,
   getRun,
+  getVariantDraft,
   listRuns,
   parseText,
   prefetchBars,
@@ -311,8 +312,16 @@ export function RunFlow({
       const params = new URLSearchParams(window.location.search);
       pitch = params.get("pitch");
       modeParam = params.get("mode");
-      if (params.has("pitch") || params.has("mode")) {
+      // V-08: /new?variant=<runId> reopens a stored run on the dials. Same
+      // one-shot consumption as the other boot params, so a refresh does not
+      // re-fetch — and, like them, it lands on a phase rather than a route.
+      const variantOf = params.get("variant");
+      if (params.has("pitch") || params.has("mode") || params.has("variant")) {
         window.history.replaceState(null, "", "/new");
+      }
+      if (variantOf) {
+        void bootVariantRef.current(variantOf);
+        return;
       }
     }
     if (modeParam === "chart") {
@@ -326,6 +335,36 @@ export function RunFlow({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** V-08: land on the spec screen prefilled from a stored run. The projection
+   * is the server's (V-22), so nothing here reconstructs a parent's spec. */
+  const bootVariant = useCallback(async (runId: string) => {
+    setBusy(true);
+    try {
+      const v = await getVariantDraft(runId);
+      if (!v.draft || v.tier === "c") {
+        // V-128: the honest reason, never a generic error
+        setError(
+          Object.values(v.reasons)[0] ??
+            "this run's strategy cannot be reopened on the dials",
+        );
+        return;
+      }
+      // the parent's spec is the rebuild base, so parser-only vocabulary
+      // survives a dial edit exactly as it does after a fresh parse
+      parsedSpecRef.current = v.spec;
+      parsedDraftRef.current = JSON.stringify(v.draft);
+      transcriptRef.current = v.conversation ?? [];
+      setDraft(v.draft);
+      setPhase("spec");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "could not open that run");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  const bootVariantRef = useRef(bootVariant);
+  bootVariantRef.current = bootVariant;
 
   const compileText = useCallback(
     // `source` overrides state `text` for the landing handoff: setText in

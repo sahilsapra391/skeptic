@@ -25,9 +25,15 @@ EFFECTIVE = {"effective_start": "2023-04-03", "effective_end": "2026-07-17"}
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """No access token configured, matching test_runs_api: these runs are
-    unowned (user_id NULL), which _enforce_run_access leaves reachable by id —
-    that is how an anonymous device revisits its own run."""
+    """HARNESS FACT 1: the /api gate in app/main.py opens only when
+    SKEPTIC_ACCESS_TOKEN is ABSENT (auth.gate_allows returns True immediately
+    on an unset token). A stray token in the environment — from a .env, or
+    exported in the shell — turns every request in this file into a bare 401
+    with no hint about why. Deleting it is what test_runs_api does too.
+
+    The runs stored below are unowned (user_id NULL), which
+    _enforce_run_access deliberately leaves reachable by id: that is how an
+    anonymous device revisits its own run."""
     monkeypatch.delenv("SKEPTIC_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     return TestClient(app)
@@ -50,8 +56,11 @@ def _store(
                 stats_json=json.dumps(stats) if stats else None,
             )
         )
-        # db.session() hands back a raw Session: __exit__ closes and rolls
-        # back, so an uncommitted row is invisible to the request's own session
+        # HARNESS FACT 2, and the one that will cost you an hour: db.session()
+        # returns a RAW SQLAlchemy Session. Its __exit__ closes and rolls back;
+        # it does not commit. A fixture that forgets this stores nothing, and
+        # the endpoint then answers "run <id> not found" — a 404 that reads as
+        # an endpoint bug and sends you debugging the wrong file entirely.
         s.commit()
     return run_id
 
