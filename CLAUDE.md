@@ -38,6 +38,10 @@ skeptic/
     builds fresh and is unaffected. A documented command that errors gets
     worked around by running a subset, which in a repo this guardrail-heavy is
     how a green-looking partial run happens (V-83).
+  - **Same for mypy**: `uv run python -m mypy app`, not `uv run mypy app`. The
+    bare form reports 43 errors from the wrong interpreter's stubs; the module
+    form reports none. Both numbers look like real results, which is what
+    makes this worth writing down rather than rediscovering.
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.

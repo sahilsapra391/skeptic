@@ -317,6 +317,35 @@ def test_one_edited_dial_changes_only_what_it_owns() -> None:
     assert result["position"]["legs"][1]["strike_selection"]["value"] == 10
 
 
+def test_custom_width_survives_a_strike_edit() -> None:
+    """The case the variant tier classifier rests on.
+
+    `test_one_edited_dial_changes_only_what_it_owns` moves the DTE dial, which
+    never touched legs in the first place. The load-bearing case is moving the
+    STRIKE dial on a spec with a non-default wing: pre-V-17 that rebuilt every
+    leg and reset the width to the hardcoded $5. If the width did not survive
+    here, a custom width would be a rule the dials cannot express, and
+    `app/api/variant.py` would have to classify it tier (b) rather than (a).
+    """
+    spec = _validated(CORPUS["custom_spread_width"])
+    assert spec["position"]["legs"][1]["strike_selection"]["value"] == 10
+    draft = _draft_for(spec)
+    draft["strikeDelta"] = 20  # the single user edit, on the strike dial
+
+    rebuilt = _rebuild_all([{"draft": draft, "base": spec}])[0]
+    assert rebuilt["ok"], rebuilt.get("error")
+    result = _validated(rebuilt["spec"])
+
+    assert result["position"]["legs"][0]["strike_selection"]["value"] == 0.20, (
+        "the strike the user chose"
+    )
+    assert result["position"]["legs"][1]["strike_selection"]["value"] == 10, (
+        "the width they did NOT touch"
+    )
+    changed = {p for p, _, _ in _field_diff(spec, result)}
+    assert ".position.legs[1].strike_selection.value" not in changed
+
+
 def test_the_guard_actually_detects_a_rewrite() -> None:
     """A guard that cannot fail is not a guard. Force the pre-V-17 condition —
     a strike dial the user DID move — and prove the diff reports it."""
