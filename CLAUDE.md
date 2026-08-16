@@ -31,7 +31,16 @@ skeptic/
 
 ## Commands
 
-- Backend: `cd backend && uv sync && uv run pytest` · dev: `uv run uvicorn app.main:app --reload`
+- Backend: `cd backend && uv sync && uv run python -m pytest` · dev: `uv run uvicorn app.main:app --reload`
+  - Use `python -m pytest`, not bare `uv run pytest`. The `pytest` shim on this
+    machine resolves a 3.13 environment while the project pins 3.12, so the
+    bare form fails the whole suite with `ModuleNotFoundError: fastapi`. CI
+    builds fresh and is unaffected. A documented command that errors gets
+    worked around by running a subset, which in a repo this guardrail-heavy is
+    how a green-looking partial run happens (V-83).
+  - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
+    stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
+    dependency: without node the guard fails rather than skipping.
 - Frontend: `cd frontend && npm i && npm run dev` · checks: `npm run lint && npm run typecheck`
 - Collector local run: `cd collector && uv run python collect.py --mode eod`
 - CI must be green before any milestone is called done.

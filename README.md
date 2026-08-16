@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C099%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1%2C145%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -97,6 +97,7 @@ Enforced in code and in tests, not in a style guide.
 | **Re-grading at read time** | Saved runs re-grade when the viewer's evidence bar differs from the one they were scored at. | A verdict is a function of policy, not a frozen label. |
 | **Honest coverage** | Any surface showing results also shows the data window they came from. | Results without their window are unfalsifiable. |
 | **Determinism** | Same spec, same data, same seed produces identical engine and gauntlet output. | An honesty layer you cannot reproduce is not evidence. |
+| **The confirmed spec is a contract** | What the confirmation screen shows is what runs. A dial changes only what that dial owns, and nothing downstream re-reads Settings to overwrite it. | The dangerous edit is the one nobody made: an unrelated dial quietly rewriting a strike rule or a fill assumption is wrong-answer-no-error. |
 
 ---
 
@@ -251,7 +252,7 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           986 tests, engine fixtures hand-computed
+  tests/           1,032 tests, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
   tests/           113 tests
@@ -262,7 +263,7 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,099 tests** (986 backend, 113 collector).
+**1,145 tests** (1,032 backend, 113 collector).
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on

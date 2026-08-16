@@ -17,6 +17,13 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+      # V-58: the V-18 round-trip guard runs the REAL frontend/lib/spec.ts
+      # through node's native type stripping (22.6+). It is a HARD dependency
+      # of this suite — without node the guard fails rather than skipping, so
+      # node is pinned here instead of relying on whatever the runner ships.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run mypy app

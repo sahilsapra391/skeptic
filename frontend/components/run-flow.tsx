@@ -24,6 +24,8 @@ import {
   startBacktest,
 } from "@/lib/api";
 import { HEADLINES } from "@/lib/headlines";
+import { confirmDefaults } from "@/lib/confirm";
+import { getSettings } from "@/lib/settings";
 import { myRunIds } from "@/lib/my-runs";
 import { turnstileConfigured } from "@/lib/turnstile";
 import { notifyCreditsChanged } from "@/lib/credits-events";
@@ -46,6 +48,13 @@ import { SpecScreen } from "@/components/spec/spec-screen";
 
 type Phase = "compose" | "clarify" | "spec" | "running" | "results";
 type Mode = "text" | "chart";
+
+/** V-36: stamp the confirmed costs and seed onto a brand-new draft. The pure
+ * implementation lives in lib/confirm.ts so the V-18 guard can execute it. */
+const confirmed = (
+  draft: SpecDraft,
+  parsedSpec?: Record<string, unknown> | null,
+): SpecDraft => confirmDefaults(draft, parsedSpec, getSettings());
 
 /** Starter strategies. Ordered by what the library says the user actually
  * runs (structure counts from past runs), most-used first. */
@@ -355,9 +364,10 @@ export function RunFlow({
           if (!withAnswers) setAnswers({});
           setPhase("clarify");
         } else {
+          const draft = confirmed(res.draft, res.spec);
           parsedSpecRef.current = res.spec ?? null;
-          parsedDraftRef.current = JSON.stringify(res.draft);
-          setDraft(res.draft);
+          parsedDraftRef.current = JSON.stringify(draft);
+          setDraft(draft);
           setPhase("spec");
         }
       } catch (e) {
@@ -874,7 +884,7 @@ export function RunFlow({
               parsedSpecRef.current = null;
               parsedDraftRef.current = null;
               transcriptRef.current = [];
-              setDraft(d);
+              setDraft(confirmed(d, null));
               setPhase("spec");
             }}
           />

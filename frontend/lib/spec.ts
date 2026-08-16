@@ -69,6 +69,143 @@ function legs(draft: SpecDraft): Json[] {
   }
 }
 
+/**
+ * V-77 — DIAL OWNERSHIP. The operative rule of the rebuild is "regenerate what
+ * the dial owns, inherit everything else". It is not self-evident from the
+ * code, and rebuilding too much is how this file has gone wrong three times
+ * (the D5d ladder drop, then legs/tenor, then meta.name). Read this before
+ * adding anything to the spec literal below.
+ *
+ *   DIAL          OWNS (regenerated when the dial moves)
+ *   ─────────────────────────────────────────────────────────────────────────
+ *   TICKER        underlying.ticker                            + meta.name
+ *   STRUCTURE     position.structure, the leg SHAPE             + meta.name
+ *   STRIKE        lead leg strike_selection                     + meta.name
+ *   DTE           expiration_selection.target_dte, and the derived min/max
+ *                 band ONLY when target moves
+ *   CADENCE       entry.schedule.frequency, .day_of_week
+ *   TRIGGER       entry.conditions[0]
+ *   SIZE          sizing.method, sizing.value
+ *   CAPITAL       backtest.initial_capital
+ *   EXIT          the label-expressible exit fields: profit_target_pct,
+ *                 stop_loss_pct, time_exit_dte, close_at_time
+ *   WINDOW        backtest.start / .end   (applied in startBacktest)
+ *   SCANNING      entry.intraday_scan
+ *   RESOLUTION    backtest.resolution
+ *   FILLS         costs.*                 (V-36; read-only until a variant)
+ *   (no dial)     backtest.seed           (V-36; confirmed, never re-hardcoded)
+ *
+ * OWNED BY NO DIAL — always inherited from the parsed spec, never synthesized:
+ *   entry.scale_in (the ladder) · entry.conditions[1..] · schedule.time_of_day
+ *   entry.max_concurrent_positions · exit.delta_stop_abs · exit.theta_harvest
+ *   exit.conditions · position.max_vega_per_contract · the width_from_leg
+ *   value on spread wings · expiration_selection.min_dte / .max_dte
+ *   meta.name while ticker+structure+strike are untouched
+ *
+ * meta.description_raw is the user's verbatim prompt and is carried on the
+ * draft, not derived. There is NO user-set run name anywhere in the product
+ * (no rename in the Library, no custom name at submit) — the only names that
+ * exist are parser-derived or generated here. If renaming is ever added, a
+ * user-set name must never regenerate under any dial move; only derived names
+ * may (V-79).
+ */
+
+/** Python's round() is half-to-even; JS Math.round is half-up. The delta a
+ * draft carries was produced by spec_to_draft, so the projection below has to
+ * match its rounding exactly or a .5 case reads as an edit that never happened. */
+function roundHalfEven(x: number): number {
+  const f = Math.floor(x);
+  const diff = x - f;
+  if (diff > 0.5) return f + 1;
+  if (diff < 0.5) return f;
+  return f % 2 === 0 ? f : f + 1;
+}
+
+/**
+ * V-17: is the STRIKE dial still showing exactly what the parser produced?
+ *
+ * `legs()` can only emit `method: "delta"` at a hardcoded $5 spread width, so
+ * rebuilding a spec whose strike rule it cannot express silently rewrites that
+ * rule — an offset_pct strike becomes delta 0.30, a $10-wide spread becomes $5.
+ * When the dial is untouched there is nothing to rebuild FROM, so the base legs
+ * pass through whole, exactly as the ladder and extra conditions already do.
+ *
+ * Untouched means the structure still matches AND either:
+ *  - `strikeLabel` is still set (a non-delta parser strike; the STRIKE select
+ *    nulls this label the instant it is touched), or
+ *  - the dial's delta still equals what spec_to_draft projects from the base's
+ *    lead leg — which is what catches a custom width behind a normal delta.
+ */
+function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
+  const position = (base?.position ?? null) as Json | null;
+  const baseLegs = position?.legs as Json[] | undefined;
+  if (!position || !baseLegs?.length) return false;
+  if (position.structure !== draft.structure) return false;
+  if (draft.strikeLabel != null) return true;
+
+  const sel = (baseLegs[0]?.strike_selection ?? {}) as Json;
+  if (sel.method !== "delta" || typeof sel.value !== "number") return false;
+  // Number.isFinite, not just typeof: NaN IS a number, and NaN projects
+  // through roundHalfEven to `NaN || 5` === 5, which would report an untouched
+  // dial for any draft sitting at delta 5 and pass the NaN straight through.
+  if (!Number.isFinite(sel.value)) return false;
+  // mirrors backend/app/parser/parse.py spec_to_draft
+  const projected = roundHalfEven((Math.abs(sel.value) * 100) / 5) * 5 || 5;
+  return projected === draft.strikeDelta;
+}
+
+/**
+ * V-17: the legs that actually ship.
+ *
+ * An untouched strike dial passes the base legs through whole. A MOVED strike
+ * dial rebuilds them — but the spread width is a separate value the user did
+ * not touch, and `legs()` only knows the hardcoded $5. So the rebuilt wings
+ * keep their structural `reference_leg` and inherit the base's real width.
+ *
+ * PRECONDITION: `base` must already be detached (draftToSpec deep-copies it on
+ * entry). This returns base sub-objects BY REFERENCE, so passing a raw
+ * parsedSpec here re-creates the shared-mutable-state bug. Same for
+ * strikeUntouched and tenorUntouched.
+ */
+function positionLegs(draft: SpecDraft, base?: Json | null): Json[] {
+  if (strikeUntouched(draft, base)) {
+    // `base` is already detached by draftToSpec, so this hands the legs over
+    // whole rather than half-copying them (a per-leg spread would still share
+    // every strike_selection).
+    return (base?.position as Json).legs as Json[];
+  }
+  const rebuilt = legs(draft);
+  const position = (base?.position ?? null) as Json | null;
+  const baseLegs = position?.legs as Json[] | undefined;
+  if (
+    !position ||
+    !baseLegs ||
+    position.structure !== draft.structure ||
+    baseLegs.length !== rebuilt.length
+  ) {
+    return rebuilt;
+  }
+  return rebuilt.map((leg, i) => {
+    const bsel = (baseLegs[i]?.strike_selection ?? {}) as Json;
+    const rsel = (leg.strike_selection ?? {}) as Json;
+    if (bsel.method === "width_from_leg" && rsel.method === "width_from_leg") {
+      return { ...leg, strike_selection: { ...rsel, value: bsel.value } };
+    }
+    return leg;
+  });
+}
+
+/** V-17: the DTE dial owns `target_dte` and nothing else, so while it still
+ * reads what the parser produced, the parser's own min/max band is the truth
+ * and the target-10 / target+15 recomputation must not overwrite it. */
+function tenorUntouched(draft: SpecDraft, base?: Json | null): boolean {
+  const sel = ((base?.position ?? {}) as Json).expiration_selection as
+    | Json
+    | undefined;
+  if (!sel || typeof sel.target_dte !== "number") return false;
+  return sel.target_dte === draft.dte;
+}
+
 function schedule(draft: SpecDraft): Json {
   // the structured dial wins when present (pre-run cadence tile)
   if (draft.cadenceSel) {
@@ -201,10 +338,31 @@ function computeSpecVersion(spec: Json): number {
   return 1;
 }
 
-export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
+export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   if (!draft.exit) {
     throw new Error("exit is unset — the spec screen must ask, never default");
   }
+  // V-93: the same check startBacktest applies, so both sites agree on whether
+  // a draft without confirmed costs is legal. Enforcement stays in both places
+  // rather than moving here wholesale; making spec construction the single
+  // authority is V-61, which is a phase, not a fix.
+  if (!draft.costs) {
+    throw new Error(
+      "confirmed fill costs are unset. The spec screen must ask, never default.",
+    );
+  }
+  // Detach ONCE at the boundary. Everything below inherits sub-objects from
+  // the base (legs, the tenor band, costs, the ladder, extra conditions), and
+  // `base` is the caller's retained parsedSpec, reused for every rebuild and
+  // for the untouched verbatim branch. Returning pieces of it by reference
+  // means a later in-place edit anywhere downstream silently rewrites the
+  // parser's spec. Cloning here beats copying at each use site, which is how
+  // one branch ends up shallow and the rest deep.
+  // JSON round-trip, matching build_replay_spec's `json.loads(json.dumps(spec))`
+  // on the server. The spec IS a JSON IR, so this is exact, and unlike
+  // structuredClone it carries no browser floor and cannot smuggle through a
+  // Date or Map that would then fail to serialize.
+  const base = baseSpec ? (JSON.parse(JSON.stringify(baseSpec)) as Json) : baseSpec;
   // FX.5: 0DTE runs on the 5-minute intraday engine (shipped) — a 0DTE
   // dial now emits an intraday spec instead of refusing. The DTE band is
   // the intraday slice (0–2 trading DTE).
@@ -278,7 +436,8 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
     start: null,
     end: null,
     initial_capital: draft.capital ?? 25000,
-    seed: 42,
+    // V-36: the confirmed seed wins. 42 is the last resort, not the rule.
+    seed: draft.seed ?? (baseBacktest.seed as number | undefined) ?? 42,
   };
   if (intraday) backtest.clock = "5min";
   const resolution =
@@ -287,31 +446,50 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
       : (baseBacktest.resolution as string | undefined);
   if (resolution === "finest" && intraday) backtest.resolution = "finest";
 
+  // V-17: the generated name reads off ticker + strike + structure. While all
+  // three still say what the parser produced, the parser's own name stands —
+  // otherwise editing an unrelated dial silently renames the run in the
+  // library. Once one of them moves, a stale ".30Δ" label on a .20Δ run would
+  // be worse than a regenerated one.
+  const baseName = ((base?.meta ?? {}) as Json).name;
+  const keepName =
+    typeof baseName === "string" &&
+    strikeUntouched(draft, base) &&
+    ((base?.underlying ?? {}) as Json).ticker === draft.ticker;
+
   const spec: Json = {
     spec_version: 1,
     meta: {
-      name: `${draft.ticker} .${draft.strikeDelta}Δ ${draft.structure.replace(/_/g, " ")}`.slice(0, 80),
+      name: keepName
+        ? baseName
+        : `${draft.ticker} .${draft.strikeDelta}Δ ${draft.structure.replace(/_/g, " ")}`.slice(0, 80),
       description_raw: draft.quote,
     },
     underlying: { ticker: draft.ticker },
     position: {
       structure: draft.structure,
-      legs: legs(draft),
+      legs: positionLegs(draft, base),
       ...(((base?.position ?? {}) as Json).max_vega_per_contract != null
         ? {
             max_vega_per_contract: ((base?.position ?? {}) as Json)
               .max_vega_per_contract,
           }
         : {}),
-      // 0DTE band matches the parser's convention (max 1: same-day intent,
-      // next-day fallback only — review: band drift between ingresses)
-      expiration_selection: zeroDte
-        ? { target_dte: 0, min_dte: 0, max_dte: 1 }
-        : {
-            target_dte: draft.dte,
-            min_dte: Math.max(intraday ? 0 : 1, draft.dte - 10),
-            max_dte: Math.min(120, draft.dte + 15),
-          },
+      // V-17: same rule for the tenor band. The dial owns target_dte only, so
+      // while it still reads what the parser produced, the parser's min/max
+      // band survives instead of being recomputed as target-10 / target+15.
+      expiration_selection: tenorUntouched(draft, base)
+        ? ((base?.position as Json).expiration_selection as Json)
+        : zeroDte
+          ? // 0DTE band matches the parser's convention (max 1: same-day
+            // intent, next-day fallback only — review: band drift between
+            // ingresses)
+            { target_dte: 0, min_dte: 0, max_dte: 1 }
+          : {
+              target_dte: draft.dte,
+              min_dte: Math.max(intraday ? 0 : 1, draft.dte - 10),
+              max_dte: Math.min(120, draft.dte + 15),
+            },
     },
     entry,
     exit,
@@ -319,11 +497,10 @@ export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
       method: draft.sizeMethod ?? "fixed_contracts",
       value: draft.sizeValue ?? 1,
     },
-    costs: {
-      commission_per_contract: 0.65,
-      slippage_half_spread_fraction: 0.85,
-      slippage_half_spread_fraction_sell: 0.9,
-    },
+    // V-36: the confirmed costs, full stop. The guard at the top of this
+    // function makes them present, so there is no fallback rung here to drift
+    // out of step with startBacktest's.
+    costs: { ...draft.costs },
     backtest,
   };
   spec.spec_version = computeSpecVersion(spec);

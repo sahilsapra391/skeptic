@@ -230,6 +230,14 @@ export function SpecScreen({
   earliestYear: string;
 }) {
   const settings = useSettings();
+  // V-36: what the FILLS tile shows is the spec's own confirmed costs. Settings
+  // are the fallback only for a draft built before they were stamped on.
+  const fills = {
+    commission: draft.costs?.commission_per_contract ?? settings.commission,
+    slippage: draft.costs?.slippage_half_spread_fraction ?? settings.slippage,
+    slippageSell:
+      draft.costs?.slippage_half_spread_fraction_sell ?? settings.slippageSell,
+  };
   const [exitEditing, setExitEditing] = useState(false);
   const [customProfit, setCustomProfit] = useState("");
   const [customStop, setCustomStop] = useState("");
@@ -630,7 +638,9 @@ export function SpecScreen({
         <div className={TILE}>
           <TileLabel name="FILLS" />
           <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
-            bid/ask + slip {settings.slippage}/{settings.slippageSell} · ${settings.commission}/ct
+            {/* V-36: the CONFIRMED costs, not a live Settings read. These are
+                what will run; Settings only seeded them at parse time. */}
+            bid/ask + slip {fills.slippage}/{fills.slippageSell} · ${fills.commission}/ct
           </div>
         </div>
       </div>
