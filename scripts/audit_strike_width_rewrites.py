@@ -6,6 +6,13 @@ strike rule?
     uv run --project backend python scripts/audit_strike_width_rewrites.py \
         --since 2026-07-01 --until 2026-08-16
 
+WINDOW (V-104)
+    --since / --until take DATES ONLY: YYYY-MM-DD, zero-padded, each inclusive
+    of that whole day. Not timestamps. This function has had four defects in
+    its history and every one traced to two ends of a comparison being
+    computed by different code paths; a single accepted form makes that
+    unwritable rather than merely untested.
+
 ENV CONTRACT
     DATABASE_URL   the database to inspect. Neon Postgres in production;
                    falls back to the local SQLite dev file when unset, which
@@ -54,7 +61,7 @@ import json
 import os
 import re
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -72,135 +79,117 @@ def _database_url() -> str:
 
 
 class WindowArgumentError(ValueError):
-    """A --since / --until value that is not one of the two accepted forms.
+    """A --since / --until value that is not the accepted form (V-104: dates).
 
     Raised BEFORE anything is parsed loosely, queried, or printed. `main`
     turns it into a non-zero exit with the offending value named.
     """
 
 
-# Exactly two accepted shapes. Matched explicitly rather than inferred from
-# whether some parser happened to raise — inference from a failed parse is
-# historical defect 3 (see the module docstring).
+# ONE accepted shape (V-104). Four defects in this function's history all came
+# from carrying two forms with different inclusivity through one comparison;
+# with a single form the mismatch is unwritable rather than merely untested.
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# kept solely to explain the refusal to someone pasting a timestamp back in
 _TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?$")
 
-_ACCEPTED_FORMS = (
-    "accepted forms: a date YYYY-MM-DD, zero-padded, meaning that whole day "
-    "inclusive; or a timestamp YYYY-MM-DD HH:MM:SS[.ffffff], meaning that "
-    "exact instant inclusive"
+_ACCEPTED_FORM = (
+    "this script takes dates only: YYYY-MM-DD, zero-padded. Both --since and "
+    "--until are inclusive of that whole day"
 )
 
 
-def _classify(label: str, value: str) -> tuple[str, str]:
-    """Reject before parsing. Returns (form, value) or raises.
+def _as_date(label: str, value: str) -> date:
+    """Reject before parsing (V-97), and accept exactly one form (V-104).
 
-    Nothing that fails these two patterns reaches SQL or a string comparison.
-    `2026-7-16` is not silently a timestamp; it is a typo, and a typo that
-    silently widens the window is worse than a crash, because the banner then
-    reports the wrong window with total confidence.
+    Nothing that fails this pattern reaches SQL or a comparison. `2026-7-16` is
+    not silently something else; it is a typo, and a typo that silently widens
+    the window is worse than a crash, because the banner then reports the wrong
+    window with total confidence.
     """
-    if _DATE_RE.match(value):
-        try:
-            date.fromisoformat(value)
-        except ValueError as exc:
-            raise WindowArgumentError(
-                f"--{label} {value!r} is shaped like a date but is not a real "
-                f"calendar date. {_ACCEPTED_FORMS}"
-            ) from exc
-        return "date", value
-    if _TIMESTAMP_RE.match(value):
-        try:
-            datetime.fromisoformat(value)
-        except ValueError as exc:
-            raise WindowArgumentError(
-                f"--{label} {value!r} is shaped like a timestamp but is not a "
-                f"real one. {_ACCEPTED_FORMS}"
-            ) from exc
-        return "timestamp", value
-    raise WindowArgumentError(
-        f"--{label} {value!r} is not a recognised date or timestamp. "
-        f"{_ACCEPTED_FORMS}"
-    )
+    if not _DATE_RE.match(value):
+        hint = ""
+        if _TIMESTAMP_RE.match(value):
+            # the one refusal a user is likely to hit by accident, since the
+            # newest-run line prints a timestamp
+            hint = (
+                f" That is a timestamp; pass {value[:10]!r} to cover that "
+                "whole day."
+            )
+        raise WindowArgumentError(
+            f"--{label} {value!r} is not a date. {_ACCEPTED_FORM}.{hint}"
+        )
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise WindowArgumentError(
+            f"--{label} {value!r} is shaped like a date but is not a real "
+            f"calendar date. {_ACCEPTED_FORM}"
+        ) from exc
 
 
-def _lower_bound(form: str, value: str) -> datetime:
-    return (
-        datetime.fromisoformat(f"{value} 00:00:00")
-        if form == "date"
-        else datetime.fromisoformat(value)
-    )
+def _boundary(day: date, edge: str) -> str:
+    """V-106: the ONE place a validated date becomes a comparison bound.
+
+    The window is half-open: [since 00:00, until+1day 00:00). BOTH ends come
+    from here, so they cannot disagree about inclusivity. Deriving one end
+    through a helper and inlining the other is the asymmetry behind every
+    defect this function has had.
+    """
+    start = day if edge == "lower" else day + timedelta(days=1)
+    return datetime.combine(start, time.min).isoformat(sep=" ")
+
+
+def until_for(timestamp: str | None) -> str | None:
+    """V-105: the --until value that covers a printed timestamp's day.
+
+    Anything this script prints as copyable has to be accepted by this script.
+    The newest-run line prints a full timestamp because that is the honest
+    figure; this is the date to hand back to --until.
+    """
+    return timestamp[:10] if timestamp else None
 
 
 def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
-    """V-92 / V-97: the ONE derivation of this script's boundary semantics,
-    and the only place a --since / --until value is validated.
+    """V-92 / V-97 / V-104: the ONE derivation of this script's boundary
+    semantics, and the only place a --since / --until value is validated.
 
-        --until <date>            INCLUSIVE of that entire day
-        --until <full timestamp>  INCLUSIVE of that exact instant
-        anything else             WindowArgumentError, non-zero exit
+        --since <date>   inclusive of that whole day
+        --until <date>   inclusive of that whole day
+        anything else    WindowArgumentError, non-zero exit
 
     Both the query and the printed banner read this result, so the window
     reported is by construction the window queried.
 
-    A date needs the exclusive next-midnight form because `created_at <=
-    '2026-07-17'` compares a timestamp against a date and drops the whole day:
-    '2026-07-17 18:53' sorts after '2026-07-17'. A timestamp needs `<=` to
-    keep the inclusive meaning it has always had.
+    The bounds are half-open under the hood — `created_at >= since 00:00` and
+    `created_at < until+1day 00:00` — because `created_at <= '2026-07-17'`
+    compares a timestamp against a date and drops the whole day: '2026-07-17
+    18:53' sorts after '2026-07-17'. That is invisible to the caller, who only
+    ever says which days they mean.
     """
-    since_form = since_value = None
-    if since is not None:
-        since_form, since_value = _classify("since", since)
+    since_day = _as_date("since", since) if since is not None else None
+    until_day = _as_date("until", until) if until is not None else None
 
-    until_form = until_value = until_op = None
-    if until is not None:
-        until_form, until_raw = _classify("until", until)
-        if until_form == "date":
-            # the whole day, expressed as an exclusive bound at next midnight
-            until_value = (date.fromisoformat(until_raw) + timedelta(days=1)).isoformat()
-            until_op = "<"
-        else:
-            until_value = until_raw
-            until_op = "<="
+    since_value = _boundary(since_day, "lower") if since_day else None
+    until_value = _boundary(until_day, "upper") if until_day else None
 
-    if since_form and until_form:
+    if since_value and until_value and since_value >= until_value:
         # An inverted window silently returns nothing, which this script would
         # then report as "0 detected" — the most dangerous false negative it
-        # has, given the number gates a merge.
-        lower = _lower_bound(since_form, since_value or "")
-        upper = (
-            datetime.fromisoformat(f"{until_value} 00:00:00")
-            if until_form == "date"
-            else datetime.fromisoformat(until_value or "")
+        # has, given the number gates a merge. Equal bounds are NOT inverted:
+        # they are one whole day, and refusing them was defect 4.
+        raise WindowArgumentError(
+            f"--since {since!r} is after --until {until!r}: the window is "
+            "inverted, which would report zero runs as though none existed"
         )
-        if lower >= upper:
-            raise WindowArgumentError(
-                f"--since {since!r} is not before --until {until!r}: the window "
-                "is empty or inverted, which would report zero runs as though "
-                "none existed"
-            )
 
     return {
         "since": since,
-        "since_form": since_form,
         "until": until,
+        "since_value": since_value,
         "until_value": until_value,
-        "until_op": until_op,
-        "until_form": until_form,
         "bounded": bool(since or until),
     }
-
-
-# V-100: the comparison operator is chosen from a fixed table keyed by the
-# validated form, so no caller-supplied string is ever interpolated into SQL.
-# "fine for every current caller" is the argument that ends with a script
-# pointed at production interpolating something a caller supplied; V-62 made
-# the write path structurally impossible and the read path gets the same
-# treatment rather than a convention in a comment.
-_UNTIL_CLAUSE = {
-    "date": "created_at < :until",
-    "timestamp": "created_at <= :until",
-}
 
 
 def _read_only_url(url: str) -> str:
@@ -219,13 +208,17 @@ def _read(url: str, window: dict[str, Any]) -> tuple[list[tuple[Any, ...]], str 
     bounded scan is what would make runs predating the fix read as new
     instances after it.
     """
+    # V-100 / V-106: both operators are literals here and both operands are
+    # bound parameters carrying the SAME resolved values the banner prints.
+    # No caller-supplied string reaches SQL, and there is no second derivation
+    # for the banner to drift from.
     where: list[str] = []
     params: dict[str, str] = {}
-    if window["since"]:
+    if window["since_value"]:
         where.append("created_at >= :since")
-        params["since"] = window["since"]
-    if window["until_form"]:
-        where.append(_UNTIL_CLAUSE[window["until_form"]])
+        params["since"] = window["since_value"]
+    if window["until_value"]:
+        where.append("created_at < :until")
         params["until"] = window["until_value"]
     clause = (" where " + " and ".join(where)) if where else ""
 
@@ -339,25 +332,31 @@ def _print_text(result: dict[str, Any]) -> None:
     # days, and "which flags did I pass last time" is not a thing to remember.
     print()
     print("WINDOW APPLIED")
-    if w["since"]:
-        print(f"  since               : {w['since']} (inclusive)   [--since {w['since']}]")
+    # V-106: every value below is read straight off the resolved window, which
+    # is the same object bound into the query, so the banner cannot describe a
+    # window other than the one that ran.
+    if w["since_value"]:
+        print(f"  since               : created_at >= {w['since_value']}"
+              f"   [--since {w['since']}, all of that day]")
     else:
         print("  since               : beginning of time   [default, no --since]")
-    if w["until"]:
-        shape = (
-            f"covers all of {w['until']}"
-            if w["until_form"] == "date"
-            else f"inclusive of {w['until']}"
-        )
-        print(f"  until               : created_at {w['until_op']} {w['until_value']}"
-              f"   [--until {w['until']}, {shape}]")
+    if w["until_value"]:
+        print(f"  until               : created_at <  {w['until_value']}"
+              f"   [--until {w['until']}, all of that day]")
     else:
         print("  until               : unbounded   [default, no --until]")
     # V-91: both, labelled. The database-wide figure is the one the V-71
     # cutoff uses, because a bounded scan's maximum would make runs that
     # predate the fix look like new instances after it.
+    newest_db = result["newest_in_database"]
     print(f"  newest in window    : {result['newest_in_window'] or 'none'}")
-    print(f"  newest in DATABASE  : {result['newest_in_database'] or 'none'}")
+    # V-105: the timestamp is the honest figure, and the date beside it is what
+    # --until accepts — anything printed as copyable must be valid input.
+    if newest_db:
+        print(f"  newest in DATABASE  : {newest_db}   "
+              f"(pass --until {until_for(newest_db)} to cover it)")
+    else:
+        print("  newest in DATABASE  : none")
 
     # V-66: the denominator comes BEFORE the count. A bare "0 detected" is
     # unreadable when the detection rule can only see runs that recorded a

@@ -95,23 +95,28 @@ def test_bare_date_until_excludes_the_next_day(audit_mod: Any, db: str) -> None:
     assert "after" not in _ids(audit_mod, db, None, BOUNDARY_DAY)
 
 
-def test_full_timestamp_until_includes_that_exact_instant(
-    audit_mod: Any, db: str
-) -> None:
-    """The regression the first fix introduced: flipping every input to `<`
-    made a timestamp bound exclusive of the instant it names. A caller who
-    passes the exact stamp of a run means to include that run."""
-    assert _ids(audit_mod, db, None, BOUNDARY_INSTANT) == {"before", "boundary"}
+def test_since_is_inclusive_of_its_whole_day(audit_mod: Any, db: str) -> None:
+    assert _ids(audit_mod, db, BOUNDARY_DAY, None) == {"boundary", "after"}
 
 
-def test_full_timestamp_until_excludes_anything_after_it(
-    audit_mod: Any, db: str
-) -> None:
-    assert _ids(audit_mod, db, None, "2026-07-17 18:53:22.304999") == {"before"}
+def test_equal_bounds_select_that_day(audit_mod: Any, db: str) -> None:
+    """V-107: the tightest boundary there is, and the one that should have been
+    in V-98. `--since X --until X` means that whole day, and it is a legal
+    window — refusing it as "empty or inverted" was historical defect 4."""
+    assert _ids(audit_mod, db, BOUNDARY_DAY, BOUNDARY_DAY) == {"boundary"}
 
 
-def test_since_is_inclusive_of_its_own_instant(audit_mod: Any, db: str) -> None:
-    assert _ids(audit_mod, db, BOUNDARY_INSTANT, None) == {"boundary", "after"}
+@pytest.mark.parametrize("flag", ["since", "until"])
+def test_iso_timestamp_is_rejected_and_says_why(audit_mod: Any, flag: str) -> None:
+    """V-104: a valid ISO timestamp is refused now, and the message says
+    dates-only and offers the date to use, so someone pasting a stamp the
+    script itself printed learns the rule rather than guessing at it."""
+    args = {flag: BOUNDARY_INSTANT}
+    with pytest.raises(audit_mod.WindowArgumentError) as exc:
+        audit_mod.resolve_window(args.get("since"), args.get("until"))
+    message = str(exc.value)
+    assert "dates only" in message.lower(), "the message must name the rule"
+    assert BOUNDARY_DAY in message, "and offer the date to pass instead"
 
 
 def test_unbounded_returns_everything(audit_mod: Any, db: str) -> None:
@@ -173,8 +178,7 @@ def test_malformed_until_is_rejected_not_inferred(audit_mod: Any, bad: str) -> N
         audit_mod.resolve_window(None, bad)
     message = str(exc.value)
     assert repr(bad) in message or bad in message, "the offending value is named"
-    assert "YYYY-MM-DD" in message, "the accepted date form is shown"
-    assert "HH:MM:SS" in message, "the accepted timestamp form is shown"
+    assert "YYYY-MM-DD" in message, "the one accepted form is shown"
 
 
 @pytest.mark.parametrize("bad", ["2026-7-16", "garbage", ""])
@@ -217,10 +221,19 @@ def test_regression_bare_date_no_longer_drops_its_own_day(
     assert "boundary" in _ids(audit_mod, db, None, BOUNDARY_DAY)
 
 
-def test_regression_timestamp_is_not_made_exclusive(audit_mod: Any, db: str) -> None:
+def test_regression_the_bound_is_not_exclusive_of_the_days_contents(
+    audit_mod: Any, db: str
+) -> None:
     """Historical defect 2 (introduced by the first fix): flipping every input
-    to `<` silently excluded the exact instant a timestamp names."""
-    assert "boundary" in _ids(audit_mod, db, None, BOUNDARY_INSTANT)
+    to `<` silently excluded the exact instant a bound named.
+
+    Re-expressed for the dates-only form (V-104): `--until <day>` must include
+    every instant during that day, and the fixture's boundary run sits late in
+    it at 18:53. An off-by-one that made the bound exclusive of the day's
+    contents rather than of the following midnight would drop it.
+    """
+    assert "boundary" in _ids(audit_mod, db, None, BOUNDARY_DAY)
+    assert audit_mod.resolve_window(None, BOUNDARY_DAY)["until_value"] > BOUNDARY_INSTANT
 
 
 def test_regression_malformed_input_cannot_widen_the_window(
@@ -231,6 +244,31 @@ def test_regression_malformed_input_cannot_widen_the_window(
     silently matched everything while the banner claimed a bound."""
     with pytest.raises(audit_mod.WindowArgumentError):
         audit_mod.resolve_window(None, "2026-7-16")
+
+
+def test_regression_equal_bounds_are_not_called_inverted(
+    audit_mod: Any, db: str
+) -> None:
+    """Historical defect 4 (introduced by the third fix): the inverted-window
+    check compared against an upper bound it treated as exclusive, which was
+    only true of one of the two accepted forms, so an equal-bounds window was
+    accepted as dates and refused as timestamps. With a single form the
+    mismatch is unwritable; this pins that it stays so."""
+    window = audit_mod.resolve_window(BOUNDARY_DAY, BOUNDARY_DAY)
+    assert window["since_value"] < window["until_value"], (
+        "equal bounds must resolve to a non-empty half-open window"
+    )
+
+
+def test_printed_until_value_round_trips_as_input(audit_mod: Any, db: str) -> None:
+    """V-105: anything the script prints as copyable must be accepted by the
+    script. The newest-run line prints a timestamp, so it also prints the date
+    to pass to --until, and that date has to be valid input."""
+    result = audit_mod.audit(db, None, None)
+    suggested = audit_mod.until_for(result["newest_in_database"])
+    assert audit_mod.resolve_window(None, suggested)["until"] == suggested
+    # and it actually covers the newest run
+    assert "after" in _ids(audit_mod, db, None, suggested)
 
 
 def test_newest_is_reported_for_the_database_not_just_the_window(
