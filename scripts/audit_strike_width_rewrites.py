@@ -52,8 +52,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -70,44 +71,124 @@ def _database_url() -> str:
     return os.environ.get("DATABASE_URL", _DEFAULT_SQLITE)
 
 
+class WindowArgumentError(ValueError):
+    """A --since / --until value that is not one of the two accepted forms.
+
+    Raised BEFORE anything is parsed loosely, queried, or printed. `main`
+    turns it into a non-zero exit with the offending value named.
+    """
+
+
+# Exactly two accepted shapes. Matched explicitly rather than inferred from
+# whether some parser happened to raise — inference from a failed parse is
+# historical defect 3 (see the module docstring).
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?$")
+
+_ACCEPTED_FORMS = (
+    "accepted forms: a date YYYY-MM-DD, zero-padded, meaning that whole day "
+    "inclusive; or a timestamp YYYY-MM-DD HH:MM:SS[.ffffff], meaning that "
+    "exact instant inclusive"
+)
+
+
+def _classify(label: str, value: str) -> tuple[str, str]:
+    """Reject before parsing. Returns (form, value) or raises.
+
+    Nothing that fails these two patterns reaches SQL or a string comparison.
+    `2026-7-16` is not silently a timestamp; it is a typo, and a typo that
+    silently widens the window is worse than a crash, because the banner then
+    reports the wrong window with total confidence.
+    """
+    if _DATE_RE.match(value):
+        try:
+            date.fromisoformat(value)
+        except ValueError as exc:
+            raise WindowArgumentError(
+                f"--{label} {value!r} is shaped like a date but is not a real "
+                f"calendar date. {_ACCEPTED_FORMS}"
+            ) from exc
+        return "date", value
+    if _TIMESTAMP_RE.match(value):
+        try:
+            datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise WindowArgumentError(
+                f"--{label} {value!r} is shaped like a timestamp but is not a "
+                f"real one. {_ACCEPTED_FORMS}"
+            ) from exc
+        return "timestamp", value
+    raise WindowArgumentError(
+        f"--{label} {value!r} is not a recognised date or timestamp. "
+        f"{_ACCEPTED_FORMS}"
+    )
+
+
+def _lower_bound(form: str, value: str) -> datetime:
+    return (
+        datetime.fromisoformat(f"{value} 00:00:00")
+        if form == "date"
+        else datetime.fromisoformat(value)
+    )
+
+
 def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
-    """V-92: the ONE derivation of this script's boundary semantics.
+    """V-92 / V-97: the ONE derivation of this script's boundary semantics,
+    and the only place a --since / --until value is validated.
 
         --until <date>            INCLUSIVE of that entire day
         --until <full timestamp>  INCLUSIVE of that exact instant
+        anything else             WindowArgumentError, non-zero exit
 
     Both the query and the printed banner read this result, so the window
-    reported is by construction the window queried. This logic has been written
-    three times and been wrong twice (a bare date silently dropping its own
-    day, then every input flipping to exclusive and dropping a named instant),
-    so it is pinned by backend/tests/test_audit_script_windows.py.
+    reported is by construction the window queried.
 
-    A bare date needs the exclusive next-midnight form because `created_at <=
+    A date needs the exclusive next-midnight form because `created_at <=
     '2026-07-17'` compares a timestamp against a date and drops the whole day:
-    '2026-07-17 18:53' sorts after '2026-07-17'. A full timestamp needs `<=`
-    to keep the inclusive meaning it had before PR-0.
+    '2026-07-17 18:53' sorts after '2026-07-17'. A timestamp needs `<=` to
+    keep the inclusive meaning it has always had.
     """
-    window: dict[str, Any] = {
+    since_form = since_value = None
+    if since is not None:
+        since_form, since_value = _classify("since", since)
+
+    until_form = until_value = until_op = None
+    if until is not None:
+        until_form, until_raw = _classify("until", until)
+        if until_form == "date":
+            # the whole day, expressed as an exclusive bound at next midnight
+            until_value = (date.fromisoformat(until_raw) + timedelta(days=1)).isoformat()
+            until_op = "<"
+        else:
+            until_value = until_raw
+            until_op = "<="
+
+    if since_form and until_form:
+        # An inverted window silently returns nothing, which this script would
+        # then report as "0 detected" — the most dangerous false negative it
+        # has, given the number gates a merge.
+        lower = _lower_bound(since_form, since_value or "")
+        upper = (
+            datetime.fromisoformat(f"{until_value} 00:00:00")
+            if until_form == "date"
+            else datetime.fromisoformat(until_value or "")
+        )
+        if lower >= upper:
+            raise WindowArgumentError(
+                f"--since {since!r} is not before --until {until!r}: the window "
+                "is empty or inverted, which would report zero runs as though "
+                "none existed"
+            )
+
+    return {
         "since": since,
+        "since_form": since_form,
         "until": until,
-        "until_value": None,
-        "until_op": None,
-        "until_form": None,
+        "until_value": until_value,
+        "until_op": until_op,
+        "until_form": until_form,
         "bounded": bool(since or until),
     }
-    if until is None:
-        return window
-    try:
-        window["until_value"] = (
-            date.fromisoformat(until) + timedelta(days=1)
-        ).isoformat()
-        window["until_op"] = "<"
-        window["until_form"] = "date"
-    except ValueError:
-        window["until_value"] = until
-        window["until_op"] = "<="
-        window["until_form"] = "timestamp"
-    return window
 
 
 def _rows(url: str, window: dict[str, Any]) -> list[tuple[Any, ...]]:
@@ -360,7 +441,14 @@ def main() -> int:
             print("WARNING: DATABASE_URL is unset, so this is the local dev file.")
             print("         The number you want lives in production.")
 
-    result = audit(url, args.since, args.until)
+    try:
+        result = audit(url, args.since, args.until)
+    except WindowArgumentError as exc:
+        # V-97: exit non-zero with the offending value. The banner must NEVER
+        # print on a rejected input — a confident "WINDOW APPLIED" block above
+        # a wrong window is the whole problem.
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 2
     if args.json:
         print(json.dumps(result, indent=2))
     else:
