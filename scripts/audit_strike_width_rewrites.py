@@ -278,6 +278,7 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
     total = with_provenance = 0
     eligible: list[str] = []
     detected: list[dict[str, Any]] = []
+    at_risk = 0
     newest: str | None = None
     window = resolve_window(since, until)
 
@@ -293,6 +294,12 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
         if draft is None:
             continue
         eligible.append(run_id)
+        # V-116: the AT-RISK population. Detection needs a stored strikeLabel,
+        # which only exists when the parser emitted a NON-delta strike. Without
+        # this, "0 of 26 eligible" reads as "the bug did not fire" when it may
+        # mean "nothing was ever exposed to it" — a different claim entirely.
+        if draft.get("strikeLabel") is not None:
+            at_risk += 1
         if draft.get("strikeLabel") is not None and _lead_method(spec_json) == "delta":
             detected.append(
                 {
@@ -313,6 +320,7 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
         "total_runs": total,
         "runs_with_any_provenance": with_provenance,
         "eligible_runs": len(eligible),
+        "at_risk_runs": at_risk,
         "not_inspectable": total - len(eligible),
         "detected": detected,
     }
@@ -380,15 +388,24 @@ def _print_text(result: dict[str, Any]) -> None:
     print(f"  with a confirmed.draft        : {eligible}   <- the eligible set")
     print(f"  not inspectable               : {result['not_inspectable']}")
     print()
-    print(f"DETECTED strike rewrites        : {len(detected)} of {eligible} eligible")
+    at_risk = result["at_risk_runs"]
+    print(f"  of those, AT RISK             : {at_risk}   <- parser emitted a non-delta strike")
+    print()
+    print(f"DETECTED strike rewrites        : {len(detected)} of {at_risk} at risk")
     for d in detected:
         print(
             f"    {d['run_id']}  {d['created_at']}  "
             f"{d['original_rule']!r} -> {d['rewritten_to']}"
         )
     print()
-    print(f"  {len(detected)} detected among {eligible} eligible runs; "
-          f"{result['not_inspectable']} runs not inspectable.")
+    print(f"  {len(detected)} detected among {at_risk} at-risk runs "
+          f"({eligible} eligible, {result['not_inspectable']} not inspectable).")
+    if eligible and not at_risk:
+        # V-116: the distinction that makes the number readable
+        print("  NOTE: the at-risk population is EMPTY. The rebuild ran, but no")
+        print("  inspectable run ever carried a strike rule the dials could not")
+        print("  express, so this 0 means 'nothing was exposed', NOT 'the bug was")
+        print("  not triggered'. The V-18 guard is what proves the fix works.")
     if detected:
         # V-76: say what the number means where the number is.
         print("  These runs' stored specs record a strike rule the user did not")
