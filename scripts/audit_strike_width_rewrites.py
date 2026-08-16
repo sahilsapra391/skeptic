@@ -11,12 +11,18 @@ ENV CONTRACT
                    falls back to the local SQLite dev file when unset, which
                    is almost never what you want for this audit.
 
-WHY THIS EXISTS
-    `draftToSpec` rebuilt `position.legs` from the structure + delta dials on
-    every edit, so a spec whose strike rule the dials could not express was
-    silently rewritten the moment any unrelated dial moved: an `offset_pct`
-    strike became delta 0.30. This counts the runs that happened to before the
-    PR-0 pass-through fix (V-17) landed.
+WHAT THIS NUMBER IS (V-76)
+    Not a bug-frequency curiosity. It counts STORED RUNS WHOSE `spec_json`
+    RECORDS A STRIKE RULE THE USER DID NOT CHOOSE, and whose backtest results
+    reflect that rule. Those runs are permanently wrong. `draftToSpec` rebuilt
+    `position.legs` from the structure + delta dials on every edit, so a spec
+    whose strike rule the dials could not express was silently rewritten the
+    moment any unrelated dial moved: an `offset_pct` strike became delta 0.30,
+    and the engine then backtested the delta.
+
+    PR-0 (V-17) stops this happening again. It does NOT fix the affected runs
+    and must not try. No repair, no flag, no backfill — here or in A1 — without
+    an explicit decision from the owner after reading the number and the ids.
 
 DETECTION (exact, no false positives)
     `spec_to_draft` records a display `strikeLabel` for non-delta strikes and
@@ -158,6 +164,34 @@ def _print_text(result: dict[str, Any]) -> None:
     print()
     print(f"  {len(detected)} detected among {eligible} eligible runs; "
           f"{result['not_inspectable']} runs not inspectable.")
+    if detected:
+        # V-76: say what the number means where the number is.
+        print("  These runs' stored specs record a strike rule the user did not")
+        print("  choose, and their results were computed on that rule. They are")
+        print("  permanently wrong. PR-0 stops it recurring; it does not fix them.")
+
+    # V-81: an empty denominator is not a clean bill of health.
+    if eligible == 0:
+        print()
+        print("  VACUOUS RESULT — the eligible set is empty, so this audit cannot")
+        print("  answer the question on stored data. '0 of 0' is not evidence the")
+        print("  fix worked; the V-18 round-trip guard in CI is what proves that.")
+        print("  This run's value is the baseline for the post-PR-0 comparison.")
+
+    # V-82: an A1 planning input, not just an audit line.
+    if total:
+        share = 100.0 * eligible / total
+        print()
+        print("A1 PLANNING INPUT — provenance coverage")
+        print(f"  {eligible}/{total} runs ({share:.0f}%) carry a confirmed.draft.")
+        if share < 50:
+            print("  MOST runs have no stored draft, so V-28's server-side projection")
+            print("  is the MAJORITY path for 'Run a variant', not the worst case.")
+            print("  That promotes the tier classifier from safety net to primary")
+            print("  code path, and A1's test weight should sit there accordingly.")
+        else:
+            print("  The stored-draft path is the common case; the V-28 projection")
+            print("  path stays the edge case A1 treats it as.")
 
     # V-63: the blind spot travels WITH the number, not in a doc alongside it.
     print()

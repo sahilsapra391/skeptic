@@ -324,6 +324,36 @@ def test_the_guard_actually_detects_a_rewrite() -> None:
     ), "a moved strike dial should produce the delta the user chose"
 
 
+def test_v78_a_name_only_difference_is_unreachable() -> None:
+    """V-78, settled here so A1's zero-edit credit guard does not have to
+    special-case it.
+
+    `meta.name` regenerates only when ticker, structure or strike moves. On a
+    variant ticker and structure are LOCKED (V-06), so the only reachable
+    trigger is a strike move — and a strike move also rewrites the lead leg.
+    A name-only delta therefore cannot occur, which means it can never read as
+    a real edit and spend a credit, and `meta.name` needs no exclusion from the
+    canonicalized V-10/V-19 comparison.
+
+    If this test ever fails, V-19 must name `meta.name` in its loud failure
+    rather than letting the run through.
+    """
+    spec = _validated(CORPUS["canonical"])
+    draft = spec_to_draft(spec, spec["meta"]["description_raw"])
+    draft["strikeDelta"] = 20  # the only name-regenerating move a variant has
+
+    res = _rebuild_all([{"draft": draft, "base": spec}])[0]
+    assert res["ok"], res.get("error")
+    changed = {p for p, _, _ in _field_diff(spec, _validated(res["spec"]))}
+
+    assert ".meta.name" in changed, "the premise moved: a strike move should rename"
+    assert changed != {".meta.name"}, (
+        "a name-only delta became reachable — V-19 must now name meta.name in "
+        "its loud failure instead of treating this as a legitimate variant"
+    )
+    assert ".position.legs[0].strike_selection.value" in changed
+
+
 def _client_path(spec: dict[str, Any], settings: dict[str, float]) -> dict[str, Any]:
     """The real ingress: parse -> spec_to_draft -> confirmDefaults(Settings) ->
     draftToSpec. Zero dial edits."""

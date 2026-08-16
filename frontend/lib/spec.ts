@@ -69,6 +69,47 @@ function legs(draft: SpecDraft): Json[] {
   }
 }
 
+/**
+ * V-77 — DIAL OWNERSHIP. The operative rule of the rebuild is "regenerate what
+ * the dial owns, inherit everything else". It is not self-evident from the
+ * code, and rebuilding too much is how this file has gone wrong three times
+ * (the D5d ladder drop, then legs/tenor, then meta.name). Read this before
+ * adding anything to the spec literal below.
+ *
+ *   DIAL          OWNS (regenerated when the dial moves)
+ *   ─────────────────────────────────────────────────────────────────────────
+ *   TICKER        underlying.ticker                            + meta.name
+ *   STRUCTURE     position.structure, the leg SHAPE             + meta.name
+ *   STRIKE        lead leg strike_selection                     + meta.name
+ *   DTE           expiration_selection.target_dte, and the derived min/max
+ *                 band ONLY when target moves
+ *   CADENCE       entry.schedule.frequency, .day_of_week
+ *   TRIGGER       entry.conditions[0]
+ *   SIZE          sizing.method, sizing.value
+ *   CAPITAL       backtest.initial_capital
+ *   EXIT          the label-expressible exit fields: profit_target_pct,
+ *                 stop_loss_pct, time_exit_dte, close_at_time
+ *   WINDOW        backtest.start / .end   (applied in startBacktest)
+ *   SCANNING      entry.intraday_scan
+ *   RESOLUTION    backtest.resolution
+ *   FILLS         costs.*                 (V-36; read-only until a variant)
+ *   (no dial)     backtest.seed           (V-36; confirmed, never re-hardcoded)
+ *
+ * OWNED BY NO DIAL — always inherited from the parsed spec, never synthesized:
+ *   entry.scale_in (the ladder) · entry.conditions[1..] · schedule.time_of_day
+ *   entry.max_concurrent_positions · exit.delta_stop_abs · exit.theta_harvest
+ *   exit.conditions · position.max_vega_per_contract · the width_from_leg
+ *   value on spread wings · expiration_selection.min_dte / .max_dte
+ *   meta.name while ticker+structure+strike are untouched
+ *
+ * meta.description_raw is the user's verbatim prompt and is carried on the
+ * draft, not derived. There is NO user-set run name anywhere in the product
+ * (no rename in the Library, no custom name at submit) — the only names that
+ * exist are parser-derived or generated here. If renaming is ever added, a
+ * user-set name must never regenerate under any dial move; only derived names
+ * may (V-79).
+ */
+
 /** Python's round() is half-to-even; JS Math.round is half-up. The delta a
  * draft carries was produced by spec_to_draft, so the projection below has to
  * match its rounding exactly or a .5 case reads as an edit that never happened. */
