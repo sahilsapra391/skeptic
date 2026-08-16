@@ -142,6 +142,97 @@ def classify(spec: dict[str, Any]) -> Representability:
     return Representability("b" if reasons else "a", locked, reasons)
 
 
+def _effective_window(stats: dict[str, Any] | None) -> dict[str, str] | None:
+    """What the parent actually tested, shown as context in every window state.
+    Lives in the honesty report, not the spec — the spec records what was
+    REQUESTED, coverage decides what was reached."""
+    report = ((stats or {}).get("honesty_report") or {})
+    start, end = report.get("effective_start"), report.get("effective_end")
+    return {"start": start, "end": end} if start and end else None
+
+
+def window_state(
+    parent_run_id: str,
+    stored_draft: dict[str, Any] | None,
+    spec: dict[str, Any],
+    stats: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """V-133: which of the three window cases this variant is in, and the
+    window to prefill. Returns (window, variantWindow).
+
+    A run with a stored draft recorded the KIND the user picked, including
+    "all", so that choice carries forward intact. A run without one leaves
+    `backtest.start` NULL for two different reasons that the record cannot
+    tell apart — the user chose "all", or the run predates the window
+    directive — so it goes to the unset state rather than guessing (V-50).
+    """
+    effective = _effective_window(stats)
+    meta: dict[str, Any] = {"parentRunId": parent_run_id, "parentEffective": effective}
+
+    stored = (stored_draft or {}).get("window") if stored_draft else None
+    if isinstance(stored, dict) and stored.get("kind"):
+        kind = stored["kind"]
+        # V-51: an inherited "all" resolves against CURRENT coverage, so it may
+        # legitimately reach further back than the parent did. Correct, not drift.
+        meta["state"] = "carried_all" if kind == "all" else "carried"
+        return dict(stored), meta
+
+    # V-39: no stored draft, but the spec names explicit dates — that IS the
+    # requested window, so carry it as a custom range.
+    backtest = spec.get("backtest") or {}
+    if backtest.get("start"):
+        meta["state"] = "carried"
+        return (
+            {"kind": "custom", "start": backtest["start"], "end": backtest.get("end")},
+            meta,
+        )
+
+    # V-50: leave it unset with the parent's effective window as context, and
+    # keep the run locked until the user picks. V-132: this is a routine first
+    # screen, not a degraded one — a third of stored runs land here.
+    meta["state"] = "unset"
+    return None, meta
+
+
+def build_variant_draft(
+    parent_run_id: str,
+    spec: dict[str, Any],
+    provenance: dict[str, Any] | None,
+    stats: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Project a stored spec onto the dials, enriched with everything
+    `spec_to_draft` drops: costs, seed, and the window with its state.
+
+    `spec_to_draft` is imported from the parser and NEVER edited — the parser
+    tree is frozen for this phase.
+    """
+    from app.parser.parse import spec_to_draft
+
+    prov = provenance or {}
+    confirmed = prov.get("confirmed") or {}
+    stored_draft = confirmed.get("draft") if isinstance(confirmed.get("draft"), dict) else None
+
+    # V-28: the prompt comes from the stored record when there is one, and is
+    # DERIVED from description_raw when there is not. Never invented.
+    prompt_text = ((prov.get("prompt") or {}).get("text")) or (
+        (spec.get("meta") or {}).get("description_raw") or ""
+    )
+    draft = spec_to_draft(spec, prompt_text)
+
+    # V-34 / V-35: costs and seed inherit from the PARENT's confirmed spec,
+    # never from the copier's current Settings.
+    if spec.get("costs"):
+        draft["costs"] = dict(spec["costs"])
+    seed = (spec.get("backtest") or {}).get("seed")
+    if seed is not None:
+        draft["seed"] = seed
+
+    window, variant_window = window_state(parent_run_id, stored_draft, spec, stats)
+    draft["window"] = window
+    draft["variantWindow"] = variant_window
+    return draft
+
+
 def locked_field_paths(rep: Representability) -> list[str]:
     """Spec paths the submitted variant must match its parent on (V-22).
 

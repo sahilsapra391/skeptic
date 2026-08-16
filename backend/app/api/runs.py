@@ -916,6 +916,59 @@ class AskRequest(BaseModel):
     min_trades: int | None = Field(default=None, ge=1, le=10_000)
 
 
+@router.get("/runs/{run_id}/variant")
+def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
+    """V-08 / V-20 / V-28: everything the spec screen needs to reopen THIS run
+    as a variant, projected server-side from the stored spec.
+
+    Costs nothing and commits to nothing (V-09) — the credit is debited at
+    submit, atomically with run creation, exactly as for any other run.
+
+    Works for every run the caller owns, including refused ones (V-03): the
+    usual fix for a refusal is widening the window, which is precisely what
+    this button is for.
+    """
+    from app.api.variant import build_variant_draft, classify, locked_field_paths
+
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or not run.spec_json:
+            raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+        _enforce_run_access(run, run_id, request)
+        spec = json.loads(run.spec_json)
+        provenance = json.loads(run.provenance_json) if run.provenance_json else None
+        stats = json.loads(run.stats_json) if run.stats_json else None
+        root_id = run.root_run_id or run_id
+        parent_ordinal = run.variant_ordinal
+
+    rep = classify(spec)
+    parent = {"id": run_id, "rootId": root_id, "ordinal": parent_ordinal}
+
+    if rep.blocks:
+        # V-128: the refusal names the ACTUAL reason, never a generic error,
+        # in the same plain register as the tier (b) read-only dial.
+        # V-129: zero in 99 is today's measurement, not a permanent property,
+        # so the first real occurrence announces itself rather than arriving
+        # as a support message.
+        log.warning(
+            "variant blocked: tier c run=%s reasons=%s", run_id, rep.reasons
+        )
+        return {"parent": parent, "draft": None, "spec": None, **rep.as_dict()}
+
+    return {
+        "parent": parent,
+        "draft": build_variant_draft(run_id, spec, provenance, stats),
+        # the rebuild base, so parser-only vocabulary survives a dial edit
+        "spec": spec,
+        # V-05: carried verbatim and NOT re-asked. Absent on a run that never
+        # stored one, and never invented (V-28).
+        "prompt": (provenance or {}).get("prompt") or None,
+        "conversation": (provenance or {}).get("conversation") or [],
+        "lockedPaths": locked_field_paths(rep),
+        **rep.as_dict(),
+    }
+
+
 @router.post("/runs/{run_id}/replay")
 def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """On-demand verdict receipt (D3c, owner amendment 1): replay THIS
