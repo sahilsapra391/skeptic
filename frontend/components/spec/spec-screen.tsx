@@ -576,6 +576,49 @@ export function SpecScreen({
               </option>
             ))}
           </select>
+          {/* V-133: three window cases on a variant, three distinct readings.
+              Stated in the UI, never left to be worked out from whether the
+              field happens to be filled. */}
+          {draft.variantWindow && (
+            <div className="mt-1 font-mono text-[10.5px] leading-[1.4] text-ink-3">
+              {draft.variantWindow.state === "unset" ? (
+                // V-132: routine, not degraded. States the fact and the reason
+                // with no apology and no language implying breakage — a third
+                // of stored runs land here, and it is the normal next step.
+                <>
+                  Run {draft.variantWindow.parentRunId} tested{" "}
+                  {draft.variantWindow.parentEffective
+                    ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                    : "a window this record does not carry"}
+                  . It did not record a requested window, so pick one to
+                  continue.
+                </>
+              ) : draft.variantWindow.state === "carried_all" ? (
+                // V-51: coverage grows, so an inherited "all" may legitimately
+                // reach further back than the parent did. Correct, not drift.
+                <>
+                  Carried from run {draft.variantWindow.parentRunId}: all
+                  available data. That run tested{" "}
+                  {draft.variantWindow.parentEffective
+                    ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                    : "its own window"}
+                  ; this one resolves against current coverage, so it may test
+                  more history.
+                </>
+              ) : (
+                // V-39: requested prefilled, both stated. The variant computes
+                // its own effective window at run time.
+                <>
+                  Carried from run {draft.variantWindow.parentRunId}. That run
+                  tested{" "}
+                  {draft.variantWindow.parentEffective
+                    ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                    : "its own window"}
+                  ; this one computes its own against current coverage.
+                </>
+              )}
+            </div>
+          )}
           {dealerBound && (
             <div className="mt-1 font-mono text-[10.5px] leading-[1.4] text-ink-4">
               dealer-positioning data starts {dealerBound.first} — earlier

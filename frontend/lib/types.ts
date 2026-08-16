@@ -72,6 +72,24 @@ export interface SpecDraft {
   };
   /** V-36: likewise the seed. Confirmed here, never re-hardcoded downstream. */
   seed?: number;
+  /** V-133: on a variant, WHICH of the three window cases this draft is in.
+   * A user must never have to work out which one they got, so the state is
+   * carried explicitly rather than inferred from whether `window` is set.
+   *
+   * - `carried`     the parent recorded a requested window; it is prefilled
+   * - `carried_all` the parent chose "all"; prefilled, and by V-51 the variant
+   *                 may legitimately test MORE history than the parent did,
+   *                 because it resolves against current coverage
+   * - `unset`       the parent recorded no requested window (V-50). The field
+   *                 stays empty and the run is locked until the user picks.
+   *                 This is a routine first screen, not a degraded one (V-132). */
+  variantWindow?: {
+    state: "carried" | "carried_all" | "unset";
+    /** the immediate parent, never the root (V-52) */
+    parentRunId: string;
+    /** what the parent actually tested, shown as context in every state */
+    parentEffective?: { start: string; end: string } | null;
+  };
   clock?: "daily" | "5min";
   /** FX.5 (spec v4 dials): continuous scanning + per-session resolution.
    * Unset = the defaults (once per session · 5-min grid). */
