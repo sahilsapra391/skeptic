@@ -199,6 +199,7 @@ def build_variant_draft(
     spec: dict[str, Any],
     provenance: dict[str, Any] | None,
     stats: dict[str, Any] | None,
+    parent_label: str | None = None,
 ) -> dict[str, Any]:
     """Project a stored spec onto the dials, enriched with everything
     `spec_to_draft` drops: costs, seed, and the window with its state.
@@ -228,8 +229,13 @@ def build_variant_draft(
         draft["seed"] = seed
 
     window, variant_window = window_state(parent_run_id, stored_draft, spec, stats)
+    variant_window["parentLabel"] = parent_label
     draft["window"] = window
     draft["variantWindow"] = variant_window
+    # V-154: the composer's "Here's what I heard" is FALSE on this path — the
+    # quoted prompt is the parent's, not something this user said. The screen
+    # needs to know it is on the variant path to say so.
+    draft["variantOf"] = {"runId": parent_run_id, "label": parent_label}
     return draft
 
 

@@ -940,9 +940,25 @@ def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
         stats = json.loads(run.stats_json) if run.stats_json else None
         root_id = run.root_run_id or run_id
         parent_ordinal = run.variant_ordinal
+        # V-155: no screen on the variant path shows a raw run id to a person.
+        # The Library's own name for the run is what a user recognises; the id
+        # stays available as a link target.
+        parent_label = None
+        if run.summary_json:
+            try:
+                parent_label = (json.loads(run.summary_json) or {}).get("name")
+            except Exception:
+                parent_label = None
+        if not parent_label:
+            parent_label = ((json.loads(run.spec_json).get("meta") or {}).get("name"))
 
     rep = classify(spec)
-    parent = {"id": run_id, "rootId": root_id, "ordinal": parent_ordinal}
+    parent = {
+        "id": run_id,
+        "rootId": root_id,
+        "ordinal": parent_ordinal,
+        "label": parent_label,
+    }
 
     if rep.blocks:
         # V-128: the refusal names the ACTUAL reason, never a generic error,
@@ -957,7 +973,7 @@ def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
 
     return {
         "parent": parent,
-        "draft": build_variant_draft(run_id, spec, provenance, stats),
+        "draft": build_variant_draft(run_id, spec, provenance, stats, parent_label),
         # the rebuild base, so parser-only vocabulary survives a dial edit
         "spec": spec,
         # V-05: carried verbatim and NOT re-asked. Absent on a run that never

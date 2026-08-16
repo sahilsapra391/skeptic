@@ -238,6 +238,8 @@ export function SpecScreen({
     slippageSell:
       draft.costs?.slippage_half_spread_fraction_sell ?? settings.slippageSell,
   };
+  // V-155: a name a person recognises, never a raw run id in a sentence
+  const parentName = draft.variantWindow?.parentLabel ?? "The run this came from";
   const [exitEditing, setExitEditing] = useState(false);
   const [customProfit, setCustomProfit] = useState("");
   const [customStop, setCustomStop] = useState("");
@@ -346,7 +348,25 @@ export function SpecScreen({
           {draft.fromChart ? `◉ ${draft.quote}` : `“${draft.quote}”`}
         </div>
       </div>
-      <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+      {/* V-154: on the variant path "Here's what I heard" claims the user said
+          this. They did not — the quote above is the parent run's prompt. The
+          framing is REPLACED rather than supplemented, so no reader can come
+          away believing they authored it. */}
+      {draft.variantOf ? (
+        <p className="mb-3.5 text-[16px] text-ink-3">
+          A variant of{" "}
+          <a
+            href={`/runs/${draft.variantOf.runId}`}
+            className="text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
+          >
+            {draft.variantOf.label ?? "an earlier run"}
+          </a>
+          . That run's words are above, not yours — every dial below is
+          adjustable.
+        </p>
+      ) : (
+        <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+      )}
 
       <div className="grid grid-cols-4 gap-2.5">
         <div className={TILE}>
@@ -576,49 +596,6 @@ export function SpecScreen({
               </option>
             ))}
           </select>
-          {/* V-133: three window cases on a variant, three distinct readings.
-              Stated in the UI, never left to be worked out from whether the
-              field happens to be filled. */}
-          {draft.variantWindow && (
-            <div className="mt-1 font-mono text-[10.5px] leading-[1.4] text-ink-3">
-              {draft.variantWindow.state === "unset" ? (
-                // V-132: routine, not degraded. States the fact and the reason
-                // with no apology and no language implying breakage — a third
-                // of stored runs land here, and it is the normal next step.
-                <>
-                  Run {draft.variantWindow.parentRunId} tested{" "}
-                  {draft.variantWindow.parentEffective
-                    ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
-                    : "a window this record does not carry"}
-                  . It did not record a requested window, so pick one to
-                  continue.
-                </>
-              ) : draft.variantWindow.state === "carried_all" ? (
-                // V-51: coverage grows, so an inherited "all" may legitimately
-                // reach further back than the parent did. Correct, not drift.
-                <>
-                  Carried from run {draft.variantWindow.parentRunId}: all
-                  available data. That run tested{" "}
-                  {draft.variantWindow.parentEffective
-                    ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
-                    : "its own window"}
-                  ; this one resolves against current coverage, so it may test
-                  more history.
-                </>
-              ) : (
-                // V-39: requested prefilled, both stated. The variant computes
-                // its own effective window at run time.
-                <>
-                  Carried from run {draft.variantWindow.parentRunId}. That run
-                  tested{" "}
-                  {draft.variantWindow.parentEffective
-                    ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
-                    : "its own window"}
-                  ; this one computes its own against current coverage.
-                </>
-              )}
-            </div>
-          )}
           {dealerBound && (
             <div className="mt-1 font-mono text-[10.5px] leading-[1.4] text-ink-4">
               dealer-positioning data starts {dealerBound.first} — earlier
@@ -878,6 +855,18 @@ export function SpecScreen({
         <div className="mt-3 rounded-xl border border-trust-border bg-trust-dim px-3.5 py-3 text-[13.5px] leading-[1.5] text-ink">
           <b className="text-trust">Pick a data window</b> — how much history should this run test
           against? Shorter is faster; longer sees more market regimes and earns more trust.
+          {/* V-156: ONE statement about the window, in one place. The tile no
+              longer repeats this in a second register. */}
+          {draft.variantWindow?.state === "unset" && (
+            <>
+              {" "}
+              {parentName} did not record a requested window
+              {draft.variantWindow.parentEffective
+                ? `, though it tested ${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                : ""}
+              , so this one starts empty.
+            </>
+          )}
         </div>
       )}
 

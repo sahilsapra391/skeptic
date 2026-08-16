@@ -83,8 +83,16 @@ export interface SpecDraft {
    * - `unset`       the parent recorded no requested window (V-50). The field
    *                 stays empty and the run is locked until the user picks.
    *                 This is a routine first screen, not a degraded one (V-132). */
+  /** V-154: this draft came from another run, so the composer's "Here's what
+   * I heard" framing is FALSE here — the quoted prompt is the parent's, not
+   * something this user said. Same rule as V-31, applied to the composer
+   * screen instead of the provenance record. */
+  variantOf?: { runId: string; label: string | null };
   variantWindow?: {
     state: "carried" | "carried_all" | "unset";
+    /** V-155: how a person recognises the parent. The id is a link target, never
+     * a string in a sentence. */
+    parentLabel?: string | null;
     /** the immediate parent, never the root (V-52) */
     parentRunId: string;
     /** what the parent actually tested, shown as context in every state */
