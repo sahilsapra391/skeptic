@@ -148,3 +148,25 @@ class TestUnlockScan:
         with db.session() as s:  # cleanup for other tests
             s.query(db.Run).filter(db.Run.id.in_(["refusedA", "refusedB", "childA"])).delete()
             s.commit()
+
+
+def test_variant_lineage_columns_exist(tmp_path, monkeypatch) -> None:
+    """V-25: root_run_id and variant_ordinal are additive, nullable, and present
+    on a live table. Old rows keep NULL for both, which is what makes a run
+    created before this phase indistinguishable from a root run — correct, since
+    that is exactly what it is."""
+    from app import db
+
+    cols = {c["name"] for c in _inspect_runs()}
+    assert {"parent_run_id", "root_run_id", "variant_ordinal"} <= cols
+    run = db.Run(id="v1", spec_json="{}", parent_run_id="p0", root_run_id="p0",
+                 variant_ordinal=3)
+    assert run.variant_ordinal == 3 and run.root_run_id == "p0"
+
+
+def _inspect_runs():
+    from sqlalchemy import inspect
+
+    from app import db
+
+    return inspect(db._engine).get_columns("runs")

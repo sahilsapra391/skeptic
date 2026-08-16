@@ -61,6 +61,14 @@ class Run(Base):
     origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # D3: the refused/original run an automatic run supersedes or replays
     parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # V-25: the head of a variant chain. A root run has this NULL; every variant
+    # carries the id of the run the chain started from, so the Library can group
+    # a family without walking parent links one at a time.
+    root_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # V-25: this run's position in its chain, assigned once at creation and
+    # STORED. Never recomputed from a live count — a deleted variant must leave
+    # a gap rather than renumber its siblings (V-45).
+    variant_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # D3c: 5-minute replay receipts attached to this (daily) run — merged
     # into the payload at READ time; the stored verdict is never rewritten
     receipts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -467,7 +475,15 @@ def _ensure_columns() -> None:
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
         for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)"),
-                             ("user_id", "VARCHAR(40)")):
+                             ("user_id", "VARCHAR(40)"),
+                             # V-25: variant lineage. root_run_id is the head of
+                             # the chain; variant_ordinal is assigned ONCE at
+                             # creation and stored, never recomputed from a live
+                             # count. Deleting a variant leaves a gap, and gaps
+                             # are correct: renumbering would make a saved PDF
+                             # and the live app disagree about which run is which.
+                             ("root_run_id", "VARCHAR(40)"),
+                             ("variant_ordinal", "INTEGER")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
     # launch L3: the Stripe idempotency keys on the live credit_ledger —
