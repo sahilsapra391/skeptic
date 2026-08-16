@@ -128,16 +128,29 @@ def _as_date(label: str, value: str) -> date:
         ) from exc
 
 
-def _boundary(day: date, edge: str) -> str:
-    """V-106: the ONE place a validated date becomes a comparison bound.
+def _midnight(day: date) -> str:
+    """A date as a SQL-bindable instant. The single shared conversion, so the
+    two ends of the window are built the same way and compare the same way."""
+    return datetime.combine(day, time.min).isoformat(sep=" ")
 
-    The window is half-open: [since 00:00, until+1day 00:00). BOTH ends come
-    from here, so they cannot disagree about inclusivity. Deriving one end
-    through a helper and inlining the other is the asymmetry behind every
-    defect this function has had.
+
+def _lower_bound(day: date) -> str:
+    """V-106: `--since <day>` includes everything from that day's first instant."""
+    return _midnight(day)
+
+
+def _upper_bound(day: date) -> str:
+    """V-106: `--until <day>` includes all of that day, expressed as an
+    exclusive bound at the following midnight.
+
+    V-111: two named functions rather than one taking an `edge` string. The
+    previous form treated anything that was not the literal "lower" as the
+    upper bound, so a mistyped argument silently returned the wrong end — a
+    silent default standing in for a case nobody enumerated, which is the
+    shape of all four defects this file has had. Both call sites being correct
+    was never the standard; the wrong case has to be unwritable.
     """
-    start = day if edge == "lower" else day + timedelta(days=1)
-    return datetime.combine(start, time.min).isoformat(sep=" ")
+    return _midnight(day + timedelta(days=1))
 
 
 def until_for(timestamp: str | None) -> str | None:
@@ -170,8 +183,8 @@ def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
     since_day = _as_date("since", since) if since is not None else None
     until_day = _as_date("until", until) if until is not None else None
 
-    since_value = _boundary(since_day, "lower") if since_day else None
-    until_value = _boundary(until_day, "upper") if until_day else None
+    since_value = _lower_bound(since_day) if since_day is not None else None
+    until_value = _upper_bound(until_day) if until_day is not None else None
 
     if since_value and until_value and since_value >= until_value:
         # An inverted window silently returns nothing, which this script would
@@ -446,9 +459,18 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="emit JSON instead of text")
     args = ap.parse_args()
 
-    print("READ ONLY. This script does not write.")
-
     url = _database_url()
+    try:
+        result = audit(url, args.since, args.until)
+    except WindowArgumentError as exc:
+        # V-97 / V-112: the error comes FIRST and nothing else prints. The
+        # READ ONLY line, the source line and the banner all assert facts
+        # about a run that is not happening, so preamble belongs strictly
+        # after validation passes.
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 2
+
+    print("READ ONLY. This script does not write.")
     if not args.json:
         kind = "local SQLite" if url.startswith("sqlite") else "postgres"
         print(f"source: {kind}")
@@ -456,14 +478,6 @@ def main() -> int:
             print("WARNING: DATABASE_URL is unset, so this is the local dev file.")
             print("         The number you want lives in production.")
 
-    try:
-        result = audit(url, args.since, args.until)
-    except WindowArgumentError as exc:
-        # V-97: exit non-zero with the offending value. The banner must NEVER
-        # print on a rejected input — a confident "WINDOW APPLIED" block above
-        # a wrong window is the whole problem.
-        print(f"REFUSED: {exc}", file=sys.stderr)
-        return 2
     if args.json:
         print(json.dumps(result, indent=2))
     else:

@@ -210,7 +210,10 @@ def test_cli_exits_non_zero_and_prints_no_banner(
     out = capsys.readouterr()
     assert code != 0, "a rejected window must exit non-zero"
     assert "WINDOW APPLIED" not in out.out, "the banner printed on a rejected input"
-    assert bad in (out.err + out.out)
+    # V-112: no preamble either. READ ONLY and the source line assert facts
+    # about a run that is not happening, so stdout must be empty entirely.
+    assert out.out == "", f"a rejected invocation printed preamble: {out.out!r}"
+    assert bad in out.err
 
 
 def test_regression_bare_date_no_longer_drops_its_own_day(
