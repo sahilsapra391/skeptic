@@ -36,8 +36,15 @@ READ ONLY (V-62)
     behind any flag. Postgres connections are pinned to a read-only
     transaction; SQLite is opened with `mode=ro`.
 
-V-71: run this for a baseline BEFORE PR-0 merges, then again after PR-0 over
-the same --since/--until window, to confirm the count stopped growing.
+V-71 / V-86: take a baseline BEFORE PR-0 merges, then run TWO follow-ups after
+it merges, because "the count stopped growing" is two questions:
+
+  (a) SANITY CHECK — bounded to the baseline's end date. Must be IDENTICAL to
+      the baseline. A difference means detection itself changed, not the bug.
+  (b) THE ACTUAL TEST — unbounded. Any detection newer than the baseline's end
+      date is a NEW instance arising after the fix, so the fix did not hold.
+
+The script prints both invocations, filled in, at the end of every run.
 """
 
 from __future__ import annotations
@@ -46,6 +53,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +70,20 @@ def _database_url() -> str:
     return os.environ.get("DATABASE_URL", _DEFAULT_SQLITE)
 
 
+def _exclusive_upper(until: str) -> str:
+    """`--until 2026-08-16` means "through the whole of the 16th".
+
+    `created_at <= '2026-08-16'` compares a timestamp against a bare date and
+    silently drops every run that day, because '2026-08-16 18:53' sorts after
+    '2026-08-16'. A bare date therefore becomes an EXCLUSIVE bound at the next
+    midnight. An explicit timestamp is taken literally.
+    """
+    try:
+        return (date.fromisoformat(until) + timedelta(days=1)).isoformat()
+    except ValueError:
+        return until  # a full timestamp — the caller meant exactly that instant
+
+
 def _rows(url: str, since: str | None, until: str | None) -> list[tuple[Any, ...]]:
     """SELECT only. Read-only at the connection level where the driver allows."""
     if url.startswith("sqlite"):
@@ -69,13 +91,14 @@ def _rows(url: str, since: str | None, until: str | None) -> list[tuple[Any, ...
         path = url.split("sqlite:///", 1)[1]
         url = f"sqlite:///file:{path}?mode=ro&uri=true"
     engine = create_engine(url)
-    where, params = [], {}
+    where: list[str] = []
+    params: dict[str, str] = {}
     if since:
         where.append("created_at >= :since")
         params["since"] = since
     if until:
-        where.append("created_at <= :until")
-        params["until"] = until
+        where.append("created_at < :until")
+        params["until"] = _exclusive_upper(until)
     clause = (" where " + " and ".join(where)) if where else ""
     sql = f"select id, created_at, spec_json, provenance_json from runs{clause}"
     with engine.connect() as conn:
@@ -110,9 +133,13 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
     total = with_provenance = 0
     eligible: list[str] = []
     detected: list[dict[str, Any]] = []
+    newest: str | None = None
 
     for run_id, created_at, spec_json, provenance_json in _rows(url, since, until):
         total += 1
+        stamp = str(created_at)
+        if newest is None or stamp > newest:
+            newest = stamp
         if provenance_json:
             with_provenance += 1
         draft = _confirmed_draft(provenance_json)
@@ -130,7 +157,15 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
             )
 
     return {
-        "window": {"since": since, "until": until},
+        "window": {
+            "since": since,
+            "until": until,
+            # V-85: the bound actually applied, so the V-71 comparison never
+            # depends on remembering which flags were passed a week earlier
+            "resolved_until_exclusive": _exclusive_upper(until) if until else None,
+            "bounded": bool(since or until),
+        },
+        "newest_run_seen": newest,
         "total_runs": total,
         "runs_with_any_provenance": with_provenance,
         "eligible_runs": len(eligible),
@@ -141,15 +176,29 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
 
 def _print_text(result: dict[str, Any]) -> None:
     w = result["window"]
-    window = f"{w['since'] or 'beginning'} to {w['until'] or 'now'}"
     total = result["total_runs"]
     eligible = result["eligible_runs"]
     detected = result["detected"]
 
+    # V-85: state the invocation before any number. The V-71 comparison spans
+    # days, and "which flags did I pass last time" is not a thing to remember.
+    print()
+    print("WINDOW APPLIED")
+    if w["since"]:
+        print(f"  since (inclusive)   : {w['since']}   [from --since {w['since']}]")
+    else:
+        print("  since (inclusive)   : beginning of time   [default, no --since]")
+    if w["until"]:
+        print(f"  until (exclusive)   : {w['resolved_until_exclusive']}   "
+              f"[from --until {w['until']}, resolved to cover that whole day]")
+    else:
+        print("  until               : unbounded   [default, no --until]")
+    print(f"  newest run seen     : {result['newest_run_seen'] or 'none'}")
+
     # V-66: the denominator comes BEFORE the count. A bare "0 detected" is
     # unreadable when the detection rule can only see runs that recorded a
     # confirmed draft.
-    print(f"\nwindow                          : {window}")
+    print()
     print(f"total runs in window            : {total}")
     print(f"  with any provenance record    : {result['runs_with_any_provenance']}")
     print(f"  with a confirmed.draft        : {eligible}   <- the eligible set")
@@ -177,6 +226,25 @@ def _print_text(result: dict[str, Any]) -> None:
         print("  answer the question on stored data. '0 of 0' is not evidence the")
         print("  fix worked; the V-18 round-trip guard in CI is what proves that.")
         print("  This run's value is the baseline for the post-PR-0 comparison.")
+
+    # V-86: the post-PR-0 comparison is TWO numbers, and only the second is
+    # the actual test. Print the exact follow-up invocations rather than
+    # leaving them to be reconstructed.
+    print()
+    print("V-71 FOLLOW-UP — run BOTH after PR-0 merges")
+    newest = result["newest_run_seen"]
+    if newest:
+        end = newest[:10]
+        print("  (a) SANITY CHECK, bounded to this same end date:")
+        print(f"        --until {end}")
+        print("      Must be IDENTICAL to this run. A difference means detection")
+        print("      itself changed, not that the bug did.")
+        print("  (b) THE ACTUAL TEST, unbounded:")
+        print("        (no flags)")
+        print(f"      Any detection with created_at after {newest} is a NEW instance")
+        print("      arising after the fix, which means the fix did not hold.")
+    else:
+        print("  No runs in window, so there is no baseline to compare against yet.")
 
     # V-82: an A1 planning input, not just an audit line.
     if total:
@@ -209,7 +277,7 @@ def _print_text(result: dict[str, Any]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--since", help="ISO date, inclusive lower bound on created_at")
-    ap.add_argument("--until", help="ISO date, inclusive upper bound on created_at")
+    ap.add_argument("--until", help="ISO date, INCLUSIVE of that whole day")
     ap.add_argument("--json", action="store_true", help="emit JSON instead of text")
     args = ap.parse_args()
 

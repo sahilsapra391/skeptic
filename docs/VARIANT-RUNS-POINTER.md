@@ -43,13 +43,24 @@ flag.
 
 ## Live IDs
 
+> **Last synced: PR #143 (PR-0).** This list is a duplicate of the brief's
+> section 9, kept here only because a repo-only session cannot read
+> `Projects Misc/`. Per V-87 both are updated in the **same commit** at PR
+> close. **If you are reading this with merged PRs past #143, assume this
+> index is stale and go read the brief** — that duplication is exactly how it
+> drifted the first time, so the marker is the drift detector.
+
 V-02 V-03 V-04 V-05 V-06 V-07 V-08 V-09 V-10 V-12 V-13 V-14 V-16 V-17 V-18
 V-19 V-20 V-21 V-22 V-23 V-24 V-25 V-26 V-27 V-28 V-29 V-30 V-31 V-32 V-33
 V-34 V-35 V-36 V-37 V-38 V-39 V-40 V-41 V-42 V-43 V-44 V-45 V-46 V-49 V-50
 V-51 V-52 V-53 V-54 V-55 V-56 V-57 V-58 V-59 V-60 V-61 V-62 V-63 V-64 V-65
-V-66 V-67 V-68 V-69 V-70 V-71 V-72 V-73 V-74
+V-66 V-67 V-68 V-69 V-70 V-71 V-72 V-73 V-74 V-75 V-76 V-77 V-78 V-79 V-80
+V-81 V-82 V-83 V-84 V-85 V-86 V-87 V-88 V-89
 
-Superseded: V-11 by V-25, V-15 by V-26. V-64's timing is corrected by V-71.
+Superseded: V-11 by V-25, V-15 by V-26. V-64 is corrected twice: V-71 moves
+the baseline to before PR-0 merges, and V-86 splits "the count stopped
+growing" into a bounded sanity check plus an unbounded actual test. V-72's
+single-index instruction is corrected by V-87.
 Retired: V-01. Never issued: V-47, V-48.
 
 Recorded but deliberately out of phase, and not to be lost:

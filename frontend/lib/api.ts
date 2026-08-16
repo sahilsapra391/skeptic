@@ -238,7 +238,18 @@ export function startBacktest(
   // confirms; after that they are inert. A confirmed spec that runtime can
   // still overwrite is a suggestion, not a contract. Applied on the verbatim
   // branch too, because the FILLS tile showed these to the user either way.
-  if (draft.costs) spec.costs = { ...draft.costs };
+  //
+  // Absent costs THROW rather than falling back, matching windowToDates above:
+  // a silent fallback here would run the backtest on fill assumptions the user
+  // never saw, which is the exact failure this change exists to remove. Every
+  // draft is stamped by confirmDefaults the moment it exists, so reaching this
+  // means a new draft-construction path forgot to.
+  if (!draft.costs) {
+    throw new Error(
+      "confirmed fill costs are unset. The spec screen must ask, never default.",
+    );
+  }
+  spec.costs = { ...draft.costs };
   // pre-run dials apply to EVERY run too (2026-07-06): the confirmed data
   // window (required), contracts, cadence and capital — like costs, they
   // override even a verbatim parsed spec, because the screen showed them

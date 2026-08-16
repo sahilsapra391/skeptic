@@ -145,6 +145,10 @@ function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
 
   const sel = (baseLegs[0]?.strike_selection ?? {}) as Json;
   if (sel.method !== "delta" || typeof sel.value !== "number") return false;
+  // Number.isFinite, not just typeof: NaN IS a number, and NaN projects
+  // through roundHalfEven to `NaN || 5` === 5, which would report an untouched
+  // dial for any draft sitting at delta 5 and pass the NaN straight through.
+  if (!Number.isFinite(sel.value)) return false;
   // mirrors backend/app/parser/parse.py spec_to_draft
   const projected = roundHalfEven((Math.abs(sel.value) * 100) / 5) * 5 || 5;
   return projected === draft.strikeDelta;
@@ -160,7 +164,10 @@ function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
  */
 function positionLegs(draft: SpecDraft, base?: Json | null): Json[] {
   if (strikeUntouched(draft, base)) {
-    return ((base?.position as Json).legs as Json[]).map((l) => ({ ...l }));
+    // `base` is already detached by draftToSpec, so this hands the legs over
+    // whole rather than half-copying them (a per-leg spread would still share
+    // every strike_selection).
+    return (base?.position as Json).legs as Json[];
   }
   const rebuilt = legs(draft);
   const position = (base?.position ?? null) as Json | null;
@@ -326,10 +333,22 @@ function computeSpecVersion(spec: Json): number {
   return 1;
 }
 
-export function draftToSpec(draft: SpecDraft, base?: Json | null): Json {
+export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   if (!draft.exit) {
     throw new Error("exit is unset — the spec screen must ask, never default");
   }
+  // Detach ONCE at the boundary. Everything below inherits sub-objects from
+  // the base (legs, the tenor band, costs, the ladder, extra conditions), and
+  // `base` is the caller's retained parsedSpec, reused for every rebuild and
+  // for the untouched verbatim branch. Returning pieces of it by reference
+  // means a later in-place edit anywhere downstream silently rewrites the
+  // parser's spec. Cloning here beats copying at each use site, which is how
+  // one branch ends up shallow and the rest deep.
+  // JSON round-trip, matching build_replay_spec's `json.loads(json.dumps(spec))`
+  // on the server. The spec IS a JSON IR, so this is exact, and unlike
+  // structuredClone it carries no browser floor and cannot smuggle through a
+  // Date or Map that would then fail to serialize.
+  const base = baseSpec ? (JSON.parse(JSON.stringify(baseSpec)) as Json) : baseSpec;
   // FX.5: 0DTE runs on the 5-minute intraday engine (shipped) — a 0DTE
   // dial now emits an intraday spec instead of refusing. The DTE band is
   // the intraday slice (0–2 trading DTE).
