@@ -49,6 +49,15 @@ skeptic/
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.
+  - **Before freeing a port, confirm the PID is this project's own tooling**
+    (`ps -p <pid> -o command`). SpecHawk and other projects share this
+    machine, and a port-adjacent casualty in someone else's dev server is the
+    cheapest accident here to prevent (V-191).
+  - The dev server pins `DATABASE_URL` to local SQLite in
+    `.claude/launch.json`. It is a PIN, not a removal: the preview spawner's
+    environment carried a production Neon URL from an unidentified source, and
+    pinning defends against any origin. Never set
+    `SKEPTIC_ALLOW_REMOTE_MIGRATION` to make a dev server start (V-188).
 - Frontend: `cd frontend && npm i && npm run dev` · checks: `npm run lint && npm run typecheck`
 - Collector local run: `cd collector && uv run python collect.py --mode eod`
 - CI must be green before any milestone is called done.
