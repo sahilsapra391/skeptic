@@ -84,7 +84,7 @@ function AnswerChip({ text, typed }: { text: string; typed?: boolean }) {
   );
 }
 
-function ExchangeCard({ x }: { x: Exchange }) {
+function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }) {
   const q = x.question;
   const answer = x.answer?.answer;
   if (!q) {
@@ -103,7 +103,14 @@ function ExchangeCard({ x }: { x: Exchange }) {
     <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
       <div className="mb-1 flex items-baseline justify-between gap-3">
         <span className="font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
-          IT ASKED — I DON’T GUESS
+          {/* V-177/V-178: "IT ASKED — I DON'T GUESS" is present-tense fresh-run
+              voice. Inside a carried block it reads as though the interview
+              ran here, contradicting the header directly above it — and the
+              cards are the visually dominant element, so a skimmer believes
+              the cards. Until A2 lands the per-exchange states, the eyebrow
+              carries its share of the misattribution work rather than leaving
+              it all to the header. */}
+          {carried ? "IT ASKED ON THE ORIGINAL RUN" : "IT ASKED — I DON’T GUESS"}
         </span>
         {time && <span className="font-mono text-[10.5px] text-ink-4">{time}</span>}
       </div>
@@ -309,6 +316,36 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
   return out.filter((x): x is Box => x !== null);
 }
 
+/** V-13 section 5: the field-level diff against the parent, stored at
+ * creation from the SAME comparison the lock check and zero-edit guard read
+ * (V-162). Old and new per row, in the story's own register; absent on
+ * non-variants, so nothing renders there (V-175). */
+function WhatChanged({ prov }: { prov: RunProvenance }) {
+  const rows = prov.what_changed;
+  if (!rows || rows.length === 0) return null;
+  const show = (v: unknown) =>
+    v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  return (
+    <div className={`${PANEL} px-5 py-4`}>
+      <div className={`${LABEL} mb-3`}>WHAT CHANGED — VS THE PARENT RUN</div>
+      <div className="flex flex-col gap-2">
+        {rows.map((r) => (
+          <div key={r.field} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <span className="font-mono text-[11px] text-ink-4">{r.field}</span>
+            <span className="font-mono text-[13px] text-ink-3 line-through decoration-line">
+              {show(r.parent)}
+            </span>
+            <span className="font-mono text-[11px] text-ink-4">→</span>
+            <span className="font-mono text-[13px] font-semibold text-ink">
+              {show(r.variant)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DecisionGrid({ prov }: { prov: RunProvenance }) {
   const confirmed = prov.confirmed;
   if (!confirmed) return null;
@@ -425,6 +462,13 @@ function MechanicsLine({ prov }: { prov: RunProvenance }) {
 // --------------------------------------------------------------------- view
 export function HowBuilt({ run }: { run: RunPayload }) {
   const prov = run.provenance;
+  // V-155: the parent named the way the Library names it; the id is only ever
+  // a link target. get_run already resolved the label (and whether the parent
+  // was deleted), so nothing here re-derives it.
+  const carried = prov?.carried_from ?? null;
+  const parentLabel = run.variant?.parent.deleted
+    ? null
+    : (run.variant?.parent.label ?? null);
   if (!prov) {
     // real runs always carry a record (stored or derived) — this is the
     // safety net for demo runs and unreadable rows, so it claims nothing
@@ -504,6 +548,37 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         </div>
       )}
 
+      {/* V-31: the header does ALL the misattribution work until A2 lands the
+          per-exchange states — every carried exchange currently reads STILL
+          HOLDS (V-67), so nothing inside the block distinguishes an answer
+          that still applies from one this run's edits superseded. Stated
+          plainly, never euphemistically: no phrasing may let a skimming
+          reader believe the interview ran twice. */}
+      {carried && exchanges !== null && exchanges.length > 0 && (
+        <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-3.5">
+          <div className="font-mono text-[12.5px] leading-[1.6] text-ink-2">
+            These questions were asked on{" "}
+            {parentLabel ? (
+              <a
+                href={`/runs/${carried}`}
+                className="text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
+              >
+                {parentLabel}
+              </a>
+            ) : (
+              "the original run"
+            )}
+            , not on this run.{" "}
+            <a
+              href={`/runs/${carried}`}
+              className="text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
+            >
+              See how that run was built ›
+            </a>
+          </div>
+        </div>
+      )}
+
       {exchanges === null ? (
         <div className="rounded-[14px] border border-dashed border-line px-5 py-4 text-center">
           <span className="font-mono text-[12px] text-ink-4">
@@ -512,19 +587,30 @@ export function HowBuilt({ run }: { run: RunPayload }) {
                 it ran */}
             {prov.origin && prov.origin !== "user"
               ? "no conversation — this run was started automatically"
-              : prov.derived
-                ? "conversation not captured (predates provenance recording)"
-                : "no conversation was captured for this run"}
+              : carried
+                ? // V-176: no compile happened here, so it cannot be
+                  // "not captured" for THIS run either
+                  "no conversation carried — the original run recorded none"
+                : prov.derived
+                  ? "conversation not captured (predates provenance recording)"
+                  : "no conversation was captured for this run"}
           </span>
         </div>
       ) : exchanges.length === 0 ? (
         <div className="rounded-[14px] border border-dashed border-line px-5 py-4 text-center">
           <span className="font-mono text-[12px] text-ink-4">
-            no clarifying questions were needed — the strategy compiled directly
+            {/* V-176: "the strategy compiled directly" describes an event that
+                did not happen on a variant — no compile ran here at all. The
+                truth, in the carried register. */}
+            {carried
+              ? "the original run needed no clarifying questions, and this run asked none — it is a variant"
+              : "no clarifying questions were needed — the strategy compiled directly"}
           </span>
         </div>
       ) : (
-        exchanges.map((x, i) => <ExchangeCard key={i} x={x} />)
+        exchanges.map((x, i) => (
+          <ExchangeCard key={i} x={x} carried={Boolean(carried)} />
+        ))
       )}
 
       {prov.truncated && (
@@ -536,6 +622,7 @@ export function HowBuilt({ run }: { run: RunPayload }) {
       )}
 
       <DecisionGrid prov={prov} />
+      <WhatChanged prov={prov} />
       <MechanicsLine prov={prov} />
     </div>
   );

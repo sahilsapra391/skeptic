@@ -207,6 +207,24 @@ export function windowToDates(draft: SpecDraft): { start: string | null; end: st
   return { start: start.toISOString().slice(0, 10), end: null };
 }
 
+/** V-08: everything the spec screen needs to reopen a stored run as a variant.
+ * Server-side projection — the client never rebuilds a parent's spec itself. */
+export interface VariantDraftPayload {
+  parent: { id: string; rootId: string; ordinal: number | null };
+  draft: SpecDraft | null;
+  spec: Record<string, unknown> | null;
+  tier: "a" | "b" | "c";
+  locked: string[];
+  reasons: Record<string, string>;
+  lockedPaths?: string[];
+  prompt?: { text?: string } | null;
+  conversation?: ProvenanceEvent[];
+}
+
+export function getVariantDraft(runId: string): Promise<VariantDraftPayload> {
+  return request<VariantDraftPayload>(`/api/runs/${runId}/variant`);
+}
+
 export type StartResult = {
   run_id: string;
   demo: boolean;
@@ -301,6 +319,10 @@ export function startBacktest(
       provenance,
       min_trades: getSettings().minTrades,
       turnstile_token: turnstileToken,
+      // V-167: a draft opened from a stored run carries its parent, so the
+      // server can run the lock check and zero-edit guard BEFORE the debit
+      // and stamp lineage in the same transaction as it
+      parent_run_id: draft.variantOf?.runId ?? null,
     }),
   }).then((res) => {
     // pre-accounts: this browser's runs ride the curated listing via

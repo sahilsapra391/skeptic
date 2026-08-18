@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.api.jobs import claim_run_job, marker_age_minutes, pinned_engine_rerun
@@ -111,6 +112,58 @@ def _inherit_trials(parent_run_id: str | None, family: str) -> int:
     with db.session() as s:
         row = s.get(db.TrialCounter, family)
         return max(row.trials if row else 1, 1)
+
+
+def _run_label(run: db.Run) -> str | None:
+    """V-155/V-160: how a person recognises a run — the Library's own name
+    (summary_json), falling back to spec meta.name only when no summary
+    exists. Shared by the variant endpoint and the lineage header so the
+    screen and the Library can never disagree about what a run is called."""
+    if run.summary_json:
+        try:
+            name = (json.loads(run.summary_json) or {}).get("name")
+            if name:
+                return str(name)
+        except Exception:
+            # a corrupt summary must not look like a legitimately unnamed run:
+            # this feeds the variant framing, the back link and the lineage
+            # header, so it degrades three surfaces at once and silently
+            log.warning("unreadable summary_json on run %s", run.id, exc_info=True)
+    try:
+        return (json.loads(run.spec_json).get("meta") or {}).get("name")
+    except Exception:
+        log.warning("unreadable spec_json on run %s", run.id, exc_info=True)
+        return None
+
+
+def _is_ordinal_collision(exc: IntegrityError) -> bool:
+    """Did THIS integrity error come from uq_runs_variant_ordinal?
+
+    Postgres names the constraint on the diagnostics object; SQLite names the
+    columns instead ("UNIQUE constraint failed: runs.root_run_id,
+    runs.variant_ordinal") and carries no constraint name at all, so both
+    engines need their own read. Anything else — a credit-ledger partial index,
+    a duplicate run id — is NOT this race and must not be reported as one.
+    """
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    if getattr(diag, "constraint_name", None) == "uq_runs_variant_ordinal":
+        return True
+    text = str(getattr(exc, "orig", exc))
+    return "root_run_id" in text and "variant_ordinal" in text
+
+
+def _next_ordinal(s: Any, root: str) -> int:
+    """The next variant_ordinal in a root's family, computed INSIDE the
+    debit transaction. Deliberately a seam: the V-172 retry test feeds it a
+    stale value to force the collision the unique index then catches."""
+    from sqlalchemy import func
+
+    current = (
+        s.query(func.max(db.Run.variant_ordinal))
+        .filter(db.Run.root_run_id == root)
+        .scalar()
+    )
+    return int(current or 0) + 1
 
 
 def _inherit_min_trades(parent_run_id: str | None) -> int:
@@ -551,6 +604,115 @@ def backtest(
     # automation origin (the field is client-supplied).
     origin = "user" if run_user is not None else req.origin
 
+    # ---- variant gates (V-167: THIS ORDER IS THE CONTRACT) -----------------
+    # A variant is a HUMAN copy: origin "user" carrying parent_run_id. The
+    # automatic origins re-run the SAME spec by design (HONESTY.md D3b), so
+    # the zero-edit guard must never see them. Order: lock check first,
+    # zero-edit guard second, and only then the debit — a rejection here
+    # happens BEFORE the debit exists in any form, not rolled back after.
+    variant_root: str | None = None
+    variant_diff: list[dict[str, Any]] | None = None
+    if (
+        req.parent_run_id
+        and origin == "user"
+        # same predicate as `is_anon` below, which is defined after the
+        # anon-armor block; the gate has to run BEFORE the debit, so it
+        # cannot wait for that binding
+        and run_user is None
+        and not auth.is_service(request)
+    ):
+        # V-04 said the button "shows and routes to signup" — that was only
+        # ever enforced in the client, and `origin` defaults to "user", so an
+        # anonymous POST carrying parent_run_id walked straight into the
+        # variant path: free (charge_credit is False for anon), and stamping
+        # lineage into someone's family with user_id NULL. The API now declines
+        # what the UI declines to offer, in the same words.
+        raise HTTPException(
+            status_code=402,
+            detail="create a free account to run a variant",
+        )
+    if origin == "user" and req.parent_run_id:
+        from app.api.variant import classify, diff_specs, locked_field_paths
+
+        with db.session() as s:
+            vparent = s.get(db.Run, req.parent_run_id)
+            if vparent is None or not vparent.spec_json:
+                raise HTTPException(
+                    status_code=404, detail=f"run {req.parent_run_id} not found"
+                )
+            _enforce_run_access(vparent, req.parent_run_id, request)
+            parent_spec = json.loads(vparent.spec_json)
+            variant_root = vparent.root_run_id or vparent.id
+        rep = classify(parent_spec)
+        if rep.blocks:
+            # V-128 posture at the submit boundary too: the real reason
+            raise HTTPException(
+                status_code=422,
+                detail="this run cannot be reopened as a variant: "
+                + "; ".join(rep.reasons.values()),
+            )
+        variant_diff = diff_specs(parent_spec, json.loads(spec.model_dump_json()))
+
+        # 1) V-22 / V-168: locked fields, named in the dial's own register.
+        # A doctored client gets the same honest sentence a confused
+        # legitimate one would.
+        def _hits(field: str, path: str) -> bool:
+            return field == path or field.startswith((path + ".", path + "["))
+
+        # V-168: the reason comes from the DIAL that produced the locked path,
+        # so a lock added later cannot inherit a sentence about the strike.
+        # The identity locks share one explanation; every other lock is a
+        # tier (b) dial and speaks rep.reasons in the dial's own words.
+        _IDENTITY_WHY = (
+            "ticker and structure define the strategy family the trial "
+            "counter tracks — changing them is a New Analysis, not a variant"
+        )
+        _PATH_DIAL = {
+            "underlying.ticker": "ticker",
+            "position.structure": "structure",
+            "position.legs": "strike",
+        }
+        for row in variant_diff:
+            for path in locked_field_paths(rep):
+                if not _hits(row["field"], path):
+                    continue
+                dial = _PATH_DIAL.get(path)
+                if dial in ("ticker", "structure"):
+                    why = _IDENTITY_WHY
+                elif dial and dial in rep.reasons:
+                    why = (
+                        f"the parent chose its {dial} as {rep.reasons[dial]}, "
+                        "which the dial cannot express"
+                    )
+                else:
+                    # an unmapped lock path: refuse without inventing a cause
+                    log.error("locked path %s has no reason mapping", path)
+                    why = "it is locked on a variant and this run changed it"
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{row['field']} is locked on this variant: {why}",
+                )
+
+        # 2) V-10 / V-19 / V-169: the zero-edit guard, both causes named.
+        if not variant_diff:
+            raise HTTPException(
+                status_code=409,
+                detail="Nothing changed. This would be the same run. "
+                f"See /runs/{req.parent_run_id}.",
+            )
+        claims_untouched = bool(
+            ((req.provenance or {}).get("confirmed") or {}).get("untouched")
+        )
+        if claims_untouched:
+            drifted = ", ".join(r["field"] for r in variant_diff[:5])
+            raise HTTPException(
+                status_code=422,
+                detail="zero-edit mismatch: no dial was touched, yet the "
+                f"rebuilt spec differs from the parent at {drifted} — this "
+                "is the lossy rebuild resurfacing (V-19), a defect, not "
+                "your edit; no credit was spent",
+            )
+
     # launch L4 anon armor: the anonymous free-run path is defended so a
     # doctored client can't turn the engine into free compute. Signed-in
     # users and the service principal skip ALL of this. Everything that can
@@ -624,41 +786,84 @@ def backtest(
     charge_credit = run_user is not None and not auth.is_service(request)
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
-    with db.session() as s:
-        if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
-            uid = run_user.id
-            # lock THIS account's row (Postgres) so two simultaneous runs
-            # can't both spend the last credit, then recompute the balance
-            # under the lock and debit + create in ONE transaction — a crash
-            # between them leaves NEITHER (the atomicity guarantee). On the
-            # SQLite fallback with_for_update is a no-op, so a concurrent
-            # overdraft of 1 credit is possible there; acceptable, as the
-            # fallback is degraded single-node mode and prod is Postgres.
-            s.query(db.User).filter(db.User.id == uid).with_for_update().first()
-            if db.credit_balance_tx(s, uid) <= 0:
-                raise HTTPException(
-                    status_code=402,
-                    detail="you're out of backtest credits — top-ups are coming soon",
+    # V-172: the ordinal race (two tabs submitting variants of one root
+    # at the same moment) retries ONCE with a fresh transaction — the
+    # loser recomputes max+1 and lands the next ordinal. One run per
+    # submit, no error surfaced on the legitimate double-submit path; the
+    # 409 below remains only for a double collision, genuine contention.
+    for _ordinal_attempt in (1, 2):
+        with db.session() as s:
+            if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
+                uid = run_user.id
+                # lock THIS account's row (Postgres) so two simultaneous runs
+                # can't both spend the last credit, then recompute the balance
+                # under the lock and debit + create in ONE transaction — a crash
+                # between them leaves NEITHER (the atomicity guarantee). On the
+                # SQLite fallback with_for_update is a no-op, so a concurrent
+                # overdraft of 1 credit is possible there; acceptable, as the
+                # fallback is degraded single-node mode and prod is Postgres.
+                s.query(db.User).filter(db.User.id == uid).with_for_update().first()
+                if db.credit_balance_tx(s, uid) <= 0:
+                    raise HTTPException(
+                        status_code=402,
+                        detail="you're out of backtest credits — top-ups are coming soon",
+                    )
+                s.add(
+                    db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
                 )
+            # V-167 step 3: lineage is stamped in the SAME transaction as the
+            # debit. A crash between them must leave neither — a run with a debit
+            # and no lineage is a variant that lost its parent, unrepairable.
+            variant_ordinal: int | None = None
+            if variant_root is not None:
+                variant_ordinal = _next_ordinal(s, variant_root)
             s.add(
-                db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
+                db.Run(
+                    id=run_id,
+                    status="queued",
+                    stage=0,
+                    seed=spec.backtest.seed,
+                    spec_json=spec.model_dump_json(),
+                    origin=origin,
+                    parent_run_id=req.parent_run_id,
+                    root_run_id=variant_root,
+                    variant_ordinal=variant_ordinal,
+                    user_id=run_user.id if run_user is not None else None,
+                    provenance_json=creation_record(
+                        req.provenance, origin, req.parent_run_id, note,
+                        what_changed=variant_diff,
+                    ),
+                )
             )
-        s.add(
-            db.Run(
-                id=run_id,
-                status="queued",
-                stage=0,
-                seed=spec.backtest.seed,
-                spec_json=spec.model_dump_json(),
-                origin=origin,
-                parent_run_id=req.parent_run_id,
-                user_id=run_user.id if run_user is not None else None,
-                provenance_json=creation_record(
-                    req.provenance, origin, req.parent_run_id, note
-                ),
-            )
-        )
-        s.commit()
+            try:
+                s.commit()
+                break
+            except IntegrityError as exc:
+                # the rollback discards the debit with the insert — nothing
+                # half-written, whatever the cause turns out to be
+                s.rollback()
+                # Only the ordinal index may be BLAMED on the ordinal race, and
+                # only after checking. Claiming a cause this never verified is
+                # the same defect class as a verdict citing a number it does
+                # not have: every other refusal here names a reason it
+                # established first (db.was_refunded, the V-168 lock message).
+                if not _is_ordinal_collision(exc):
+                    raise
+                # V-172: attempt 1 retries on a fresh transaction — the loser
+                # of a cross-tab race recomputes max+1 and lands the next
+                # ordinal, so a legitimate double submit sees ONE run and no
+                # error. A second collision is genuine contention: honest 409.
+                if _ordinal_attempt == 1:
+                    log.warning(
+                        "variant ordinal collision on root %s — retrying",
+                        variant_root,
+                    )
+                    continue
+                raise HTTPException(
+                    status_code=409,
+                    detail="another variant of this run landed at the same "
+                    "moment — try again",
+                ) from None
     # record the anon trial only after the run row exists, so a failed
     # creation never burns the visitor's one free run. Best-effort: a
     # trial-write hiccup must not 500 a run that already exists and is about
@@ -722,6 +927,11 @@ def list_runs(
             db.Run.stage,
             db.Run.summary_json,
             db.Run.spec_json,
+            # V-12: lineage rides the ROW, injected at read — never written
+            # into summary_json, so old summaries and the narration rebuild
+            # need no special-casing and pre-phase rows group correctly
+            db.Run.root_run_id,
+            db.Run.variant_ordinal,
         )
         # scope=all is the full cross-account listing — automation ONLY.
         # A non-service caller appending it (review finding: it was
@@ -757,7 +967,8 @@ def list_runs(
         )
         runs: list[dict[str, Any]] = []
         backfilled = False
-        for run_id, created_at, status, stage, summary_json, spec_json in rows:
+        for (run_id, created_at, status, stage, summary_json, spec_json,
+             root_run_id, variant_ordinal) in rows:
             if status in ("queued", "running"):
                 spec = json.loads(spec_json)
                 created = created_at.strftime("%b %-d ’%y") if created_at else ""
@@ -771,6 +982,11 @@ def list_runs(
                         "meta": f"started {created}" if created else "in progress",
                         "quote": "",
                         "kind": "verdict",
+                        **(
+                            {"rootRunId": root_run_id, "variantOrdinal": variant_ordinal}
+                            if variant_ordinal is not None
+                            else {}
+                        ),
                     }
                 )
                 continue
@@ -778,6 +994,9 @@ def list_runs(
                 summary = json.loads(summary_json)
                 if run_id in examples:
                     summary["example"] = True
+                if variant_ordinal is not None:
+                    summary["rootRunId"] = root_run_id
+                    summary["variantOrdinal"] = variant_ordinal
                 runs.append(summary)
                 continue
             # stored before summary_json existed — build once, persist, done
@@ -883,6 +1102,21 @@ def get_run(
                 )
         except Exception:
             log.exception("provenance merge failed for %s", run_id)
+        # V-12: the lineage header — "Variant N, from <parent>", parent and
+        # root both linkable, parent named the way the Library names it
+        # (V-155). A deleted parent keeps the lineage and says so (V-45).
+        if run.variant_ordinal is not None:
+            with db.session() as s:
+                vparent = s.get(db.Run, run.parent_run_id) if run.parent_run_id else None
+            payload["variant"] = {
+                "ordinal": run.variant_ordinal,
+                "parent": {
+                    "id": run.parent_run_id,
+                    "label": _run_label(vparent) if vparent else None,
+                    "deleted": run.parent_run_id is not None and vparent is None,
+                },
+                "root": {"id": run.root_run_id},
+            }
         from app.api.replay import replay_eligible_spec
 
         payload["replayEligible"] = (
@@ -914,6 +1148,66 @@ class AskRequest(BaseModel):
     # the viewer's evidence bar — Q&A must describe the SAME verdict the
     # screen shows when a stored run was re-graded at read time
     min_trades: int | None = Field(default=None, ge=1, le=10_000)
+
+
+@router.get("/runs/{run_id}/variant")
+def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
+    """V-08 / V-20 / V-28: everything the spec screen needs to reopen THIS run
+    as a variant, projected server-side from the stored spec.
+
+    Costs nothing and commits to nothing (V-09) — the credit is debited at
+    submit, atomically with run creation, exactly as for any other run.
+
+    Works for every run the caller owns, including refused ones (V-03): the
+    usual fix for a refusal is widening the window, which is precisely what
+    this button is for.
+    """
+    from app.api.variant import build_variant_draft, classify, locked_field_paths
+
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or not run.spec_json:
+            raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+        _enforce_run_access(run, run_id, request)
+        spec = json.loads(run.spec_json)
+        provenance = json.loads(run.provenance_json) if run.provenance_json else None
+        stats = json.loads(run.stats_json) if run.stats_json else None
+        root_id = run.root_run_id or run_id
+        parent_ordinal = run.variant_ordinal
+        # V-155: no screen on the variant path shows a raw run id to a person.
+        parent_label = _run_label(run)
+
+    rep = classify(spec)
+    parent = {
+        "id": run_id,
+        "rootId": root_id,
+        "ordinal": parent_ordinal,
+        "label": parent_label,
+    }
+
+    if rep.blocks:
+        # V-128: the refusal names the ACTUAL reason, never a generic error,
+        # in the same plain register as the tier (b) read-only dial.
+        # V-129: zero in 99 is today's measurement, not a permanent property,
+        # so the first real occurrence announces itself rather than arriving
+        # as a support message.
+        log.warning(
+            "variant blocked: tier c run=%s reasons=%s", run_id, rep.reasons
+        )
+        return {"parent": parent, "draft": None, "spec": None, **rep.as_dict()}
+
+    return {
+        "parent": parent,
+        "draft": build_variant_draft(run_id, spec, provenance, stats, parent_label),
+        # the rebuild base, so parser-only vocabulary survives a dial edit
+        "spec": spec,
+        # V-05: carried verbatim and NOT re-asked. Absent on a run that never
+        # stored one, and never invented (V-28).
+        "prompt": (provenance or {}).get("prompt") or None,
+        "conversation": (provenance or {}).get("conversation") or [],
+        "lockedPaths": locked_field_paths(rep),
+        **rep.as_dict(),
+    }
 
 
 @router.post("/runs/{run_id}/replay")

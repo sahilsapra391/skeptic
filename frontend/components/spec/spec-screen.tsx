@@ -81,6 +81,15 @@ const SPEC_HINTS: Record<string, [string, string]> = {
   ],
 };
 
+/** V-177: the LADDER hint tells the reader to edit their strategy text and
+ * re-compile. On a variant there is no text of theirs to edit and no compile
+ * step at all — the spec came from a stored run. Same rule as V-154: a string
+ * written for the fresh path must not assert an action this path cannot take. */
+const LADDER_HINT_VARIANT: [string, string] = [
+  "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic and carry over from the original run — dials can't edit them, and a variant can't re-compile. Start a New Analysis to change the ladder.",
+  "The plan for buying in steps as the signal deepens, with a hard cap. It carries over from the original run and can't be changed here — start a New Analysis to change the steps.",
+];
+
 const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
 const TILE_LABEL = "mb-[7px] font-mono text-[11px] font-medium tracking-[.1em] text-ink-4";
 
@@ -238,6 +247,8 @@ export function SpecScreen({
     slippageSell:
       draft.costs?.slippage_half_spread_fraction_sell ?? settings.slippageSell,
   };
+  // V-155: a name a person recognises, never a raw run id in a sentence
+  const parentName = draft.variantWindow?.parentLabel ?? "The run this came from";
   const [exitEditing, setExitEditing] = useState(false);
   const [customProfit, setCustomProfit] = useState("");
   const [customStop, setCustomStop] = useState("");
@@ -337,16 +348,56 @@ export function SpecScreen({
 
   return (
     <div>
-      <button onClick={onBack} className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3">
-        ‹ edit input
-      </button>
+      {/* V-159: on the variant path, "edit input" offers to edit words the
+          user did not write — the same misattribution as "Here's what I
+          heard", relocated to the navigation. Back means the parent run.
+          Starting fresh is still possible, but it says so plainly and sits
+          second. */}
+      {draft.variantOf ? (
+        <div className="mb-[18px] flex items-center gap-4">
+          <a
+            href={`/runs/${draft.variantOf.runId}`}
+            className="text-[12.5px] text-ink-4 hover:text-ink-3"
+          >
+            ‹ back to {draft.variantOf.label ?? "the original run"}
+          </a>
+          <button
+            onClick={onBack}
+            className="text-[11.5px] text-ink-5 underline decoration-line underline-offset-2 hover:text-ink-4"
+          >
+            start fresh instead
+          </button>
+        </div>
+      ) : (
+        <button onClick={onBack} className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3">
+          ‹ edit input
+        </button>
+      )}
 
       <div className="mb-4 flex justify-end">
         <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-4 py-3 font-mono text-[14px] leading-[1.55] text-ink-2">
           {draft.fromChart ? `◉ ${draft.quote}` : `“${draft.quote}”`}
         </div>
       </div>
-      <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+      {/* V-154: on the variant path "Here's what I heard" claims the user said
+          this. They did not — the quote above is the parent run's prompt. The
+          framing is REPLACED rather than supplemented, so no reader can come
+          away believing they authored it. */}
+      {draft.variantOf ? (
+        <p className="mb-3.5 text-[16px] text-ink-3">
+          A variant of{" "}
+          <a
+            href={`/runs/${draft.variantOf.runId}`}
+            className="text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
+          >
+            {draft.variantOf.label ?? "an earlier run"}
+          </a>
+          . That run's words are above, not yours — every dial below is
+          adjustable.
+        </p>
+      ) : (
+        <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+      )}
 
       <div className="grid grid-cols-4 gap-2.5">
         <div className={TILE}>
@@ -556,10 +607,12 @@ export function SpecScreen({
               if (v === "__unset") return;
               if (v === "__custom" || v === "custom") {
                 // confirm the text-supplied dates as the window
-                set({ window: { ...(draft.window ?? {}), kind: "custom" } });
+                set({ window: { ...(draft.window ?? {}), kind: "custom" }, variantWindow: undefined });
                 return;
               }
-              set({ window: { kind: v } });
+              // V-40: touching the window ends its "carried" status — it is a
+              // normal user choice from here and stops being labelled inherited
+              set({ window: { kind: v }, variantWindow: undefined });
             }}
             className={TILE_SELECT_CLS}
             title={estimate?.basis.note ?? "Data window — required before running"}
@@ -650,7 +703,11 @@ export function SpecScreen({
           <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
             LADDER — ADDS ON SIGNAL
             <Hint
-              text={settings.verbiage === "retail" ? SPEC_HINTS.LADDER[1] : SPEC_HINTS.LADDER[0]}
+              text={
+                (draft.variantOf ? LADDER_HINT_VARIANT : SPEC_HINTS.LADDER)[
+                  settings.verbiage === "retail" ? 1 : 0
+                ]
+              }
             />
           </span>
           {draft.ladder.rungs.map((r, i) => (
@@ -831,10 +888,49 @@ export function SpecScreen({
         </div>
       )}
 
+      {windowSet && draft.variantWindow && draft.variantWindow.state !== "unset" && (
+        <div className="mt-3 rounded-xl border border-line bg-panel px-3.5 py-3 text-[13px] leading-[1.5] text-ink-3">
+          {/* V-133: the carried states say so where the unset callout would
+              sit — one statement, one place. V-51: an inherited "all" may
+              legitimately test MORE history than the parent, and says so. */}
+          Window carried from {parentName}
+          {draft.variantWindow.state === "carried_all" ? (
+            <>
+              : all available data. That run tested{" "}
+              {draft.variantWindow.parentEffective
+                ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                : "its own window"}
+              ; this one resolves against current coverage, so it may test more
+              history. Changing the window makes it your choice.
+            </>
+          ) : (
+            <>
+              . That run tested{" "}
+              {draft.variantWindow.parentEffective
+                ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                : "its own window"}
+              ; this one computes its own against current coverage. Changing
+              the window makes it your choice.
+            </>
+          )}
+        </div>
+      )}
       {!windowSet && (
         <div className="mt-3 rounded-xl border border-trust-border bg-trust-dim px-3.5 py-3 text-[13.5px] leading-[1.5] text-ink">
           <b className="text-trust">Pick a data window</b> — how much history should this run test
           against? Shorter is faster; longer sees more market regimes and earns more trust.
+          {/* V-156: ONE statement about the window, in one place. The tile no
+              longer repeats this in a second register. */}
+          {draft.variantWindow?.state === "unset" && (
+            <>
+              {" "}
+              {parentName} did not record a requested window
+              {draft.variantWindow.parentEffective
+                ? `, though it tested ${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                : ""}
+              , so this one starts empty.
+            </>
+          )}
         </div>
       )}
 

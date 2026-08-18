@@ -3,15 +3,35 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--project", "backend", "uvicorn", "app.main:app", "--app-dir", "backend", "--port", "8000"],
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATABASE_URL=sqlite:///backend/runs.db",
+        "uv",
+        "run",
+        "--project",
+        "backend",
+        "python",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--app-dir",
+        "backend",
+        "--port",
+        "8000"
+      ],
       "port": 8000,
-      "autoPort": false
+      "autoPort": false,
+      "_why_pinned": "V-188: DATABASE_URL is PINNED, not unset. The preview spawner's environment carried a production Neon URL and the source was never identified (V-189 cleared shell profiles, launchd, direnv, uv config/UV_* vars, and all three settings.json env blocks; backend/.env holds only Clerk keys; the value's home is collector/.env, which the nightly ledger legitimately needs, but uv does not load it for --project backend). Unsetting defends against one origin; pinning defends against any. The pin stays even if the source turns up later \u2014 a dev server that sits one env var away from production should be explicit, not ambient. V-149 refused the remote migration on boot, which is what caught this; the fix is to stop pointing dev at prod, never to set SKEPTIC_ALLOW_REMOTE_MIGRATION."
     },
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": false
     }

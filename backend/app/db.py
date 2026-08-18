@@ -61,6 +61,14 @@ class Run(Base):
     origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # D3: the refused/original run an automatic run supersedes or replays
     parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # V-25: the head of a variant chain. A root run has this NULL; every variant
+    # carries the id of the run the chain started from, so the Library can group
+    # a family without walking parent links one at a time.
+    root_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # V-25: this run's position in its chain, assigned once at creation and
+    # STORED. Never recomputed from a live count — a deleted variant must leave
+    # a gap rather than renumber its siblings (V-45).
+    variant_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # D3c: 5-minute replay receipts attached to this (daily) run — merged
     # into the payload at READ time; the stored verdict is never rewritten
     receipts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -438,6 +446,11 @@ def init_db() -> None:
     try:
         Base.metadata.create_all(_engine)
         _ensure_columns()
+    except RemoteMigrationRefused:
+        # V-149: this is a REFUSAL, not an outage. Falling back to local SQLite
+        # here would be worse than the accident it prevents — the server would
+        # come up healthy on the wrong database and nobody would know.
+        raise
     except Exception as exc:  # unreachable/refusing DB — degrade, loudly
         reason = str(exc).strip().split("\n")[0][:200]
         log.error("configured database unavailable (%s) — falling back to local SQLite", reason)
@@ -448,16 +461,63 @@ def init_db() -> None:
         _ensure_columns()
 
 
+def target_line() -> str:
+    """V-150: what this process actually connected to, in plain terms.
+
+    A whole cycle was spent discovering after the fact which engine was in
+    play. Same reasoning as V-85: the thing that ran announces what it ran
+    against, at the moment it runs.
+    """
+    url = _database_url()
+    if url.startswith("sqlite"):
+        return f"LOCAL SQLite — {url.split('sqlite:///', 1)[-1]}"
+    host = url.split("@", 1)[-1].split("/", 1)[0]
+    return f"REMOTE postgres — {host}"
+
+
 def status() -> str:
     if FALLBACK_REASON:
         return f"local SQLite fallback — configured DB unavailable: {FALLBACK_REASON}"
     return "postgres (Neon)" if not _database_url().startswith("sqlite") else "local SQLite"
 
 
+def _is_local_target(url: str) -> bool:
+    """SQLite anywhere, or Postgres on this machine. Everything else is
+    somebody's real database."""
+    if url.startswith("sqlite"):
+        return True
+    host = url.split("@", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+    return host in {"localhost", "127.0.0.1", "::1", ""}
+
+
+class RemoteMigrationRefused(RuntimeError):
+    """V-149: a schema change against a remote database that nobody asked for."""
+
+
 def _ensure_columns() -> None:
     """Additive micro-migration: create_all never alters existing tables,
-    so columns added after first deploy are patched in here."""
+    so columns added after first deploy are patched in here.
+
+    V-149: REFUSES to run against a remote database unless
+    SKEPTIC_ALLOW_REMOTE_MIGRATION is set. Local SQLite and localhost Postgres
+    proceed silently; the deploy path sets the flag deliberately.
+
+    This is not about any particular migration. It is that a dev server booting
+    with the wrong DATABASE_URL should not be able to reshape production on its
+    way up — a schema change should be something someone CHOSE. Today's
+    additions were additive and nullable, so the accident was harmless; the
+    next one might not be.
+    """
     from sqlalchemy import inspect, text
+
+    url = _database_url()
+    if not _is_local_target(url) and not os.environ.get("SKEPTIC_ALLOW_REMOTE_MIGRATION"):
+        host = url.split("@", 1)[-1].split("/", 1)[0]
+        raise RemoteMigrationRefused(
+            f"refusing to migrate a remote database ({host}). Set "
+            "SKEPTIC_ALLOW_REMOTE_MIGRATION=1 if you mean it — the deploy "
+            "path does."
+        )
 
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:
@@ -467,7 +527,15 @@ def _ensure_columns() -> None:
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} TEXT"))
         for column, kind in (("origin", "VARCHAR(20)"), ("parent_run_id", "VARCHAR(40)"),
-                             ("user_id", "VARCHAR(40)")):
+                             ("user_id", "VARCHAR(40)"),
+                             # V-25: variant lineage. root_run_id is the head of
+                             # the chain; variant_ordinal is assigned ONCE at
+                             # creation and stored, never recomputed from a live
+                             # count. Deleting a variant leaves a gap, and gaps
+                             # are correct: renumbering would make a saved PDF
+                             # and the live app disagree about which run is which.
+                             ("root_run_id", "VARCHAR(40)"),
+                             ("variant_ordinal", "INTEGER")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
     # launch L3: the Stripe idempotency keys on the live credit_ledger —
@@ -504,6 +572,16 @@ def _ensure_indexes() -> None:
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_chargeback "
             "ON credit_ledger (payment_ref) WHERE reason = 'chargeback'"
+        ))
+        # V-170: two concurrent variants of one root must get distinct
+        # ordinals or one must fail cleanly. Application logic computes
+        # max+1 inside the insert transaction; THIS index is what makes the
+        # race lose loudly instead of storing a duplicate — the ordinal is
+        # stored forever (V-25), so a duplicate would be permanent.
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_variant_ordinal "
+            "ON runs (root_run_id, variant_ordinal) "
+            "WHERE root_run_id IS NOT NULL AND variant_ordinal IS NOT NULL"
         ))
 
 

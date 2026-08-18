@@ -38,9 +38,26 @@ skeptic/
     builds fresh and is unaffected. A documented command that errors gets
     worked around by running a subset, which in a repo this guardrail-heavy is
     how a green-looking partial run happens (V-83).
+  - **The rule, not the instances (V-153):** on this machine, invoke Python
+    tooling as `python -m <tool>`. Console-script entry points (`pytest`,
+    `mypy`, `uvicorn`, and presumably the next one) resolve to a 3.13
+    interpreter while the project pins 3.12. The failures do not look alike —
+    pytest raises `ModuleNotFoundError: fastapi`, mypy reports 43 phantom
+    errors from the wrong stubs, uvicorn fails to spawn at all — so each one
+    reads as its own bug until you know the pattern. CI builds fresh and is
+    unaffected.
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.
+  - **Before freeing a port, confirm the PID is this project's own tooling**
+    (`ps -p <pid> -o command`). SpecHawk and other projects share this
+    machine, and a port-adjacent casualty in someone else's dev server is the
+    cheapest accident here to prevent (V-191).
+  - The dev server pins `DATABASE_URL` to local SQLite in
+    `.claude/launch.json`. It is a PIN, not a removal: the preview spawner's
+    environment carried a production Neon URL from an unidentified source, and
+    pinning defends against any origin. Never set
+    `SKEPTIC_ALLOW_REMOTE_MIGRATION` to make a dev server start (V-188).
 - Frontend: `cd frontend && npm i && npm run dev` · checks: `npm run lint && npm run typecheck`
 - Collector local run: `cd collector && uv run python collect.py --mode eod`
 - CI must be green before any milestone is called done.

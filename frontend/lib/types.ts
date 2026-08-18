@@ -72,6 +72,32 @@ export interface SpecDraft {
   };
   /** V-36: likewise the seed. Confirmed here, never re-hardcoded downstream. */
   seed?: number;
+  /** V-133: on a variant, WHICH of the three window cases this draft is in.
+   * A user must never have to work out which one they got, so the state is
+   * carried explicitly rather than inferred from whether `window` is set.
+   *
+   * - `carried`     the parent recorded a requested window; it is prefilled
+   * - `carried_all` the parent chose "all"; prefilled, and by V-51 the variant
+   *                 may legitimately test MORE history than the parent did,
+   *                 because it resolves against current coverage
+   * - `unset`       the parent recorded no requested window (V-50). The field
+   *                 stays empty and the run is locked until the user picks.
+   *                 This is a routine first screen, not a degraded one (V-132). */
+  /** V-154: this draft came from another run, so the composer's "Here's what
+   * I heard" framing is FALSE here — the quoted prompt is the parent's, not
+   * something this user said. Same rule as V-31, applied to the composer
+   * screen instead of the provenance record. */
+  variantOf?: { runId: string; label: string | null };
+  variantWindow?: {
+    state: "carried" | "carried_all" | "unset";
+    /** V-155: how a person recognises the parent. The id is a link target, never
+     * a string in a sentence. */
+    parentLabel?: string | null;
+    /** the immediate parent, never the root (V-52) */
+    parentRunId: string;
+    /** what the parent actually tested, shown as context in every state */
+    parentEffective?: { start: string; end: string } | null;
+  };
   clock?: "daily" | "5min";
   /** FX.5 (spec v4 dials): continuous scanning + per-session resolution.
    * Unset = the defaults (once per session · 5-min grid). */
@@ -139,6 +165,13 @@ export interface RunProvenance {
     omitted?: string;
   };
   truncated?: { dropped_events: number };
+  /** V-31/V-176: sections 1-2 are the PARENT's — its prompt, and its Q&A if
+   * it had any. Marked explicitly so carried history is never rendered as
+   * though the interview ran on this run. */
+  carried_from?: string | null;
+  /** V-13 section 5: the server-computed what-changed rows (V-162's one
+   * comparison), stored at creation. Absent on non-variants. */
+  what_changed?: { field: string; parent: unknown; variant: unknown }[];
   mechanics?: {
     engine_s?: number;
     gauntlet_s?: number;
@@ -373,6 +406,13 @@ export interface RunPayload {
    * read time for runs predating the column. Absent only when the stored
    * record is unreadable. */
   provenance?: RunProvenance;
+  /** V-12: the lineage header. Present only on variants; parent is named the
+   * way the Library names it (V-155) and a deleted parent says so (V-45). */
+  variant?: {
+    ordinal: number;
+    parent: { id: string | null; label: string | null; deleted: boolean };
+    root: { id: string | null };
+  };
   /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
    * time like receipts; the stored verdict is never rewritten. */
   fillAudit?: {
@@ -516,6 +556,9 @@ export interface RunSummary {
   upgradeOf?: string | null; // the refused run this one supersedes
   autoNote?: string | null; // "re-ran automatically — N new sessions"
   supersededBy?: string | null; // set on the OLD refusal once upgraded
+  /** V-12: lineage, injected at read from the run row — groups a family */
+  rootRunId?: string | null;
+  variantOrdinal?: number | null;
   /** launch L4: one of the two pinned showcase runs — badged everywhere so
    * a stranger never mistakes it for their own result */
   example?: boolean;
