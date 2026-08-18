@@ -267,6 +267,79 @@ def canonical_json(spec: dict[str, Any]) -> str:
     return json.dumps(canonical_spec(spec), sort_keys=True, separators=(",", ":"))
 
 
+# Explicit, closed vocabulary. Not fuzzy matching: every entry is an exact
+# string that maps to exactly one canonical token. Parser options for boolean
+# spec fields are worded this way ("Yes"/"No"), and without this an answer of
+# "no" could never match a stored `false`.
+_BOOLEAN_WORDS = {
+    "yes": "true", "y": "true", "true": "true", "on": "true", "enabled": "true",
+    "no": "false", "n": "false", "false": "false", "off": "false",
+    "disabled": "false", "none": "false",
+}
+
+# Units that qualify a number without rescaling it. `%` is here deliberately:
+# the schema stores whole percents (`exit.profit_target_pct: 50` means 50%),
+# so "50%" and "50" are the same value and dividing by 100 would invent one.
+_TRAILING_UNITS = ("%", "dte", "dtes", "days", "day", "d", "contracts", "contract", "x")
+
+
+def canonical_token(value: object) -> str | None:
+    """THE normalization for value matching (V-202), applied to BOTH sides.
+
+    One function, not two, for the reason V-163 gives: a recorded answer and a
+    stored spec value are compared, so they must be normalized by the same code
+    or the comparison is between two different spaces. The answer string
+    "50%" and the spec value `50.0` both land on "50" here, and equality after
+    that is exact. There is no fuzzy step, no nearest match, no threshold.
+
+    Returns None when the input cannot be canonicalized, which the reconciler
+    treats as a safe miss and counts (V-204). None never equals None: callers
+    must not compare two Nones and call it a match.
+    """
+    if value is None or isinstance(value, (list, dict)):
+        return None
+    if isinstance(value, bool):  # before the numeric branch; bool is an int
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return _number_token(float(value))
+
+    text = " ".join(str(value).split()).strip().casefold()
+    if not text:
+        return None
+    if text in _BOOLEAN_WORDS:
+        return _BOOLEAN_WORDS[text]
+
+    number = _extract_number(text)
+    if number is not None:
+        return _number_token(number)
+    return text
+
+
+def _extract_number(text: str) -> float | None:
+    """A number, optionally wearing a currency symbol, thousands separators, or
+    one trailing unit. Anything else is not a number, deliberately: "between 30
+    and 45" must not silently become 30."""
+    cleaned = text.replace(",", "").replace("$", "").strip()
+    for unit in _TRAILING_UNITS:
+        if cleaned.endswith(unit):
+            cleaned = cleaned[: -len(unit)].strip()
+            break
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _number_token(number: float) -> str:
+    """`50`, `50.0` and `"50%"` must all render identically, and a float that
+    is integral must not render as `50.0` while the int renders as `50`."""
+    if number == int(number):
+        return str(int(number))
+    return repr(round(number, 10))
+
+
 def diff_specs(
     parent: dict[str, Any], variant: dict[str, Any]
 ) -> list[dict[str, Any]]:
