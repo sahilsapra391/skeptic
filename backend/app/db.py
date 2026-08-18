@@ -483,15 +483,54 @@ def status() -> str:
 
 def _is_local_target(url: str) -> bool:
     """SQLite anywhere, or Postgres on this machine. Everything else is
-    somebody's real database."""
+    somebody's real database.
+
+    The IPv6 form has to be parsed rather than assumed: `@[::1]:5432/db` splits
+    on the FIRST colon to `"["`, so the old one-liner classified a localhost
+    IPv6 Postgres as remote and its `"::1"` entry was unreachable. Refusing is
+    the safe direction to be wrong in, which is exactly why it sat unnoticed.
+    The empty-string entry went with it: it made any authority beginning with a
+    colon read as local, and nothing legitimate produces that.
+    """
     if url.startswith("sqlite"):
         return True
-    host = url.split("@", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
-    return host in {"localhost", "127.0.0.1", "::1", ""}
+    authority = url.split("@", 1)[-1].split("/", 1)[0]
+    if authority.startswith("["):
+        host = authority[1:].split("]", 1)[0].lower()
+    else:
+        host = authority.rsplit(":", 1)[0].lower() if ":" in authority else authority.lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
 
 
 class RemoteMigrationRefused(RuntimeError):
     """V-149: a schema change against a remote database that nobody asked for."""
+
+
+def _refuse_remote_migration_if_unchosen(url: str) -> None:
+    """The guard, as a pure function of (url, environment).
+
+    Split out from `_ensure_columns` so it can be tested without an engine and
+    therefore without a network. The first version of its test built a real
+    SQLAlchemy engine pointed at the production hostname to exercise the remote
+    branch, and the suite dialled production on every run. A guard whose test
+    has to touch the thing it guards is the wrong shape.
+
+    Takes the url of the engine ABOUT TO BE MIGRATED, not the configured
+    DATABASE_URL. The two diverge in `init_db`'s fallback, where an unreachable
+    remote swaps `_engine` to local SQLite and migrates that instead; judging
+    the configured string there refuses a migration against a local file and
+    kills the process, turning "degrade, loudly" into an outage.
+    """
+    if _is_local_target(url):
+        return
+    if os.environ.get("SKEPTIC_ALLOW_REMOTE_MIGRATION"):
+        return
+    host = url.split("@", 1)[-1].split("/", 1)[0]
+    raise RemoteMigrationRefused(
+        f"refusing to migrate a remote database ({host}). Set "
+        "SKEPTIC_ALLOW_REMOTE_MIGRATION=1 if you mean it; "
+        "backend/Dockerfile sets it for the deploy."
+    )
 
 
 def _ensure_columns() -> None:
@@ -500,7 +539,14 @@ def _ensure_columns() -> None:
 
     V-149: REFUSES to run against a remote database unless
     SKEPTIC_ALLOW_REMOTE_MIGRATION is set. Local SQLite and localhost Postgres
-    proceed silently; the deploy path sets the flag deliberately.
+    proceed silently; the deploy path sets the flag in `backend/Dockerfile`,
+    and `backend/tests/test_remote_migration_guard.py` fails if it stops.
+
+    That last sentence used to say the deploy path "does" set the flag, with no
+    file named and nothing checking. It was false, the flag was set nowhere, and
+    since this raises at IMPORT time the first production deploy after the guard
+    shipped never bound a port. The whole suite stayed green throughout, because
+    every test runs on SQLite where the guard cannot fire.
 
     This is not about any particular migration. It is that a dev server booting
     with the wrong DATABASE_URL should not be able to reshape production on its
@@ -510,14 +556,7 @@ def _ensure_columns() -> None:
     """
     from sqlalchemy import inspect, text
 
-    url = _database_url()
-    if not _is_local_target(url) and not os.environ.get("SKEPTIC_ALLOW_REMOTE_MIGRATION"):
-        host = url.split("@", 1)[-1].split("/", 1)[0]
-        raise RemoteMigrationRefused(
-            f"refusing to migrate a remote database ({host}). Set "
-            "SKEPTIC_ALLOW_REMOTE_MIGRATION=1 if you mean it — the deploy "
-            "path does."
-        )
+    _refuse_remote_migration_if_unchosen(str(_engine.url))
 
     existing = {c["name"] for c in inspect(_engine).get_columns("runs")}
     with _engine.begin() as conn:

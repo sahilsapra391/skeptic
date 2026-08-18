@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C205%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1%2C225%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -142,6 +142,15 @@ flowchart TB
 Frontend on Vercel. Backend on Railway. Data in R2, queried with DuckDB.
 Collection on a VM that is always on, for reasons the next sections explain.
 
+The backend refuses to alter the schema of a remote database unless something
+explicitly chose to, and it refuses at import, so a server pointed at a database
+nobody meant to reshape fails to start instead of reshaping it quietly. The
+deploy makes that choice in `backend/Dockerfile`, not in a hosting dashboard,
+for a reason worth stating: the guard first shipped with the flag set nowhere at
+all, and because no dashboard variable is visible to the repo, nothing could
+check the code's own claim that the deploy set it. Production healthchecked red
+until it did. It is now read by a test.
+
 Three jobs need a language model: turning a plain-English strategy into a
 validated spec, writing the verdict, and answering questions about a finished
 run. All three go to DeepSeek V4 Pro through OpenRouter. It used to be two
@@ -252,7 +261,7 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           1,092 tests, engine fixtures hand-computed
+  tests/           1,112 tests, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
   tests/           113 tests
@@ -263,7 +272,7 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,205 tests** (1,092 backend, 113 collector).
+**1,225 tests** (1,112 backend, 113 collector).
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on

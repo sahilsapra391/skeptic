@@ -21,6 +21,21 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY app ./app
 
+# V-149's migration guard refuses to reshape a REMOTE database unless this is
+# set, and it raises at import time, so without it the app never binds a port
+# and the healthcheck fails. This container IS the deploy path, which is what
+# the guard means by "someone chose it": the threat it defends against is a
+# local dev server booting on the wrong DATABASE_URL, and that server runs from
+# .claude/launch.json, never from this image.
+#
+# It lives here rather than in a Railway dashboard variable on purpose. The
+# outage happened because the code asserted "the deploy path does" set this
+# while the setting existed nowhere the repo could see, so nothing could check
+# the claim. In here it is reviewable, it ships with the image that needs it,
+# and backend/tests/test_remote_migration_guard.py reads this file and fails if
+# it goes missing again.
+ENV SKEPTIC_ALLOW_REMOTE_MIGRATION=1
+
 # runtime env expected from the platform:
 #   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET
 #   OPENROUTER_API_KEY (parser + verdict narration + grounded Q&A)
