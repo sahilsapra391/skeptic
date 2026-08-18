@@ -239,6 +239,83 @@ def build_variant_draft(
     return draft
 
 
+# --- the ONE comparison (V-162 / V-163 / V-164) ------------------------------
+
+
+def canonical_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    """THE canonicalizer — shared with the V-18 round-trip guard, which imports
+    this function rather than keeping its own (V-163: two canonicalizers is the
+    two-code-paths-one-comparison structure that produced four defects in the
+    audit script's date handling).
+
+    Normalizes through the SAME pydantic model the engine validates against:
+    null and absent collapse together (exclude_none), types settle (ints vs
+    floats), and vocabulary the model normalizes (an `atm` strike becoming
+    delta 0.5) normalizes identically on both sides of any comparison.
+    """
+    from app.models.spec import StrategySpec
+
+    return StrategySpec.model_validate(spec).model_dump(
+        mode="json", exclude_none=True
+    )
+
+
+def canonical_json(spec: dict[str, Any]) -> str:
+    """Byte-comparable form: sorted keys, compact separators."""
+    import json
+
+    return json.dumps(canonical_spec(spec), sort_keys=True, separators=(",", ":"))
+
+
+def diff_specs(
+    parent: dict[str, Any], variant: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The field-level diff between a parent's stored spec and a submitted
+    variant. ONE function, one output, consumed by every reader (V-162):
+
+        the V-22 lock check          — prefix-matches `field` against lockedPaths
+        the V-10/V-19 zero-edit guard — empty list = same run, block pre-debit
+        provenance section 5          — rendered as the what-changed record
+        A2's Q&A reconciler           — maps question labels onto `field`
+
+    Output rows are {"field", "parent", "variant"}, ordered by path.
+
+    FIELD PATHS ARE A CONTRACT (V-164): dotted spec-schema paths with list
+    indices in brackets — "backtest.start", "exit.profit_target_pct",
+    "position.legs[0].strike_selection.value",
+    "position.expiration_selection.target_dte". A2's label table maps question
+    labels onto exactly these strings, so renaming one breaks reconciliation
+    silently; test_the_path_vocabulary_is_pinned fails first.
+
+    A key present on one side only diffs against None (canonicalization has
+    already collapsed null-vs-absent, so a surviving absence is a real
+    vocabulary difference, e.g. a ladder the variant dropped). Lists of equal
+    length diff index-wise; a length change is ONE row at the list's own path
+    carrying both lists whole.
+    """
+    rows: list[dict[str, Any]] = []
+    _walk(canonical_spec(parent), canonical_spec(variant), "", rows)
+    rows.sort(key=lambda r: r["field"])
+    return rows
+
+
+def _walk(a: Any, b: Any, path: str, rows: list[dict[str, Any]]) -> None:
+    if isinstance(a, dict) and isinstance(b, dict):
+        for key in sorted(set(a) | set(b)):
+            child = f"{path}.{key}" if path else key
+            _walk(a.get(key), b.get(key), child, rows)
+        return
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            rows.append({"field": path, "parent": a, "variant": b})
+            return
+        for i, (x, y) in enumerate(zip(a, b, strict=True)):
+            _walk(x, y, f"{path}[{i}]", rows)
+        return
+    if a != b:
+        rows.append({"field": path, "parent": a, "variant": b})
+
+
 def locked_field_paths(rep: Representability) -> list[str]:
     """Spec paths the submitted variant must match its parent on (V-22).
 

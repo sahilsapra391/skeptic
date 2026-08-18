@@ -37,7 +37,7 @@ from typing import Any
 
 import pytest
 
-from app.models.spec import StrategySpec
+from app.api.variant import canonical_json, canonical_spec
 from app.parser.parse import spec_to_draft
 
 from .test_spec_roundtrip import CANONICAL
@@ -191,14 +191,17 @@ CORPUS: dict[str, Any] = {
 
 
 def _validated(spec: dict[str, Any]) -> dict[str, Any]:
-    """Every corpus entry is a REAL spec, not hand-waved JSON — it goes through
-    the same pydantic model the engine validates against."""
-    model = StrategySpec.model_validate(spec)
-    return model.model_dump(mode="json", exclude_none=True)
+    """Every corpus entry is a REAL spec, not hand-waved JSON. V-163: this IS
+    the submit-side canonicalizer from app.api.variant — the guard and the
+    variant diff share one implementation, because two canonicalizers is the
+    two-code-paths-one-comparison structure that produced four defects in the
+    audit script's date handling. Extending canonicalization means extending
+    THAT function and re-running this guard, never writing a second one here."""
+    return canonical_spec(spec)
 
 
 def _canonical(spec: dict[str, Any]) -> str:
-    return json.dumps(spec, sort_keys=True, separators=(",", ":"), default=str)
+    return canonical_json(spec)
 
 
 def _draft_for(spec: dict[str, Any]) -> dict[str, Any]:
