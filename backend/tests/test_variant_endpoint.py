@@ -224,3 +224,32 @@ def test_identity_fields_are_locked_on_every_variant(client: TestClient, field: 
     """V-06: locked regardless of tier."""
     rid = _store("varsrc11", _spec_with_window("2024-01-01"))
     assert field in client.get(f"/api/runs/{rid}/variant").json()["locked"]
+
+
+def test_parent_label_is_the_librarys_name_not_meta_name(client: TestClient) -> None:
+    """V-160: the screen and the Library must never disagree about what a run
+    is called, so the label reads summary_json — the exact field the Library
+    renders — and falls back to spec.meta.name ONLY when no summary exists.
+    The two differing is exactly the case that matters: meta.name is the field
+    PR-0 just stopped from regenerating silently, and a variant screen naming
+    the parent one thing while the Library shows another is V-80's seam."""
+    spec = _spec_with_window("2024-01-01")
+    rid = "varsrc12"
+    with db.session() as s:
+        s.query(db.Run).filter(db.Run.id == rid).delete()
+        s.add(db.Run(id=rid, status="done", spec_json=json.dumps(spec),
+                     summary_json=json.dumps({"name": "the Library's name"})))
+        s.commit()
+    body = client.get(f"/api/runs/{rid}/variant").json()
+    assert body["parent"]["label"] == "the Library's name"
+    assert body["draft"]["variantOf"]["label"] == "the Library's name"
+
+
+def test_parent_label_falls_back_to_meta_name_without_a_summary(
+    client: TestClient,
+) -> None:
+    """The explicit fallback half of V-160: pre-summary rows still get a human
+    name rather than a raw id."""
+    rid = _store("varsrc13", _spec_with_window("2024-01-01"))
+    body = client.get(f"/api/runs/{rid}/variant").json()
+    assert body["parent"]["label"] == CANONICAL["meta"]["name"]

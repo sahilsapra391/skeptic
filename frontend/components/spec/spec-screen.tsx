@@ -339,9 +339,31 @@ export function SpecScreen({
 
   return (
     <div>
-      <button onClick={onBack} className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3">
-        ‹ edit input
-      </button>
+      {/* V-159: on the variant path, "edit input" offers to edit words the
+          user did not write — the same misattribution as "Here's what I
+          heard", relocated to the navigation. Back means the parent run.
+          Starting fresh is still possible, but it says so plainly and sits
+          second. */}
+      {draft.variantOf ? (
+        <div className="mb-[18px] flex items-center gap-4">
+          <a
+            href={`/runs/${draft.variantOf.runId}`}
+            className="text-[12.5px] text-ink-4 hover:text-ink-3"
+          >
+            ‹ back to {draft.variantOf.label ?? "the original run"}
+          </a>
+          <button
+            onClick={onBack}
+            className="text-[11.5px] text-ink-5 underline decoration-line underline-offset-2 hover:text-ink-4"
+          >
+            start fresh instead
+          </button>
+        </div>
+      ) : (
+        <button onClick={onBack} className="mb-[18px] text-[12.5px] text-ink-4 hover:text-ink-3">
+          ‹ edit input
+        </button>
+      )}
 
       <div className="mb-4 flex justify-end">
         <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-4 py-3 font-mono text-[14px] leading-[1.55] text-ink-2">
@@ -576,10 +598,12 @@ export function SpecScreen({
               if (v === "__unset") return;
               if (v === "__custom" || v === "custom") {
                 // confirm the text-supplied dates as the window
-                set({ window: { ...(draft.window ?? {}), kind: "custom" } });
+                set({ window: { ...(draft.window ?? {}), kind: "custom" }, variantWindow: undefined });
                 return;
               }
-              set({ window: { kind: v } });
+              // V-40: touching the window ends its "carried" status — it is a
+              // normal user choice from here and stops being labelled inherited
+              set({ window: { kind: v }, variantWindow: undefined });
             }}
             className={TILE_SELECT_CLS}
             title={estimate?.basis.note ?? "Data window — required before running"}
@@ -851,6 +875,33 @@ export function SpecScreen({
         </div>
       )}
 
+      {windowSet && draft.variantWindow && draft.variantWindow.state !== "unset" && (
+        <div className="mt-3 rounded-xl border border-line bg-panel px-3.5 py-3 text-[13px] leading-[1.5] text-ink-3">
+          {/* V-133: the carried states say so where the unset callout would
+              sit — one statement, one place. V-51: an inherited "all" may
+              legitimately test MORE history than the parent, and says so. */}
+          Window carried from {parentName}
+          {draft.variantWindow.state === "carried_all" ? (
+            <>
+              : all available data. That run tested{" "}
+              {draft.variantWindow.parentEffective
+                ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                : "its own window"}
+              ; this one resolves against current coverage, so it may test more
+              history. Changing the window makes it your choice.
+            </>
+          ) : (
+            <>
+              . That run tested{" "}
+              {draft.variantWindow.parentEffective
+                ? `${draft.variantWindow.parentEffective.start} to ${draft.variantWindow.parentEffective.end}`
+                : "its own window"}
+              ; this one computes its own against current coverage. Changing
+              the window makes it your choice.
+            </>
+          )}
+        </div>
+      )}
       {!windowSet && (
         <div className="mt-3 rounded-xl border border-trust-border bg-trust-dim px-3.5 py-3 text-[13.5px] leading-[1.5] text-ink">
           <b className="text-trust">Pick a data window</b> — how much history should this run test
