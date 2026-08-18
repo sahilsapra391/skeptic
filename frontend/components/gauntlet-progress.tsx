@@ -107,7 +107,7 @@ const TIPS_RETAIL = [
   "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld — good-looking numbers don't override it.",
   "Every re-run of a similar strategy raises the bar — retrying until something works gets caught.",
   "On the results screen, ask questions — answers use only this run's computed numbers.",
-  "Commission and slippage are editable in Settings and apply to every new run.",
+  "Trading costs come from the setup you confirmed — Settings fill in the starting numbers when you first describe a strategy, and a variant keeps the original run's.",
   "In the settings-nudge grid, the ringed column is your exact setup — brighter neighbors did better.",
   "The verdict leads with the most uncomfortable finding on purpose. That's the product.",
   "Trades never fill at the perfect midpoint price — buys pay a little more, sells get a little less, like real life.",

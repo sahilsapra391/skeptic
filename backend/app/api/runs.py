@@ -125,10 +125,14 @@ def _run_label(run: db.Run) -> str | None:
             if name:
                 return str(name)
         except Exception:
-            pass
+            # a corrupt summary must not look like a legitimately unnamed run:
+            # this feeds the variant framing, the back link and the lineage
+            # header, so it degrades three surfaces at once and silently
+            log.warning("unreadable summary_json on run %s", run.id, exc_info=True)
     try:
         return (json.loads(run.spec_json).get("meta") or {}).get("name")
     except Exception:
+        log.warning("unreadable spec_json on run %s", run.id, exc_info=True)
         return None
 
 
@@ -592,6 +596,25 @@ def backtest(
     # happens BEFORE the debit exists in any form, not rolled back after.
     variant_root: str | None = None
     variant_diff: list[dict[str, Any]] | None = None
+    if (
+        req.parent_run_id
+        and origin == "user"
+        # same predicate as `is_anon` below, which is defined after the
+        # anon-armor block; the gate has to run BEFORE the debit, so it
+        # cannot wait for that binding
+        and run_user is None
+        and not auth.is_service(request)
+    ):
+        # V-04 said the button "shows and routes to signup" — that was only
+        # ever enforced in the client, and `origin` defaults to "user", so an
+        # anonymous POST carrying parent_run_id walked straight into the
+        # variant path: free (charge_credit is False for anon), and stamping
+        # lineage into someone's family with user_id NULL. The API now declines
+        # what the UI declines to offer, in the same words.
+        raise HTTPException(
+            status_code=402,
+            detail="create a free account to run a variant",
+        )
     if origin == "user" and req.parent_run_id:
         from app.api.variant import classify, diff_specs, locked_field_paths
 
@@ -620,27 +643,39 @@ def backtest(
         def _hits(field: str, path: str) -> bool:
             return field == path or field.startswith((path + ".", path + "["))
 
-        _LOCK_WHY = {
-            "underlying.ticker": "ticker and structure define the strategy "
-            "family the trial counter tracks — changing them is a New "
-            "Analysis, not a variant",
-            "position.structure": "ticker and structure define the strategy "
-            "family the trial counter tracks — changing them is a New "
-            "Analysis, not a variant",
+        # V-168: the reason comes from the DIAL that produced the locked path,
+        # so a lock added later cannot inherit a sentence about the strike.
+        # The identity locks share one explanation; every other lock is a
+        # tier (b) dial and speaks rep.reasons in the dial's own words.
+        _IDENTITY_WHY = (
+            "ticker and structure define the strategy family the trial "
+            "counter tracks — changing them is a New Analysis, not a variant"
+        )
+        _PATH_DIAL = {
+            "underlying.ticker": "ticker",
+            "position.structure": "structure",
+            "position.legs": "strike",
         }
         for row in variant_diff:
             for path in locked_field_paths(rep):
-                if _hits(row["field"], path):
-                    why = _LOCK_WHY.get(
-                        path,
-                        f"the parent chose its strike as "
-                        f"{rep.reasons.get('strike', 'a rule')}, which the "
-                        "dial cannot express",
+                if not _hits(row["field"], path):
+                    continue
+                dial = _PATH_DIAL.get(path)
+                if dial in ("ticker", "structure"):
+                    why = _IDENTITY_WHY
+                elif dial and dial in rep.reasons:
+                    why = (
+                        f"the parent chose its {dial} as {rep.reasons[dial]}, "
+                        "which the dial cannot express"
                     )
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"{row['field']} is locked on this variant: {why}",
-                    )
+                else:
+                    # an unmapped lock path: refuse without inventing a cause
+                    log.error("locked path %s has no reason mapping", path)
+                    why = "it is locked on a variant and this run changed it"
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{row['field']} is locked on this variant: {why}",
+                )
 
         # 2) V-10 / V-19 / V-169: the zero-edit guard, both causes named.
         if not variant_diff:

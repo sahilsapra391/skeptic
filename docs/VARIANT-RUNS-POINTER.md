@@ -26,13 +26,20 @@ brief does not cover, resolve it that way.
 | PR | Scope | State |
 | --- | --- | --- |
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
-| PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | complete in #145 |
+| PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **complete, in review** (#145) |
 | PR-A2 | Per-exchange Q&A reconciliation: SUPERSEDED / NOT APPLICABLE states, the label table, the unmapped counter | not started |
 | PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
 
 PR-A1 renders the carried Q&A bulk-inherited (every exchange STILL HOLDS,
 which is the brief's own fallback), so it is a valid system state without A2
 rather than a stub with a TODO in it.
+
+**V-181:** a close commit cannot truthfully record the merge that follows it —
+the same structural limit as the sha marker. So A1 reads "complete, in review"
+here, and **A2's first commit marks it merged**, from the branch that can
+actually see the merge. If you are reading this on a branch where #145 is
+merged and this still says in review, that is the expected one-step lag, not
+drift.
 
 ## Standing constraints
 
@@ -91,3 +98,21 @@ Recorded but deliberately out of phase, and not to be lost:
   should send dial values and nothing else. PR-0 buys time for this; it does
   not substitute for it.
 - **V-49** — side-by-side comparison of two variants. Ask before building.
+- **V-183** — the two Library observations, deferred under ONE trigger:
+  revisit when any root carries **five or more variants in real use**. The
+  ordinal badge distinguishes same-name variants by identity but not by
+  content, and nothing on the card says what a variant changed. If built, the
+  fix is **the first `what_changed` row on the card** — nothing else, no
+  second mechanism. A threshold observation, not a TODO: below five per root
+  the badge plus one click is enough.
+- **V-182** — process rule, now part of the close checklist beside the
+  citation sweep: a PR that changes behaviour sweeps user-facing prose
+  describing that behaviour, scoped to strings naming what changed. Earned by
+  the Settings/costs tip, which V-36 falsified and which survived two PRs
+  because nobody looked — and whose second copy (the retail register) survived
+  the first fix because that fix took the first grep hit instead of sweeping.
+- **V-184** — at A2 open, a pre-push check in the existing hook family
+  asserting the pointer's Last-synced sha is an ancestor of the pushed tip
+  (`git merge-base --is-ancestor`). Converts the sha rule into an unwritable
+  wrong case, which is the move that has ended every recurring failure this
+  phase. A few lines, rides A2's first commit, does not reopen A1.

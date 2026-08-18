@@ -384,3 +384,23 @@ def test_ordinal_collision_retries_once_and_the_user_never_sees_it(
         row = s.get(db.Run, r.json()["run_id"])
         assert row.variant_ordinal == 2, "the retry landed the next free ordinal"
     assert _debits(uid).count(r.json()["run_id"]) == 1, "exactly one debit"
+
+
+def test_an_anonymous_caller_cannot_submit_a_variant(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V-04 server-side. `origin` defaults to "user" and anon callers are not
+    charged, so without this an anonymous POST carrying parent_run_id got a
+    free variant that stamped lineage into a family with user_id NULL. The API
+    must decline what the UI declines to offer, in the same words."""
+    parent = _store_parent(None, fx.SPEC)          # unowned, so access allows it
+    fresh = TestClient(app, base_url="https://testserver")   # no session cookie
+    r = fresh.post(
+        "/api/backtest",
+        json={"spec": copy.deepcopy(fx.SPEC), "parent_run_id": parent,
+              "min_trades": 1},
+    )
+    assert r.status_code == 402, r.text
+    assert "create a free account" in r.json()["detail"]
+    with db.session() as s:
+        assert s.query(db.Run).filter(db.Run.parent_run_id == parent).count() == 0
