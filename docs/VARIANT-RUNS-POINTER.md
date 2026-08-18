@@ -43,7 +43,13 @@ flag.
 
 ## Live IDs
 
-> **Last synced: PR #145 (PR-A1), commit `afd8cb3`.** This list is a
+> **Last synced: PR #145 (PR-A1), through commit `bfa566e`.** A marker cannot
+> name the commit that contains it, so this sha names the commit the sync
+> landed in and this line is stamped by the commit immediately after — the
+> one-commit lag is structural, not an oversight. Per V-136 the sha is
+> copied from `git rev-parse`, and verified reachable from the branch tip
+> (an amended sha resolves locally while being an orphan no clone can see).
+> This list is a
 > duplicate of the brief's section 9, kept here only because a repo-only
 > session cannot read `Projects Misc/`. Per V-87 both are updated in the
 > **same commit** at PR close, and per V-136 the sha above is copied from the
