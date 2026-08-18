@@ -26,20 +26,19 @@ brief does not cover, resolve it that way.
 | PR | Scope | State |
 | --- | --- | --- |
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
-| PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **complete, in review** (#145) |
-| PR-A2 | Per-exchange Q&A reconciliation: SUPERSEDED / NOT APPLICABLE states, the label table, the unmapped counter | not started |
+| PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
+| PR-A2 | Per-exchange Q&A reconciliation: SUPERSEDED / NOT APPLICABLE states, the label table, the unmapped counter | **in progress** |
 | PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
 
 PR-A1 renders the carried Q&A bulk-inherited (every exchange STILL HOLDS,
 which is the brief's own fallback), so it is a valid system state without A2
 rather than a stub with a TODO in it.
 
-**V-181:** a close commit cannot truthfully record the merge that follows it —
-the same structural limit as the sha marker. So A1 reads "complete, in review"
-here, and **A2's first commit marks it merged**, from the branch that can
-actually see the merge. If you are reading this on a branch where #145 is
-merged and this still says in review, that is the expected one-step lag, not
-drift.
+**V-181, discharged:** a close commit cannot truthfully record the merge that
+follows it, so A1's own close left it reading "complete, in review" and **A2's
+first commit** — this one — marks it merged, from the branch that can actually
+see the merge. The same rule applies to A2's own close: expect one step of lag
+at the seam, and read it as the scheme working rather than as drift.
 
 ## Standing constraints
 
@@ -50,12 +49,17 @@ flag.
 
 ## Live IDs
 
-> **Last synced: PR #145 (PR-A1), through commit `bfa566e`.** A marker cannot
-> name the commit that contains it, so this sha names the commit the sync
-> landed in and this line is stamped by the commit immediately after — the
-> one-commit lag is structural, not an oversight. Per V-136 the sha is
-> copied from `git rev-parse`, and verified reachable from the branch tip
-> (an amended sha resolves locally while being an orphan no clone can see).
+> **Last synced: PR #145 (PR-A1), through its merge commit `702487c`.**
+> The marker now names the **merge commit of the closed PR**, not a commit on
+> the PR branch. That is the change worth noticing: a sha on the branch could
+> not be written until the commit after the sync landed, and that one-commit
+> lag is exactly what produced an orphaned marker when a `--amend` rewrote the
+> stamped commit underneath it. A merge commit is nameable at the moment the
+> index is being synced, so there is no lag left to get wrong. Per V-136 the
+> sha is copied from `git rev-parse`, never typed from recall, and **V-184's
+> `.claude/hooks/pointer-sha-ancestor.sh` now enforces on every push that this
+> sha both exists and is an ancestor of the pushed tip** — the rule stopped
+> being something to remember.
 > This list is a
 > duplicate of the brief's section 9, kept here only because a repo-only
 > session cannot read `Projects Misc/`. Per V-87 both are updated in the
@@ -78,7 +82,8 @@ V-128 V-129 V-130 V-131 V-132 V-133 V-134 V-135 V-136 V-137 V-138 V-139
 V-140 V-141 V-142 V-143 V-144 V-145 V-146 V-147 V-148 V-149 V-150 V-151
 V-152 V-153 V-154 V-155 V-156 V-157 V-158 V-159 V-160 V-161 V-162 V-163
 V-164 V-165 V-166 V-167 V-168 V-169 V-170 V-171 V-172 V-173 V-174 V-175
-V-176 V-177 V-178 V-179
+V-176 V-177 V-178 V-179 V-180 V-181 V-182 V-183 V-184 V-185 V-186 V-187
+V-188 V-189 V-190 V-191 V-192 V-193 V-194 V-195 V-196
 
 Superseded: V-11 by V-25, V-15 by V-26. V-119 is rebalanced by V-126 (tier (b) measured at 1 in 99). V-64 is corrected twice: V-71 moves
 the baseline to before PR-0 merges, and V-86 splits "the count stopped
@@ -111,8 +116,10 @@ Recorded but deliberately out of phase, and not to be lost:
   the Settings/costs tip, which V-36 falsified and which survived two PRs
   because nobody looked — and whose second copy (the retail register) survived
   the first fix because that fix took the first grep hit instead of sweeping.
-- **V-184** — at A2 open, a pre-push check in the existing hook family
-  asserting the pointer's Last-synced sha is an ancestor of the pushed tip
-  (`git merge-base --is-ancestor`). Converts the sha rule into an unwritable
-  wrong case, which is the move that has ended every recurring failure this
-  phase. A few lines, rides A2's first commit, does not reopen A1.
+- **V-184 — LANDED** in this commit as `.claude/hooks/pointer-sha-ancestor.sh`,
+  wired as a PreToolUse hook on `git push`. It asserts the Last-synced sha both
+  resolves and is an ancestor of HEAD, escalating with the specific failure
+  named (orphaned by an amend, or off on another branch). Silent when the
+  pointer is gone or carries no marker. Kept here as the record of why it
+  exists: converting the sha rule into an unwritable wrong case is the move that
+  ended every recurring failure this phase.
