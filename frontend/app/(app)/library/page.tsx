@@ -153,24 +153,13 @@ export default function LibraryPage() {
               key={r.id}
               className="group relative rounded-[14px] border border-line bg-panel p-5 hover:border-line-hover"
             >
-              {/* the whole card navigates, but as an overlay SIBLING of the
-                  action rather than its ancestor: a <button> inside an <a> is
-                  invalid HTML and leaves the accessibility tree malformed —
-                  screen readers announce a link containing a button, and the
-                  inner activation gets swallowed. Card content sits above the
-                  overlay; only the action needs its own stacking context. */}
-              <Link
-                href={`/runs/${r.id}`}
-                aria-label={`Open ${r.name}`}
-                className="absolute inset-0 z-0 rounded-[14px]"
-              />
-              <div className="relative z-10 flex items-center gap-2 font-mono text-[15px] font-medium">
+              <div className="flex items-center gap-2 font-mono text-[15px] font-medium">
                 {r.status === "running" && (
                   <span className="inline-block h-[8px] w-[8px] shrink-0 animate-pin-pulse rounded-full bg-trust" />
                 )}
                 {r.name}
               </div>
-              <div className="relative z-10 mb-3.5 mt-1 flex items-baseline justify-between gap-2">
+              <div className="mb-3.5 mt-1 flex items-baseline justify-between gap-2">
                 <span className="font-mono text-[12px] text-ink-4">{r.meta}</span>
                 {r.status !== "running" && !r.example && !r.demo && (
                   // V-173: a sibling of the card's overlay link, so it needs no
@@ -179,49 +168,63 @@ export default function LibraryPage() {
                   // than tearing down the SPA and the 30s listing cache
                   <Link
                     href={`/new?variant=${r.id}`}
-                    className="shrink-0 rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4 hover:border-trust-border hover:text-trust"
+                    className="relative z-10 shrink-0 rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4 hover:border-trust-border hover:text-trust"
                   >
                     run a variant ›
                   </Link>
                 )}
               </div>
               {r.example && (
-                <div className="relative z-10 mb-2 inline-block rounded-full border border-trust-border bg-trust-dim px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
+                <div className="mb-2 inline-block rounded-full border border-trust-border bg-trust-dim px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
                   EXAMPLE RUN — a showcase result, not yours
                 </div>
               )}
               {r.autoNote && (
-                <div className="relative z-10 mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
+                <div className="mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
                   ↻ {r.autoNote}
                 </div>
               )}
               {r.supersededBy && (
-                <div className="relative z-10 mb-2 inline-block rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4">
+                <div className="mb-2 inline-block rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4">
                   superseded — re-ran automatically on new data
                 </div>
               )}
               {/* V-12: the ordinal badge is what tells same-name variants
                   apart (V-80/V-174) — lineage register, navigation only */}
               {r.variantOrdinal != null && (
-                <div className="relative z-10 mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
+                <div className="mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
                   ↳ variant {r.variantOrdinal}
                 </div>
               )}
               {r.status === "running" ? (
-                <div className="relative z-10 flex min-h-[72px] flex-col justify-center gap-1.5">
+                <div className="flex min-h-[72px] flex-col justify-center gap-1.5">
                   <div className="font-mono text-[12px] tracking-[.1em] text-trust">
                     GAUNTLET IN PROGRESS — STAGE {Math.min((r.stage ?? 0) + 1, 6)} OF 6
                   </div>
                   <div className="text-[13px] text-ink-4">Open to watch it live.</div>
                 </div>
               ) : (
-                <div className="relative z-10">
+                <div>
                   <TrustBandCard band={r.band} marker={r.marker} withheld={r.kind === "refusal"} />
                   <div className="text-[13.5px] italic leading-[1.55] text-ink-2">
                     {settings.verbiage === "retail" && r.quoteRetail ? r.quoteRetail : r.quote}
                   </div>
                 </div>
               )}
+              {/* LAST child, deliberately: a <button>/<a> inside the card's
+                  link was invalid HTML and broke keyboard and screen-reader
+                  nav, so the whole-card target is an overlay SIBLING instead.
+                  It must come last and carry no z-index — that way it paints
+                  above the content by DOM order and catches clicks anywhere,
+                  while the action's `relative z-10` is the one thing that
+                  beats it. Giving the CONTENT z-10 (the first attempt) made
+                  the content swallow clicks the overlay never received: the
+                  same defect inverted, and invisible to every test. */}
+              <Link
+                href={`/runs/${r.id}`}
+                aria-label={`Open ${r.name}`}
+                className="absolute inset-0 rounded-[14px]"
+              />
             </div>
           ))}
           <Link
