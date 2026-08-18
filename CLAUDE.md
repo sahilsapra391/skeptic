@@ -56,7 +56,11 @@ skeptic/
     Prefer the forms that need no directory, both checked from the repo root:
     `uv run --project backend python -m pytest backend/tests` and
     `npm --prefix frontend run lint`. Otherwise make the path absolute or print
-    `pwd` in the same invocation.
+    `pwd` in the same invocation. The collector's `cd collector && uv run python
+    collect.py --mode eod` below is a known instance of the pattern, left alone
+    on purpose until that command is next touched: rewriting a documented
+    command without running it first is the same mistake pointing the other way
+    (V-198).
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.
