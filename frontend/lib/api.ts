@@ -319,6 +319,10 @@ export function startBacktest(
       provenance,
       min_trades: getSettings().minTrades,
       turnstile_token: turnstileToken,
+      // V-167: a draft opened from a stored run carries its parent, so the
+      // server can run the lock check and zero-edit guard BEFORE the debit
+      // and stamp lineage in the same transaction as it
+      parent_run_id: draft.variantOf?.runId ?? null,
     }),
   }).then((res) => {
     // pre-accounts: this browser's runs ride the curated listing via

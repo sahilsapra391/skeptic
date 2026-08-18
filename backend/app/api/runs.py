@@ -20,6 +20,7 @@ from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.api.jobs import claim_run_job, marker_age_minutes, pinned_engine_rerun
@@ -551,6 +552,84 @@ def backtest(
     # automation origin (the field is client-supplied).
     origin = "user" if run_user is not None else req.origin
 
+    # ---- variant gates (V-167: THIS ORDER IS THE CONTRACT) -----------------
+    # A variant is a HUMAN copy: origin "user" carrying parent_run_id. The
+    # automatic origins re-run the SAME spec by design (HONESTY.md D3b), so
+    # the zero-edit guard must never see them. Order: lock check first,
+    # zero-edit guard second, and only then the debit — a rejection here
+    # happens BEFORE the debit exists in any form, not rolled back after.
+    variant_root: str | None = None
+    variant_diff: list[dict[str, Any]] | None = None
+    if origin == "user" and req.parent_run_id:
+        from app.api.variant import classify, diff_specs, locked_field_paths
+
+        with db.session() as s:
+            vparent = s.get(db.Run, req.parent_run_id)
+            if vparent is None or not vparent.spec_json:
+                raise HTTPException(
+                    status_code=404, detail=f"run {req.parent_run_id} not found"
+                )
+            _enforce_run_access(vparent, req.parent_run_id, request)
+            parent_spec = json.loads(vparent.spec_json)
+            variant_root = vparent.root_run_id or vparent.id
+        rep = classify(parent_spec)
+        if rep.blocks:
+            # V-128 posture at the submit boundary too: the real reason
+            raise HTTPException(
+                status_code=422,
+                detail="this run cannot be reopened as a variant: "
+                + "; ".join(rep.reasons.values()),
+            )
+        variant_diff = diff_specs(parent_spec, json.loads(spec.model_dump_json()))
+
+        # 1) V-22 / V-168: locked fields, named in the dial's own register.
+        # A doctored client gets the same honest sentence a confused
+        # legitimate one would.
+        def _hits(field: str, path: str) -> bool:
+            return field == path or field.startswith((path + ".", path + "["))
+
+        _LOCK_WHY = {
+            "underlying.ticker": "ticker and structure define the strategy "
+            "family the trial counter tracks — changing them is a New "
+            "Analysis, not a variant",
+            "position.structure": "ticker and structure define the strategy "
+            "family the trial counter tracks — changing them is a New "
+            "Analysis, not a variant",
+        }
+        for row in variant_diff:
+            for path in locked_field_paths(rep):
+                if _hits(row["field"], path):
+                    why = _LOCK_WHY.get(
+                        path,
+                        f"the parent chose its strike as "
+                        f"{rep.reasons.get('strike', 'a rule')}, which the "
+                        "dial cannot express",
+                    )
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"{row['field']} is locked on this variant: {why}",
+                    )
+
+        # 2) V-10 / V-19 / V-169: the zero-edit guard, both causes named.
+        if not variant_diff:
+            raise HTTPException(
+                status_code=409,
+                detail="Nothing changed. This would be the same run. "
+                f"See /runs/{req.parent_run_id}.",
+            )
+        claims_untouched = bool(
+            ((req.provenance or {}).get("confirmed") or {}).get("untouched")
+        )
+        if claims_untouched:
+            drifted = ", ".join(r["field"] for r in variant_diff[:5])
+            raise HTTPException(
+                status_code=422,
+                detail="zero-edit mismatch: no dial was touched, yet the "
+                f"rebuilt spec differs from the parent at {drifted} — this "
+                "is the lossy rebuild resurfacing (V-19), a defect, not "
+                "your edit; no credit was spent",
+            )
+
     # launch L4 anon armor: the anonymous free-run path is defended so a
     # doctored client can't turn the engine into free compute. Signed-in
     # users and the service principal skip ALL of this. Everything that can
@@ -643,6 +722,19 @@ def backtest(
             s.add(
                 db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
             )
+        # V-167 step 3: lineage is stamped in the SAME transaction as the
+        # debit. A crash between them must leave neither — a run with a debit
+        # and no lineage is a variant that lost its parent, unrepairable.
+        variant_ordinal: int | None = None
+        if variant_root is not None:
+            from sqlalchemy import func
+
+            current = (
+                s.query(func.max(db.Run.variant_ordinal))
+                .filter(db.Run.root_run_id == variant_root)
+                .scalar()
+            )
+            variant_ordinal = (current or 0) + 1
         s.add(
             db.Run(
                 id=run_id,
@@ -652,13 +744,27 @@ def backtest(
                 spec_json=spec.model_dump_json(),
                 origin=origin,
                 parent_run_id=req.parent_run_id,
+                root_run_id=variant_root,
+                variant_ordinal=variant_ordinal,
                 user_id=run_user.id if run_user is not None else None,
                 provenance_json=creation_record(
-                    req.provenance, origin, req.parent_run_id, note
+                    req.provenance, origin, req.parent_run_id, note,
+                    what_changed=variant_diff,
                 ),
             )
         )
-        s.commit()
+        try:
+            s.commit()
+        except IntegrityError:
+            # V-170: two concurrent variants computed the same max+1 and the
+            # unique index made the race lose loudly. The rollback discards
+            # the debit with it — clean failure, nothing half-written.
+            s.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="another variant of this run landed at the same "
+                "moment — try again",
+            ) from None
     # record the anon trial only after the run row exists, so a failed
     # creation never burns the visitor's one free run. Best-effort: a
     # trial-write hiccup must not 500 a run that already exists and is about

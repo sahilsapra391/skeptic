@@ -111,8 +111,14 @@ def creation_record(
     origin: str,
     parent_run_id: str | None = None,
     auto_note: str | None = None,
+    what_changed: list[dict[str, Any]] | None = None,
 ) -> str:
-    """The provenance JSON written when a run row is created."""
+    """The provenance JSON written when a run row is created.
+
+    `what_changed` is section 5 (V-13): the server-computed field-level diff
+    of a user-origin variant against its parent — the SAME rows the lock
+    check and the zero-edit guard read (V-162), stored at creation so no
+    later reader recomputes the comparison."""
     if origin in ("auto_unlock", "receipt"):
         # automatic runs have no conversation — one origin record, note only
         note = (
@@ -126,6 +132,10 @@ def creation_record(
         })
 
     record: dict[str, Any] = {"v": 1, "origin": "user", "recorded_at": _now()}
+    if parent_run_id:
+        record["parent_run_id"] = parent_run_id
+    if what_changed is not None:
+        record["what_changed"] = what_changed
     if not isinstance(client, dict):
         # a submitter that captured nothing (curl, an old client) — the
         # record still marks WHEN recording started, so a missing

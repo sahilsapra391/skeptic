@@ -573,6 +573,16 @@ def _ensure_indexes() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_chargeback "
             "ON credit_ledger (payment_ref) WHERE reason = 'chargeback'"
         ))
+        # V-170: two concurrent variants of one root must get distinct
+        # ordinals or one must fail cleanly. Application logic computes
+        # max+1 inside the insert transaction; THIS index is what makes the
+        # race lose loudly instead of storing a duplicate — the ordinal is
+        # stored forever (V-25), so a duplicate would be permanent.
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_variant_ordinal "
+            "ON runs (root_run_id, variant_ordinal) "
+            "WHERE root_run_id IS NOT NULL AND variant_ordinal IS NOT NULL"
+        ))
 
 
 def session() -> Session:
