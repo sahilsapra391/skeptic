@@ -53,7 +53,7 @@ const TIPS = [
   "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld — good-looking numbers don't override it.",
   "Every re-run of the same strategy family counts as a trial — the deflated Sharpe gets harder to impress each time.",
   "On the results screen, ask questions — answers use only this run's computed stats.",
-  "Commission and slippage are editable in Settings and apply to every new run.",
+  "Commission and slippage come from the spec you confirmed — Settings supply the starting values when a strategy is first compiled, and a variant inherits its parent's.",
   "In the sensitivity grid, the ringed column is your spec — brighter neighbors did better.",
   "The verdict leads with the most uncomfortable finding on purpose. That's the product.",
   "Fills never happen at mid price — buys lean toward the ask, sells toward the bid, plus slippage.",

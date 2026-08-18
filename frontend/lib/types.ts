@@ -165,6 +165,10 @@ export interface RunProvenance {
     omitted?: string;
   };
   truncated?: { dropped_events: number };
+  /** V-31/V-176: sections 1-2 are the PARENT's — its prompt, and its Q&A if
+   * it had any. Marked explicitly so carried history is never rendered as
+   * though the interview ran on this run. */
+  carried_from?: string | null;
   /** V-13 section 5: the server-computed what-changed rows (V-162's one
    * comparison), stored at creation. Absent on non-variants. */
   what_changed?: { field: string; parent: unknown; variant: unknown }[];

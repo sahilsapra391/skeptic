@@ -288,3 +288,22 @@ def test_get_run_carries_lineage_and_survives_a_deleted_parent(
 
 def fxspec() -> dict[str, Any]:
     return copy.deepcopy(CANONICAL)
+
+
+def test_a_variant_marks_its_carried_provenance(client: TestClient) -> None:
+    """V-31/V-176: the variant's own provenance says the prompt and Q&A came
+    from the parent. Without the marker, a renderer shows carried history as
+    though the interview ran on this run."""
+    from app.api.provenance import creation_record
+
+    rec = json.loads(creation_record(
+        {"prompt": {"text": "sell puts"}, "conversation": []},
+        "user", "parent99", None, what_changed=[{"field": "backtest.seed",
+                                                 "parent": 42, "variant": 7}],
+    ))
+    assert rec["carried_from"] == "parent99"
+    assert rec["parent_run_id"] == "parent99"
+
+    # a fresh run claims no carriage
+    fresh = json.loads(creation_record({"prompt": {"text": "sell puts"}}, "user"))
+    assert "carried_from" not in fresh

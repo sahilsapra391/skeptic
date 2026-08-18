@@ -81,6 +81,15 @@ const SPEC_HINTS: Record<string, [string, string]> = {
   ],
 };
 
+/** V-177: the LADDER hint tells the reader to edit their strategy text and
+ * re-compile. On a variant there is no text of theirs to edit and no compile
+ * step at all — the spec came from a stored run. Same rule as V-154: a string
+ * written for the fresh path must not assert an action this path cannot take. */
+const LADDER_HINT_VARIANT: [string, string] = [
+  "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic and carry over from the original run — dials can't edit them, and a variant can't re-compile. Start a New Analysis to change the ladder.",
+  "The plan for buying in steps as the signal deepens, with a hard cap. It carries over from the original run and can't be changed here — start a New Analysis to change the steps.",
+];
+
 const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
 const TILE_LABEL = "mb-[7px] font-mono text-[11px] font-medium tracking-[.1em] text-ink-4";
 
@@ -694,7 +703,11 @@ export function SpecScreen({
           <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
             LADDER — ADDS ON SIGNAL
             <Hint
-              text={settings.verbiage === "retail" ? SPEC_HINTS.LADDER[1] : SPEC_HINTS.LADDER[0]}
+              text={
+                (draft.variantOf ? LADDER_HINT_VARIANT : SPEC_HINTS.LADDER)[
+                  settings.verbiage === "retail" ? 1 : 0
+                ]
+              }
             />
           </span>
           {draft.ladder.rungs.map((r, i) => (

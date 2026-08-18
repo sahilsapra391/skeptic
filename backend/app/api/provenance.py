@@ -134,6 +134,12 @@ def creation_record(
     record: dict[str, Any] = {"v": 1, "origin": "user", "recorded_at": _now()}
     if parent_run_id:
         record["parent_run_id"] = parent_run_id
+        # V-31/V-176: sections 1-2 below are the PARENT's — its prompt, and its
+        # clarifying Q&A if it had any. Marked explicitly rather than inferred,
+        # so no reader (or renderer) can mistake carried history for something
+        # that happened on this run. Explicit beats inferred, same reasoning as
+        # V-133's window state.
+        record["carried_from"] = parent_run_id
     if what_changed is not None:
         record["what_changed"] = what_changed
     if not isinstance(client, dict):
