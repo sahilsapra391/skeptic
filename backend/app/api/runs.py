@@ -114,6 +114,38 @@ def _inherit_trials(parent_run_id: str | None, family: str) -> int:
         return max(row.trials if row else 1, 1)
 
 
+def _run_label(run: db.Run) -> str | None:
+    """V-155/V-160: how a person recognises a run — the Library's own name
+    (summary_json), falling back to spec meta.name only when no summary
+    exists. Shared by the variant endpoint and the lineage header so the
+    screen and the Library can never disagree about what a run is called."""
+    if run.summary_json:
+        try:
+            name = (json.loads(run.summary_json) or {}).get("name")
+            if name:
+                return str(name)
+        except Exception:
+            pass
+    try:
+        return (json.loads(run.spec_json).get("meta") or {}).get("name")
+    except Exception:
+        return None
+
+
+def _next_ordinal(s: Any, root: str) -> int:
+    """The next variant_ordinal in a root's family, computed INSIDE the
+    debit transaction. Deliberately a seam: the V-172 retry test feeds it a
+    stale value to force the collision the unique index then catches."""
+    from sqlalchemy import func
+
+    current = (
+        s.query(func.max(db.Run.variant_ordinal))
+        .filter(db.Run.root_run_id == root)
+        .scalar()
+    )
+    return int(current or 0) + 1
+
+
 def _inherit_min_trades(parent_run_id: str | None) -> int:
     """Evidence bar for an AUTOMATIC re-run (auto-unlock / receipt): the
     bar its parent was scored at — an unlock promised at the parent's bar
@@ -703,68 +735,78 @@ def backtest(
     charge_credit = run_user is not None and not auth.is_service(request)
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
-    with db.session() as s:
-        if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
-            uid = run_user.id
-            # lock THIS account's row (Postgres) so two simultaneous runs
-            # can't both spend the last credit, then recompute the balance
-            # under the lock and debit + create in ONE transaction — a crash
-            # between them leaves NEITHER (the atomicity guarantee). On the
-            # SQLite fallback with_for_update is a no-op, so a concurrent
-            # overdraft of 1 credit is possible there; acceptable, as the
-            # fallback is degraded single-node mode and prod is Postgres.
-            s.query(db.User).filter(db.User.id == uid).with_for_update().first()
-            if db.credit_balance_tx(s, uid) <= 0:
-                raise HTTPException(
-                    status_code=402,
-                    detail="you're out of backtest credits — top-ups are coming soon",
-                )
-            s.add(
-                db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
-            )
-        # V-167 step 3: lineage is stamped in the SAME transaction as the
-        # debit. A crash between them must leave neither — a run with a debit
-        # and no lineage is a variant that lost its parent, unrepairable.
-        variant_ordinal: int | None = None
-        if variant_root is not None:
-            from sqlalchemy import func
-
-            current = (
-                s.query(func.max(db.Run.variant_ordinal))
-                .filter(db.Run.root_run_id == variant_root)
-                .scalar()
-            )
-            variant_ordinal = (current or 0) + 1
-        s.add(
-            db.Run(
-                id=run_id,
-                status="queued",
-                stage=0,
-                seed=spec.backtest.seed,
-                spec_json=spec.model_dump_json(),
-                origin=origin,
-                parent_run_id=req.parent_run_id,
-                root_run_id=variant_root,
-                variant_ordinal=variant_ordinal,
-                user_id=run_user.id if run_user is not None else None,
-                provenance_json=creation_record(
-                    req.provenance, origin, req.parent_run_id, note,
-                    what_changed=variant_diff,
-                ),
-            )
-        )
-        try:
-            s.commit()
-        except IntegrityError:
-            # V-170: two concurrent variants computed the same max+1 and the
-            # unique index made the race lose loudly. The rollback discards
-            # the debit with it — clean failure, nothing half-written.
-            s.rollback()
-            raise HTTPException(
-                status_code=409,
-                detail="another variant of this run landed at the same "
-                "moment — try again",
-            ) from None
+    # V-172: the ordinal race (two tabs submitting variants of one root
+    # at the same moment) retries ONCE with a fresh transaction — the
+    # loser recomputes max+1 and lands the next ordinal. One run per
+    # submit, no error surfaced on the legitimate double-submit path; the
+    # 409 below remains only for a double collision, genuine contention.
+    for _ordinal_attempt in (1, 2):
+      with db.session() as s:
+          if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
+              uid = run_user.id
+              # lock THIS account's row (Postgres) so two simultaneous runs
+              # can't both spend the last credit, then recompute the balance
+              # under the lock and debit + create in ONE transaction — a crash
+              # between them leaves NEITHER (the atomicity guarantee). On the
+              # SQLite fallback with_for_update is a no-op, so a concurrent
+              # overdraft of 1 credit is possible there; acceptable, as the
+              # fallback is degraded single-node mode and prod is Postgres.
+              s.query(db.User).filter(db.User.id == uid).with_for_update().first()
+              if db.credit_balance_tx(s, uid) <= 0:
+                  raise HTTPException(
+                      status_code=402,
+                      detail="you're out of backtest credits — top-ups are coming soon",
+                  )
+              s.add(
+                  db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
+              )
+          # V-167 step 3: lineage is stamped in the SAME transaction as the
+          # debit. A crash between them must leave neither — a run with a debit
+          # and no lineage is a variant that lost its parent, unrepairable.
+          variant_ordinal: int | None = None
+          if variant_root is not None:
+              variant_ordinal = _next_ordinal(s, variant_root)
+          s.add(
+              db.Run(
+                  id=run_id,
+                  status="queued",
+                  stage=0,
+                  seed=spec.backtest.seed,
+                  spec_json=spec.model_dump_json(),
+                  origin=origin,
+                  parent_run_id=req.parent_run_id,
+                  root_run_id=variant_root,
+                  variant_ordinal=variant_ordinal,
+                  user_id=run_user.id if run_user is not None else None,
+                  provenance_json=creation_record(
+                      req.provenance, origin, req.parent_run_id, note,
+                      what_changed=variant_diff,
+                  ),
+              )
+          )
+          try:
+              s.commit()
+              break
+          except IntegrityError:
+              # V-170: two concurrent variants computed the same max+1 and the
+              # unique index made the race lose loudly. The rollback discards
+              # the debit with it — clean failure, nothing half-written.
+              s.rollback()
+              # V-172: attempt 1 retries on a fresh transaction — the loser
+              # of a cross-tab race recomputes max+1 and lands the next
+              # ordinal, so a legitimate double submit sees ONE run and no
+              # error. A second collision is genuine contention: honest 409.
+              if _ordinal_attempt == 1 and variant_root is not None:
+                  log.warning(
+                      "variant ordinal collision on root %s — retrying",
+                      variant_root,
+                  )
+                  continue
+              raise HTTPException(
+                  status_code=409,
+                  detail="another variant of this run landed at the same "
+                  "moment — try again",
+              ) from None
     # record the anon trial only after the run row exists, so a failed
     # creation never burns the visitor's one free run. Best-effort: a
     # trial-write hiccup must not 500 a run that already exists and is about
@@ -828,6 +870,11 @@ def list_runs(
             db.Run.stage,
             db.Run.summary_json,
             db.Run.spec_json,
+            # V-12: lineage rides the ROW, injected at read — never written
+            # into summary_json, so old summaries and the narration rebuild
+            # need no special-casing and pre-phase rows group correctly
+            db.Run.root_run_id,
+            db.Run.variant_ordinal,
         )
         # scope=all is the full cross-account listing — automation ONLY.
         # A non-service caller appending it (review finding: it was
@@ -863,7 +910,8 @@ def list_runs(
         )
         runs: list[dict[str, Any]] = []
         backfilled = False
-        for run_id, created_at, status, stage, summary_json, spec_json in rows:
+        for (run_id, created_at, status, stage, summary_json, spec_json,
+             root_run_id, variant_ordinal) in rows:
             if status in ("queued", "running"):
                 spec = json.loads(spec_json)
                 created = created_at.strftime("%b %-d ’%y") if created_at else ""
@@ -877,6 +925,11 @@ def list_runs(
                         "meta": f"started {created}" if created else "in progress",
                         "quote": "",
                         "kind": "verdict",
+                        **(
+                            {"rootRunId": root_run_id, "variantOrdinal": variant_ordinal}
+                            if variant_ordinal is not None
+                            else {}
+                        ),
                     }
                 )
                 continue
@@ -884,6 +937,9 @@ def list_runs(
                 summary = json.loads(summary_json)
                 if run_id in examples:
                     summary["example"] = True
+                if variant_ordinal is not None:
+                    summary["rootRunId"] = root_run_id
+                    summary["variantOrdinal"] = variant_ordinal
                 runs.append(summary)
                 continue
             # stored before summary_json existed — build once, persist, done
@@ -989,6 +1045,21 @@ def get_run(
                 )
         except Exception:
             log.exception("provenance merge failed for %s", run_id)
+        # V-12: the lineage header — "Variant N, from <parent>", parent and
+        # root both linkable, parent named the way the Library names it
+        # (V-155). A deleted parent keeps the lineage and says so (V-45).
+        if run.variant_ordinal is not None:
+            with db.session() as s:
+                vparent = s.get(db.Run, run.parent_run_id) if run.parent_run_id else None
+            payload["variant"] = {
+                "ordinal": run.variant_ordinal,
+                "parent": {
+                    "id": run.parent_run_id,
+                    "label": _run_label(vparent) if vparent else None,
+                    "deleted": run.parent_run_id is not None and vparent is None,
+                },
+                "root": {"id": run.root_run_id},
+            }
         from app.api.replay import replay_eligible_spec
 
         payload["replayEligible"] = (
@@ -1047,16 +1118,7 @@ def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
         root_id = run.root_run_id or run_id
         parent_ordinal = run.variant_ordinal
         # V-155: no screen on the variant path shows a raw run id to a person.
-        # The Library's own name for the run is what a user recognises; the id
-        # stays available as a link target.
-        parent_label = None
-        if run.summary_json:
-            try:
-                parent_label = (json.loads(run.summary_json) or {}).get("name")
-            except Exception:
-                parent_label = None
-        if not parent_label:
-            parent_label = ((json.loads(run.spec_json).get("meta") or {}).get("name"))
+        parent_label = _run_label(run)
 
     rep = classify(spec)
     parent = {

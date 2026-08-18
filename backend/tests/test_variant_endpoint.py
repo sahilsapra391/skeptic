@@ -253,3 +253,38 @@ def test_parent_label_falls_back_to_meta_name_without_a_summary(
     rid = _store("varsrc13", _spec_with_window("2024-01-01"))
     body = client.get(f"/api/runs/{rid}/variant").json()
     assert body["parent"]["label"] == CANONICAL["meta"]["name"]
+
+
+def test_get_run_carries_lineage_and_survives_a_deleted_parent(
+    client: TestClient,
+) -> None:
+    """V-12: the results header reads payload["variant"] — ordinal, parent
+    (named the Library's way, V-155), and root. V-45: a deleted parent keeps
+    the lineage and says so; never orphaned silently, never re-rooted."""
+    parent = _store("varsrc14", _spec_with_window("2024-01-01"))
+    with db.session() as s:
+        s.add(db.Run(id="varsrc15", status="done", spec_json=json.dumps(fxspec()),
+                     payload_json=json.dumps({"id": "varsrc15", "status": "done"}),
+                     parent_run_id=parent, root_run_id=parent, variant_ordinal=2))
+        s.commit()
+
+    body = client.get("/api/runs/varsrc15").json()
+    v = body["variant"]
+    assert v["ordinal"] == 2
+    assert v["parent"]["id"] == parent
+    assert v["parent"]["label"] == CANONICAL["meta"]["name"], "the Library's name"
+    assert v["parent"]["deleted"] is False
+    assert v["root"]["id"] == parent
+
+    # V-45: delete the parent — lineage stays, the record says deleted
+    with db.session() as s:
+        s.query(db.Run).filter(db.Run.id == parent).delete()
+        s.commit()
+    v = client.get("/api/runs/varsrc15").json()["variant"]
+    assert v["parent"]["deleted"] is True
+    assert v["parent"]["id"] == parent, "the id is kept, not orphaned"
+    assert v["ordinal"] == 2, "the ordinal never renumbers"
+
+
+def fxspec() -> dict[str, Any]:
+    return copy.deepcopy(CANONICAL)

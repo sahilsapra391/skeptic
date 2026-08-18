@@ -309,6 +309,36 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
   return out.filter((x): x is Box => x !== null);
 }
 
+/** V-13 section 5: the field-level diff against the parent, stored at
+ * creation from the SAME comparison the lock check and zero-edit guard read
+ * (V-162). Old and new per row, in the story's own register; absent on
+ * non-variants, so nothing renders there (V-175). */
+function WhatChanged({ prov }: { prov: RunProvenance }) {
+  const rows = prov.what_changed;
+  if (!rows || rows.length === 0) return null;
+  const show = (v: unknown) =>
+    v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  return (
+    <div className={`${PANEL} px-5 py-4`}>
+      <div className={`${LABEL} mb-3`}>WHAT CHANGED — VS THE PARENT RUN</div>
+      <div className="flex flex-col gap-2">
+        {rows.map((r) => (
+          <div key={r.field} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <span className="font-mono text-[11px] text-ink-4">{r.field}</span>
+            <span className="font-mono text-[13px] text-ink-3 line-through decoration-line">
+              {show(r.parent)}
+            </span>
+            <span className="font-mono text-[11px] text-ink-4">→</span>
+            <span className="font-mono text-[13px] font-semibold text-ink">
+              {show(r.variant)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DecisionGrid({ prov }: { prov: RunProvenance }) {
   const confirmed = prov.confirmed;
   if (!confirmed) return null;
@@ -536,6 +566,7 @@ export function HowBuilt({ run }: { run: RunPayload }) {
       )}
 
       <DecisionGrid prov={prov} />
+      <WhatChanged prov={prov} />
       <MechanicsLine prov={prov} />
     </div>
   );

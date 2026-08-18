@@ -165,6 +165,9 @@ export interface RunProvenance {
     omitted?: string;
   };
   truncated?: { dropped_events: number };
+  /** V-13 section 5: the server-computed what-changed rows (V-162's one
+   * comparison), stored at creation. Absent on non-variants. */
+  what_changed?: { field: string; parent: unknown; variant: unknown }[];
   mechanics?: {
     engine_s?: number;
     gauntlet_s?: number;
@@ -399,6 +402,13 @@ export interface RunPayload {
    * read time for runs predating the column. Absent only when the stored
    * record is unreadable. */
   provenance?: RunProvenance;
+  /** V-12: the lineage header. Present only on variants; parent is named the
+   * way the Library names it (V-155) and a deleted parent says so (V-45). */
+  variant?: {
+    ordinal: number;
+    parent: { id: string | null; label: string | null; deleted: boolean };
+    root: { id: string | null };
+  };
   /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
    * time like receipts; the stored verdict is never rewritten. */
   fillAudit?: {
@@ -542,6 +552,9 @@ export interface RunSummary {
   upgradeOf?: string | null; // the refused run this one supersedes
   autoNote?: string | null; // "re-ran automatically — N new sessions"
   supersededBy?: string | null; // set on the OLD refusal once upgraded
+  /** V-12: lineage, injected at read from the run row — groups a family */
+  rootRunId?: string | null;
+  variantOrdinal?: number | null;
   /** launch L4: one of the two pinned showcase runs — badged everywhere so
    * a stranger never mistakes it for their own result */
   example?: boolean;

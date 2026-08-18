@@ -16,6 +16,45 @@ import type { RunSummary } from "@/lib/types";
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { TrustBandCard } from "@/components/verdict/trust-band";
 
+/** V-12: group a family — each root followed immediately by its variants in
+ * ordinal order. Roots keep the listing's own (newest-first) order; a variant
+ * whose root is not in the listing stands alone, badge intact. */
+function groupFamilies(runs: RunSummary[]): RunSummary[] {
+  const byRoot = new Map<string, RunSummary[]>();
+  for (const r of runs) {
+    if (r.variantOrdinal != null && r.rootRunId) {
+      const list = byRoot.get(r.rootRunId) ?? [];
+      list.push(r);
+      byRoot.set(r.rootRunId, list);
+    }
+  }
+  const out: RunSummary[] = [];
+  const placed = new Set<string>();
+  for (const r of runs) {
+    if (placed.has(r.id)) continue;
+    if (r.variantOrdinal != null && r.rootRunId && byRoot.has(r.rootRunId)) {
+      // variants render under their root's pass; skip here unless the root
+      // is absent from the listing entirely
+      const rootPresent = runs.some((x) => x.id === r.rootRunId);
+      if (rootPresent) continue;
+    }
+    out.push(r);
+    placed.add(r.id);
+    const family = byRoot.get(r.id);
+    if (family) {
+      for (const v of [...family].sort(
+        (a, b) => (a.variantOrdinal ?? 0) - (b.variantOrdinal ?? 0),
+      )) {
+        if (!placed.has(v.id)) {
+          out.push(v);
+          placed.add(v.id);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 export default function LibraryPage() {
   const settings = useSettings();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
@@ -97,7 +136,7 @@ export default function LibraryPage() {
 
       {runs && runs.length > 0 && (
         <div className="grid grid-cols-2 gap-3.5">
-          {runs.map((r) => (
+          {groupFamilies(runs).map((r) => (
             <Link
               key={r.id}
               href={`/runs/${r.id}`}
@@ -109,7 +148,23 @@ export default function LibraryPage() {
                 )}
                 {r.name}
               </div>
-              <div className="mb-3.5 mt-1 font-mono text-[12px] text-ink-4">{r.meta}</div>
+              <div className="mb-3.5 mt-1 flex items-baseline justify-between gap-2">
+                <span className="font-mono text-[12px] text-ink-4">{r.meta}</span>
+                {r.status !== "running" && !r.example && !r.demo && (
+                  <button
+                    onClick={(e) => {
+                      // V-173: intercept ONLY this click — a plain click
+                      // anywhere else on the row still opens the run
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.location.assign(`/new?variant=${r.id}`);
+                    }}
+                    className="shrink-0 rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4 hover:border-trust-border hover:text-trust"
+                  >
+                    run a variant ›
+                  </button>
+                )}
+              </div>
               {r.example && (
                 <div className="mb-2 inline-block rounded-full border border-trust-border bg-trust-dim px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
                   EXAMPLE RUN — a showcase result, not yours
@@ -123,6 +178,13 @@ export default function LibraryPage() {
               {r.supersededBy && (
                 <div className="mb-2 inline-block rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4">
                   superseded — re-ran automatically on new data
+                </div>
+              )}
+              {/* V-12: the ordinal badge is what tells same-name variants
+                  apart (V-80/V-174) — lineage register, navigation only */}
+              {r.variantOrdinal != null && (
+                <div className="mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
+                  ↳ variant {r.variantOrdinal}
                 </div>
               )}
               {r.status === "running" ? (

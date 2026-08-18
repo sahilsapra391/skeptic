@@ -209,6 +209,11 @@ def test_rebuild_mismatch_fails_loudly_naming_the_field(client: TestClient) -> N
     assert "backtest.seed" in detail, "the drifted field is named"
     assert "rebuild" in detail.lower(), "the cause is named as a rebuild defect"
     assert _debits(uid) == []
+    # V-171: the error's field strings ARE the pinned V-164 vocabulary — when
+    # this alarm fires in production, its text is what gets grepped against
+    # the vocabulary, so they cannot be dialects
+    for row in diff_specs(fx.SPEC, drifted):
+        assert row["field"] in detail, f"{row['field']} missing from the alarm text"
 
 
 # --- V-167: the happy path stamps lineage in the debit transaction -------------
@@ -341,3 +346,41 @@ def test_auto_rerun_of_the_same_spec_is_not_blocked(client: TestClient) -> None:
         assert r.status_code == 200, r.text
     finally:
         os.environ["SKEPTIC_ACCESS_TOKEN"] = ""
+
+
+def test_ordinal_collision_retries_once_and_the_user_never_sees_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V-172: a cross-tab race is the legitimate path to the collision, and
+    the correct experience is ONE run created and no error surfaced. Feed the
+    first attempt a stale ordinal (as if another tab landed between compute
+    and commit); the unique index rejects it, the retry recomputes on a fresh
+    transaction, and the submit succeeds."""
+    uid = _signup(client)
+    parent = _store_parent(uid, fx.SPEC)
+    # ordinal 1 is already taken in this family, as if the other tab won
+    with db.session() as s:
+        s.add(db.Run(id=f"{parent}sib", spec_json="{}",
+                     root_run_id=parent, variant_ordinal=1))
+        s.commit()
+
+    import app.api.runs as runs_api
+
+    real = runs_api._next_ordinal
+    calls = {"n": 0}
+
+    def stale_then_real(s: Any, root: str) -> int:
+        calls["n"] += 1
+        return 1 if calls["n"] == 1 else real(s, root)  # stale on attempt 1
+
+    monkeypatch.setattr(runs_api, "_next_ordinal", stale_then_real)
+    edited = copy.deepcopy(fx.SPEC)
+    edited["backtest"]["seed"] = 21
+    r = _post_variant(client, parent, edited)
+
+    assert r.status_code == 200, "the user must never see the race"
+    assert calls["n"] == 2, "attempt 1 collided, attempt 2 recomputed"
+    with db.session() as s:
+        row = s.get(db.Run, r.json()["run_id"])
+        assert row.variant_ordinal == 2, "the retry landed the next free ordinal"
+    assert _debits(uid).count(r.json()["run_id"]) == 1, "exactly one debit"

@@ -1107,6 +1107,38 @@ export function ResultsView({
             <div className="font-mono text-[11.5px] text-ink-4">{run.meta}</div>
             {run.demo && <DemoBadge />}
           </div>
+          {/* V-12: lineage is navigation, never a statistical claim (V-26a).
+              Parent named the Library's way (V-155); a deleted parent says so
+              (V-45); root links only when the chain is deeper than one. */}
+          {run.variant && (
+            <div className="mt-1 font-mono text-[11.5px] text-ink-3">
+              Variant {run.variant.ordinal}
+              {run.variant.parent.deleted ? (
+                <span className="text-ink-4"> · parent run deleted</span>
+              ) : run.variant.parent.id ? (
+                <>
+                  {" · from "}
+                  <a
+                    href={`/runs/${run.variant.parent.id}`}
+                    className="text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
+                  >
+                    {run.variant.parent.label ?? "the original run"}
+                  </a>
+                </>
+              ) : null}
+              {run.variant.root.id && run.variant.root.id !== run.variant.parent.id && (
+                <>
+                  {" · "}
+                  <a
+                    href={`/runs/${run.variant.root.id}`}
+                    className="text-ink-4 underline decoration-line underline-offset-2 hover:text-ink-3"
+                  >
+                    root ›
+                  </a>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="ml-auto flex shrink-0 gap-2 print:hidden">
           {onEditSpec && (
@@ -1119,6 +1151,21 @@ export function ResultsView({
               </svg>
               Edit spec
             </button>
+          )}
+          {/* V-02: one shared destination for both entry points — the
+              variant boot at /new?variant=<id>. V-03: every owned run,
+              refusals included. V-46: print-hidden (the row already is). */}
+          {!run.demo && (
+            <a
+              href={`/new?variant=${run.id}`}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-line bg-raised-2 px-4 py-2 text-[13px] font-semibold text-ink-2 hover:border-trust-border hover:bg-raised-3 hover:text-ink"
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5.5 3.5h7v7" />
+                <path d="M3.5 5.5h7v7h-7z" />
+              </svg>
+              Run a variant
+            </a>
           )}
           {/* demo runs carry no provenance record — no dead story tab */}
           {run.provenance && (
