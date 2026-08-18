@@ -404,3 +404,116 @@ def test_an_anonymous_caller_cannot_submit_a_variant(
     assert "create a free account" in r.json()["detail"]
     with db.session() as s:
         assert s.query(db.Run).filter(db.Run.parent_run_id == parent).count() == 0
+
+
+def test_a_non_ordinal_integrity_error_is_not_blamed_on_the_race(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 409 may only be raised for a verified uq_runs_variant_ordinal
+    violation. Any other constraint failure — a credit-ledger partial index, a
+    duplicate run id — must propagate rather than be reported as "another
+    variant landed at the same moment", a cause nothing checked. Same rule the
+    V-168 lock message follows: name a reason you established first."""
+    uid = _signup(client)
+    parent = _store_parent(uid, fx.SPEC)
+
+    import app.api.runs as runs_api
+
+    real = runs_api._next_ordinal
+
+    def boom_on_commit(s: Any, root: str) -> int:
+        # force an integrity failure that has nothing to do with the ordinal:
+        # a second run_debit row for a run id that already has one
+        s.add(db.CreditLedger(user_id=uid, delta=-1, reason="engine_refund",
+                              run_id="dupe-refund"))
+        s.add(db.CreditLedger(user_id=uid, delta=-1, reason="engine_refund",
+                              run_id="dupe-refund"))
+        return real(s, root)
+
+    calls = {"n": 0}
+    real_ordinal = runs_api._next_ordinal
+
+    def counting(s: Any, root: str) -> int:
+        calls["n"] += 1
+        return boom_on_commit(s, root)
+
+    monkeypatch.setattr(runs_api, "_next_ordinal", counting)
+    edited = copy.deepcopy(fx.SPEC)
+    edited["backtest"]["seed"] = 31
+
+    with pytest.raises(IntegrityError):
+        _post_variant(client, parent, edited)
+
+    # V-185: NO RETRY on a non-ordinal cause — one attempt, then propagate
+    assert calls["n"] == 1, "a non-ordinal integrity error must not retry"
+    # and nothing was written: the rollback still discards the debit
+    assert _debits(uid) == []
+    assert real_ordinal is not None  # keep the reference meaningful
+
+
+def test_the_ordinal_collision_check_reads_both_engines() -> None:
+    """Postgres names the constraint, SQLite names the columns. The predicate
+    has to recognise its own race on either, and decline everything else."""
+    from app.api.runs import _is_ordinal_collision
+
+    class _Diag:
+        constraint_name = "uq_runs_variant_ordinal"
+
+    class _PgOrig:
+        diag = _Diag()
+
+    class _Exc:
+        def __init__(self, orig: Any) -> None:
+            self.orig = orig
+
+    assert _is_ordinal_collision(_Exc(_PgOrig()))          # postgres
+    assert _is_ordinal_collision(_Exc(
+        "UNIQUE constraint failed: runs.root_run_id, runs.variant_ordinal"))
+    # a different constraint on either engine is NOT this race
+    assert not _is_ordinal_collision(_Exc(
+        "UNIQUE constraint failed: credit_ledger.run_id"))
+
+    class _OtherDiag:
+        constraint_name = "uq_credit_ledger_refund"
+
+    class _OtherOrig:
+        diag = _OtherDiag()
+
+    assert not _is_ordinal_collision(_Exc(_OtherOrig()))
+
+
+def test_a_non_variant_integrity_error_never_yields_the_variant_race_409(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """V-185 case 2. A plain run has no parent, so `variant_root` is None and
+    the old handler skipped the retry and fell straight to a 409 announcing
+    that "another variant of this run landed" — on a run with no family at
+    all. The error must propagate as itself instead."""
+    uid = _signup(client)
+
+    import app.api.runs as runs_api
+
+    real = runs_api.creation_record
+
+    def duplicate_refund(*a: Any, **kw: Any) -> str:
+        # a ledger constraint, nothing to do with ordinals, raised while the
+        # Run row is being built — inside the debit transaction
+        raise IntegrityError(
+            "INSERT INTO credit_ledger",
+            {},
+            Exception("UNIQUE constraint failed: credit_ledger.run_id"),
+        )
+
+    monkeypatch.setattr(runs_api, "creation_record", duplicate_refund)
+    r = None
+    try:
+        r = client.post("/api/backtest", json={"spec": copy.deepcopy(fx.SPEC),
+                                              "min_trades": 1})
+    except IntegrityError:
+        pass  # propagated, which is the point
+    if r is not None:
+        assert r.status_code != 409, (
+            "a non-variant integrity error was reported as the variant race"
+        )
+    assert real is not None
+    assert _debits(uid) == []

@@ -136,6 +136,22 @@ def _run_label(run: db.Run) -> str | None:
         return None
 
 
+def _is_ordinal_collision(exc: IntegrityError) -> bool:
+    """Did THIS integrity error come from uq_runs_variant_ordinal?
+
+    Postgres names the constraint on the diagnostics object; SQLite names the
+    columns instead ("UNIQUE constraint failed: runs.root_run_id,
+    runs.variant_ordinal") and carries no constraint name at all, so both
+    engines need their own read. Anything else — a credit-ledger partial index,
+    a duplicate run id — is NOT this race and must not be reported as one.
+    """
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    if getattr(diag, "constraint_name", None) == "uq_runs_variant_ordinal":
+        return True
+    text = str(getattr(exc, "orig", exc))
+    return "root_run_id" in text and "variant_ordinal" in text
+
+
 def _next_ordinal(s: Any, root: str) -> int:
     """The next variant_ordinal in a root's family, computed INSIDE the
     debit transaction. Deliberately a seam: the V-172 retry test feeds it a
@@ -776,72 +792,78 @@ def backtest(
     # submit, no error surfaced on the legitimate double-submit path; the
     # 409 below remains only for a double collision, genuine contention.
     for _ordinal_attempt in (1, 2):
-      with db.session() as s:
-          if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
-              uid = run_user.id
-              # lock THIS account's row (Postgres) so two simultaneous runs
-              # can't both spend the last credit, then recompute the balance
-              # under the lock and debit + create in ONE transaction — a crash
-              # between them leaves NEITHER (the atomicity guarantee). On the
-              # SQLite fallback with_for_update is a no-op, so a concurrent
-              # overdraft of 1 credit is possible there; acceptable, as the
-              # fallback is degraded single-node mode and prod is Postgres.
-              s.query(db.User).filter(db.User.id == uid).with_for_update().first()
-              if db.credit_balance_tx(s, uid) <= 0:
-                  raise HTTPException(
-                      status_code=402,
-                      detail="you're out of backtest credits — top-ups are coming soon",
-                  )
-              s.add(
-                  db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
-              )
-          # V-167 step 3: lineage is stamped in the SAME transaction as the
-          # debit. A crash between them must leave neither — a run with a debit
-          # and no lineage is a variant that lost its parent, unrepairable.
-          variant_ordinal: int | None = None
-          if variant_root is not None:
-              variant_ordinal = _next_ordinal(s, variant_root)
-          s.add(
-              db.Run(
-                  id=run_id,
-                  status="queued",
-                  stage=0,
-                  seed=spec.backtest.seed,
-                  spec_json=spec.model_dump_json(),
-                  origin=origin,
-                  parent_run_id=req.parent_run_id,
-                  root_run_id=variant_root,
-                  variant_ordinal=variant_ordinal,
-                  user_id=run_user.id if run_user is not None else None,
-                  provenance_json=creation_record(
-                      req.provenance, origin, req.parent_run_id, note,
-                      what_changed=variant_diff,
-                  ),
-              )
-          )
-          try:
-              s.commit()
-              break
-          except IntegrityError:
-              # V-170: two concurrent variants computed the same max+1 and the
-              # unique index made the race lose loudly. The rollback discards
-              # the debit with it — clean failure, nothing half-written.
-              s.rollback()
-              # V-172: attempt 1 retries on a fresh transaction — the loser
-              # of a cross-tab race recomputes max+1 and lands the next
-              # ordinal, so a legitimate double submit sees ONE run and no
-              # error. A second collision is genuine contention: honest 409.
-              if _ordinal_attempt == 1 and variant_root is not None:
-                  log.warning(
-                      "variant ordinal collision on root %s — retrying",
-                      variant_root,
-                  )
-                  continue
-              raise HTTPException(
-                  status_code=409,
-                  detail="another variant of this run landed at the same "
-                  "moment — try again",
-              ) from None
+        with db.session() as s:
+            if charge_credit and run_user is not None:  # 2nd clause narrows for mypy
+                uid = run_user.id
+                # lock THIS account's row (Postgres) so two simultaneous runs
+                # can't both spend the last credit, then recompute the balance
+                # under the lock and debit + create in ONE transaction — a crash
+                # between them leaves NEITHER (the atomicity guarantee). On the
+                # SQLite fallback with_for_update is a no-op, so a concurrent
+                # overdraft of 1 credit is possible there; acceptable, as the
+                # fallback is degraded single-node mode and prod is Postgres.
+                s.query(db.User).filter(db.User.id == uid).with_for_update().first()
+                if db.credit_balance_tx(s, uid) <= 0:
+                    raise HTTPException(
+                        status_code=402,
+                        detail="you're out of backtest credits — top-ups are coming soon",
+                    )
+                s.add(
+                    db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
+                )
+            # V-167 step 3: lineage is stamped in the SAME transaction as the
+            # debit. A crash between them must leave neither — a run with a debit
+            # and no lineage is a variant that lost its parent, unrepairable.
+            variant_ordinal: int | None = None
+            if variant_root is not None:
+                variant_ordinal = _next_ordinal(s, variant_root)
+            s.add(
+                db.Run(
+                    id=run_id,
+                    status="queued",
+                    stage=0,
+                    seed=spec.backtest.seed,
+                    spec_json=spec.model_dump_json(),
+                    origin=origin,
+                    parent_run_id=req.parent_run_id,
+                    root_run_id=variant_root,
+                    variant_ordinal=variant_ordinal,
+                    user_id=run_user.id if run_user is not None else None,
+                    provenance_json=creation_record(
+                        req.provenance, origin, req.parent_run_id, note,
+                        what_changed=variant_diff,
+                    ),
+                )
+            )
+            try:
+                s.commit()
+                break
+            except IntegrityError as exc:
+                # the rollback discards the debit with the insert — nothing
+                # half-written, whatever the cause turns out to be
+                s.rollback()
+                # Only the ordinal index may be BLAMED on the ordinal race, and
+                # only after checking. Claiming a cause this never verified is
+                # the same defect class as a verdict citing a number it does
+                # not have: every other refusal here names a reason it
+                # established first (db.was_refunded, the V-168 lock message).
+                if not _is_ordinal_collision(exc):
+                    raise
+                # V-172: attempt 1 retries on a fresh transaction — the loser
+                # of a cross-tab race recomputes max+1 and lands the next
+                # ordinal, so a legitimate double submit sees ONE run and no
+                # error. A second collision is genuine contention: honest 409.
+                if _ordinal_attempt == 1:
+                    log.warning(
+                        "variant ordinal collision on root %s — retrying",
+                        variant_root,
+                    )
+                    continue
+                raise HTTPException(
+                    status_code=409,
+                    detail="another variant of this run landed at the same "
+                    "moment — try again",
+                ) from None
     # record the anon trial only after the run row exists, so a failed
     # creation never burns the visitor's one free run. Best-effort: a
     # trial-write hiccup must not 500 a run that already exists and is about

@@ -1265,6 +1265,13 @@ export function ResultsView({
               {asking ? "thinking…" : "↵"}
             </button>
           </div>
+          {/* V-46 / V-186: the PDF is VIEW-SCOPED, decided. The V-31 header
+              exists to qualify carried Q&A; the Results view prints no prompt
+              and no exchange content, so there is nothing in that artifact for
+              it to qualify, and the lineage line above (outside print:hidden)
+              is its provenance disclosure. If a richer variant PDF is ever
+              wanted the fix is a print-only WHAT CHANGED block here, NOT
+              printing both views. */}
           <Disclaimer />
         </>
       )}
