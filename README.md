@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C225%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1%2C263%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -31,6 +31,7 @@ flowchart LR
     B -->|"missing or<br/>ambiguous field"| Q["Clarifying<br/>question"]
     Q -.->|"user answers"| B
     B -->|"validated"| C["Strategy Spec<br/>JSON Schema"]
+    R["A finished run"] -->|"run a variant:<br/>reopens the confirmed dials,<br/>no interview replay"| C
     C --> D["EOD options<br/>backtest"]
     D --> E["Honesty<br/>gauntlet"]
     E --> F["Trust gate"]
@@ -46,6 +47,26 @@ flowchart LR
 The parser never guesses. If entry, strike, or exit is missing or ambiguous it
 asks, rather than defaulting, because a silent default is a strategy you did not
 describe and did not test.
+
+A finished run is also an entry point. **Run a variant** reopens that run's
+confirmed spec on the dials with nothing retyped and no interview replayed, and
+the rule the whole path holds is that nothing changes a value you did not change:
+the ticker and the leg shape are locked, everything else is yours, and the window,
+costs and seed are inherited from the parent rather than from your current
+settings. A variant is a normal run in every way that matters to honesty. It
+costs a credit, it runs the full gauntlet from scratch, no parent result is ever
+reused, and it increments the same trial counter the deflated Sharpe reads, so
+copying a run to try one more parameter makes the bar harder rather than easier.
+
+Submitting a variant that changed nothing is refused before the credit is spent.
+If you edited no dial and the rebuilt spec still differs from the parent, that is
+a bug in the rebuild and it fails loudly instead of quietly charging you.
+
+Because the interview does not replay, the original questions are carried across
+and marked. An answer your edits contradicted is shown as superseded, with the
+field and both values. Everything else is shown as-is, which means "not shown to
+be superseded", never "checked and still true": matching works on stored values,
+and only about a third of recorded answers can ever match one.
 
 ---
 
@@ -129,6 +150,7 @@ flowchart TB
     FE -->|"HTTPS"| API
     API --> PARSE
     PARSE --> ENG
+    API -->|"variant of a saved run:<br/>stored spec, no parse"| ENG
     ENG --> HON
     HON --> VER
     ENG -->|"point-in-time reads"| LAKE
@@ -261,7 +283,7 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           1,112 tests, engine fixtures hand-computed
+  tests/           1,150 tests, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
   tests/           113 tests
@@ -272,7 +294,7 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,225 tests** (1,112 backend, 113 collector).
+**1,263 tests** (1,150 backend, 113 collector).
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on

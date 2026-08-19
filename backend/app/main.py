@@ -17,6 +17,34 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.config import load_local_env
 
+# READ THIS BEFORE DEBUGGING ANYTHING THAT LOOKS LIKE "the local server is
+# configured wrong" (V-209).
+#
+# This line grants a local boot PRODUCTION'S DATABASE AND PRODUCTION'S AUTH GATE,
+# by design. load_local_env() reads backend/.env and then collector/.env and
+# pushes every key it finds into os.environ. collector/.env is the recorder's
+# single source of truth for credentials and it holds DATABASE_URL and
+# SKEPTIC_ACCESS_TOKEN, so unless something overrides them first, `uvicorn` on
+# your laptop talks to Neon and enforces the production bearer gate.
+#
+# That is what happened in V-151: a dev server wrote to production, and the
+# propagation was recorded for a while as "unidentified" because the search
+# stopped at "uv does not load that file", which is true and not an answer. The
+# loader is right here.
+#
+# Two consequences that cost real time, both non-obvious:
+#
+#   * It uses os.environ.setdefault, so a value ALREADY PRESENT wins. That is
+#     the only reason .claude/launch.json's pins work.
+#   * UNSETTING CANNOT WORK. `env -u SKEPTIC_ACCESS_TOKEN uvicorn ...` removes
+#     the variable and this line puts it back a moment later, at import, before
+#     any request is served. The dev server then 401s every /api call while
+#     looking correctly configured from the outside. Only a PIN survives, which
+#     is why launch.json sets `SKEPTIC_ACCESS_TOKEN=` (empty) rather than
+#     clearing it.
+#
+# If you are adding a config file to this loader, note that you are widening
+# what a local process silently inherits.
 load_local_env()
 
 

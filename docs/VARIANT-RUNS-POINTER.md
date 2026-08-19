@@ -27,12 +27,41 @@ brief does not cover, resolve it that way.
 | --- | --- | --- |
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
 | PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
-| PR-A2 | Per-exchange Q&A reconciliation: SUPERSEDED / NOT APPLICABLE states, the label table, the unmapped counter | **in progress** |
+| PR-A2 | Per-exchange Q&A reconciliation: value-matched SUPERSEDED, the field-label table, the unmapped counter | **complete, in review** (#146) |
 | PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
 
 PR-A1 renders the carried Q&A bulk-inherited (every exchange STILL HOLDS,
 which is the brief's own fallback), so it is a valid system state without A2
 rather than a stub with a TODO in it.
+
+## Two supersessions recorded in A2 (V-207)
+
+**V-53 is superseded by V-200.** The label table was specified as
+question-label-to-spec-field. It is not buildable: parser question ids AND
+question text are both authored by the model per call, with no enumerated
+vocabulary, no validation, no uniqueness constraint and a positional `q{i}`
+fallback (`parse.py:566-574`). A table keyed on either is keyed on a model
+version and fails silently on any model or prompt change. Thirty candidate
+mappings were proposed and zero survived. What replaced it matches on stored
+truth: a recorded ANSWER, canonicalized, against the `parent` value of a changed
+diff row. The cause is worth naming because it is the V-141 shape again, in the
+brief itself: a table was specified against an artifact nobody had inspected.
+
+**V-30(c) is superseded by V-203.** NOT APPLICABLE is dropped. A locked field
+produces no diff row, so finding one means scanning unchanged values, which
+breaks diff-anchoring and widens the false-positive surface for a state measured
+at 1 run in 99 whose real disclosure is the locked dial's own copy. Tier (b)
+exchanges render STILL HOLDS.
+
+**The binding constraint is data, not mechanism (V-211).** Measured read-only
+against production: 99 runs, 34 with provenance, 9 carrying a conversation at
+all, 23 recorded answers. All 23 canonicalize, but only 8 (34.8%) equal any value
+in their own run's spec, which is the ceiling on how often SUPERSEDED can ever
+fire. Substring matching was considered and rejected on evidence: those 14
+non-anchoring answers produce 80+ path hits between them, because a prose answer
+containing any digit matches every numeric field sharing that digit. So V-57's
+trigger will accumulate slowly, and that is the finding rather than a failure of
+the counter.
 
 **V-181, discharged:** a close commit cannot truthfully record the merge that
 follows it, so A1's own close left it reading "complete, in review" and **A2's
@@ -49,7 +78,14 @@ flag.
 
 ## Live IDs
 
-> **Last synced: PR #145 (PR-A1), through its merge commit `702487c`.**
+> **Index synced through PR #146 (PR-A2). Marker still names A1's merge commit
+> `702487c`, which is the last MERGED state this branch can truthfully point at.**
+> A2's own merge commit gets stamped by the first commit after #146 merges, the
+> same one-step handoff A1 used, and for the same structural reason: a branch
+> cannot name the merge that has not happened. The marker deliberately keeps a
+> real, reachable sha rather than a placeholder — V-184's pre-push hook parses
+> this line, and a marker with no sha in it makes the hook exit silently, which
+> would trade an enforced rule for a decorative one.
 > The marker now names the **merge commit of the closed PR**, not a commit on
 > the PR branch. That is the change worth noticing: a sha on the branch could
 > not be written until the commit after the sync landed, and that one-commit
@@ -83,9 +119,15 @@ V-140 V-141 V-142 V-143 V-144 V-145 V-146 V-147 V-148 V-149 V-150 V-151
 V-152 V-153 V-154 V-155 V-156 V-157 V-158 V-159 V-160 V-161 V-162 V-163
 V-164 V-165 V-166 V-167 V-168 V-169 V-170 V-171 V-172 V-173 V-174 V-175
 V-176 V-177 V-178 V-179 V-180 V-181 V-182 V-183 V-184 V-185 V-186 V-187
-V-188 V-189 V-190 V-191 V-192 V-193 V-194 V-195 V-196
+V-188 V-189 V-190 V-191 V-192 V-193 V-194 V-195 V-196 V-197 V-198 V-199
+V-200 V-201 V-202 V-203 V-204 V-205 V-206 V-207 V-208 V-209 V-210 V-211
+V-212
 
-Superseded: V-11 by V-25, V-15 by V-26. V-119 is rebalanced by V-126 (tier (b) measured at 1 in 99). V-64 is corrected twice: V-71 moves
+Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
+not buildable; value matching replaces it). **V-30(c) by V-203** (NOT APPLICABLE
+dropped). V-189 is ANSWERED by V-197 as corrected on 2026-08-19: the mechanism is
+`load_local_env()` at `backend/app/main.py`, which loads `collector/.env` and so
+grants any local boot production's database and auth gate by design. V-119 is rebalanced by V-126 (tier (b) measured at 1 in 99). V-64 is corrected twice: V-71 moves
 the baseline to before PR-0 merges, and V-86 splits "the count stopped
 growing" into a bounded sanity check plus an unbounded actual test. V-72's
 single-index instruction is corrected by V-87.
@@ -93,10 +135,19 @@ Retired: V-01. Never issued: V-47, V-48.
 
 Recorded but deliberately out of phase, and not to be lost:
 
-- **V-57** — enumerated spec-field vocabulary on parser question ids. The
-  correct long-term fix for the Q&A-to-field mapping, and it also serves
-  Phase 4 discovery mode. Belongs in a parser phase with its own regression
-  budget. When it lands, PR-A2's label table becomes a thin adapter and dies.
+- **V-57** — enumerated spec-field vocabulary on parser question ids. Still the
+  correct long-term fix, and A2 measured exactly how much it would buy. Belongs
+  in a parser phase with its own regression budget. Its trigger is the V-204
+  tally, which will grow slowly for the reason V-211 records: the constraint is
+  how little Q&A exists, not the mapping mechanism. A slow counter is the
+  finding, not a broken counter.
+- **V-210 — the source-hunt rule.** A mechanism hunt closes at the code that
+  performs the load, never at the exoneration of a candidate. "Not X" is a
+  narrowed search, not an answer. Two instances this phase, both of which
+  recorded a true negative as done: the launch.json pin (V-188, which worked for
+  a reason nobody knew) and the uv check (V-197, which proved uv does not load
+  collector/.env and concluded the origin was unknown while the loader sat at
+  main.py:20).
 - **V-61** — port `draftToSpec` to Python and make the server the sole
   authority on spec construction. V-17 and V-36 are the same failure twice:
   something other than the confirmed spec deciding what runs. The client

@@ -61,6 +61,18 @@ skeptic/
     on purpose until that command is next touched: rewriting a documented
     command without running it first is the same mistake pointing the other way
     (V-198).
+  - **Credential-shaped debugging asks whether, never what (V-209).** When you
+    are tracing a secret, print `bool(os.environ.get(KEY))` or the key's
+    presence, never its value or a `repr` of it. A single debug line that asked
+    what a token held put it in a session transcript and forced a rotation. The
+    same rule covers connection strings: print the host, never the URL.
+  - **`load_local_env()` at `backend/app/main.py` gives any local boot
+    production's database and auth gate**, because it reads `collector/.env`,
+    which holds `DATABASE_URL` and `SKEPTIC_ACCESS_TOKEN`. It uses
+    `setdefault`, so a value already present wins: that is why
+    `.claude/launch.json`'s pins hold, and why **unsetting cannot work** —
+    `env -u` removes the variable and the import puts it back. Pin, never
+    clear (V-189, V-209).
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.
