@@ -28,7 +28,7 @@ brief does not cover, resolve it that way.
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
 | PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
 | PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | merged in #146 |
-| PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
+| PR-B | The argue-back: exact-cell sensitivity lookup at the confirm step, the DSR's sweep disclosure, and the three-counter separation | **complete, in review** |
 
 **PR-B's opening constraints are settled (V-229 to V-231):** field identity comes
 from the V-208 table and nowhere else; the DSR line, the lineage ordinal and
@@ -37,7 +37,14 @@ cannot be mistaken for each other; and the argue-back renders only what
 `sensitivityDetail` holds for the exact cell, with no interpolation and no
 nearest-neighbour guess, because the marker died for rendering a weak mapping.
 
-**A standing rule came out of A2 (V-228):** a fixture that exists to catch a
+**Two standing rules came out of this phase.** **V-246:** a check keyed on prose is
+fooled by prose — key on the artifact (sha anchors, stored values, parsed code), and
+where prose must be checked, strip everything that is not the claim. Three instances:
+the hook that grepped the phrase it guarded, the table keyed on LLM-authored labels,
+the test that tripped on its own comment. Companion: an instruction's keyword is not
+its claim either (V-27's "attempts" turned out to mean trials, not variants).
+
+**V-228:** a fixture that exists to catch a
 boundary failure asserts its own proximity to that boundary, so loosening it fails
 the test rather than emptying it. Four instances in this phase, two of them
 consecutive attempts at the same fix. Full derivation in the brief's learnings.
@@ -135,6 +142,18 @@ first commit** — this one — marks it merged, from the branch that can actual
 see the merge. The same rule applies to A2's own close: expect one step of lag
 at the seam, and read it as the scheme working rather than as drift.
 
+## The phase is closed
+
+The **retrospective** is the final entry in the brief's learnings: the yield tables
+(13.0% killed the marker, 98.8% shipped the argue-back), the five-member incident
+family, the earned constants with derivations, and the one-sentence lesson —
+everything keyed on something regenerable died, everything measured against stored
+truth survived.
+
+The **deferred ledger** closes it, with triggers verbatim so the next phase inherits a
+list rather than an archaeology: V-49, V-57, V-61, V-129/V-130, V-113, V-146, V-183,
+V-198, V-244. None promoted, none dropped.
+
 ## Standing constraints
 
 `backend/app/engine/`, `backend/app/honesty/` and `backend/app/parser/` are
@@ -195,7 +214,8 @@ V-188 V-189 V-190 V-191 V-192 V-193 V-194 V-195 V-196 V-197 V-198 V-199
 V-200 V-201 V-202 V-203 V-204 V-205 V-206 V-207 V-208 V-209 V-210 V-211
 V-212 V-213 V-214 V-215 V-216 V-217 V-218 V-219 V-220 V-221 V-222 V-223
 V-224 V-225 V-226 V-227 V-228 V-229 V-230 V-231 V-232 V-233 V-234 V-235
-V-236 V-237 V-238 V-239 V-240 V-241 V-242 V-243 V-244 V-245
+V-236 V-237 V-238 V-239 V-240 V-241 V-242 V-243 V-244 V-245 V-246 V-247
+V-248
 
 Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
 not buildable; value matching replaces it). **V-30 by V-203 and V-213**, in both
