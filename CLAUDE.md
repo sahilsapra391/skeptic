@@ -31,7 +31,10 @@ skeptic/
 
 ## Commands
 
-- Backend: `cd backend && uv sync && uv run python -m pytest` · dev: `uv run uvicorn app.main:app --reload`
+- Backend: `uv run --project backend python -m pytest backend/tests` (runs
+  from the repo root; `uv sync --project backend` first on a cold checkout).
+  Start the dev server through `.claude/launch.json`, never by hand: the pinned
+  entry is the only form that guarantees a local database (see below).
   - Use `python -m pytest`, not bare `uv run pytest`. The `pytest` shim on this
     machine resolves a 3.13 environment while the project pins 3.12, so the
     bare form fails the whole suite with `ModuleNotFoundError: fastapi`. CI
@@ -46,6 +49,37 @@ skeptic/
     errors from the wrong stubs, uvicorn fails to spawn at all — so each one
     reads as its own bug until you know the pattern. CI builds fresh and is
     unaffected.
+  - **Never verify through a relative `cd` (V-196).** `cd frontend && npm run
+    lint` succeeds at nothing when the shell is already in `frontend`, and the
+    clean report that follows reads as success on work that never ran. Same
+    class as the rule above: the command looks right and so does the output.
+    Prefer the forms that need no directory, both checked from the repo root:
+    `uv run --project backend python -m pytest backend/tests` and
+    `npm --prefix frontend run lint`. Otherwise make the path absolute or print
+    `pwd` in the same invocation. The collector's `cd collector && uv run python
+    collect.py --mode eod` below is a known instance of the pattern, left alone
+    on purpose until that command is next touched: rewriting a documented
+    command without running it first is the same mistake pointing the other way
+    (V-198).
+  - **A guard that greps prose dies when the prose is edited (V-221).** The
+    pointer-sha hook keyed on the words "last synced" and was silently disabled
+    within a day by a commit that reworded that sentence; one push went out
+    unverified. Guards key on a machine-readable anchor
+    (`<!-- last-synced-sha: … -->`), and a MISSING anchor escalates rather than
+    exiting quietly, because a guard that can vanish without a sound is not a
+    guard. Same posture as V-58: fail, never skip.
+  - **Credential-shaped debugging asks whether, never what (V-209).** When you
+    are tracing a secret, print `bool(os.environ.get(KEY))` or the key's
+    presence, never its value or a `repr` of it. A single debug line that asked
+    what a token held put it in a session transcript and forced a rotation. The
+    same rule covers connection strings: print the host, never the URL.
+  - **`load_local_env()` at `backend/app/main.py` gives any local boot
+    production's database and auth gate**, because it reads `collector/.env`,
+    which holds `DATABASE_URL` and `SKEPTIC_ACCESS_TOKEN`. It uses
+    `setdefault`, so a value already present wins: that is why
+    `.claude/launch.json`'s pins hold, and why **unsetting cannot work** —
+    `env -u` removes the variable and the import puts it back. Pin, never
+    clear (V-189, V-209).
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
     stripping) to execute the real `frontend/lib/spec.ts`. It is a hard
     dependency: without node the guard fails rather than skipping.
@@ -58,7 +92,9 @@ skeptic/
     environment carried a production Neon URL from an unidentified source, and
     pinning defends against any origin. Never set
     `SKEPTIC_ALLOW_REMOTE_MIGRATION` to make a dev server start (V-188).
-- Frontend: `cd frontend && npm i && npm run dev` · checks: `npm run lint && npm run typecheck`
+- Frontend: `npm --prefix frontend i`, then the dev server via
+  `.claude/launch.json`. Checks: `npm --prefix frontend run lint` and
+  `... run typecheck`.
 - Collector local run: `cd collector && uv run python collect.py --mode eod`
 - CI must be green before any milestone is called done.
 

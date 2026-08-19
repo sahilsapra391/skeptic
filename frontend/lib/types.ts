@@ -171,7 +171,10 @@ export interface RunProvenance {
   carried_from?: string | null;
   /** V-13 section 5: the server-computed what-changed rows (V-162's one
    * comparison), stored at creation. Absent on non-variants. */
-  what_changed?: { field: string; parent: unknown; variant: unknown }[];
+  /** `label` is V-208's human caption from the one server-side table; `field`
+   *  is always present and is the authority. A row with no label renders its
+   *  path, which is correct rather than degraded. */
+  what_changed?: { field: string; label?: string; parent: unknown; variant: unknown }[];
   mechanics?: {
     engine_s?: number;
     gauntlet_s?: number;

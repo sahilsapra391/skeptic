@@ -6,6 +6,7 @@
       "runtimeExecutable": "env",
       "runtimeArgs": [
         "DATABASE_URL=sqlite:///backend/runs.db",
+        "SKEPTIC_ACCESS_TOKEN=",
         "uv",
         "run",
         "--project",
@@ -21,7 +22,7 @@
       ],
       "port": 8000,
       "autoPort": false,
-      "_why_pinned": "V-188: DATABASE_URL is PINNED, not unset. The preview spawner's environment carried a production Neon URL and the source was never identified (V-189 cleared shell profiles, launchd, direnv, uv config/UV_* vars, and all three settings.json env blocks; backend/.env holds only Clerk keys; the value's home is collector/.env, which the nightly ledger legitimately needs, but uv does not load it for --project backend). Unsetting defends against one origin; pinning defends against any. The pin stays even if the source turns up later \u2014 a dev server that sits one env var away from production should be explicit, not ambient. V-149 refused the remote migration on boot, which is what caught this; the fix is to stop pointing dev at prod, never to set SKEPTIC_ALLOW_REMOTE_MIGRATION."
+      "_why_pinned": "V-189, ANSWERED. The propagation mechanism is backend/app/config.py::load_local_env(), called at main.py:20, which deliberately loads collector/.env into the process environment. That file holds the production DATABASE_URL and SKEPTIC_ACCESS_TOKEN, so a dev server inherits production's database and production's gate by design, not by accident. Both are PINNED here rather than unset: `env -u` cannot work, because the app re-adds the value from the file AFTER env removed it. os.environ.setdefault yields to a value that is already present, so a pin wins and a removal does not. SKEPTIC_ACCESS_TOKEN= (empty) is the repo's own idiom for open local dev, the same thing the tests do. Never set SKEPTIC_ALLOW_REMOTE_MIGRATION to make a dev server start (V-188)."
     },
     {
       "name": "frontend",

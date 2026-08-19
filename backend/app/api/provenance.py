@@ -31,7 +31,9 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+from app.api.field_labels import label_rows
 from app.api.payload import FILL_MODEL
+from app.api.variant import reconcile
 from app.engine.types import RunResult
 
 # generous for real use (a long clarify session is a few KB) while keeping
@@ -141,7 +143,29 @@ def creation_record(
         # V-133's window state.
         record["carried_from"] = parent_run_id
     if what_changed is not None:
-        record["what_changed"] = what_changed
+        # V-208: the stored rows carry a human label so the WHAT CHANGED list and
+        # the SUPERSEDED marker name fields the same way. Paths are untouched and
+        # still present on every row: the label is an added caption, and a row
+        # with no label renders its path, which is always correct.
+        #
+        # Applied HERE and not in diff_specs, because the diff is a contract
+        # (V-164) read by the lock check and the zero-edit guard, and a caption
+        # has no business in it. The stored provenance record is the presentation
+        # artifact, so this is where presentation belongs.
+        labelled, unlabeled = label_rows(what_changed)
+        record["what_changed"] = labelled
+        # the table's gaps report themselves rather than waiting to be noticed —
+        # the V-204 posture applied to labels. Counted where the table is
+        # APPLIED rather than where it renders: a browser cannot write to the
+        # server's tally, and the set of gaps is identical either way.
+        record["labeling"] = {"rows": len(labelled), "unlabeled": unlabeled}
+        # V-222: set BEFORE the envelope below, so the byte budget accounts for
+        # it. The previous version added keys after the budget was measured. The
+        # cap test passed anyway, and the reason is worth naming: its fixture
+        # calls creation_record with no what_changed at all, so it exercises the
+        # one path where the overflow cannot occur. The assertion was right and
+        # its coverage omitted the variant path entirely, which is the same
+        # false-green shape as a green suite that never clicks a card.
     if not isinstance(client, dict):
         # a submitter that captured nothing (curl, an old client) — the
         # record still marks WHEN recording started, so a missing
@@ -168,6 +192,27 @@ def creation_record(
     # pair with the prompt) is the story's spine. Never a refusal.
     envelope = {**record, "conversation": [],
                 "truncated": {"dropped_events": len(events) + dropped}}
+    if what_changed is not None:
+        # V-225: reserve the telemetry block's WORST CASE, because it is written
+        # after truncation and therefore after this budget is measured.
+        #
+        # Moving `labeling` before the envelope (V-222) was not enough, and the
+        # test that proved it is the one that finally had power: 200 events of 240
+        # characters packs the budget to within ~130 bytes, and the telemetry key
+        # then pushed the record 102 bytes past the cap. The first attempt at this
+        # fixture used 1,900-character answers, whose leftover slack was wider
+        # than the overflow and hid it — an under-powered test replacing an
+        # under-powered test.
+        #
+        # Reserving rather than measuring, because the real counts depend on
+        # `kept`, which depends on this budget. The counts are five integers each
+        # bounded by MAX_EVENTS, so the worst case is exact and cheap.
+        envelope["reconcile_telemetry"] = {
+            "counts": dict.fromkeys(
+                ("carried", "superseded", "unmatched", "suppressed", "unparseable"),
+                MAX_EVENTS,
+            )
+        }
     budget = MAX_RECORD_BYTES - len(json.dumps(envelope).encode())
     kept: list[dict[str, Any]] = []
     used = 0
@@ -179,6 +224,23 @@ def creation_record(
         used += cost
     dropped += len(events) - len(kept)
     record["conversation"] = kept
+    if what_changed is not None and kept:
+        # V-213/V-214: TELEMETRY, counts only, and the labels are deliberately
+        # not stored. Nothing renders a per-exchange validity claim, and keeping
+        # the matched labels out of the payload is what makes that unwritable
+        # rather than merely unwired: a future reader cannot switch the markers
+        # back on from stored data, because the stored data does not contain
+        # them. Re-enabling would require recomputing, which is the point at
+        # which someone has to re-read why it was turned off.
+        #
+        # Computed against `kept`, once. The previous version computed it twice,
+        # before and after truncation, and the review found that the second pass
+        # re-ran V-201's uniqueness over a SMALLER set of answers: a deliberate
+        # suppression could flip into a confident match because the answer that
+        # made it ambiguous had been truncated away. Counting once, over exactly
+        # the events that were stored, has no such window.
+        counts = reconcile(kept, what_changed)["counts"]
+        record["reconcile_telemetry"] = {"counts": counts}
     if dropped:
         record["truncated"] = {"dropped_events": dropped}
     return json.dumps(record)

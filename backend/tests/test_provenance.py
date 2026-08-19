@@ -143,6 +143,66 @@ class TestCapsAndCorruption:
         assert kept[0]["id"] == "q0"
         assert record["truncated"]["dropped_events"] == 120 - len(kept)
 
+    def test_the_cap_holds_on_a_VARIANT_record_too(self) -> None:
+        """V-225: the fixture the test above was missing.
+
+        The assertion above is correct and was under-powered: it calls
+        creation_record with no `what_changed`, so it exercises the one path where
+        a variant's extra keys cannot appear. The overflow it was meant to catch
+        lived entirely on the variant path — labelled diff rows, the labeling
+        tally and the reconcile telemetry were added AFTER the byte budget had
+        been measured — and the suite stayed green while asserting the opposite.
+        That is the same false-green shape as a suite that never clicks a card:
+        the claim was right, the coverage did not reach the defect.
+
+        So this drives the same cap through the variant path, at the size that
+        overflowed: a conversation big enough to consume the whole budget, plus
+        enough labelled rows to matter. Verified to FAIL against the pre-fix
+        ordering (keys added after the envelope) and pass with it.
+        """
+        # 200 events of 240 characters, which is where the packing is TIGHTEST:
+        # it fills the budget to within ~130 bytes, so a key written after the
+        # budget was measured pushes the record over. The first version of this
+        # fixture used 1,900-character answers and passed, because their leftover
+        # slack was wider than the overflow — an under-powered test replacing an
+        # under-powered test. Measured against the pre-fix code this configuration
+        # exceeds the cap by 102 bytes; the size was found by sweeping, not chosen.
+        conversation = [
+            {"kind": "answer", "id": f"q{i}", "answer": "y" * 240,
+             "answered_at": "2026-07-14T14:00:00+00:00"}
+            for i in range(200)
+        ]
+        # every one of these gets a label from the V-208 table, so each row grows
+        what_changed = [
+            {"field": "exit.profit_target_pct", "parent": 50, "variant": 35},
+            {"field": "exit.stop_loss_pct", "parent": 200, "variant": 150},
+            {"field": "backtest.start", "parent": None, "variant": "2022-01-03"},
+            {"field": "backtest.initial_capital", "parent": 25_000, "variant": 50_000},
+            {"field": "position.expiration_selection.target_dte", "parent": 45, "variant": 30},
+            {"field": "position.legs[0].strike_selection.value", "parent": 0.3, "variant": 0.2},
+            {"field": "sizing.value", "parent": 1, "variant": 3},
+            {"field": "costs.commission_per_contract", "parent": 0.65, "variant": 0.5},
+        ]
+        record = json.loads(creation_record(
+            {**CLIENT_PROVENANCE, "conversation": conversation},
+            "user", "parent123", None, what_changed=what_changed))
+
+        size = len(json.dumps(record).encode())
+        assert size <= MAX_RECORD_BYTES, (
+            f"variant record is {size} bytes, over the {MAX_RECORD_BYTES} cap"
+        )
+        # and the variant keys the old test never saw are actually present, so
+        # this cannot pass by accidentally exercising the non-variant path again
+        assert record["labeling"]["rows"] == len(what_changed)
+        assert record["reconcile_telemetry"]["counts"]["carried"] > 0
+        assert all("label" in r for r in record["what_changed"])
+        # and the packing really was tight, so a future edit that loosens the
+        # fixture cannot quietly remove this test's power
+        assert MAX_RECORD_BYTES - size < 400, (
+            f"only {MAX_RECORD_BYTES - size} bytes of slack; this fixture must pack "
+            "the budget tightly or it cannot catch a key added after the budget"
+        )
+
     def test_null_optional_fields_never_become_the_string_none(self) -> None:
         # dict.get defaults don't fire on present-but-null keys — str(None)
         # would store the literal text "None" as a bar time or ticker
