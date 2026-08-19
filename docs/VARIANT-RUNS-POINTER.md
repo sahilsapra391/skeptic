@@ -142,6 +142,20 @@ first commit** — this one — marks it merged, from the branch that can actual
 see the merge. The same rule applies to A2's own close: expect one step of lag
 at the seam, and read it as the scheme working rather than as drift.
 
+## The phase is closed — all four PRs merged, plan complete (V-255)
+
+**Two defects found by the closing verification are queued as their own PR (V-254),
+not folded into this close:** a failed variant boot lands on a blank composer with no
+explanation, and V-04's anonymous signup CTA does not exist (anonymous users get the
+working variant flow instead). A defect found by verification is a defect, not an
+unfinished chunk of the phase.
+
+**One record is worth reading before trusting any entry here (V-252):** an owner
+directive instructed that two advisor statements be recorded as fact; they did not exist,
+the advisor refused, the directive insisted, and a five-file all-role all-block-type
+search settled it. The correction and the whole sequence are in the brief. The rule that
+came out of it (V-253): a negative finding states its scope.
+
 ## The phase is closed
 
 **The retrospective was amended after close (V-247a/b/c):** the incident family is six
@@ -178,9 +192,9 @@ flag.
 
 ## Live IDs
 
-<!-- last-synced-sha: 1f9a803 -->
+<!-- last-synced-sha: 3c9fffa -->
 
-> **Last synced: PR #153 (PR-B), through its merge commit `1f9a803`.**
+> **Last synced: PR #153 (PR-B), through the close-out merge `3c9fffa`.**
 > Stamped by the first commit after #153 merged — the one-step handoff, for the
 > third and last time this phase, and the only one of the three that was guarded
 > rather than remembered. The sha the hook reads is the `last-synced-sha` anchor
