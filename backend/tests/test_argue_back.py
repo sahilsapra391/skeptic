@@ -403,3 +403,74 @@ class TestItNamesTheParentAndItsRange:
         hit = r.json()["hit"]
         assert "parent_label" in hit, "the label must reach the client from the run row"
         assert hit["range"] == [40.0, 60.0]
+
+
+class TestThreeNumbersThreeHomes:
+    """V-230, extending V-70's two-counter test to three.
+
+    Three numbers on a variant answer "how many times", and any two of them being
+    mistakable for each other is the failure V-26 exists to prevent:
+
+        trial_counter        family trials, sweeps INCLUDED. The only number the
+                             deflated Sharpe line may cite.
+        variant_ordinal      lineage. Navigation. No statistical claim, ever.
+        reconcile telemetry  how often A2's dead mechanism would have guessed.
+                             Logs only; never a surface.
+
+    The telemetry is the newest and the easiest to misplace, because it looks like a
+    count of something meaningful and counts how often a mechanism would have fired.
+    """
+
+    def test_the_dsr_line_discloses_that_trials_include_sweeps(self) -> None:
+        """V-26: a reader who counts their own submitted runs gets a smaller number.
+        The sweeps are the difference and the copy has to say so, or the count reads
+        as wrong."""
+        import inspect
+
+        from app.api import payload
+
+        src = inspect.getsource(payload)
+        i = src.index("report.dsr.trials} trials")
+        window = src[i - 400 : i + 400]
+        assert "including parameter sweeps" in window
+        assert "already accounts for them" in window
+
+    def test_the_telemetry_never_reaches_a_payload_surface(self) -> None:
+        """It is instrumentation. A number that looks meaningful and is not must not
+        appear where a user reads numbers that are."""
+        import inspect
+
+        from app.api import payload
+
+        src = inspect.getsource(payload)
+        for token in ("reconcile_telemetry", "would-have-fired", "suppressed"):
+            assert token not in src, (
+                f"{token!r} appears in the results payload; the reconcile telemetry "
+                "is logs-only (V-214) and is not a number a user should weigh"
+            )
+
+    def test_the_lineage_ordinal_carries_no_statistical_claim(self) -> None:
+        """V-26: lineage is navigation. It must not appear in the honesty payload,
+        where every number is an argument about trustworthiness.
+
+        Checked against CODE, not prose. The first version of this grepped the raw
+        source for "ordinal" and failed on a comment that says the ordinal is not
+        this number — the same mistake the V-221 hook made when it grepped prose it
+        was supposed to guard. Comments are stripped before asserting.
+        """
+        import inspect
+
+        from app.api import payload
+
+        src = inspect.getsource(payload)
+        region = src[src.index("def _recommendations") : src.index("def _recommendations") + 6000]
+        code = "\n".join(
+            line for line in region.splitlines() if not line.lstrip().startswith("#")
+        )
+        assert "variant_ordinal" not in code, (
+            "the lineage ordinal must not be read where recommendations are built"
+        )
+        assert "ordinal" not in code, (
+            "no recommendation may interpolate a lineage number into a claim about "
+            "trustworthiness"
+        )
