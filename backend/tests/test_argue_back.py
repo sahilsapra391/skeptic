@@ -67,6 +67,42 @@ def _with(spec: dict, **edits) -> dict:
     return out
 
 
+@pytest.fixture()
+def client(monkeypatch):
+    monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    return TestClient(app)
+
+
+@pytest.fixture()
+def seeded_parent():
+    """A stored parent carrying a real sweep dump, so the endpoint reads it from
+    the database rather than from a hand-passed dict."""
+    import os
+    import uuid
+
+    os.environ.setdefault("DATABASE_URL", "sqlite:///backend/runs.db")
+    from app import db
+
+    db.init_db()
+    spec, stats = _parent()
+    spec = _with(spec, **{"exit.profit_target_pct": 50.0})
+    run_id = f"ab{uuid.uuid4().hex[:10]}"
+    with db.session() as s:
+        s.add(db.Run(id=run_id, status="done", stage=6, seed=42, origin="user",
+                     spec_json=json.dumps(spec), stats_json=json.dumps(stats)))
+        s.commit()
+    yield run_id, spec
+    with db.session() as s:
+        row = s.get(db.Run, run_id)
+        if row is not None:
+            s.delete(row)
+            s.commit()
+
+
 class TestItFiresOnAnExactCell:
     def test_the_reference_case(self) -> None:
         """The parent swept profit target and the user just picked a swept value."""
@@ -241,3 +277,88 @@ class TestOneMutationSpanningSeveralFields:
         changed, so there is nothing to argue about. Measured at 12 of 979."""
         spec, stats = self._spread()
         assert lookup(spec, stats, copy.deepcopy(spec)) is None
+
+
+class TestTheTwoSilencesStayDistinct:
+    """V-240. "Unnameable" and "absent" are different outcomes and must not collapse.
+
+    A multi-leg cell the parent genuinely ran, whose edit cannot be attributed to a
+    single dial, renders the SWEEP as subject. A cell whose replay produced an
+    identical spec renders NOTHING, because there is no edit.
+
+    Both are pinned here because a refactor that folded the first into the second
+    would silently discard real evidence, and it would look like a simplification.
+    """
+
+    def test_the_multi_leg_class_carries_a_sweep_subject_and_says_what_moved(self) -> None:
+        spec, stats = TestOneMutationSpanningSeveralFields()._spread()
+        variant = copy.deepcopy(spec)
+        for leg in variant["position"]["legs"]:
+            if leg.get("strike_selection", {}).get("method") == "delta":
+                leg["strike_selection"]["value"] = 0.36
+
+        hit = lookup(spec, stats, variant)
+        assert hit is not None
+        assert hit["subject"] == "sweep"
+        assert hit["field"] is None
+        assert hit["label"] == "strike delta"
+        assert hit["moved"] == "moved every delta-selected leg together", (
+            "the copy must state that both legs moved, or it implies a single-leg "
+            "test the sweep never ran"
+        )
+
+    def test_the_single_field_class_carries_a_field_subject_and_no_moved_clause(self) -> None:
+        spec, stats = _parent()
+        spec = _with(spec, **{"exit.profit_target_pct": 50.0})
+        hit = lookup(spec, stats, _with(spec, **{"exit.profit_target_pct": 55.0}))
+        assert hit is not None
+        assert hit["subject"] == "field"
+        assert hit["field"] == "exit.profit_target_pct"
+        assert hit["moved"] is None, "a single dial needs no explanation of what moved"
+
+    def test_the_identical_spec_class_is_absent_not_unnameable(self) -> None:
+        """The distinction the test above protects: this one returns None, and it
+        must keep returning None rather than becoming a sweep-subject render."""
+        spec, stats = TestOneMutationSpanningSeveralFields()._spread()
+        assert lookup(spec, stats, copy.deepcopy(spec)) is None
+
+
+class TestTheEndpoint:
+    """POST /api/runs/{id}/argue-back — read-only, free, and silent by default."""
+
+    def test_a_hit_is_returned_for_a_swept_edit(self, client, seeded_parent) -> None:
+        parent_id, parent_spec = seeded_parent
+        variant = _with(parent_spec, **{"exit.profit_target_pct": 55.0})
+        r = client.post(f"/api/runs/{parent_id}/argue-back", json={"spec": variant})
+        assert r.status_code == 200
+        hit = r.json()["hit"]
+        assert hit is not None
+        assert hit["tested_sharpe"] == 0.43
+        assert hit["subject"] == "field"
+
+    def test_an_unswept_edit_returns_a_null_hit_not_an_error(self, client, seeded_parent) -> None:
+        parent_id, parent_spec = seeded_parent
+        variant = _with(parent_spec, **{"exit.profit_target_pct": 52.0})
+        r = client.post(f"/api/runs/{parent_id}/argue-back", json={"spec": variant})
+        assert r.status_code == 200
+        assert r.json()["hit"] is None, "silence is the ordinary answer, not a failure"
+
+    def test_it_spends_nothing_and_creates_nothing(self, client, seeded_parent) -> None:
+        """V-09's posture applied to the argue-back: looking costs nothing."""
+        from app import db
+
+        parent_id, parent_spec = seeded_parent
+        with db.session() as s:
+            runs_before = s.query(db.Run).count()
+            ledger_before = s.query(db.CreditLedger).count()
+        client.post(
+            f"/api/runs/{parent_id}/argue-back",
+            json={"spec": _with(parent_spec, **{"exit.profit_target_pct": 55.0})},
+        )
+        with db.session() as s:
+            assert s.query(db.Run).count() == runs_before
+            assert s.query(db.CreditLedger).count() == ledger_before
+
+    def test_a_missing_run_is_404(self, client) -> None:
+        r = client.post("/api/runs/nope/argue-back", json={"spec": {}})
+        assert r.status_code == 404

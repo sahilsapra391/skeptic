@@ -23,7 +23,10 @@ import {
   parseText,
   prefetchBars,
   startBacktest,
+  getArgueBack,
+  type ArgueBackHit,
 } from "@/lib/api";
+import { draftToSpec } from "@/lib/spec";
 import { HEADLINES } from "@/lib/headlines";
 import { confirmDefaults } from "@/lib/confirm";
 import { getSettings } from "@/lib/settings";
@@ -176,6 +179,47 @@ export function RunFlow({
   // the parser's validated spec + the draft it projected — an unedited draft
   // runs the parser spec verbatim, dial edits rebuild from the dials
   const parsedSpecRef = useRef<Record<string, unknown> | null>(null);
+  // V-14: the parent's own stored sweep result for whatever is on the dials right
+  // now. Fetched HERE rather than in SpecScreen because this component owns the
+  // parsed spec that draftToSpec needs as its base, and the spec screen stays a
+  // renderer. null means the parent never ran this configuration, which is the
+  // ordinary case.
+  const [argueBack, setArgueBack] = useState<ArgueBackHit | null>(null);
+
+
+  // Recomputed as the dials move, debounced, and deliberately silent about its own
+  // failures: this is an optional grace note on the confirm step, so a network
+  // hiccup must never block a submit or show an error. An aborted or failed lookup
+  // is indistinguishable from "the parent did not run this", which is correct —
+  // both mean there is nothing we can honestly say.
+  useEffect(() => {
+    const parent = draft?.variantOf?.runId;
+    if (!draft || !parent || !draft.exit) {
+      setArgueBack(null);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      let candidate: Record<string, unknown>;
+      try {
+        candidate = draftToSpec(draft, parsedSpecRef.current) as Record<string, unknown>;
+      } catch {
+        setArgueBack(null);
+        return;
+      }
+      void getArgueBack(parent, candidate)
+        .then((r) => {
+          if (live) setArgueBack(r.hit);
+        })
+        .catch(() => {
+          if (live) setArgueBack(null);
+        });
+    }, 350);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [draft]);
   const parsedDraftRef = useRef<string | null>(null);
   // Chunk A: the clarifying conversation, chronological with timestamps —
   // `questions`/`answers` above are working state (each round REPLACES
@@ -712,6 +756,7 @@ export function RunFlow({
           onBack={() => setPhase("compose")}
           onRun={runGauntlet}
           earliestYear={earliestYear}
+          argueBack={argueBack}
         />
         {/* anon trial framing — honest about the free run's limits, so the
             visitor picks a daily ≤3y window instead of hitting the backend's

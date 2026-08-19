@@ -55,6 +55,14 @@ _SWEPT_FIELD_HINT: dict[str, str] = {
     "dte": "position.expiration_selection.target_dte",
 }
 
+# V-240: what the sweep MOVED, in words, for the sweep-as-subject sentence. The
+# label alone ("strike delta") does not tell a reader that both short legs moved
+# together, and that is the fact which makes the cell evidence about their edit.
+_SWEEP_MOVED: dict[str, str] = {
+    "delta": "moved every delta-selected leg together",
+    "dte": "moved the tenor and its derived window together",
+}
+
 _SWEEP_LABEL: dict[str, str] = {
     # When ONE swept mutation legitimately spans several fields and no single one
     # of them is the subject, the sweep itself is the subject. `set_delta` moves
@@ -187,5 +195,16 @@ def lookup(
                 "base_sharpe": base_sharpe,
                 "classification": sweep.get("classification") or None,
                 "cells": len(values),
+                # V-240: the two silences are DIFFERENT and must stay different.
+                # `subject` says which sentence to render. "field" means one dial
+                # moved and the copy names it. "sweep" means one mutation moved
+                # several fields together and the copy must say so, because "leg 1
+                # strike" would be a claim the sweep did not test. An
+                # identical-spec cell returns None instead and renders nothing,
+                # since there is no edit to argue about. A refactor that collapsed
+                # unnameable into absent would silently drop real evidence, so a
+                # test pins each class to its own rendering.
+                "subject": "field" if field is not None else "sweep",
+                "moved": None if field is not None else _SWEEP_MOVED.get(str(name)),
             }
     return None

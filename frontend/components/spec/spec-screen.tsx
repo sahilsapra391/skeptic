@@ -13,6 +13,7 @@ import clsx from "clsx";
 
 import { Hint } from "@/components/hint";
 import { getEstimate } from "@/lib/api";
+import type { ArgueBackHit } from "@/lib/api";
 import { useSettings } from "@/lib/settings";
 import type { EstimatePayload, SpecDraft, Structure, Ticker, TriggerSpec, WindowKind } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
@@ -231,12 +232,16 @@ export function SpecScreen({
   onBack,
   onRun,
   earliestYear,
+  argueBack = null,
 }: {
   draft: SpecDraft;
   onChange: (d: SpecDraft) => void;
   onBack: () => void;
   onRun: () => void;
   earliestYear: string;
+  /** V-14: the parent's own stored sweep result for the current dials, or null.
+   *  Null is the ordinary case and renders nothing. */
+  argueBack?: ArgueBackHit | null;
 }) {
   const settings = useSettings();
   // V-36: what the FILLS tile shows is the spec's own confirmed costs. Settings
@@ -931,6 +936,56 @@ export function SpecScreen({
               , so this one starts empty.
             </>
           )}
+        </div>
+      )}
+
+      {/* V-14 / V-231: the parent already ran this exact configuration, so its own
+          number is quotable without running anything. Everything here is read from
+          the stored sweep cell: no interpolation between swept values, no extension
+          past the sweep's range, and no panel at all when the parent did not run
+          this. It argues, it does not block — the run button is untouched. */}
+      {argueBack && (
+        <div className="mt-5 rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
+          <div className="font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
+            YOUR LAST RUN ALREADY TESTED THIS
+          </div>
+          <div className="mt-2 text-[14.5px] leading-[1.5] text-ink-2">
+            {/* V-240: two different sentences for two different situations. When one
+                dial moved, name it. When one sweep moved several fields together,
+                say THAT, because naming a single leg would describe a test the
+                sweep never ran. */}
+            {argueBack.subject === "field" ? (
+              <>
+                The sweep on <span className="font-semibold text-ink">{argueBack.label ?? argueBack.field}</span>{" "}
+                ran <span className="font-mono">{argueBack.tested_value}</span> and scored a Sharpe of{" "}
+                <span className="font-mono font-semibold text-ink">{argueBack.tested_sharpe.toFixed(2)}</span>,
+                against <span className="font-mono">{argueBack.base_sharpe.toFixed(2)}</span> at{" "}
+                <span className="font-mono">{argueBack.base_value}</span>.
+              </>
+            ) : (
+              <>
+                The sweep on <span className="font-semibold text-ink">{argueBack.label}</span> ran{" "}
+                <span className="font-mono">{argueBack.tested_value}</span> and scored a Sharpe of{" "}
+                <span className="font-mono font-semibold text-ink">{argueBack.tested_sharpe.toFixed(2)}</span>,
+                against <span className="font-mono">{argueBack.base_sharpe.toFixed(2)}</span> at{" "}
+                <span className="font-mono">{argueBack.base_value}</span>. It{" "}
+                {argueBack.moved ?? "moved every field in that group together"}, which is what
+                this edit does.
+              </>
+            )}
+          </div>
+          {argueBack.classification && (
+            <div className="mt-2 font-mono text-[12px] text-ink-4">
+              That sweep was classified{" "}
+              <span className="text-trust">{argueBack.classification}</span> across its{" "}
+              {argueBack.cells} tested values.
+            </div>
+          )}
+          <div className="mt-2.5 text-[12.5px] text-ink-4">
+            Running it again spends a credit and a full gauntlet to reproduce a number
+            you already have. Worth it if you want the honesty stages on it; not worth
+            it if you only wanted the Sharpe.
+          </div>
         </div>
       )}
 
