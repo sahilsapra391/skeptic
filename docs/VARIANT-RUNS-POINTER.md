@@ -27,8 +27,16 @@ brief does not cover, resolve it that way.
 | --- | --- | --- |
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
 | PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
-| PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | **complete, reviewed** (#146) |
+| PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | merged in #146 |
 | PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
+
+**Where A2 leaves PR-B.** Nothing in B depended on the marker, so its scope is
+unchanged. Two things A2 established are worth carrying in: the V-208 label table
+is the path-to-label authority and B's sensitivity copy should read from it rather
+than writing its own field names (V-217), and V-26's two-counter separation now
+has a third number nearby that must not be confused with either — the V-214
+reconcile telemetry is neither lineage nor trials, carries no statistical claim,
+and never appears in a verdict or an honesty payload.
 
 PR-A1 renders the carried Q&A bulk-inherited (every exchange STILL HOLDS,
 which is the brief's own fallback), so it is a valid system state without A2
@@ -124,13 +132,15 @@ flag.
 
 ## Live IDs
 
-<!-- last-synced-sha: 702487c -->
+<!-- last-synced-sha: 4260d68 -->
 
-> **Index synced through PR #146 (PR-A2). Marker still names A1's merge commit
-> `702487c`, which is the last MERGED state this branch can truthfully point at.**
-> A2's own merge commit gets stamped by the first commit after #146 merges, the
-> same one-step handoff A1 used, and for the same structural reason: a branch
-> cannot name the merge that has not happened. The marker deliberately keeps a
+> **Last synced: PR #146 (PR-A2), through its merge commit `4260d68`.**
+> Stamped by the first commit after #146 merged, which is the one-step handoff A1
+> used and for the same structural reason: a branch cannot name the merge that has
+> not happened yet. The handoff is now guarded rather than remembered — V-184's
+> hook reads the `last-synced-sha` anchor above and refuses a push whose stamped
+> sha is missing, unresolvable, or not an ancestor, and V-221 rebuilt it to key on
+> that anchor instead of this prose after a rewording killed the first version. The marker deliberately keeps a
 > real, reachable sha. The sha the hook actually reads is the
 > `last-synced-sha` anchor directly above this block, NOT this prose: V-221
 > records what happened when the hook grepped the prose instead and a rewording
