@@ -52,7 +52,13 @@ function duration(seconds: number): string {
 interface Exchange {
   question?: ProvenanceEvent;
   answer?: ProvenanceEvent;
+  /** index of `answer` in the stored conversation. V-200's labels anchor here
+   *  rather than on a position in this paired list, so the server's pairing and
+   *  this one never have to agree for a marker to land on the right card. */
+  answerIndex?: number;
 }
+
+type Superseded = NonNullable<RunProvenance["reconciliation"]>["labels"][number];
 
 /** Pair answers to questions by event id, preserving chronology. A round's
  * questions arrive together (one asked_at) and the answers follow — each
@@ -64,16 +70,49 @@ interface Exchange {
  * question still renders — the record is the truth. */
 function pairConversation(events: ProvenanceEvent[]): Exchange[] {
   const out: Exchange[] = [];
-  for (const ev of events) {
+  events.forEach((ev, index) => {
     if (ev.kind === "question") {
       out.push({ question: ev });
-      continue;
+      return;
     }
     const open = out.find((x) => x.question?.id === ev.id && !x.answer);
-    if (open) open.answer = ev;
-    else out.push({ answer: ev });
-  }
+    if (open) {
+      open.answer = ev;
+      open.answerIndex = index;
+    } else {
+      out.push({ answer: ev, answerIndex: index });
+    }
+  });
   return out;
+}
+
+/** V-200's one line, in section 5's register on purpose.
+ *
+ *  The brief renders this as "profit target 50% to 35%", which would need a
+ *  path-to-prose table. The same field also appears verbatim in WHAT CHANGED
+ *  further down the page, and a reader who sees "profit target" here and
+ *  `exit.profit_target_pct` there cannot connect them. One vocabulary on one
+ *  screen beats a prettier sentence, and it is a table that cannot rot. */
+function SupersededLine({ label }: { label: Superseded }) {
+  const show = (v: unknown) =>
+    v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  return (
+    <div className="mt-3 border-t border-trust-border pt-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+        <span className="font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4">
+          SUPERSEDED ON THIS RUN
+        </span>
+        <span className="font-mono text-[11px] text-ink-4">{label.field}</span>
+        <span className="font-mono text-[12.5px] text-ink-3 line-through decoration-line">
+          {show(label.parent)}
+        </span>
+        <span className="font-mono text-[11px] text-ink-4">→</span>
+        <span className="font-mono text-[12.5px] font-semibold text-ink">
+          {show(label.variant)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function AnswerChip({ text, typed }: { text: string; typed?: boolean }) {
@@ -84,15 +123,26 @@ function AnswerChip({ text, typed }: { text: string; typed?: boolean }) {
   );
 }
 
-function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }) {
+function ExchangeCard({
+  x,
+  carried = false,
+  superseded,
+}: {
+  x: Exchange;
+  carried?: boolean;
+  superseded?: Superseded;
+}) {
   const q = x.question;
   const answer = x.answer?.answer;
   if (!q) {
     // an answer the record holds without its question — show it honestly
     return (
-      <div className="flex items-center gap-2.5">
-        <span className={LABEL}>ANSWERED</span>
-        {answer && <AnswerChip text={answer} typed />}
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className={LABEL}>ANSWERED</span>
+          {answer && <AnswerChip text={answer} typed />}
+        </div>
+        {superseded && <SupersededLine label={superseded} />}
       </div>
     );
   }
@@ -107,15 +157,16 @@ function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }
               voice. Inside a carried block it reads as though the interview
               ran here, contradicting the header directly above it — and the
               cards are the visually dominant element, so a skimmer believes
-              the cards. Until A2 lands the per-exchange states, the eyebrow
-              carries its share of the misattribution work rather than leaving
-              it all to the header. */}
+              the cards. The eyebrow carries its share of the misattribution
+              work rather than leaving it all to the header; A2's per-exchange
+              marker is about which answers still apply, which is a different
+              question from where they were asked. */}
           {carried ? "IT ASKED ON THE ORIGINAL RUN" : "IT ASKED — I DON’T GUESS"}
         </span>
         {time && <span className="font-mono text-[10.5px] text-ink-4">{time}</span>}
       </div>
       <div className="mb-3 text-[15.5px] font-semibold leading-snug">{q.question}</div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex flex-wrap items-center gap-2${superseded ? " opacity-60" : ""}`}>
         {options.map((opt) =>
           opt === chosen ? (
             <AnswerChip key={opt} text={opt} />
@@ -133,6 +184,10 @@ function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }
           <span className="font-mono text-[11.5px] text-ink-4">no answer recorded</span>
         )}
       </div>
+      {/* The question and the original answer stay fully visible above: they
+          are real history and the brief is explicit that they are not erased.
+          The marker is additive, below them. */}
+      {superseded && <SupersededLine label={superseded} />}
     </div>
   );
 }
@@ -483,6 +538,11 @@ export function HowBuilt({ run }: { run: RunPayload }) {
 
   const events = prov.conversation;
   const exchanges = events ? pairConversation(events) : null;
+  // V-200: keyed by index into the stored conversation. Absence is STILL HOLDS,
+  // so a payload without this object degrades to the state A1 already shipped.
+  const supersededByIndex = new Map<number, Superseded>(
+    (prov.reconciliation?.labels ?? []).map((label) => [label.answer_index, label]),
+  );
   const pins = prov.prompt?.chart?.pins ?? [];
 
   return (
@@ -548,11 +608,15 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         </div>
       )}
 
-      {/* V-31: the header does ALL the misattribution work until A2 lands the
-          per-exchange states — every carried exchange currently reads STILL
-          HOLDS (V-67), so nothing inside the block distinguishes an answer
-          that still applies from one this run's edits superseded. Stated
-          plainly, never euphemistically: no phrasing may let a skimming
+      {/* V-31: the header states WHERE these questions were asked, which stays
+          load-bearing now that A2 has landed. A2's markers answer a different
+          question — which answers this run's edits superseded — and they are
+          silent on the rest by design (V-200 matches on stored values, and
+          measured against production only about a third of recorded answers
+          can ever match one). So an unmarked exchange means "not shown to be
+          superseded", never "verified as still true", and the header carries
+          the misattribution work regardless of how many markers appear.
+          Stated plainly, never euphemistically: no phrasing may let a skimming
           reader believe the interview ran twice. */}
       {carried && exchanges !== null && exchanges.length > 0 && (
         <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-3.5">
@@ -609,7 +673,14 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         </div>
       ) : (
         exchanges.map((x, i) => (
-          <ExchangeCard key={i} x={x} carried={Boolean(carried)} />
+          <ExchangeCard
+            key={i}
+            x={x}
+            carried={Boolean(carried)}
+            superseded={
+              x.answerIndex === undefined ? undefined : supersededByIndex.get(x.answerIndex)
+            }
+          />
         ))
       )}
 

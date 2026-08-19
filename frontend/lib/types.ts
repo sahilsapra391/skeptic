@@ -156,6 +156,30 @@ export interface RunProvenance {
     };
   };
   conversation?: ProvenanceEvent[];
+  /** V-200: which carried exchanges this variant's edits superseded.
+   *
+   *  Computed once at run creation and stored, never recomputed at read time.
+   *  ONLY superseded entries appear: an exchange with no entry is STILL HOLDS,
+   *  which makes the safe state structural rather than something a renderer has
+   *  to get right. `answer_index` indexes `conversation` above, deliberately
+   *  rather than indexing the paired exchanges, so this never depends on the
+   *  server and the client pairing a conversation identically. */
+  reconciliation?: {
+    labels: {
+      answer_index: number;
+      state: "superseded";
+      field: string;
+      parent: unknown;
+      variant: unknown;
+    }[];
+    counts: {
+      carried: number;
+      superseded: number;
+      unmatched: number;
+      suppressed: number;
+      unparseable: number;
+    };
+  };
   confirmed?: {
     draft?: SpecDraft;
     boxes?: Record<string, unknown>;
