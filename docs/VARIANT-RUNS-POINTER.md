@@ -196,7 +196,9 @@ V-200 V-201 V-202 V-203 V-204 V-205 V-206 V-207 V-208 V-209 V-210 V-211
 V-212 V-213 V-214 V-215 V-216 V-217 V-218 V-219 V-220 V-221 V-222 V-223
 V-224 V-225 V-226 V-227 V-228 V-229 V-230 V-231 V-232 V-233 V-234 V-235
 V-236 V-237 V-238 V-239 V-240 V-241 V-242 V-243 V-244 V-245 V-246 V-247
-V-248
+V-248 V-249 V-250 V-251
+
+**The V-series closes at V-251.** The next phase opens its own sequence.
 
 Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
 not buildable; value matching replaces it). **V-30 by V-203 and V-213**, in both
