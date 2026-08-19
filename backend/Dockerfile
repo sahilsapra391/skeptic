@@ -1,20 +1,34 @@
 # Skeptic backend — Railway deploy (BUILD-PLAN M6).
 # uv-based build; runs uvicorn on Railway's injected $PORT.
 
-FROM python:3.13-slim
+# Both base images are pinned by DIGEST, not by tag. `python:3.13-slim` and
+# `ghcr.io/astral-sh/uv:latest` are moving tags on external registries, pulled
+# fresh on every build, which means the deploy could change underneath us
+# without a commit and a build could fail for reasons no one here authored.
+# Update these deliberately, the same way a lockfile is updated.
+#
+# Resolved with `docker buildx imagetools inspect python:3.13-slim` on 2026-08-18.
+#   python:3.13-slim -> sha256:ffb752e1...c6e30a
+#
+# NOTE: this pins the RUNTIME PYTHON at 3.13 while CI tests on 3.12
+# (`requires-python = ">=3.12"`, ci.yml python-version 3.12). Production has
+# always run a Python that CI never exercises; the pin freezes that mismatch
+# rather than creating it, and it deserves its own change.
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
 
-# uv comes from PyPI, not from ghcr.io.
+# uv comes from PyPI, pinned, and NOT from ghcr.io.
 #
-# This used to be `COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/`, which
-# made every build depend on a SECOND registry, and on an unpinned `:latest` tag
-# there. When Railway began failing at "building the image" and hanging before it
-# failed, a registry it cannot reach was the hypothesis that fit: the same inputs
-# built and booted fine on GitHub's amd64 runners from a clean checkout, three
-# times, so the Dockerfile was not the thing breaking.
+# Two changes arrived here from different directions and both survive, because
+# they remove different things. The ghcr.io dependency is gone (one registry
+# instead of two), and what remains is pinned by version instead of tracking
+# `:latest`. Together with the digest-pinned base above, no part of this build
+# resolves a moving reference on an external host any more.
 #
-# PyPI is a registry this build already depends on for every other dependency, so
-# this removes a failure domain rather than trading one for another. Pinned,
-# because an unpinned build tool is the same class of problem as an unpinned base.
+# The ghcr removal's original rationale was WRONG and is recorded as such: it was
+# a hypothesis that Railway could not reach ghcr.io, and the actual cause was a
+# Railway platform incident. It stays because removing a build-time dependency on
+# a second registry, and pinning the tool that replaces it, are worth doing on
+# their own merits — not because the theory that produced it held up.
 RUN pip install --no-cache-dir uv==0.12.5
 
 ENV UV_COMPILE_BYTECODE=1 \
