@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       # V-58: the V-18 round-trip guard runs the REAL frontend/lib/spec.ts
       # through node's native type stripping (22.6+). It is a HARD dependency
       # of this suite — without node the guard fails rather than skipping, so
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - run: uv sync
       - run: uv run python -c "import ledger, derive_ivs_signals, derive_flow_signals, derive_cross_validation, derive_cboe_eod, derive_inhouse_signals, derive_fill_calibration, derive_flow_inhouse"
       # collector/tests: state-poisoning guards for the UW backfill resume ledger
