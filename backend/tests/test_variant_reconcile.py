@@ -281,44 +281,103 @@ class TestStoredAsTelemetryOnly:
         assert len(record["conversation"]) == 4, "the junk event is filtered"
 
 
+# V-224: the crashing set, DERIVED by replaying the pre-fix implementation over
+# every spelling `float()` accepts, not recalled. The PR body first said "six
+# inputs"; the real count is 24 across these classes, and a count was never the
+# point — the boundary is generative, so the classes are listed and the RULE is
+# asserted separately below.
+NON_FINITE_ANSWERS = [
+    # inf, every case and sign float() takes
+    "inf", "+inf", "-inf", "INF", "Inf",
+    "infinity", "Infinity", "INFINITY", "+infinity", "-infinity",
+    # nan, likewise
+    "nan", "NaN", "NAN", "+nan", "-nan",
+    # finite-looking literals that overflow to inf
+    "1e400", "-1e400", "1E400", "1e999",
+    # the same, wearing a trailing unit the tokenizer strips
+    "inf%", "nan dte", "1e400 days", "infinity contracts",
+    # and surviving the .trim() the UI applies at run-flow.tsx:452
+    "  inf  ",
+]
+
+
 class TestNonFiniteAnswersCannotCrashTheSubmitPath:
-    """V-220. Named for the crash, not folded into a neighbouring test.
+    """V-220/V-224. Named for the crash, not folded into a neighbouring test.
 
-    `float()` accepts "inf", "-inf", "Infinity", "nan" and "1e400". Every one
-    reached `_number_token`, which calls `int(number)`, which raises
-    OverflowError or ValueError. That raise left `canonical_token`, `reconcile`
-    and `creation_record` and surfaced as a 500 on POST /api/backtest.
+    `float()` accepts every spelling in NON_FINITE_ANSWERS. Each one reached
+    `_number_token`, whose `int()` raised OverflowError or ValueError, and that
+    raise left `canonical_token`, `reconcile` and `creation_record` and surfaced
+    as a 500 on POST /api/backtest.
 
-    A user can type any of these into a clarifying answer. "1e400" is a typo, not
-    an attack.
+    USER-TYPEABLE, VERIFIED RATHER THAN ASSUMED (V-224). The clarifying-question
+    step renders a bare `<input>` at frontend/components/run-flow.tsx:673 with no
+    `type`, no `maxLength`, no `pattern` and no `inputMode`, placeholdered "or
+    answer in your own words". Its handler at run-flow.tsx:449-455 stores
+    `answer.trim()` verbatim into the transcript that becomes the provenance
+    conversation. So a user types "inf", presses Enter, and it is recorded. No
+    crafted request needed; "1e400" is a plausible typo rather than an attack.
 
     Blast radius, confirmed rather than assumed: `variant.py` performs no writes
     at all, and `creation_record` is called at runs.py:793, BEFORE the ordinal
-    retry loop, the credit debit and the run insert. So the crash cost a request
-    and nothing else — no credit spent, no half-written run. That is why this is
-    a 500 to fix rather than an incident to unwind.
+    retry loop, the credit debit and the run insert. The crash cost a request and
+    nothing else.
 
-    Introduced by A2: `canonical_token` does not exist on main.
+    A2-introduced: `canonical_token` does not exist on main.
     """
 
-    @pytest.mark.parametrize(
-        "answer", ["inf", "-inf", "Infinity", "INFINITY", "nan", "NaN", "1e400", "-1e400"]
-    )
-    def test_a_non_finite_answer_is_a_safe_miss(self, answer: str) -> None:
+    @pytest.mark.parametrize("answer", NON_FINITE_ANSWERS)
+    def test_every_derived_spelling_is_a_safe_miss(self, answer: str) -> None:
         assert canonical_token(answer) is None, (
-            f"{answer!r} must canonicalize to None (a safe miss), never raise"
+            f"{answer!r} must canonicalize to None, never raise and never become a token"
         )
 
-    @pytest.mark.parametrize("answer", ["inf", "nan", "1e400"])
-    def test_reconcile_survives_it(self, answer: str) -> None:
+    def test_the_rule_not_just_the_samples(self) -> None:
+        """The list above is a sample of a generative set, so assert the rule.
+
+        Anything `float()` accepts that is not finite must be None. Without this,
+        a spelling nobody thought of (a new unit suffix, a wider float grammar)
+        walks straight back into the crash and the sample list looks complete.
+        """
+        import itertools
+        import math
+
+        from app.api.variant import _TRAILING_UNITS
+
+        stems = ["inf", "infinity", "nan", "1e400", "1e999"]
+        signs = ["", "+", "-"]
+        units = ["", *(f" {u}" for u in _TRAILING_UNITS)]
+        for sign, stem, unit in itertools.product(signs, stems, units):
+            for text in (f"{sign}{stem}{unit}", f"{sign}{stem}{unit}".upper()):
+                probe = text.replace(",", "").replace("$", "").strip()
+                for u in _TRAILING_UNITS:
+                    if probe.casefold().endswith(u):
+                        probe = probe[: -len(u)].strip()
+                        break
+                try:
+                    numeric = math.isfinite(float(probe))
+                except ValueError:
+                    continue
+                if not numeric:
+                    assert canonical_token(text) is None, (
+                        f"{text!r} parses as a non-finite float and must be a miss"
+                    )
+
+    @pytest.mark.parametrize("answer", ["inf", "nan", "1e400", "  inf  "])
+    def test_reconcile_counts_it_unparseable_not_unmatched(self, answer: str) -> None:
+        """The distinction matters because V-214 makes the telemetry's accuracy
+        the reason for keeping it. "inf" is numeric in form with no usable value;
+        counting it as `unmatched` would describe an answer that was compared and
+        missed, which is not what happened."""
         result = reconcile(
             [q("x"), a("x", answer)], [row("exit.profit_target_pct", 50, 35)]
         )
         assert result["labels"] == []
         assert result["counts"]["unparseable"] == 1
+        assert result["counts"]["unmatched"] == 0
 
     def test_finite_numbers_still_parse(self) -> None:
-        """The fix must not reject real numbers: 1e308 is finite."""
+        """The fix must not over-reject: 1e308 is finite and 0 is falsy."""
         assert canonical_token("1e308") is not None
         assert canonical_token("50") == "50"
         assert canonical_token("-0.5") == "-0.5"
+        assert canonical_token("0") == "0"

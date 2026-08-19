@@ -192,6 +192,27 @@ def creation_record(
     # pair with the prompt) is the story's spine. Never a refusal.
     envelope = {**record, "conversation": [],
                 "truncated": {"dropped_events": len(events) + dropped}}
+    if what_changed is not None:
+        # V-225: reserve the telemetry block's WORST CASE, because it is written
+        # after truncation and therefore after this budget is measured.
+        #
+        # Moving `labeling` before the envelope (V-222) was not enough, and the
+        # test that proved it is the one that finally had power: 200 events of 240
+        # characters packs the budget to within ~130 bytes, and the telemetry key
+        # then pushed the record 102 bytes past the cap. The first attempt at this
+        # fixture used 1,900-character answers, whose leftover slack was wider
+        # than the overflow and hid it — an under-powered test replacing an
+        # under-powered test.
+        #
+        # Reserving rather than measuring, because the real counts depend on
+        # `kept`, which depends on this budget. The counts are five integers each
+        # bounded by MAX_EVENTS, so the worst case is exact and cheap.
+        envelope["reconcile_telemetry"] = {
+            "counts": dict.fromkeys(
+                ("carried", "superseded", "unmatched", "suppressed", "unparseable"),
+                MAX_EVENTS,
+            )
+        }
     budget = MAX_RECORD_BYTES - len(json.dumps(envelope).encode())
     kept: list[dict[str, Any]] = []
     used = 0
