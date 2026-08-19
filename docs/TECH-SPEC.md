@@ -62,6 +62,8 @@ All routes under `/api`, JSON, authenticated by a single bearer token
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/parse` | POST | `{text, answers?}` → spec or clarifying questions. `answers` carries responses to prior questions so the loop converges. |
+| `/api/runs/{id}/variant` | GET | Everything the spec screen needs to reopen a stored run on the dials: projected draft, spec, representability tier, locked field paths, carried conversation, costs, seed, and the parent's requested vs effective window. Costs nothing and commits to nothing — the credit is debited at submit. |
+| `/api/runs/{id}/argue-back` | POST | `{spec}` → the parent's own stored sensitivity cell for that exact edit, or `{"hit": null}`. Read-only and free: no engine call, no credit, no run, no write. Renders only what the stored sweep contains for the exact cell — no interpolation, no extension past the swept range. |
 | `/api/backtest` | POST | `{spec, seed?}` → `{run_id}`. Runs synchronously if estimated < 15 s (EOD single run), else enqueues; response includes `status`. |
 | `/api/runs/{id}` | GET | Full run: status, stats, honesty payload, verdict, trade log, equity/drawdown series, data window used. |
 | `/api/runs` | GET | Library list with compact trust levels. |
@@ -175,8 +177,12 @@ Runs automatically after every backtest, in stages (each stage emits a
    Output the matrix for the heatmap.
 5. **Multiple-testing correction:** deflated Sharpe ratio (Bailey &
    López de Prado) using `trial_counter` for this strategy family (family key:
-   underlying + structure). Every parse-to-run and every sweep value
-   increments trials. Report DSR and the plain-English implication.
+   underlying + structure). Every HUMAN-INITIATED RUN and every sweep value
+   increments trials (V-73: broadened from "every parse-to-run", which a
+   variant is not — it reopens a stored spec without parsing. Broadening the
+   rule rather than carving out a variant case matches HONESTY.md's
+   human-initiated framing and stops the next surface having to ask whether it
+   counts). Report DSR and the plain-English implication.
 6. **Regime & sample guardrail (guardrail #5):** compute VIX regime coverage
    (days in VIX <15 / 15–20 / >20 buckets) and trade count. If trades < 15 or
    only one regime bucket represented, `trust_cap = "insufficient_evidence"`.

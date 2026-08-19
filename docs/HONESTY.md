@@ -101,7 +101,14 @@ refused verdict (the auto-unlock queue) is the SAME spec on more data: no
 new parameter choice was made, so it does NOT bump the family's trial
 counter — it inherits the parent run's count (owner decision, 2026-07-05).
 Human-initiated runs always bump, including a human clicking re-run on the
-same spec. Auto re-runs are capped per night (`AUTO_RERUNS_PER_NIGHT`) and
+same spec, and including a VARIANT — a stored run reopened on the dials and
+resubmitted. A variant makes a new parameter choice by construction (the
+zero-edit guard refuses one that does not), it carries `origin="user"`, and it
+runs the full gauntlet from scratch with no parent output reused. So it bumps,
+through the same branch as any other human run and with no special case in the
+code. Copying a run to try one more parameter therefore makes the bar harder,
+not easier, which is the only honest arithmetic for a feature whose whole
+purpose is making that copy cheap. Auto re-runs are capped per night (`AUTO_RERUNS_PER_NIGHT`) and
 every one is labeled `origin=auto_unlock` in the runs table and
 "re-ran automatically" in the Library — provenance is never blurred.
 
