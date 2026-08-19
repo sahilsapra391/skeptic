@@ -34,6 +34,7 @@ strike is `atm`.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 # the seven structures the dials can build, and the leg count each implies.
@@ -330,6 +331,148 @@ def _extract_number(text: str) -> float | None:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def _pair_conversation(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mirrors `pairConversation` in frontend/components/results/how-built.tsx
+    exactly: an answer attaches to the first OPEN question sharing its id, and
+    otherwise stands alone.
+
+    Mirrored rather than reinvented, and the labels this module emits are
+    anchored on the ANSWER EVENT'S INDEX rather than on a position in this
+    list, so the two implementations never have to agree for a label to land on
+    the right card. If they ever diverge, the pairing changes and the anchor
+    does not.
+    """
+    out: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") == "question":
+            out.append({"question": event})
+            continue
+        if event.get("kind") != "answer":
+            continue
+        open_pair = next(
+            (
+                x
+                for x in out
+                if x.get("question", {}).get("id") == event.get("id") and "answer" not in x
+            ),
+            None,
+        )
+        if open_pair is not None:
+            open_pair["answer"] = event
+            open_pair["answer_index"] = index
+        else:
+            out.append({"answer": event, "answer_index": index})
+    return out
+
+
+def reconcile(
+    conversation: list[dict[str, Any]] | None,
+    diff_rows: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """V-200: which carried exchanges did this variant's edits supersede.
+
+    An exchange is SUPERSEDED when its recorded ANSWER, canonicalized, equals
+    the `parent` value of a row the user actually changed. Both sides go through
+    `canonical_token` (V-202), equality is exact after that, and there is no
+    fuzzy or nearest matching. Substring matching in particular is forbidden and
+    fenced by a test: measured against production, 14 unanchored answers
+    produced 80+ substring hits between them, because a prose answer containing
+    any digit matches every numeric field sharing that digit.
+
+    Diff-anchored, so only CHANGED rows are candidates. An answer equal to a
+    value that stayed put is history, not a supersession.
+
+    V-201, unique in BOTH directions. An answer matching two changed rows cannot
+    name which one it settled; two answers matching one row cannot say which
+    exchange the edit displaced. Either way nothing is marked and the
+    suppression is counted. Never guess, applied to values.
+
+    Emits ONLY superseded entries. Absence of an entry means STILL HOLDS, which
+    makes the safe state structural: a dropped field, an unhandled shape or a
+    serialization bug degrades to the brief's own fallback instead of to a false
+    claim on the provenance screen. NOT APPLICABLE is deliberately absent
+    (V-203): a locked field has no diff row, so finding one would mean scanning
+    unchanged values, which breaks diff-anchoring for a state measured at 1 run
+    in 99 whose real disclosure is the locked dial's own copy.
+
+    Counts, per V-204, are exchange-side and reported with the total they came
+    from, because a bare miss count is unreadable as a rate:
+
+        carried      exchanges in the conversation
+        superseded   uniquely matched, one row each
+        unmatched    an answer that canonicalized and matched no changed row
+        suppressed   exchanges dropped by the uniqueness rule
+        unparseable  an answer that could not be canonicalized at all
+
+    Changed fields with NO matching exchange are deliberately not counted: most
+    fields were never asked about, so that is the normal case, not a gap.
+    """
+    events = [e for e in (conversation or []) if isinstance(e, dict)]
+    rows = [r for r in (diff_rows or []) if isinstance(r, dict) and "field" in r]
+    pairs = _pair_conversation(events)
+
+    counts = {
+        "carried": len(pairs),
+        "superseded": 0,
+        "unmatched": 0,
+        "suppressed": 0,
+        "unparseable": 0,
+    }
+    if not pairs:
+        return {"labels": [], "counts": counts}
+
+    # index the changed rows by their parent value's canonical token
+    rows_by_token: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        token = canonical_token(r.get("parent"))
+        if token is not None:
+            rows_by_token.setdefault(token, []).append(r)
+
+    # candidate answers, and which rows each one could be talking about
+    candidates: list[tuple[int, str, list[dict[str, Any]]]] = []
+    for pair in pairs:
+        answer_event = pair.get("answer")
+        if answer_event is None:
+            continue
+        token = canonical_token(answer_event.get("answer"))
+        if token is None:
+            counts["unparseable"] += 1
+            continue
+        matched = rows_by_token.get(token, [])
+        if not matched:
+            counts["unmatched"] += 1
+            continue
+        candidates.append((pair["answer_index"], token, matched))
+
+    # V-201, both directions. An answer wanting more than one row is ambiguous;
+    # a row wanted by more than one answer is ambiguous for every answer in it.
+    contested: set[str] = {
+        token for token, n in Counter(t for _, t, _ in candidates).items() if n > 1
+    }
+
+    labels: list[dict[str, Any]] = []
+    for answer_index, token, matched in candidates:
+        if len(matched) > 1 or token in contested:
+            counts["suppressed"] += 1
+            continue
+        row = matched[0]
+        labels.append(
+            {
+                "answer_index": answer_index,
+                "state": "superseded",
+                "field": row["field"],
+                "parent": row.get("parent"),
+                "variant": row.get("variant"),
+            }
+        )
+        counts["superseded"] += 1
+
+    labels.sort(key=lambda label: label["answer_index"])
+    return {"labels": labels, "counts": counts}
 
 
 def _number_token(number: float) -> str:
