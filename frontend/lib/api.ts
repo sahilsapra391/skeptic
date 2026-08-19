@@ -225,6 +225,46 @@ export function getVariantDraft(runId: string): Promise<VariantDraftPayload> {
   return request<VariantDraftPayload>(`/api/runs/${runId}/variant`);
 }
 
+/** V-14: the parent's own stored sweep result for the edit now on the dials, or
+ *  null. Null is the ordinary answer — the parent's sweep did not run this exact
+ *  configuration, so there is nothing to say (V-231 prefers silence to a
+ *  nearest-neighbour guess). Costs nothing and commits to nothing. */
+export type ArgueBackHit = {
+  sweep: string;
+  /** null when one mutation moved several fields and no single dial is the
+   *  subject; `label` then names the sweep and `moved` says what it moved. */
+  field: string | null;
+  fields: string[];
+  label: string | null;
+  moved: string | null;
+  subject: "field" | "sweep";
+  tested_value: number;
+  tested_sharpe: number;
+  base_value: number;
+  base_sharpe: number;
+  classification: string | null;
+  cells: number;
+  /** V-243: the parent's Library name, from the same `_run_label` the carried-Q&A
+   *  header and the lineage line use. Never "your last run": on a chain the parent
+   *  may be several runs back. */
+  parent_label: string | null;
+  /** V-244: [lowest, highest] value the sweep tested. Shown only when the panel is
+   *  already visible, so it adds no claim about untested values — it tells the
+   *  reader the sweep had edges, which makes a later absence interpretable. */
+  range: [number, number];
+};
+
+export function getArgueBack(
+  runId: string,
+  spec: Record<string, unknown>,
+): Promise<{ hit: ArgueBackHit | null }> {
+  return request<{ hit: ArgueBackHit | null }>(`/api/runs/${runId}/argue-back`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ spec }),
+  });
+}
+
 export type StartResult = {
   run_id: string;
   demo: boolean;

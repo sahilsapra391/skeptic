@@ -1250,6 +1250,42 @@ def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
     }
 
 
+
+class ArgueBackRequest(BaseModel):
+    """The candidate variant spec, as the dials currently stand."""
+
+    spec: dict[str, Any]
+
+
+@router.post("/runs/{run_id}/argue-back")
+def argue_back(run_id: str, req: ArgueBackRequest, request: Request) -> dict[str, Any]:
+    """V-14: did the parent's sweep already run the edit the user is about to submit?
+
+    Read-only and free. It reads the parent's STORED sweep and returns that cell's
+    stored numbers, or nothing. No engine call, no credit, no run, no write — the
+    whole point is that this answer already exists and nobody has to pay to see it
+    again.
+
+    POST rather than GET because it carries a spec, not because it changes anything.
+
+    `{"hit": null}` is the ordinary answer and is not an error: it means the parent
+    never ran this configuration, so there is nothing to say (V-231 prefers silence
+    to a nearest-neighbour guess).
+    """
+    from app.api.argue_back import lookup
+
+    with db.session() as s:
+        run = s.get(db.Run, run_id)
+        if run is None or not run.spec_json:
+            raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+        _enforce_run_access(run, run_id, request)
+        parent_spec = json.loads(run.spec_json)
+        parent_stats = json.loads(run.stats_json) if run.stats_json else None
+        # V-243: the SAME label the variant endpoint and the lineage header use
+        parent_label = _run_label(run)
+
+    return {"hit": lookup(parent_spec, parent_stats, req.spec, parent_label)}
+
 @router.post("/runs/{run_id}/replay")
 def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:
     """On-demand verdict receipt (D3c, owner amendment 1): replay THIS

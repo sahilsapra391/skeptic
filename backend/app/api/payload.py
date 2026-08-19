@@ -319,17 +319,32 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
         )
 
     if report.dsr.dsr is not None and report.dsr.dsr < 0.5 and report.dsr.trials > 1:
+        # V-26: this is the ONE number the DSR line may cite, and it cites the real
+        # value INCLUDING sweep-incremented trials, said out loud. A reader who
+        # counts their own submitted runs and gets a smaller number would otherwise
+        # conclude the count is wrong; it is not, and the sweeps are the difference.
+        #
+        # No invented penalty and no moved threshold: the deflated Sharpe already
+        # accounts for every trial in that count, which is exactly why the count is
+        # quotable rather than alarming. And the lineage ordinal is NOT this number
+        # and never appears here — it is navigation, it carries no statistical
+        # claim, and two numbers about "how many times" on one screen must be
+        # unmistakable for each other.
         recs.append(
             (
-                f"This is try number {report.dsr.trials} at this kind of strategy — "
-                "the math says the good numbers now look more like luck than skill. "
-                "Best move: stop tweaking and let new market data decide."
+                f"This is try number {report.dsr.trials} at this kind of strategy, "
+                "counting the parameter sweeps the gauntlet ran on your behalf — "
+                "the math says the good numbers now look more like luck than skill, "
+                "and it has already priced those tries in. Best move: stop tweaking "
+                "and let new market data decide."
             )
             if retail
             else (
                 f"Deflated Sharpe {report.dsr.dsr:.2f} after {report.dsr.trials} trials "
-                "on this family — the remaining edge is likely mined. The recommendation "
-                "is restraint: stop tuning and let new data arrive."
+                "on this family to date, including parameter sweeps — the deflated "
+                "Sharpe already accounts for them. The remaining edge is likely "
+                "mined; the recommendation is restraint: stop tuning and let new data "
+                "arrive."
             )
         )
 

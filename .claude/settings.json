@@ -14,6 +14,13 @@
           },
           {
             "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/staged-scope.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking the staged file list..."
+          },
+          {
+            "type": "command",
             "if": "Bash(git push *)",
             "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/pointer-sha-ancestor.sh\"",
             "timeout": 15,

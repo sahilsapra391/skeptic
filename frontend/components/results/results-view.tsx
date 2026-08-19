@@ -105,12 +105,16 @@ const HINT_TRADES: HintPair = [
 ];
 
 const HINT_RECS: HintPair = [
+  // V-26: the trial count named anywhere on this screen is the FAMILY TRIAL
+  // counter, and it includes the sweeps the gauntlet ran. A variant's lineage
+  // ordinal is a different number with a different meaning and never appears here.
   "Each suggestion comes from this run's own gauntlet numbers — the sensitivity sweeps " +
     "really re-ran the engine. Nothing here is opinion, and acting on one starts " +
-    "a new trial that the deflated Sharpe will count against you.",
+    "a new trial the deflated Sharpe will count, alongside the sweep trials it " +
+    "already counted.",
   "Every suggestion comes from tests we actually ran on this exact strategy — " +
     "nothing is opinion. But each retry makes good-looking numbers a little less " +
-    "trustworthy, and the math keeps score.",
+    "trustworthy, and the math keeps score — including the tests it ran itself.",
 ];
 
 const pick = (pair: HintPair, retail: boolean) => (retail ? pair[1] : pair[0]);
