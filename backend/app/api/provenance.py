@@ -31,6 +31,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+from app.api.field_labels import label_for, label_rows
 from app.api.payload import FILL_MODEL
 from app.api.variant import reconcile
 from app.engine.types import RunResult
@@ -142,7 +143,22 @@ def creation_record(
         # V-133's window state.
         record["carried_from"] = parent_run_id
     if what_changed is not None:
-        record["what_changed"] = what_changed
+        # V-208: the stored rows carry a human label so the WHAT CHANGED list and
+        # the SUPERSEDED marker name fields the same way. Paths are untouched and
+        # still present on every row: the label is an added caption, and a row
+        # with no label renders its path, which is always correct.
+        #
+        # Applied HERE and not in diff_specs, because the diff is a contract
+        # (V-164) read by the lock check and the zero-edit guard, and a caption
+        # has no business in it. The stored provenance record is the presentation
+        # artifact, so this is where presentation belongs.
+        labelled, unlabeled = label_rows(what_changed)
+        record["what_changed"] = labelled
+        # the table's gaps report themselves rather than waiting to be noticed —
+        # the V-204 posture applied to labels. Counted where the table is
+        # APPLIED rather than where it renders: a browser cannot write to the
+        # server's tally, and the set of gaps is identical either way.
+        record["labeling"] = {"rows": len(labelled), "unlabeled": unlabeled}
     if not isinstance(client, dict):
         # a submitter that captured nothing (curl, an old client) — the
         # record still marks WHEN recording started, so a missing
@@ -195,7 +211,12 @@ def creation_record(
     record["conversation"] = kept
     if "reconciliation" in record:
         # exact, against what a reader will actually see
-        record["reconciliation"] = reconcile(kept, what_changed or [])
+        resolved = reconcile(kept, what_changed or [])
+        for entry in resolved["labels"]:
+            label = label_for(str(entry.get("field", "")))
+            if label:
+                entry["label"] = label
+        record["reconciliation"] = resolved
     if dropped:
         record["truncated"] = {"dropped_events": dropped}
     return json.dumps(record)

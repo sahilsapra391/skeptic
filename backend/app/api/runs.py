@@ -803,13 +803,26 @@ def backtest(
         # only measure of how often value-matching cannot explain a carried
         # exchange. It goes to the log, never to the UI (a user seeing "we could
         # not map your question" learns nothing they can act on).
-        counts = (json.loads(provenance_blob).get("reconciliation") or {}).get("counts")
+        stored = json.loads(provenance_blob)
+        counts = (stored.get("reconciliation") or {}).get("counts")
         if counts:
             log.info(
                 "variant reconcile: %d carried, %d superseded, %d unmatched, "
                 "%d suppressed, %d unparseable (parent %s)",
                 counts["carried"], counts["superseded"], counts["unmatched"],
                 counts["suppressed"], counts["unparseable"], req.parent_run_id,
+            )
+        # V-208: separate line, because it counts a different thing and fires on
+        # runs the reconciler never sees. A variant whose parent recorded no
+        # conversation has no exchanges to reconcile and still has fields to
+        # label, and that is the common case rather than the edge (measured: of
+        # 99 production runs, 9 carry a conversation at all).
+        labeling = stored.get("labeling")
+        if labeling and labeling["unlabeled"]:
+            log.info(
+                "variant labels: %d of %d changed fields have no label — "
+                "add them to app/api/field_labels.py (parent %s)",
+                labeling["unlabeled"], labeling["rows"], req.parent_run_id,
             )
     # V-172: the ordinal race (two tabs submitting variants of one root
     # at the same moment) retries ONCE with a fresh transaction — the

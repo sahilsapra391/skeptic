@@ -86,30 +86,55 @@ function pairConversation(events: ProvenanceEvent[]): Exchange[] {
   return out;
 }
 
-/** V-200's one line, in section 5's register on purpose.
+const showValue = (v: unknown) =>
+  v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
+
+/** V-208: the field's name, with its path as a secondary.
  *
- *  The brief renders this as "profit target 50% to 35%", which would need a
- *  path-to-prose table. The same field also appears verbatim in WHAT CHANGED
- *  further down the page, and a reader who sees "profit target" here and
- *  `exit.profit_target_pct` there cannot connect them. One vocabulary on one
- *  screen beats a prettier sentence, and it is a table that cannot rot. */
+ *  ONE component for both surfaces that name a field — the SUPERSEDED marker and
+ *  WHAT CHANGED — so the reader connects them instead of translating between a
+ *  prose label in one place and a path in the other. The label comes from the
+ *  single server-side table; when a path has no entry the path itself is the
+ *  label, which is correct rather than degraded, and the gap was already counted
+ *  server-side so the table's holes report themselves.
+ *
+ *  The path stays visible because it is the authority: it is what the diff
+ *  contract pins (V-164), what the reconciler matched on, and what someone
+ *  reading a stored record or an API payload will see. Dimmed and smaller, so it
+ *  is available without being what you read first. */
+function FieldName({ field, label }: { field: string; label?: string }) {
+  if (!label) return <span className="font-mono text-[11.5px] text-ink-3">{field}</span>;
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5" title={field}>
+      <span className="text-[13px] text-ink-2">{label}</span>
+      <span className="font-mono text-[10.5px] text-ink-4">{field}</span>
+    </span>
+  );
+}
+
+function ValueChange({ parent, variant }: { parent: unknown; variant: unknown }) {
+  return (
+    <>
+      <span className="font-mono text-[12.5px] text-ink-3 line-through decoration-line">
+        {showValue(parent)}
+      </span>
+      <span className="font-mono text-[11px] text-ink-4">→</span>
+      <span className="font-mono text-[12.5px] font-semibold text-ink">
+        {showValue(variant)}
+      </span>
+    </>
+  );
+}
+
 function SupersededLine({ label }: { label: Superseded }) {
-  const show = (v: unknown) =>
-    v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
   return (
     <div className="mt-3 border-t border-trust-border pt-2.5">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
         <span className="font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4">
           SUPERSEDED ON THIS RUN
         </span>
-        <span className="font-mono text-[11px] text-ink-4">{label.field}</span>
-        <span className="font-mono text-[12.5px] text-ink-3 line-through decoration-line">
-          {show(label.parent)}
-        </span>
-        <span className="font-mono text-[11px] text-ink-4">→</span>
-        <span className="font-mono text-[12.5px] font-semibold text-ink">
-          {show(label.variant)}
-        </span>
+        <FieldName field={label.field} label={label.label} />
+        <ValueChange parent={label.parent} variant={label.variant} />
       </div>
     </div>
   );
@@ -378,22 +403,16 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
 function WhatChanged({ prov }: { prov: RunProvenance }) {
   const rows = prov.what_changed;
   if (!rows || rows.length === 0) return null;
-  const show = (v: unknown) =>
-    v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
   return (
     <div className={`${PANEL} px-5 py-4`}>
       <div className={`${LABEL} mb-3`}>WHAT CHANGED — VS THE PARENT RUN</div>
       <div className="flex flex-col gap-2">
+        {/* V-208: same FieldName and ValueChange the SUPERSEDED marker uses, so a
+            field reads identically in both places on this page */}
         {rows.map((r) => (
           <div key={r.field} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <span className="font-mono text-[11px] text-ink-4">{r.field}</span>
-            <span className="font-mono text-[13px] text-ink-3 line-through decoration-line">
-              {show(r.parent)}
-            </span>
-            <span className="font-mono text-[11px] text-ink-4">→</span>
-            <span className="font-mono text-[13px] font-semibold text-ink">
-              {show(r.variant)}
-            </span>
+            <FieldName field={r.field} label={r.label} />
+            <ValueChange parent={r.parent} variant={r.variant} />
           </div>
         ))}
       </div>
