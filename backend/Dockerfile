@@ -10,10 +10,11 @@
 # Resolved with `docker buildx imagetools inspect python:3.13-slim` on 2026-08-18.
 #   python:3.13-slim -> sha256:ffb752e1...c6e30a
 #
-# NOTE: this pins the RUNTIME PYTHON at 3.13 while CI tests on 3.12
-# (`requires-python = ">=3.12"`, ci.yml python-version 3.12). Production has
-# always run a Python that CI never exercises; the pin freezes that mismatch
-# rather than creating it, and it deserves its own change.
+# The runtime Python is 3.13 and that is the DECIDED target (V-235), not a drift.
+# CI moves to 3.13 to match; testing on an interpreter production does not run is
+# the false-green shape at the platform layer. CI was in fact the only 3.12 in the
+# system: `requires-python` is ">=3.12", so uv resolves 3.13 locally, and every
+# test run through A2 was already a 3.13 result.
 FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
 
 # uv comes from PyPI, pinned, and NOT from ghcr.io.

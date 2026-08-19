@@ -61,6 +61,14 @@ skeptic/
     on purpose until that command is next touched: rewriting a documented
     command without running it first is the same mistake pointing the other way
     (V-198).
+  - **Stage by explicit path, and read `git status` before writing the message
+    (V-234).** `git add -A` left the documented workflow: it swept an
+    uncommitted Dockerfile edit from an abandoned branch into a commit about
+    provenance, which merged and reached production unreviewed (V-232). Messages
+    get written from intent; commits get built from the tree. On any branch that
+    has shared a working tree with another branch, look at `git status` output
+    before committing. `.claude/hooks/staged-scope.sh` now blocks the specific
+    case, but the habit is the point.
   - **A guard that greps prose dies when the prose is edited (V-221).** The
     pointer-sha hook keyed on the words "last synced" and was silently disabled
     within a day by a commit that reworded that sentence; one push went out
