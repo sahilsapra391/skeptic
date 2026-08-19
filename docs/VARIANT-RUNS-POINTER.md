@@ -28,7 +28,7 @@ brief does not cover, resolve it that way.
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
 | PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
 | PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | merged in #146 |
-| PR-B | The argue-back: exact-cell sensitivity lookup at the confirm step, the DSR's sweep disclosure, and the three-counter separation | **complete, in review** |
+| PR-B | The argue-back: exact-cell sensitivity lookup at the confirm step, the DSR's sweep disclosure, and the three-counter separation | merged in #153 |
 
 **PR-B's opening constraints are settled (V-229 to V-231):** field identity comes
 from the V-208 table and nowhere else; the DSR line, the lineage ordinal and
@@ -144,6 +144,21 @@ at the seam, and read it as the scheme working rather than as drift.
 
 ## The phase is closed
 
+**The retrospective was amended after close (V-247a/b/c):** the incident family is six
+members, not five, with a floor caveat and the V-149/V-151 pair marked as its strongest
+evidence (same fault on both sides of a gate being installed). The earned constants
+became a table with a population, derivation and DATE each, which immediately caught
+one of them drifting — "9 of 99 runs carrying a conversation" re-checked at 11 of 101
+within hours. The two ungated family members are the next phase's first infrastructure
+item. Amendments live in the brief; this pointer names them so a repo-only reader is
+not working from the pre-amendment text.
+
+**Secrets (V-250):** two were exposed in this phase's transcript, neither committed, and
+the owner decided on 2026-08-19 not to rotate yet. That is recorded as a decision with a
+trigger, not a pending task, and the trigger lives in
+[`LAUNCH-CHECKLIST.md`](LAUNCH-CHECKLIST.md) — rotate both before the database holds
+anyone but the owner.
+
 The **retrospective** is the final entry in the brief's learnings: the yield tables
 (13.0% killed the marker, 98.8% shipped the argue-back), the five-member incident
 family, the earned constants with derivations, and the one-sentence lesson —
@@ -163,38 +178,19 @@ flag.
 
 ## Live IDs
 
-<!-- last-synced-sha: 4260d68 -->
+<!-- last-synced-sha: 1f9a803 -->
 
-> **Last synced: PR #146 (PR-A2), through its merge commit `4260d68`.**
-> Stamped by the first commit after #146 merged, which is the one-step handoff A1
-> used and for the same structural reason: a branch cannot name the merge that has
-> not happened yet. The handoff is now guarded rather than remembered — V-184's
-> hook reads the `last-synced-sha` anchor above and refuses a push whose stamped
-> sha is missing, unresolvable, or not an ancestor, and V-221 rebuilt it to key on
-> that anchor instead of this prose after a rewording killed the first version. The marker deliberately keeps a
-> real, reachable sha. The sha the hook actually reads is the
-> `last-synced-sha` anchor directly above this block, NOT this prose: V-221
-> records what happened when the hook grepped the prose instead and a rewording
-> killed it. Update the anchor and this sentence together; the anchor is the one
-> that is enforced.
-> The marker now names the **merge commit of the closed PR**, not a commit on
-> the PR branch. That is the change worth noticing: a sha on the branch could
-> not be written until the commit after the sync landed, and that one-commit
-> lag is exactly what produced an orphaned marker when a `--amend` rewrote the
-> stamped commit underneath it. A merge commit is nameable at the moment the
-> index is being synced, so there is no lag left to get wrong. Per V-136 the
-> sha is copied from `git rev-parse`, never typed from recall, and **V-184's
-> `.claude/hooks/pointer-sha-ancestor.sh` now enforces on every push that this
-> sha both exists and is an ancestor of the pushed tip** — the rule stopped
-> being something to remember.
-> This list is a
-> duplicate of the brief's section 9, kept here only because a repo-only
-> session cannot read `Projects Misc/`. Per V-87 both are updated in the
-> **same commit** at PR close, and per V-136 the sha above is copied from the
-> commit, never typed from recall. **If you are reading this with merged PRs
-> past #145, assume this index is stale and go read the brief** — that
-> duplication is exactly how it drifted the first time, so the marker is the
-> drift detector.
+> **Last synced: PR #153 (PR-B), through its merge commit `1f9a803`.**
+> Stamped by the first commit after #153 merged — the one-step handoff, for the
+> third and last time this phase, and the only one of the three that was guarded
+> rather than remembered. The sha the hook reads is the `last-synced-sha` anchor
+> above, not this prose: V-221 records what happened when it grepped the prose
+> instead and a rewording killed it. Update the anchor and this sentence
+> together; the anchor is the enforced one.
+>
+> **The variant-runs phase is closed.** PR-0, A1, A2 and B are all merged. The
+> brief's learnings carry the retrospective and the deferred ledger; read those
+> before opening anything that touches this surface.
 
 V-02 V-03 V-04 V-05 V-06 V-07 V-08 V-09 V-10 V-12 V-13 V-14 V-16 V-17
 V-18 V-19 V-20 V-21 V-22 V-23 V-24 V-25 V-26 V-27 V-28 V-29 V-30 V-31
@@ -215,7 +211,9 @@ V-200 V-201 V-202 V-203 V-204 V-205 V-206 V-207 V-208 V-209 V-210 V-211
 V-212 V-213 V-214 V-215 V-216 V-217 V-218 V-219 V-220 V-221 V-222 V-223
 V-224 V-225 V-226 V-227 V-228 V-229 V-230 V-231 V-232 V-233 V-234 V-235
 V-236 V-237 V-238 V-239 V-240 V-241 V-242 V-243 V-244 V-245 V-246 V-247
-V-248
+V-248 V-249 V-250 V-251
+
+**The V-series closes at V-251.** The next phase opens its own sequence.
 
 Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
 not buildable; value matching replaces it). **V-30 by V-203 and V-213**, in both
