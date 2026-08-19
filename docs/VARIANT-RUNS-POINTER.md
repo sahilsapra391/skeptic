@@ -144,6 +144,21 @@ at the seam, and read it as the scheme working rather than as drift.
 
 ## The phase is closed
 
+**The retrospective was amended after close (V-247a/b/c):** the incident family is six
+members, not five, with a floor caveat and the V-149/V-151 pair marked as its strongest
+evidence (same fault on both sides of a gate being installed). The earned constants
+became a table with a population, derivation and DATE each, which immediately caught
+one of them drifting — "9 of 99 runs carrying a conversation" re-checked at 11 of 101
+within hours. The two ungated family members are the next phase's first infrastructure
+item. Amendments live in the brief; this pointer names them so a repo-only reader is
+not working from the pre-amendment text.
+
+**Secrets (V-250):** two were exposed in this phase's transcript, neither committed, and
+the owner decided on 2026-08-19 not to rotate yet. That is recorded as a decision with a
+trigger, not a pending task, and the trigger lives in
+[`LAUNCH-CHECKLIST.md`](LAUNCH-CHECKLIST.md) — rotate both before the database holds
+anyone but the owner.
+
 The **retrospective** is the final entry in the brief's learnings: the yield tables
 (13.0% killed the marker, 98.8% shipped the argue-back), the five-member incident
 family, the earned constants with derivations, and the one-sentence lesson —
