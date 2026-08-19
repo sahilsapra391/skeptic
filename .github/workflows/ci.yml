@@ -34,6 +34,55 @@ jobs:
   # instead of at the 2 AM nightly ledger — if that chain ever grows a
   # dependency the collector env doesn't ship (the resolution-map rebuild
   # the self-improvement loop depends on rides on this import).
+  # The deploy image had never been built by anything except Railway itself.
+  # That gap is why a container which cannot start reached production twice:
+  # the backend job below runs on local SQLite, where the migration guard cannot
+  # fire, and nothing anywhere built the artifact that actually ships. This job
+  # builds it on every PR, on linux/amd64, from a clean checkout with no cache,
+  # which is Railway's platform and Railway's cache state.
+  #
+  # It builds and boots. Building only proves the Dockerfile parses; booting
+  # proves the thing Railway's healthcheck asks, which is whether the process
+  # binds a port and answers. DATABASE_URL is left unset so the container runs
+  # on ephemeral SQLite and needs no secret.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build the deploy image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          no-cache: true
+          tags: skeptic-backend:ci
+      - name: the migration flag the deploy path must set
+        # V-149's guard refuses a remote migration without this and raises at
+        # import, so an image missing it cannot start on Railway. Checked here
+        # against the built image, not against the Dockerfile's text.
+        run: |
+          value=$(docker run --rm skeptic-backend:ci printenv SKEPTIC_ALLOW_REMOTE_MIGRATION)
+          echo "SKEPTIC_ALLOW_REMOTE_MIGRATION=$value"
+          test "$value" = "1"
+      - name: it binds a port and answers a healthcheck
+        run: |
+          docker run -d --name ci-boot -p 8000:8000 -e PORT=8000 skeptic-backend:ci
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /tmp/health.json -w "%{http_code}" http://localhost:8000/api/health || true)
+            [ "$code" = "200" ] && { echo "healthy after ${i}s"; cat /tmp/health.json; exit 0; }
+            sleep 1
+          done
+          echo "NEVER BECAME HEALTHY — this is the Railway failure, caught pre-merge"
+          docker logs ci-boot 2>&1 | tail -40
+          exit 1
+      - name: stop
+        if: always()
+        run: docker rm -f ci-boot || true
+
   collector-import:
     runs-on: ubuntu-latest
     defaults:
