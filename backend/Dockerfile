@@ -1,9 +1,18 @@
 # Skeptic backend — Railway deploy (BUILD-PLAN M6).
 # uv-based build; runs uvicorn on Railway's injected $PORT.
 
-FROM python:3.13-slim
+# Both base images are pinned by DIGEST, not by tag. `python:3.13-slim` and
+# `ghcr.io/astral-sh/uv:latest` are moving tags on external registries, pulled
+# fresh on every build, which means the deploy could change underneath us
+# without a commit and a build could fail for reasons no one here authored.
+# Update these deliberately, the same way a lockfile is updated.
+#
+# Resolved with `docker buildx imagetools inspect <tag>` on 2026-08-18.
+#   python:3.13-slim            -> sha256:ffb752e1...c6e30a
+#   ghcr.io/astral-sh/uv:latest -> sha256:e85be844...8f174b1
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
