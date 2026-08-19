@@ -28,7 +28,7 @@ brief does not cover, resolve it that way.
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
 | PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
 | PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | merged in #146 |
-| PR-B | The argue-back: exact-cell sensitivity lookup at the confirm step, the DSR's sweep disclosure, and the three-counter separation | **complete, in review** |
+| PR-B | The argue-back: exact-cell sensitivity lookup at the confirm step, the DSR's sweep disclosure, and the three-counter separation | merged in #153 |
 
 **PR-B's opening constraints are settled (V-229 to V-231):** field identity comes
 from the V-208 table and nowhere else; the DSR line, the lineage ordinal and
@@ -163,38 +163,19 @@ flag.
 
 ## Live IDs
 
-<!-- last-synced-sha: 4260d68 -->
+<!-- last-synced-sha: 1f9a803 -->
 
-> **Last synced: PR #146 (PR-A2), through its merge commit `4260d68`.**
-> Stamped by the first commit after #146 merged, which is the one-step handoff A1
-> used and for the same structural reason: a branch cannot name the merge that has
-> not happened yet. The handoff is now guarded rather than remembered — V-184's
-> hook reads the `last-synced-sha` anchor above and refuses a push whose stamped
-> sha is missing, unresolvable, or not an ancestor, and V-221 rebuilt it to key on
-> that anchor instead of this prose after a rewording killed the first version. The marker deliberately keeps a
-> real, reachable sha. The sha the hook actually reads is the
-> `last-synced-sha` anchor directly above this block, NOT this prose: V-221
-> records what happened when the hook grepped the prose instead and a rewording
-> killed it. Update the anchor and this sentence together; the anchor is the one
-> that is enforced.
-> The marker now names the **merge commit of the closed PR**, not a commit on
-> the PR branch. That is the change worth noticing: a sha on the branch could
-> not be written until the commit after the sync landed, and that one-commit
-> lag is exactly what produced an orphaned marker when a `--amend` rewrote the
-> stamped commit underneath it. A merge commit is nameable at the moment the
-> index is being synced, so there is no lag left to get wrong. Per V-136 the
-> sha is copied from `git rev-parse`, never typed from recall, and **V-184's
-> `.claude/hooks/pointer-sha-ancestor.sh` now enforces on every push that this
-> sha both exists and is an ancestor of the pushed tip** — the rule stopped
-> being something to remember.
-> This list is a
-> duplicate of the brief's section 9, kept here only because a repo-only
-> session cannot read `Projects Misc/`. Per V-87 both are updated in the
-> **same commit** at PR close, and per V-136 the sha above is copied from the
-> commit, never typed from recall. **If you are reading this with merged PRs
-> past #145, assume this index is stale and go read the brief** — that
-> duplication is exactly how it drifted the first time, so the marker is the
-> drift detector.
+> **Last synced: PR #153 (PR-B), through its merge commit `1f9a803`.**
+> Stamped by the first commit after #153 merged — the one-step handoff, for the
+> third and last time this phase, and the only one of the three that was guarded
+> rather than remembered. The sha the hook reads is the `last-synced-sha` anchor
+> above, not this prose: V-221 records what happened when it grepped the prose
+> instead and a rewording killed it. Update the anchor and this sentence
+> together; the anchor is the enforced one.
+>
+> **The variant-runs phase is closed.** PR-0, A1, A2 and B are all merged. The
+> brief's learnings carry the retrospective and the deferred ledger; read those
+> before opening anything that touches this surface.
 
 V-02 V-03 V-04 V-05 V-06 V-07 V-08 V-09 V-10 V-12 V-13 V-14 V-16 V-17
 V-18 V-19 V-20 V-21 V-22 V-23 V-24 V-25 V-26 V-27 V-28 V-29 V-30 V-31
