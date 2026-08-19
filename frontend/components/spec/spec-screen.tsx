@@ -947,7 +947,21 @@ export function SpecScreen({
       {argueBack && (
         <div className="mt-5 rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
           <div className="font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
-            YOUR LAST RUN ALREADY TESTED THIS
+            {/* V-243: name the PARENT, not "your last run" — on a chain the parent
+                may be several runs back, and this is the same label the carried
+                Q&A header and the lineage line use, so the three can never
+                disagree about which run is speaking. */}
+            {argueBack.parent_label
+              ? `${argueBack.parent_label.toUpperCase()} ALREADY TESTED THIS`
+              : "THE ORIGINAL RUN ALREADY TESTED THIS"}
+          </div>
+          {/* V-244: the range this sweep speaks for. Only ever rendered when the
+              panel is already up, so it makes no claim about untested values; it
+              tells the reader the sweep had edges, which is what makes the panel's
+              next absence interpretable rather than mysterious. */}
+          <div className="mt-1 font-mono text-[11px] text-ink-4">
+            from a sweep of {argueBack.label ?? argueBack.field} across{" "}
+            {argueBack.range[0]}–{argueBack.range[1]}
           </div>
           <div className="mt-2 text-[14.5px] leading-[1.5] text-ink-2">
             {/* V-240: two different sentences for two different situations. When one
@@ -956,16 +970,14 @@ export function SpecScreen({
                 sweep never ran. */}
             {argueBack.subject === "field" ? (
               <>
-                The sweep on <span className="font-semibold text-ink">{argueBack.label ?? argueBack.field}</span>{" "}
-                ran <span className="font-mono">{argueBack.tested_value}</span> and scored a Sharpe of{" "}
+                It ran <span className="font-mono">{argueBack.tested_value}</span> and scored a Sharpe of{" "}
                 <span className="font-mono font-semibold text-ink">{argueBack.tested_sharpe.toFixed(2)}</span>,
                 against <span className="font-mono">{argueBack.base_sharpe.toFixed(2)}</span> at{" "}
                 <span className="font-mono">{argueBack.base_value}</span>.
               </>
             ) : (
               <>
-                The sweep on <span className="font-semibold text-ink">{argueBack.label}</span> ran{" "}
-                <span className="font-mono">{argueBack.tested_value}</span> and scored a Sharpe of{" "}
+                It ran <span className="font-mono">{argueBack.tested_value}</span> and scored a Sharpe of{" "}
                 <span className="font-mono font-semibold text-ink">{argueBack.tested_sharpe.toFixed(2)}</span>,
                 against <span className="font-mono">{argueBack.base_sharpe.toFixed(2)}</span> at{" "}
                 <span className="font-mono">{argueBack.base_value}</span>. It{" "}

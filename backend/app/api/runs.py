@@ -1281,8 +1281,10 @@ def argue_back(run_id: str, req: ArgueBackRequest, request: Request) -> dict[str
         _enforce_run_access(run, run_id, request)
         parent_spec = json.loads(run.spec_json)
         parent_stats = json.loads(run.stats_json) if run.stats_json else None
+        # V-243: the SAME label the variant endpoint and the lineage header use
+        parent_label = _run_label(run)
 
-    return {"hit": lookup(parent_spec, parent_stats, req.spec)}
+    return {"hit": lookup(parent_spec, parent_stats, req.spec, parent_label)}
 
 @router.post("/runs/{run_id}/replay")
 def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[str, Any]:

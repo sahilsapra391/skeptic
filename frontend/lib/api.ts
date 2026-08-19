@@ -244,6 +244,14 @@ export type ArgueBackHit = {
   base_sharpe: number;
   classification: string | null;
   cells: number;
+  /** V-243: the parent's Library name, from the same `_run_label` the carried-Q&A
+   *  header and the lineage line use. Never "your last run": on a chain the parent
+   *  may be several runs back. */
+  parent_label: string | null;
+  /** V-244: [lowest, highest] value the sweep tested. Shown only when the panel is
+   *  already visible, so it adds no claim about untested values — it tells the
+   *  reader the sweep had edges, which makes a later absence interpretable. */
+  range: [number, number];
 };
 
 export function getArgueBack(

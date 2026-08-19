@@ -61,6 +61,13 @@ skeptic/
     on purpose until that command is next touched: rewriting a documented
     command without running it first is the same mistake pointing the other way
     (V-198).
+  - **Confirm the serving process postdates the code (V-245).** A dev server
+    without `--reload` that predates the route under test returns 404 for an
+    endpoint that exists, and the client code is blameless. Before debugging an
+    endpoint as broken, check that the process was started after the code was
+    written. Fifth in this family and the same lie every time: the machine
+    reporting on work it never loaded (the console-script shim, the relative
+    `cd`, the prose-grepping guard, `git add -A`, and now a stale process).
   - **Stage by explicit path, and read `git status` before writing the message
     (V-234).** `git add -A` left the documented workflow: it swept an
     uncommitted Dockerfile edit from an abandoned branch into a commit about

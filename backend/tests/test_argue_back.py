@@ -362,3 +362,44 @@ class TestTheEndpoint:
     def test_a_missing_run_is_404(self, client) -> None:
         r = client.post("/api/runs/nope/argue-back", json={"spec": {}})
         assert r.status_code == 404
+
+
+class TestItNamesTheParentAndItsRange:
+    """V-243 and V-244."""
+
+    def test_the_parent_is_named_by_the_shared_label(self) -> None:
+        """V-243: one naming convention. "your last run" is false on any chain
+        deeper than one, and the argue-back, the carried Q&A header and the lineage
+        line must never disagree about which run is speaking."""
+        spec, stats = _parent()
+        spec = _with(spec, **{"exit.profit_target_pct": 50.0})
+        hit = lookup(
+            spec, stats, _with(spec, **{"exit.profit_target_pct": 55.0}),
+            "SPY 30-delta weekly short put",
+        )
+        assert hit["parent_label"] == "SPY 30-delta weekly short put"
+
+    def test_a_parent_with_no_label_degrades_to_none(self) -> None:
+        spec, stats = _parent()
+        spec = _with(spec, **{"exit.profit_target_pct": 50.0})
+        hit = lookup(spec, stats, _with(spec, **{"exit.profit_target_pct": 55.0}))
+        assert hit["parent_label"] is None, "the renderer falls back, the payload does not invent"
+
+    def test_the_range_is_the_swept_extremes_only(self) -> None:
+        """V-244: edges, not a value list. Listing every tested value was the
+        rejected mitigation, because it implies neighbours inform, which is
+        interpolation by suggestion."""
+        spec, stats = _parent()
+        spec = _with(spec, **{"exit.profit_target_pct": 50.0})
+        hit = lookup(spec, stats, _with(spec, **{"exit.profit_target_pct": 55.0}))
+        assert hit["range"] == [40.0, 60.0]
+
+    def test_the_endpoint_passes_the_label_through(self, client, seeded_parent) -> None:
+        parent_id, parent_spec = seeded_parent
+        r = client.post(
+            f"/api/runs/{parent_id}/argue-back",
+            json={"spec": _with(parent_spec, **{"exit.profit_target_pct": 55.0})},
+        )
+        hit = r.json()["hit"]
+        assert "parent_label" in hit, "the label must reach the client from the run row"
+        assert hit["range"] == [40.0, 60.0]

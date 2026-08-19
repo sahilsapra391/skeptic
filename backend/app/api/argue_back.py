@@ -106,6 +106,7 @@ def lookup(
     parent_spec: dict[str, Any],
     parent_stats: dict[str, Any] | None,
     variant_spec: dict[str, Any],
+    parent_label: str | None = None,
 ) -> dict[str, Any] | None:
     """The parent's stored result for this exact edit, or None.
 
@@ -206,5 +207,20 @@ def lookup(
                 # test pins each class to its own rendering.
                 "subject": "field" if field is not None else "sweep",
                 "moved": None if field is not None else _SWEEP_MOVED.get(str(name)),
+                # V-243: the evidence is the PARENT'S, so the copy names the parent
+                # the way every other citation of it does — its Library name, via
+                # _run_label. "your last run" is false on any chain deeper than one:
+                # variant 3's parent may be several runs back. One naming convention
+                # everywhere the parent is cited means the argue-back, the carried
+                # Q&A header and the lineage line cannot disagree about which run is
+                # speaking.
+                "parent_label": parent_label,
+                # V-244: the range the sweep speaks for. Rendered only when the panel
+                # is ALREADY visible, so it adds no claim about untested values — it
+                # tells a reader the sweep had edges, which makes the panel's next
+                # absence interpretable from memory instead of mysterious. Absence
+                # itself still renders nothing; listing every tested value was the
+                # rejected fix, because it implies neighbours inform.
+                "range": [float(min(values)), float(max(values))],
             }
     return None
