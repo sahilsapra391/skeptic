@@ -3,7 +3,19 @@
 
 FROM python:3.13-slim
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# uv comes from PyPI, not from ghcr.io.
+#
+# This used to be `COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/`, which
+# made every build depend on a SECOND registry, and on an unpinned `:latest` tag
+# there. When Railway began failing at "building the image" and hanging before it
+# failed, a registry it cannot reach was the hypothesis that fit: the same inputs
+# built and booted fine on GitHub's amd64 runners from a clean checkout, three
+# times, so the Dockerfile was not the thing breaking.
+#
+# PyPI is a registry this build already depends on for every other dependency, so
+# this removes a failure domain rather than trading one for another. Pinned,
+# because an unpinned build tool is the same class of problem as an unpinned base.
+RUN pip install --no-cache-dir uv==0.12.5
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

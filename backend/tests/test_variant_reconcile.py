@@ -181,3 +181,61 @@ class TestShape:
             "unparseable",
         }
         assert result["counts"]["carried"] == 1
+
+
+class TestStoredInProvenance:
+    """The reconciliation is computed at creation and stored, never recomputed
+    per page view (V-13's rule: no later reader redoes the comparison)."""
+
+    def _record(self, conversation, what_changed):
+        import json
+
+        from app.api.provenance import creation_record
+
+        return json.loads(
+            creation_record(
+                {"source": "text", "prompt": "sell puts", "conversation": conversation},
+                "user",
+                "parent123",
+                None,
+                what_changed=what_changed,
+            )
+        )
+
+    def test_the_record_carries_the_labels(self) -> None:
+        record = self._record(
+            [q("pt", "Profit target?"), a("pt", "50")],
+            [row("exit.profit_target_pct", 50, 35)],
+        )
+        assert record["reconciliation"]["labels"][0]["field"] == "exit.profit_target_pct"
+        assert record["reconciliation"]["counts"]["superseded"] == 1
+
+    def test_a_non_variant_run_has_no_reconciliation(self) -> None:
+        """Nothing to reconcile against, so the key is absent rather than empty.
+        A renderer keying off its presence must not see one on a fresh run."""
+        record = self._record([q("pt"), a("pt", "50")], None)
+        assert "reconciliation" not in record
+
+    def test_the_index_refers_to_the_conversation_AS_STORED(self) -> None:
+        """The regression this design exists to prevent.
+
+        `_clean_conversation` drops events that are neither question nor answer,
+        so an index taken from the client's raw list points at a different event
+        once anything is filtered. Here a junk event sits at raw index 0, which
+        shifts the answer from raw index 2 to stored index 1. A label saying 2
+        would attach the SUPERSEDED marker to the wrong card, which is a false
+        statement about the user's own history.
+        """
+        conversation = [
+            {"kind": "note", "text": "not an exchange"},
+            q("pt", "Profit target?"),
+            a("pt", "50"),
+        ]
+        record = self._record(conversation, [row("exit.profit_target_pct", 50, 35)])
+
+        stored = record["conversation"]
+        assert len(stored) == 2, "the junk event should have been filtered"
+        index = record["reconciliation"]["labels"][0]["answer_index"]
+        assert index == 1
+        assert stored[index]["kind"] == "answer"
+        assert stored[index]["answer"] == "50"

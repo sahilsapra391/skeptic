@@ -786,6 +786,31 @@ def backtest(
     charge_credit = run_user is not None and not auth.is_service(request)
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
+
+    # Built ONCE, outside the ordinal retry loop: nothing in it depends on the
+    # attempt, and rebuilding it per attempt would log the V-204 tally twice for
+    # a single run.
+    provenance_blob = creation_record(
+        req.provenance, origin, req.parent_run_id, note, what_changed=variant_diff,
+    )
+    if variant_diff:
+        # V-204: the reconciler's misses are counted, never swallowed, and they
+        # are reported WITH the total they came from — a bare miss count reads
+        # as coverage, and exchanges are already a lossy sample of the triggers
+        # that fired, since the parser caps a round at four questions.
+        #
+        # This is the tally that decides whether V-57 is worth doing: it is the
+        # only measure of how often value-matching cannot explain a carried
+        # exchange. It goes to the log, never to the UI (a user seeing "we could
+        # not map your question" learns nothing they can act on).
+        counts = (json.loads(provenance_blob).get("reconciliation") or {}).get("counts")
+        if counts:
+            log.info(
+                "variant reconcile: %d carried, %d superseded, %d unmatched, "
+                "%d suppressed, %d unparseable (parent %s)",
+                counts["carried"], counts["superseded"], counts["unmatched"],
+                counts["suppressed"], counts["unparseable"], req.parent_run_id,
+            )
     # V-172: the ordinal race (two tabs submitting variants of one root
     # at the same moment) retries ONCE with a fresh transaction — the
     # loser recomputes max+1 and lands the next ordinal. One run per
@@ -829,10 +854,7 @@ def backtest(
                     root_run_id=variant_root,
                     variant_ordinal=variant_ordinal,
                     user_id=run_user.id if run_user is not None else None,
-                    provenance_json=creation_record(
-                        req.provenance, origin, req.parent_run_id, note,
-                        what_changed=variant_diff,
-                    ),
+                    provenance_json=provenance_blob,
                 )
             )
             try:

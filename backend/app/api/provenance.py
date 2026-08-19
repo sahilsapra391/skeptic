@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.api.payload import FILL_MODEL
+from app.api.variant import reconcile
 from app.engine.types import RunResult
 
 # generous for real use (a long clarify session is a few KB) while keeping
@@ -166,6 +167,19 @@ def creation_record(
     # once with a worst-case truncation marker, then keep events head-first
     # within the remaining byte budget. The head (the first questions, which
     # pair with the prompt) is the story's spine. Never a refusal.
+    # V-200: which carried exchanges this variant's edits superseded. Computed
+    # HERE, not by the caller, because a label anchors on an index into the
+    # conversation AS STORED. The caller holds the client's raw list, which
+    # `_clean_conversation` has already filtered, so an index taken there would
+    # point at a different event once anything was dropped.
+    #
+    # Estimated first, purely so the size budget below accounts for it. The
+    # stored value is recomputed against `kept` after truncation, because a
+    # label whose exchange did not survive would name a card that is not there,
+    # and its counts would describe a conversation nobody can read.
+    if what_changed is not None and events:
+        record["reconciliation"] = reconcile(events, what_changed)
+
     envelope = {**record, "conversation": [],
                 "truncated": {"dropped_events": len(events) + dropped}}
     budget = MAX_RECORD_BYTES - len(json.dumps(envelope).encode())
@@ -179,6 +193,9 @@ def creation_record(
         used += cost
     dropped += len(events) - len(kept)
     record["conversation"] = kept
+    if "reconciliation" in record:
+        # exact, against what a reader will actually see
+        record["reconciliation"] = reconcile(kept, what_changed or [])
     if dropped:
         record["truncated"] = {"dropped_events": dropped}
     return json.dumps(record)
