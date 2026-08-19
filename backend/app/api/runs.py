@@ -786,6 +786,49 @@ def backtest(
     charge_credit = run_user is not None and not auth.is_service(request)
     run_id = uuid.uuid4().hex[:12]
     note = (req.auto_note or "")[:AUTO_NOTE_MAX] or None
+
+    # Built ONCE, outside the ordinal retry loop: nothing in it depends on the
+    # attempt, and rebuilding it per attempt would log the V-204 tally twice for
+    # a single run.
+    provenance_blob = creation_record(
+        req.provenance, origin, req.parent_run_id, note, what_changed=variant_diff,
+    )
+    if variant_diff:
+        # V-204: the reconciler's misses are counted, never swallowed, and they
+        # are reported WITH the total they came from — a bare miss count reads
+        # as coverage, and exchanges are already a lossy sample of the triggers
+        # that fired, since the parser caps a round at four questions.
+        #
+        # This is the tally that decides whether V-57 is worth doing: it is the
+        # only measure of how often value-matching cannot explain a carried
+        # exchange. It goes to the log, never to the UI (a user seeing "we could
+        # not map your question" learns nothing they can act on).
+        stored = json.loads(provenance_blob)
+        counts = (stored.get("reconcile_telemetry") or {}).get("counts")
+        if counts:
+            # V-214: telemetry, and the wording says so. "would have fired" is
+            # not hedging — nothing renders, so a match is a hypothetical, and
+            # a log line that read "superseded: 1" would be the same false
+            # claim as the marker, written somewhere a future reader trusts.
+            log.info(
+                "variant reconcile telemetry (nothing rendered): %d carried, "
+                "%d would-have-fired, %d unmatched, %d suppressed, "
+                "%d unparseable (parent %s)",
+                counts["carried"], counts["superseded"], counts["unmatched"],
+                counts["suppressed"], counts["unparseable"], req.parent_run_id,
+            )
+        # V-208: separate line, because it counts a different thing and fires on
+        # runs the reconciler never sees. A variant whose parent recorded no
+        # conversation has no exchanges to reconcile and still has fields to
+        # label, and that is the common case rather than the edge (measured: of
+        # 99 production runs, 9 carry a conversation at all).
+        labeling = stored.get("labeling")
+        if labeling and labeling["unlabeled"]:
+            log.info(
+                "variant labels: %d of %d changed fields have no label — "
+                "add them to app/api/field_labels.py (parent %s)",
+                labeling["unlabeled"], labeling["rows"], req.parent_run_id,
+            )
     # V-172: the ordinal race (two tabs submitting variants of one root
     # at the same moment) retries ONCE with a fresh transaction — the
     # loser recomputes max+1 and lands the next ordinal. One run per
@@ -829,10 +872,7 @@ def backtest(
                     root_run_id=variant_root,
                     variant_ordinal=variant_ordinal,
                     user_id=run_user.id if run_user is not None else None,
-                    provenance_json=creation_record(
-                        req.provenance, origin, req.parent_run_id, note,
-                        what_changed=variant_diff,
-                    ),
+                    provenance_json=provenance_blob,
                 )
             )
             try:

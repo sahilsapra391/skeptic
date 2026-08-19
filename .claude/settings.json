@@ -11,6 +11,13 @@
             "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/readme-currency.sh\"",
             "timeout": 15,
             "statusMessage": "Checking README is current..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(git push *)",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/pointer-sha-ancestor.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking the phase pointer's stamped sha..."
           }
         ]
       }

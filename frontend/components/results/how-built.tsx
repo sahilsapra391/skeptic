@@ -76,6 +76,46 @@ function pairConversation(events: ProvenanceEvent[]): Exchange[] {
   return out;
 }
 
+const showValue = (v: unknown) =>
+  v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
+
+/** V-208: the field's name, with its path as a secondary.
+ *
+ *  ONE component for both surfaces that name a field — the SUPERSEDED marker and
+ *  WHAT CHANGED — so the reader connects them instead of translating between a
+ *  prose label in one place and a path in the other. The label comes from the
+ *  single server-side table; when a path has no entry the path itself is the
+ *  label, which is correct rather than degraded, and the gap was already counted
+ *  server-side so the table's holes report themselves.
+ *
+ *  The path stays visible because it is the authority: it is what the diff
+ *  contract pins (V-164), what the reconciler matched on, and what someone
+ *  reading a stored record or an API payload will see. Dimmed and smaller, so it
+ *  is available without being what you read first. */
+function FieldName({ field, label }: { field: string; label?: string }) {
+  if (!label) return <span className="font-mono text-[11.5px] text-ink-3">{field}</span>;
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5" title={field}>
+      <span className="text-[13px] text-ink-2">{label}</span>
+      <span className="font-mono text-[10.5px] text-ink-4">{field}</span>
+    </span>
+  );
+}
+
+function ValueChange({ parent, variant }: { parent: unknown; variant: unknown }) {
+  return (
+    <>
+      <span className="font-mono text-[12.5px] text-ink-3 line-through decoration-line">
+        {showValue(parent)}
+      </span>
+      <span className="font-mono text-[11px] text-ink-4">→</span>
+      <span className="font-mono text-[12.5px] font-semibold text-ink">
+        {showValue(variant)}
+      </span>
+    </>
+  );
+}
+
 function AnswerChip({ text, typed }: { text: string; typed?: boolean }) {
   return (
     <span className="rounded-full bg-trust px-3.5 py-[6px] text-[13px] font-semibold text-on-accent">
@@ -107,9 +147,10 @@ function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }
               voice. Inside a carried block it reads as though the interview
               ran here, contradicting the header directly above it — and the
               cards are the visually dominant element, so a skimmer believes
-              the cards. Until A2 lands the per-exchange states, the eyebrow
-              carries its share of the misattribution work rather than leaving
-              it all to the header. */}
+              the cards. The eyebrow carries its share of the misattribution
+              work rather than leaving it all to the header; A2's per-exchange
+              marker is about which answers still apply, which is a different
+              question from where they were asked. */}
           {carried ? "IT ASKED ON THE ORIGINAL RUN" : "IT ASKED — I DON’T GUESS"}
         </span>
         {time && <span className="font-mono text-[10.5px] text-ink-4">{time}</span>}
@@ -323,22 +364,16 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
 function WhatChanged({ prov }: { prov: RunProvenance }) {
   const rows = prov.what_changed;
   if (!rows || rows.length === 0) return null;
-  const show = (v: unknown) =>
-    v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
   return (
     <div className={`${PANEL} px-5 py-4`}>
       <div className={`${LABEL} mb-3`}>WHAT CHANGED — VS THE PARENT RUN</div>
       <div className="flex flex-col gap-2">
+        {/* V-208: same FieldName and ValueChange the SUPERSEDED marker uses, so a
+            field reads identically in both places on this page */}
         {rows.map((r) => (
           <div key={r.field} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <span className="font-mono text-[11px] text-ink-4">{r.field}</span>
-            <span className="font-mono text-[13px] text-ink-3 line-through decoration-line">
-              {show(r.parent)}
-            </span>
-            <span className="font-mono text-[11px] text-ink-4">→</span>
-            <span className="font-mono text-[13px] font-semibold text-ink">
-              {show(r.variant)}
-            </span>
+            <FieldName field={r.field} label={r.label} />
+            <ValueChange parent={r.parent} variant={r.variant} />
           </div>
         ))}
       </div>
@@ -548,12 +583,25 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         </div>
       )}
 
-      {/* V-31: the header does ALL the misattribution work until A2 lands the
-          per-exchange states — every carried exchange currently reads STILL
-          HOLDS (V-67), so nothing inside the block distinguishes an answer
-          that still applies from one this run's edits superseded. Stated
-          plainly, never euphemistically: no phrasing may let a skimming
-          reader believe the interview ran twice. */}
+      {/* V-31: this header is the ONLY claim the carried block makes, and it is
+          a claim about provenance, not validity. These questions were asked on
+          the parent run. Nothing here says whether any answer is still true.
+
+          V-213: per-exchange validity markers were built and then deliberately
+          removed, in BOTH directions. A SUPERSEDED marker requires knowing which
+          field a question governed, and that mapping does not exist: parser
+          question ids and text are authored by the model per call. Matching on
+          values instead produced confident false claims (a carried answer of "1"
+          marked as superseded by `spec_version` on the 0DTE path), and measured
+          against production it could be right at most 13% of the time. A claim
+          renders only when the mapping is deterministic, which is V-57's world.
+          Until then the linkage is instrumentation and stays off the screen.
+
+          So: no marker, and equally no "still holds" reassurance. Both
+          directions are above the bar the mechanism can clear. Stated plainly,
+          never euphemistically: no phrasing may let a skimming reader believe
+          the interview ran twice, and none may suggest these answers were
+          re-checked. */}
       {carried && exchanges !== null && exchanges.length > 0 && (
         <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-3.5">
           <div className="font-mono text-[12.5px] leading-[1.6] text-ink-2">

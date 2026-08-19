@@ -7,9 +7,11 @@ comparison; all of them read this output shape:
 
     [{"field": <spec-schema path>, "parent": <value>, "variant": <value>}, ...]
 
-V-164: the paths are part of the CONTRACT. A2's label table maps question
-labels onto exactly these strings, so a renamed path silently breaks
-reconciliation. test_the_path_vocabulary_is_pinned is the tripwire.
+V-164: the paths are part of the CONTRACT, read by the lock check, the zero-edit
+guard and provenance section 5. A2 does NOT key on them: V-53's path-keyed
+reconciler was superseded by V-200 (value matching) and V-213 removed the
+rendering altogether. Renaming a path is still breaking, for the readers that
+remain.
 
 V-165: the three inherited-window cases are decided HERE, before the engine
 existed, because they are where "did the user change a value" and "did the
@@ -97,9 +99,11 @@ def test_an_edited_window_diffs_against_the_parents_recorded_value() -> None:
 
 
 def test_the_path_vocabulary_is_pinned() -> None:
-    """One edit per dial, and the exact path each produces. A2's label table
-    maps question labels onto THESE strings; renaming one silently breaks
-    reconciliation, so a rename must fail here first."""
+    """One edit per dial, and the exact path each produces.
+
+    Renaming one breaks the lock check's prefix matching, the stored what_changed
+    record, and the V-208 label table's keys, so a rename must fail here first.
+    It does NOT break reconciliation: that matches values, not paths."""
     cases: list[tuple[dict[str, Any], str]] = [
         (_spec(backtest__start="2023-01-01"), "backtest.start"),
         (_spec(backtest__seed=7), "backtest.seed"),

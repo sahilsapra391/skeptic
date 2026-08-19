@@ -34,6 +34,8 @@ strike is `atm`.
 
 from __future__ import annotations
 
+import math
+from collections import Counter
 from typing import Any
 
 # the seven structures the dials can build, and the leg count each implies.
@@ -267,6 +269,245 @@ def canonical_json(spec: dict[str, Any]) -> str:
     return json.dumps(canonical_spec(spec), sort_keys=True, separators=(",", ":"))
 
 
+# Explicit, closed vocabulary. Not fuzzy matching: every entry is an exact
+# string that maps to exactly one canonical token. Parser options for boolean
+# spec fields are worded this way ("Yes"/"No"), and without this an answer of
+# "no" could never match a stored `false`.
+_BOOLEAN_WORDS = {
+    "yes": "true", "y": "true", "true": "true", "on": "true", "enabled": "true",
+    "no": "false", "n": "false", "false": "false", "off": "false",
+    "disabled": "false", "none": "false",
+}
+
+# Units that qualify a number without rescaling it. `%` is here deliberately:
+# the schema stores whole percents (`exit.profit_target_pct: 50` means 50%),
+# so "50%" and "50" are the same value and dividing by 100 would invent one.
+_TRAILING_UNITS = ("%", "dte", "dtes", "days", "day", "d", "contracts", "contract", "x")
+
+
+def canonical_token(value: object) -> str | None:
+    """THE normalization for value matching (V-202), applied to BOTH sides.
+
+    One function, not two, for the reason V-163 gives: a recorded answer and a
+    stored spec value are compared, so they must be normalized by the same code
+    or the comparison is between two different spaces. The answer string
+    "50%" and the spec value `50.0` both land on "50" here, and equality after
+    that is exact. There is no fuzzy step, no nearest match, no threshold.
+
+    Returns None when the input cannot be canonicalized, which the reconciler
+    treats as a safe miss and counts (V-204). None never equals None: callers
+    must not compare two Nones and call it a match.
+    """
+    if value is None or isinstance(value, (list, dict)):
+        return None
+    if isinstance(value, bool):  # before the numeric branch; bool is an int
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return _number_token(float(value))
+
+    text = " ".join(str(value).split()).strip().casefold()
+    if not text:
+        return None
+    if text in _BOOLEAN_WORDS:
+        return _BOOLEAN_WORDS[text]
+
+    looked_numeric, number = _numeric(text)
+    if number is not None:
+        return _number_token(number)
+    if looked_numeric:
+        # numeric in form, unusable as a value (V-220). NOT falls-through-to-
+        # string: returning "inf" as a token would count in `unmatched` rather
+        # than `unparseable`, and V-214 makes the telemetry's accuracy the whole
+        # point of keeping it. An instrument that miscounts poisons the trigger
+        # data it exists to collect.
+        return None
+    return text
+
+
+def _numeric(text: str) -> tuple[bool, float | None]:
+    """(did it look numeric, is there a usable value).
+
+    Two outcomes have to be told apart, which is why this returns a pair rather
+    than an optional float. "sell puts" is not numeric and is a perfectly good
+    string token. "inf" IS numeric in form and has no usable value, and it must
+    become a miss rather than the string token "inf".
+
+    A number may wear a currency symbol, thousands separators, or one trailing
+    unit. Anything else is not a number, deliberately: "between 30 and 45" must
+    not silently become 30.
+
+    Non-finite is the V-220 crash. `float()` accepts "inf", "-inf", "Infinity",
+    "nan" and "1e400", and every one of them reached `_number_token`, whose
+    `int()` raised OverflowError or ValueError — out of canonical_token, out of
+    reconcile, out of creation_record, and out of POST /api/backtest as a 500. A
+    user can type any of them into a clarifying answer, and "1e400" is a typo
+    rather than an attack. Rejected here, where the value stops being a string
+    and starts being trusted.
+    """
+    cleaned = text.replace(",", "").replace("$", "").strip()
+    for unit in _TRAILING_UNITS:
+        if cleaned.endswith(unit):
+            cleaned = cleaned[: -len(unit)].strip()
+            break
+    if not cleaned:
+        return False, None
+    try:
+        value = float(cleaned)
+    except ValueError:
+        return False, None
+    return True, (value if math.isfinite(value) else None)
+
+
+def _pair_conversation(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mirrors `pairConversation` in frontend/components/results/how-built.tsx
+    exactly: an answer attaches to the first OPEN question sharing its id, and
+    otherwise stands alone.
+
+    Mirrored rather than reinvented, and the labels this module emits are
+    anchored on the ANSWER EVENT'S INDEX rather than on a position in this
+    list, so the two implementations never have to agree for a label to land on
+    the right card. If they ever diverge, the pairing changes and the anchor
+    does not.
+    """
+    out: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        if not isinstance(event, dict):
+            continue
+        if event.get("kind") == "question":
+            out.append({"question": event})
+            continue
+        if event.get("kind") != "answer":
+            continue
+        open_pair = next(
+            (
+                x
+                for x in out
+                if x.get("question", {}).get("id") == event.get("id") and "answer" not in x
+            ),
+            None,
+        )
+        if open_pair is not None:
+            open_pair["answer"] = event
+            open_pair["answer_index"] = index
+        else:
+            out.append({"answer": event, "answer_index": index})
+    return out
+
+
+def reconcile(
+    conversation: list[dict[str, Any]] | None,
+    diff_rows: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """V-200: which carried exchanges did this variant's edits supersede.
+
+    An exchange is SUPERSEDED when its recorded ANSWER, canonicalized, equals
+    the `parent` value of a row the user actually changed. Both sides go through
+    `canonical_token` (V-202), equality is exact after that, and there is no
+    fuzzy or nearest matching. Substring matching in particular is forbidden and
+    fenced by a test: measured against production, 14 unanchored answers
+    produced 80+ substring hits between them, because a prose answer containing
+    any digit matches every numeric field sharing that digit.
+
+    Diff-anchored, so only CHANGED rows are candidates. An answer equal to a
+    value that stayed put is history, not a supersession.
+
+    V-201, unique in BOTH directions. An answer matching two changed rows cannot
+    name which one it settled; two answers matching one row cannot say which
+    exchange the edit displaced. Either way nothing is marked and the
+    suppression is counted. Never guess, applied to values.
+
+    Emits ONLY superseded entries. Absence of an entry means STILL HOLDS, which
+    makes the safe state structural: a dropped field, an unhandled shape or a
+    serialization bug degrades to the brief's own fallback instead of to a false
+    claim on the provenance screen. NOT APPLICABLE is deliberately absent
+    (V-203): a locked field has no diff row, so finding one would mean scanning
+    unchanged values, which breaks diff-anchoring for a state measured at 1 run
+    in 99 whose real disclosure is the locked dial's own copy.
+
+    Counts, per V-204, are exchange-side and reported with the total they came
+    from, because a bare miss count is unreadable as a rate:
+
+        carried      exchanges in the conversation
+        superseded   uniquely matched, one row each
+        unmatched    an answer that canonicalized and matched no changed row
+        suppressed   exchanges dropped by the uniqueness rule
+        unparseable  an answer that could not be canonicalized at all
+
+    Changed fields with NO matching exchange are deliberately not counted: most
+    fields were never asked about, so that is the normal case, not a gap.
+    """
+    events = [e for e in (conversation or []) if isinstance(e, dict)]
+    rows = [r for r in (diff_rows or []) if isinstance(r, dict) and "field" in r]
+    pairs = _pair_conversation(events)
+
+    counts = {
+        "carried": len(pairs),
+        "superseded": 0,
+        "unmatched": 0,
+        "suppressed": 0,
+        "unparseable": 0,
+    }
+    if not pairs:
+        return {"labels": [], "counts": counts}
+
+    # index the changed rows by their parent value's canonical token
+    rows_by_token: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        token = canonical_token(r.get("parent"))
+        if token is not None:
+            rows_by_token.setdefault(token, []).append(r)
+
+    # candidate answers, and which rows each one could be talking about
+    candidates: list[tuple[int, str, list[dict[str, Any]]]] = []
+    for pair in pairs:
+        answer_event = pair.get("answer")
+        if answer_event is None:
+            continue
+        token = canonical_token(answer_event.get("answer"))
+        if token is None:
+            counts["unparseable"] += 1
+            continue
+        matched = rows_by_token.get(token, [])
+        if not matched:
+            counts["unmatched"] += 1
+            continue
+        candidates.append((pair["answer_index"], token, matched))
+
+    # V-201, both directions. An answer wanting more than one row is ambiguous;
+    # a row wanted by more than one answer is ambiguous for every answer in it.
+    contested: set[str] = {
+        token for token, n in Counter(t for _, t, _ in candidates).items() if n > 1
+    }
+
+    labels: list[dict[str, Any]] = []
+    for answer_index, token, matched in candidates:
+        if len(matched) > 1 or token in contested:
+            counts["suppressed"] += 1
+            continue
+        row = matched[0]
+        labels.append(
+            {
+                "answer_index": answer_index,
+                "state": "superseded",
+                "field": row["field"],
+                "parent": row.get("parent"),
+                "variant": row.get("variant"),
+            }
+        )
+        counts["superseded"] += 1
+
+    labels.sort(key=lambda label: label["answer_index"])
+    return {"labels": labels, "counts": counts}
+
+
+def _number_token(number: float) -> str:
+    """`50`, `50.0` and `"50%"` must all render identically, and a float that
+    is integral must not render as `50.0` while the int renders as `50`."""
+    if number == int(number):
+        return str(int(number))
+    return repr(round(number, 10))
+
+
 def diff_specs(
     parent: dict[str, Any], variant: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -276,16 +517,19 @@ def diff_specs(
         the V-22 lock check          — prefix-matches `field` against lockedPaths
         the V-10/V-19 zero-edit guard — empty list = same run, block pre-debit
         provenance section 5          — rendered as the what-changed record
-        A2's Q&A reconciler           — maps question labels onto `field`
+        A2's telemetry reconciler     — value-matches answers against `parent`
 
     Output rows are {"field", "parent", "variant"}, ordered by path.
 
     FIELD PATHS ARE A CONTRACT (V-164): dotted spec-schema paths with list
     indices in brackets — "backtest.start", "exit.profit_target_pct",
     "position.legs[0].strike_selection.value",
-    "position.expiration_selection.target_dte". A2's label table maps question
-    labels onto exactly these strings, so renaming one breaks reconciliation
-    silently; test_the_path_vocabulary_is_pinned fails first.
+    "position.expiration_selection.target_dte". Renaming one is a breaking
+    change to the stored record and to every reader of it. (This paragraph used
+    to say the reconciler keys on these strings. It does not, and never shipped
+    doing so: V-53's path-keyed table was superseded by V-200 before it was
+    built, and V-213 then removed the rendering entirely. The paths remain a
+    contract for the lock check, the zero-edit guard and section 5.)
 
     A key present on one side only diffs against None (canonicalization has
     already collapsed null-vs-absent, so a surviving absence is a real
