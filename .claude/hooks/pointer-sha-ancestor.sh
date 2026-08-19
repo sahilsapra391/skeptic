@@ -17,9 +17,22 @@
 # of the current branch, and HEAD is the honest approximation; a hook that tried
 # to parse `git push <remote> <src>:<dst>` would be guessing.
 #
-# Silent (exit 0, no stdout) when: the pointer file is gone (the phase ended),
-# or it carries no marker line at all (someone restructured it deliberately).
-# Escalates only on a sha that is present but wrong.
+# V-221 POST-MORTEM. The first version of this hook found its sha by grepping
+# the pointer's PROSE for "last synced". It was dead within a day: the commit
+# that closed PR-A2 reworded that line to "Index synced through PR #146", the
+# grep stopped matching, the hook exited silently, and one push went out
+# unverified. Nothing broke, because that push's sha happened to be a valid
+# ancestor, but the guard was gone and nobody could tell.
+#
+# Two changes came out of that. It keys on a MACHINE-READABLE ANCHOR, an HTML
+# comment nobody has a reason to reword, so editing the surrounding prose cannot
+# kill it. And a missing anchor is now LOUD: if the pointer file exists and the
+# anchor does not, this escalates rather than shrugging. That is the V-58
+# posture, applied to a guard instead of a test — fail, never skip — and it is
+# the specific lesson from a guard that died silently once already.
+#
+# Silent (exit 0, no stdout) ONLY when the pointer file is gone, which means the
+# phase ended. Every other state is reported.
 set -uo pipefail
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
@@ -28,13 +41,34 @@ cd "$repo" || exit 0
 pointer="docs/VARIANT-RUNS-POINTER.md"
 [ -f "$pointer" ] || exit 0
 
-# The marker line names the sha in backticks. Take the first match only: the
-# file discusses the marker rule in prose further down, and prose must not vote.
-marker=$(grep -m1 -iE 'last synced' "$pointer" || true)
-[ -z "$marker" ] && exit 0
+# The anchor, not the prose. Exact form:  <!-- last-synced-sha: abc1234 -->
+anchor=$(grep -m1 -oE '<!--[[:space:]]*last-synced-sha:[[:space:]]*[0-9a-f]{7,40}[[:space:]]*-->' "$pointer" || true)
+sha=$(grep -oE '[0-9a-f]{7,40}' <<<"$anchor" | head -1)
 
-sha=$(grep -oE '`[0-9a-f]{7,40}`' <<<"$marker" | head -1 | tr -d '`')
-[ -z "$sha" ] && exit 0
+if [ -z "$sha" ]; then
+  reason="$pointer exists but carries no last-synced-sha anchor.
+
+Expected a line containing exactly:
+
+    <!-- last-synced-sha: <sha> -->
+
+This check used to look for the words \"last synced\" in the prose, and a commit
+that reworded that sentence silently disabled it for a push (V-221). The anchor
+replaced the prose so an edit cannot kill the guard, and a MISSING anchor is now
+reported instead of ignored, because a guard that can vanish quietly is not a
+guard.
+
+Fix: add the anchor beside the marker with a sha from \`git rev-parse\`, or delete
+$pointer if the phase is genuinely over."
+  jq -nc --arg r "$reason" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "ask",
+      permissionDecisionReason: $r
+    }
+  }'
+  exit 0
+fi
 
 if ! git rev-parse --verify --quiet "${sha}^{commit}" >/dev/null; then
   reason="$pointer stamps \`$sha\` as its last-synced commit, and that commit does

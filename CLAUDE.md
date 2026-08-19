@@ -61,6 +61,13 @@ skeptic/
     on purpose until that command is next touched: rewriting a documented
     command without running it first is the same mistake pointing the other way
     (V-198).
+  - **A guard that greps prose dies when the prose is edited (V-221).** The
+    pointer-sha hook keyed on the words "last synced" and was silently disabled
+    within a day by a commit that reworded that sentence; one push went out
+    unverified. Guards key on a machine-readable anchor
+    (`<!-- last-synced-sha: … -->`), and a MISSING anchor escalates rather than
+    exiting quietly, because a guard that can vanish without a sound is not a
+    guard. Same posture as V-58: fail, never skip.
   - **Credential-shaped debugging asks whether, never what (V-209).** When you
     are tracing a secret, print `bool(os.environ.get(KEY))` or the key's
     presence, never its value or a `repr` of it. A single debug line that asked

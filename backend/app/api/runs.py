@@ -804,11 +804,16 @@ def backtest(
         # exchange. It goes to the log, never to the UI (a user seeing "we could
         # not map your question" learns nothing they can act on).
         stored = json.loads(provenance_blob)
-        counts = (stored.get("reconciliation") or {}).get("counts")
+        counts = (stored.get("reconcile_telemetry") or {}).get("counts")
         if counts:
+            # V-214: telemetry, and the wording says so. "would have fired" is
+            # not hedging — nothing renders, so a match is a hypothetical, and
+            # a log line that read "superseded: 1" would be the same false
+            # claim as the marker, written somewhere a future reader trusts.
             log.info(
-                "variant reconcile: %d carried, %d superseded, %d unmatched, "
-                "%d suppressed, %d unparseable (parent %s)",
+                "variant reconcile telemetry (nothing rendered): %d carried, "
+                "%d would-have-fired, %d unmatched, %d suppressed, "
+                "%d unparseable (parent %s)",
                 counts["carried"], counts["superseded"], counts["unmatched"],
                 counts["suppressed"], counts["unparseable"], req.parent_run_id,
             )

@@ -46,6 +46,19 @@ Only the rows this PR could plausibly break. Delete the rest.
       DOM order, and the action's `relative z-10` is the single thing that beats
       it. Content carries no stacking context at all. When `frontend/` gains a
       test runner this row becomes one real test and dies.
+- [ ] **The carried Q&A block makes no validity claim** (if this PR touches
+      `frontend/components/results/how-built.tsx`, `backend/app/api/variant.py` or
+      `backend/app/api/provenance.py`): open a variant whose parent had at least
+      two exchanges and whose edit changed a field one of them asked about. Every
+      carried card must render identically — no marker, no dimming, no "still
+      holds" — and the edit must appear in WHAT CHANGED under its human label.
+
+      V-213 removed per-exchange markers because deciding that an edit superseded
+      an answer needs a question-to-field mapping that does not exist; matching on
+      values was confidently wrong on the 0DTE path and right at most 13% of the
+      time. The absence is the contract, so it is what gets checked. A reviewer
+      seeing an unused match in `reconcile` and helpfully wiring it to the screen
+      is the regression this row exists to catch.
 - [ ] **Print / saved PDF** (if this PR touches a results surface): the variant
       button is absent, the lineage line and the carried-Q&A header are present.
 - [ ] Any results surface this PR adds or changes still shows the data window it

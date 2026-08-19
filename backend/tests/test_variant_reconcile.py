@@ -18,7 +18,11 @@ false claim on the provenance screen.
 """
 from __future__ import annotations
 
-from app.api.variant import reconcile
+import json
+
+import pytest
+
+from app.api.variant import canonical_token, reconcile
 
 
 def q(qid: str, text: str = "?") -> dict:
@@ -183,9 +187,16 @@ class TestShape:
         assert result["counts"]["carried"] == 1
 
 
-class TestStoredInProvenance:
-    """The reconciliation is computed at creation and stored, never recomputed
-    per page view (V-13's rule: no later reader redoes the comparison)."""
+class TestStoredAsTelemetryOnly:
+    """V-213/V-214. The reconciler still runs and still counts; nothing renders.
+
+    The stored record carries COUNTS and no labels, and that absence is the
+    contract rather than an omission. Keeping the matched labels out of the
+    payload is what makes the markers unwritable instead of merely unwired: a
+    future reader cannot switch them back on from stored data, because the data
+    does not contain them. Re-enabling means recomputing, which is exactly the
+    moment someone has to go and read why it was turned off.
+    """
 
     def _record(self, conversation, what_changed):
         import json
@@ -202,40 +213,112 @@ class TestStoredInProvenance:
             )
         )
 
-    def test_the_record_carries_the_labels(self) -> None:
+    def test_the_match_is_counted_and_no_label_is_stored(self) -> None:
         record = self._record(
             [q("pt", "Profit target?"), a("pt", "50")],
             [row("exit.profit_target_pct", 50, 35)],
         )
-        assert record["reconciliation"]["labels"][0]["field"] == "exit.profit_target_pct"
-        assert record["reconciliation"]["counts"]["superseded"] == 1
+        assert record["reconcile_telemetry"]["counts"]["superseded"] == 1
+        assert "labels" not in record["reconcile_telemetry"]
+        assert "reconciliation" not in record, (
+            "the old render-input key must be gone, not merely unread"
+        )
 
-    def test_a_non_variant_run_has_no_reconciliation(self) -> None:
-        """Nothing to reconcile against, so the key is absent rather than empty.
-        A renderer keying off its presence must not see one on a fresh run."""
-        record = self._record([q("pt"), a("pt", "50")], None)
-        assert "reconciliation" not in record
+    def test_v215_the_absence_is_the_contract(self) -> None:
+        """A variant editing a field the parser explicitly asked about renders NO
+        marker, telemetry records the match, and the changed field still appears
+        in WHAT CHANGED under its human label.
 
-    def test_the_index_refers_to_the_conversation_AS_STORED(self) -> None:
-        """The regression this design exists to prevent.
-
-        `_clean_conversation` drops events that are neither question nor answer,
-        so an index taken from the client's raw list points at a different event
-        once anything is filtered. Here a junk event sits at raw index 0, which
-        shifts the answer from raw index 2 to stored index 1. A label saying 2
-        would attach the SUPERSEDED marker to the wrong card, which is a false
-        statement about the user's own history.
+        Same reasoning as the no-run-row test on V-09: what must be guaranteed is
+        an absence, so the absence gets a test. Without this, the next person to
+        read `reconcile` and see a perfectly good match sitting unused will
+        helpfully wire it to the screen.
         """
+        record = self._record(
+            [q("pt", "What profit target should I use?"), a("pt", "50")],
+            [row("exit.profit_target_pct", 50, 35)],
+        )
+
+        # the match happened, as instrumentation
+        assert record["reconcile_telemetry"]["counts"]["superseded"] == 1
+        # nothing anywhere in the record can drive a per-exchange marker
+        blob = json.dumps(record)
+        assert "answer_index" not in blob
+        assert '"state"' not in blob
+        # and the edit is still visible, under its label, in the diff
+        assert record["what_changed"] == [
+            {
+                "field": "exit.profit_target_pct",
+                "parent": 50,
+                "variant": 35,
+                "label": "profit target",
+            }
+        ]
+
+    def test_a_non_variant_run_has_no_telemetry(self) -> None:
+        record = self._record([q("pt"), a("pt", "50")], None)
+        assert "reconcile_telemetry" not in record
+        assert "labeling" not in record
+
+    def test_counts_are_computed_over_the_stored_events_only(self) -> None:
+        """V-201's uniqueness is evaluated ONCE, over exactly the events that
+        were stored. The previous version computed it twice, before and after
+        truncation, and the second pass re-ran uniqueness over a smaller set: a
+        deliberate suppression could flip into a confident match because the
+        answer that made it ambiguous had been dropped. Counting once closes the
+        window."""
         conversation = [
             {"kind": "note", "text": "not an exchange"},
             q("pt", "Profit target?"),
             a("pt", "50"),
+            q("sl", "Stop loss?"),
+            a("sl", "50"),
         ]
         record = self._record(conversation, [row("exit.profit_target_pct", 50, 35)])
+        counts = record["reconcile_telemetry"]["counts"]
+        assert counts["superseded"] == 0, "two answers of 50, one row: ambiguous"
+        assert counts["suppressed"] == 2
+        assert len(record["conversation"]) == 4, "the junk event is filtered"
 
-        stored = record["conversation"]
-        assert len(stored) == 2, "the junk event should have been filtered"
-        index = record["reconciliation"]["labels"][0]["answer_index"]
-        assert index == 1
-        assert stored[index]["kind"] == "answer"
-        assert stored[index]["answer"] == "50"
+
+class TestNonFiniteAnswersCannotCrashTheSubmitPath:
+    """V-220. Named for the crash, not folded into a neighbouring test.
+
+    `float()` accepts "inf", "-inf", "Infinity", "nan" and "1e400". Every one
+    reached `_number_token`, which calls `int(number)`, which raises
+    OverflowError or ValueError. That raise left `canonical_token`, `reconcile`
+    and `creation_record` and surfaced as a 500 on POST /api/backtest.
+
+    A user can type any of these into a clarifying answer. "1e400" is a typo, not
+    an attack.
+
+    Blast radius, confirmed rather than assumed: `variant.py` performs no writes
+    at all, and `creation_record` is called at runs.py:793, BEFORE the ordinal
+    retry loop, the credit debit and the run insert. So the crash cost a request
+    and nothing else — no credit spent, no half-written run. That is why this is
+    a 500 to fix rather than an incident to unwind.
+
+    Introduced by A2: `canonical_token` does not exist on main.
+    """
+
+    @pytest.mark.parametrize(
+        "answer", ["inf", "-inf", "Infinity", "INFINITY", "nan", "NaN", "1e400", "-1e400"]
+    )
+    def test_a_non_finite_answer_is_a_safe_miss(self, answer: str) -> None:
+        assert canonical_token(answer) is None, (
+            f"{answer!r} must canonicalize to None (a safe miss), never raise"
+        )
+
+    @pytest.mark.parametrize("answer", ["inf", "nan", "1e400"])
+    def test_reconcile_survives_it(self, answer: str) -> None:
+        result = reconcile(
+            [q("x"), a("x", answer)], [row("exit.profit_target_pct", 50, 35)]
+        )
+        assert result["labels"] == []
+        assert result["counts"]["unparseable"] == 1
+
+    def test_finite_numbers_still_parse(self) -> None:
+        """The fix must not reject real numbers: 1e308 is finite."""
+        assert canonical_token("1e308") is not None
+        assert canonical_token("50") == "50"
+        assert canonical_token("-0.5") == "-0.5"

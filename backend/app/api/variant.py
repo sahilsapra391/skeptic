@@ -34,6 +34,7 @@ strike is `atm`.
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from typing import Any
 
@@ -310,27 +311,51 @@ def canonical_token(value: object) -> str | None:
     if text in _BOOLEAN_WORDS:
         return _BOOLEAN_WORDS[text]
 
-    number = _extract_number(text)
+    looked_numeric, number = _numeric(text)
     if number is not None:
         return _number_token(number)
+    if looked_numeric:
+        # numeric in form, unusable as a value (V-220). NOT falls-through-to-
+        # string: returning "inf" as a token would count in `unmatched` rather
+        # than `unparseable`, and V-214 makes the telemetry's accuracy the whole
+        # point of keeping it. An instrument that miscounts poisons the trigger
+        # data it exists to collect.
+        return None
     return text
 
 
-def _extract_number(text: str) -> float | None:
-    """A number, optionally wearing a currency symbol, thousands separators, or
-    one trailing unit. Anything else is not a number, deliberately: "between 30
-    and 45" must not silently become 30."""
+def _numeric(text: str) -> tuple[bool, float | None]:
+    """(did it look numeric, is there a usable value).
+
+    Two outcomes have to be told apart, which is why this returns a pair rather
+    than an optional float. "sell puts" is not numeric and is a perfectly good
+    string token. "inf" IS numeric in form and has no usable value, and it must
+    become a miss rather than the string token "inf".
+
+    A number may wear a currency symbol, thousands separators, or one trailing
+    unit. Anything else is not a number, deliberately: "between 30 and 45" must
+    not silently become 30.
+
+    Non-finite is the V-220 crash. `float()` accepts "inf", "-inf", "Infinity",
+    "nan" and "1e400", and every one of them reached `_number_token`, whose
+    `int()` raised OverflowError or ValueError — out of canonical_token, out of
+    reconcile, out of creation_record, and out of POST /api/backtest as a 500. A
+    user can type any of them into a clarifying answer, and "1e400" is a typo
+    rather than an attack. Rejected here, where the value stops being a string
+    and starts being trusted.
+    """
     cleaned = text.replace(",", "").replace("$", "").strip()
     for unit in _TRAILING_UNITS:
         if cleaned.endswith(unit):
             cleaned = cleaned[: -len(unit)].strip()
             break
     if not cleaned:
-        return None
+        return False, None
     try:
-        return float(cleaned)
+        value = float(cleaned)
     except ValueError:
-        return None
+        return False, None
+    return True, (value if math.isfinite(value) else None)
 
 
 def _pair_conversation(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -492,16 +517,19 @@ def diff_specs(
         the V-22 lock check          — prefix-matches `field` against lockedPaths
         the V-10/V-19 zero-edit guard — empty list = same run, block pre-debit
         provenance section 5          — rendered as the what-changed record
-        A2's Q&A reconciler           — maps question labels onto `field`
+        A2's telemetry reconciler     — value-matches answers against `parent`
 
     Output rows are {"field", "parent", "variant"}, ordered by path.
 
     FIELD PATHS ARE A CONTRACT (V-164): dotted spec-schema paths with list
     indices in brackets — "backtest.start", "exit.profit_target_pct",
     "position.legs[0].strike_selection.value",
-    "position.expiration_selection.target_dte". A2's label table maps question
-    labels onto exactly these strings, so renaming one breaks reconciliation
-    silently; test_the_path_vocabulary_is_pinned fails first.
+    "position.expiration_selection.target_dte". Renaming one is a breaking
+    change to the stored record and to every reader of it. (This paragraph used
+    to say the reconciler keys on these strings. It does not, and never shipped
+    doing so: V-53's path-keyed table was superseded by V-200 before it was
+    built, and V-213 then removed the rendering entirely. The paths remain a
+    contract for the lock check, the zero-edit guard and section 5.)
 
     A key present on one side only diffs against None (canonicalization has
     already collapsed null-vs-absent, so a surviving absence is a real

@@ -27,14 +27,60 @@ brief does not cover, resolve it that way.
 | --- | --- | --- |
 | PR-0 | Latent correctness fixes in the normal run path (V-17, V-36), the round-trip guard (V-18), the no-op proof (V-68), the read-only audit script (V-24) | merged in #143 |
 | PR-A1 | Schema, endpoint, tier classifier, locks, costs/seed/window inheritance, zero-edit guard, provenance sections 1-3 + section 5 diff, entry points, lineage header and grouping | **merged** (#145, merge commit `702487c`) |
-| PR-A2 | Per-exchange Q&A reconciliation: value-matched SUPERSEDED, the field-label table, the unmapped counter | **complete, in review** (#146) |
+| PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | **complete, reviewed** (#146) |
 | PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
 
 PR-A1 renders the carried Q&A bulk-inherited (every exchange STILL HOLDS,
 which is the brief's own fallback), so it is a valid system state without A2
 rather than a stub with a TODO in it.
 
-## Two supersessions recorded in A2 (V-207)
+## Three supersessions recorded in A2 (V-207, V-219)
+
+**V-30 is now fully superseded, in both directions.** V-203 dropped NOT
+APPLICABLE; V-213 dropped SUPERSEDED and STILL HOLDS as rendered states. No
+per-exchange validity claim renders at all. The carried block claims provenance
+only: these questions were asked on the parent run, and nothing about whether any
+answer remains true. Both directions of that claim are above the bar the
+mechanism can clear.
+
+**The rule that generalizes (V-213):** a per-exchange claim renders only when the
+mapping from question to field is DETERMINISTIC, which is V-57's exact-id world.
+Until then the linkage is instrumentation and stays off the screen.
+
+**Why (V-216, with the derivation, per V-136's citation bar).** Value matching
+has no relevance check. An answer matches a changed field by value alone, and
+V-201's uniqueness cannot supply relevance because it only compares within the
+changed set: when the field an answer actually governed was not edited, it
+contributes no diff row, both guards stay silent, and a confident marker lands on
+the wrong card. Eleven of the twelve findings that survived adversarial review
+were instances of that one cause.
+
+The failure is ordinary, not exotic. `spec_version` is a required top-level spec
+field that `diff_specs` diffs like any other, and `frontend/lib/spec.ts`
+recomputes it on every rebuild, so dragging the DTE dial to 0 lifts it 1 to 4.
+Any carried answer of "1" then renders "superseded by spec version 1 to 4" on the
+flagship 0DTE path. Reproduced by execution, not by argument.
+
+Two earned constants, both measured read-only against production (99 runs, 34
+with provenance, 9 carrying any conversation, 23 recorded answers):
+
+  * **34.8% parse ceiling** — 8 of 23 answers equal ANY scalar in their own run's
+    spec. Computed by `scripts/audit_answer_canonicalization.py`, which pushes
+    each recorded answer and every spec scalar through the same `canonical_token`
+    and counts exact matches.
+  * **13.0% unique-anchor ceiling** — only 3 of 23 answers identify EXACTLY ONE
+    real spec field, with bookkeeping fields (`spec_version`, `meta.*`) excluded.
+    4 of 23 are ambiguous across two or three fields and would have to be
+    suppressed. 13% is itself an overestimate of the marker rate, because a
+    marker also requires that the uniquely-matched field be the one the user
+    edited.
+
+A feature that can be right at most one time in eight, and is confidently wrong
+on the default path, is a bad trade against the invariant the brief ranks above
+everything else. These two numbers are the empirical case for V-57 whenever that
+phase is pitched.
+
+## Two supersessions recorded earlier in A2
 
 **V-53 is superseded by V-200.** The label table was specified as
 question-label-to-spec-field. It is not buildable: parser question ids AND
@@ -78,14 +124,18 @@ flag.
 
 ## Live IDs
 
+<!-- last-synced-sha: 702487c -->
+
 > **Index synced through PR #146 (PR-A2). Marker still names A1's merge commit
 > `702487c`, which is the last MERGED state this branch can truthfully point at.**
 > A2's own merge commit gets stamped by the first commit after #146 merges, the
 > same one-step handoff A1 used, and for the same structural reason: a branch
 > cannot name the merge that has not happened. The marker deliberately keeps a
-> real, reachable sha rather than a placeholder — V-184's pre-push hook parses
-> this line, and a marker with no sha in it makes the hook exit silently, which
-> would trade an enforced rule for a decorative one.
+> real, reachable sha. The sha the hook actually reads is the
+> `last-synced-sha` anchor directly above this block, NOT this prose: V-221
+> records what happened when the hook grepped the prose instead and a rewording
+> killed it. Update the anchor and this sentence together; the anchor is the one
+> that is enforced.
 > The marker now names the **merge commit of the closed PR**, not a commit on
 > the PR branch. That is the change worth noticing: a sha on the branch could
 > not be written until the commit after the sync landed, and that one-commit
@@ -121,11 +171,13 @@ V-164 V-165 V-166 V-167 V-168 V-169 V-170 V-171 V-172 V-173 V-174 V-175
 V-176 V-177 V-178 V-179 V-180 V-181 V-182 V-183 V-184 V-185 V-186 V-187
 V-188 V-189 V-190 V-191 V-192 V-193 V-194 V-195 V-196 V-197 V-198 V-199
 V-200 V-201 V-202 V-203 V-204 V-205 V-206 V-207 V-208 V-209 V-210 V-211
-V-212
+V-212 V-213 V-214 V-215 V-216 V-217 V-218 V-219 V-220 V-221 V-222 V-223
 
 Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
-not buildable; value matching replaces it). **V-30(c) by V-203** (NOT APPLICABLE
-dropped). V-189 is ANSWERED by V-197 as corrected on 2026-08-19: the mechanism is
+not buildable; value matching replaces it). **V-30 by V-203 and V-213**, in both
+directions: NOT APPLICABLE dropped, then SUPERSEDED and STILL HOLDS dropped as
+rendered states. **The rendering half of V-200 and V-201 by V-213** — the
+matching logic survives as telemetry; nothing it produces reaches a screen. V-189 is ANSWERED by V-197 as corrected on 2026-08-19: the mechanism is
 `load_local_env()` at `backend/app/main.py`, which loads `collector/.env` and so
 grants any local boot production's database and auth gate by design. V-119 is rebalanced by V-126 (tier (b) measured at 1 in 99). V-64 is corrected twice: V-71 moves
 the baseline to before PR-0 merges, and V-86 splits "the count stopped
@@ -141,6 +193,11 @@ Recorded but deliberately out of phase, and not to be lost:
   tally, which will grow slowly for the reason V-211 records: the constraint is
   how little Q&A exists, not the mapping mechanism. A slow counter is the
   finding, not a broken counter.
+- **V-217 — the V-208 label table keeps its second consumer pending.** It has
+  one consumer now, the WHAT CHANGED list. It is the path-to-label authority and
+  the marker's death does not narrow it, so it must not be folded into the diff
+  renderer as a local map. Its second consumer arrives with V-57. The
+  unmapped-at-render tally stays with it.
 - **V-210 — the source-hunt rule.** A mechanism hunt closes at the code that
   performs the load, never at the exoneration of a candidate. "Not X" is a
   narrowed search, not an answer. Two instances this phase, both of which

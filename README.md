@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C263%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1%2C276%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -63,10 +63,23 @@ If you edited no dial and the rebuilt spec still differs from the parent, that i
 a bug in the rebuild and it fails loudly instead of quietly charging you.
 
 Because the interview does not replay, the original questions are carried across
-and marked. An answer your edits contradicted is shown as superseded, with the
-field and both values. Everything else is shown as-is, which means "not shown to
-be superseded", never "checked and still true": matching works on stored values,
-and only about a third of recorded answers can ever match one.
+and labelled as the parent's history. They make no claim about whether any answer
+is still true, in either direction, and that is a deliberate limit rather than an
+unfinished edge.
+
+Marking them individually was built and then removed. Deciding that an edit
+superseded a particular answer means knowing which field that question settled,
+and that mapping does not exist: the clarifying questions are written by a
+language model per call, so there is no stable vocabulary to key on. Matching on
+values instead produced confident false claims. A carried answer of "1" got
+attributed to an internal schema version integer on the most common edit path,
+and measured against real runs the approach could be right at most 13% of the
+time. A per-exchange claim ships when the mapping is deterministic and not
+before; until then the linkage is instrumentation, counted in the logs and kept
+off the screen.
+
+What the edits changed is shown plainly instead, field by field, old value to
+new.
 
 ---
 
@@ -283,7 +296,7 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           1,150 tests, engine fixtures hand-computed
+  tests/           1,163 tests, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
   tests/           113 tests
@@ -294,7 +307,7 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,263 tests** (1,150 backend, 113 collector).
+**1,276 tests** (1,163 backend, 113 collector).
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on
