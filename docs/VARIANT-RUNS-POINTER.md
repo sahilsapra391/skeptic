@@ -30,6 +30,18 @@ brief does not cover, resolve it that way.
 | PR-A2 | Q&A reconciliation as TELEMETRY ONLY (V-213): no per-exchange state renders. The field-label table, the diff's human labels, the unmapped counter | merged in #146 |
 | PR-B | The argue-back: sensitivity lookup at the confirm step, and the two-counter separation | not started |
 
+**PR-B's opening constraints are settled (V-229 to V-231):** field identity comes
+from the V-208 table and nowhere else; the DSR line, the lineage ordinal and
+V-214's telemetry are three numbers with three homes and one test asserting they
+cannot be mistaken for each other; and the argue-back renders only what
+`sensitivityDetail` holds for the exact cell, with no interpolation and no
+nearest-neighbour guess, because the marker died for rendering a weak mapping.
+
+**A standing rule came out of A2 (V-228):** a fixture that exists to catch a
+boundary failure asserts its own proximity to that boundary, so loosening it fails
+the test rather than emptying it. Four instances in this phase, two of them
+consecutive attempts at the same fix. Full derivation in the brief's learnings.
+
 **Where A2 leaves PR-B.** Nothing in B depended on the marker, so its scope is
 unchanged. Two things A2 established are worth carrying in: the V-208 label table
 is the path-to-label authority and B's sensitivity copy should read from it rather
@@ -182,6 +194,7 @@ V-176 V-177 V-178 V-179 V-180 V-181 V-182 V-183 V-184 V-185 V-186 V-187
 V-188 V-189 V-190 V-191 V-192 V-193 V-194 V-195 V-196 V-197 V-198 V-199
 V-200 V-201 V-202 V-203 V-204 V-205 V-206 V-207 V-208 V-209 V-210 V-211
 V-212 V-213 V-214 V-215 V-216 V-217 V-218 V-219 V-220 V-221 V-222 V-223
+V-224 V-225 V-226 V-227 V-228 V-229 V-230 V-231
 
 Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
 not buildable; value matching replaces it). **V-30 by V-203 and V-213**, in both
