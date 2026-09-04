@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C295%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1%2C334%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -227,7 +227,7 @@ flowchart TD
     style KILL fill:#6e7681,color:#fff
 ```
 
-Three design choices in that diagram are worth explaining, because each one is
+Four design choices in that diagram are worth explaining, because each one is
 a scar.
 
 **The chain deliberately does not use `set -e`.** A failing derivation must not
@@ -244,6 +244,18 @@ you read at 3am.
 reboot never reaches the script's own failure block. A systemd `ExecStopPost=`
 hook fires on any non-success result and pings `/fail`. It is the only hook that
 survives a SIGKILL.
+
+**A stalled step is bounded, so it cannot take the chain down with it.** The
+in-house flow step reads roughly 405 recorder snapshots per session as
+sequential object reads, and it used to log nothing until the whole loop
+finished. On 4 September a transient storage stall inside that loop went quiet
+for 39 minutes, consumed the unit's entire 45-minute wall, and the kill took the
+last four steps (cross-source validation, fill calibration, coverage ledger)
+with it. Two things changed. Every storage call now carries an explicit timeout
+rather than the client library's generous defaults, and the step carries its own
+wall-clock budget with progress logging inside the read loop. Past the budget it
+banks the sessions it finished and reports itself failed, which is one red step
+the chain walks past instead of a kill that deletes the steps behind it.
 
 ---
 
@@ -296,10 +308,10 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           1,182 tests, engine fixtures hand-computed
+  tests/           1,213 tests, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
-  tests/           113 tests
+  tests/           121 tests
 docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 ```
 
@@ -307,7 +319,7 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,295 tests** (1,182 backend, 113 collector).
+**1,334 tests** (1,213 backend, 121 collector).
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on

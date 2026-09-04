@@ -40,6 +40,7 @@ from datetime import date, datetime, timedelta, timezone
 import boto3
 import pandas as pd
 import requests
+from botocore.config import Config
 
 log = logging.getLogger("collector")
 
@@ -70,6 +71,22 @@ QUALITY_KEY = "state/quality_flags.json"
 
 # ----------------------------- R2 helpers ---------------------------------
 
+# botocore's defaults (60s connect, 60s read, legacy retries = 5 attempts) let
+# ONE stalled object burn 300s, and callers that try two column tiers pay that
+# twice. On 2026-09-04 a transient R2 stall inside derive_flow_inhouse's
+# 405-snapshot read loop did exactly that: the step went silent for 39 min,
+# consumed the unit's whole 45-min TimeoutStartSec wall, and the SIGKILL took
+# the last four steps of the chain with it. Every R2 call is a small object on
+# a fast path, so bound them explicitly. read_timeout is per socket read, not
+# per transfer, so the multi-hundred-MB spooled downloads are unaffected as
+# long as bytes keep flowing.
+R2_TIMEOUT_CONFIG = Config(
+    connect_timeout=10,
+    read_timeout=30,
+    retries={"mode": "standard", "max_attempts": 3},
+)
+
+
 def r2_client():
     account = os.environ["R2_ACCOUNT_ID"]
     return boto3.client(
@@ -78,6 +95,7 @@ def r2_client():
         aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
         region_name="auto",
+        config=R2_TIMEOUT_CONFIG,
     )
 
 

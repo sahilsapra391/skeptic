@@ -10,6 +10,14 @@ User=skeptic
 # systemd does set HOME from passwd for User=, but autoupdate.sh was stalled for
 # three days by exactly this class of bug ("fatal: $HOME not set"), so pin it.
 Environment=HOME=/home/skeptic
+# Python block-buffers stdout when it is a file, and StandardOutput= below IS a
+# file, so a step's INFO lines only reach the log when that step's process
+# exits. A step killed by the wall therefore leaves NO record of where it got
+# to: on 2026-09-04 the flow step read 232 MB of snapshots and the log showed
+# nothing but a DeprecationWarning, because warnings go to stderr and the
+# progress did not. Unbuffered costs nothing at this volume and is the
+# difference between a log you can debug from and one you cannot.
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/opt/skeptic/collector
 ExecStart=/usr/bin/bash /opt/skeptic/collector/deploy/collect-eod.sh
 # The script flips the tile red itself when a STEP fails, but it can't run at

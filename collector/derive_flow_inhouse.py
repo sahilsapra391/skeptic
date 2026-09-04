@@ -21,8 +21,16 @@ Incremental by SET DIFFERENCE, checkpointed every 10 sessions. Grows
 nightly with the Alpaca top-up + recorder — the forward record the frozen
 UW families cannot provide.
 
+Bounded by a wall-clock budget (--budget-seconds, default 1200). The step
+reads ~405 recorder snapshots per session sequentially, so degraded R2 turns
+it into a silent stall; on 2026-09-04 one such stall ate the collect-eod
+unit's whole 45-min wall and the SIGKILL took the last four steps of the
+chain with it. Past the budget the step checkpoints what it derived, exits
+non-zero (one red step, chain continues) and leaves the rest for next run.
+
 Run:  cd collector && uv run python derive_flow_inhouse.py [--tickers ...]
-Env:  R2_* vars (same as collect.py).
+Env:  R2_* vars (same as collect.py); SKEPTIC_FLOW_BUDGET_SECONDS overrides
+      the default budget.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ import logging
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -75,6 +84,27 @@ _SNAP_LEAN = _SNAP_FULL[:-1]  # pre-#79 snaps carry no und_volume column
 _TAPE_COLUMNS = ["executed_at", "expiry", "option_type", "strike", "size",
                  "tags"]
 _JOIN = ["expiration", "right", "strike"]
+
+_SNAP_PROGRESS_EVERY = 100
+_deadline: float | None = None
+
+
+class _BudgetExhausted(RuntimeError):
+    """The step used up its wall-clock budget with sessions still to do."""
+
+
+def _start_budget(seconds: float) -> None:
+    global _deadline
+    _deadline = time.monotonic() + seconds if seconds > 0 else None
+
+
+def _check_budget() -> None:
+    """Called between R2 reads, the only places this step blocks. Raising
+    beats returning a sentinel: every caller in the chain would otherwise
+    have to remember to propagate it, and a forgotten check is how a bounded
+    step quietly becomes unbounded again."""
+    if _deadline is not None and time.monotonic() > _deadline:
+        raise _BudgetExhausted("wall-clock budget exhausted")
 
 
 def _sessions(s3, prefix: str) -> list[str]:
@@ -142,7 +172,19 @@ def derive_session(s3, ticker: str, d: str, has_tape: bool) -> dict | None:
     failed_reads = 0
     not_before = None
     tier = ["full"]
-    for skey in _snap_keys(s3, ticker, d):
+    # The loop below is ~405 sequential R2 GETs per session and used to log
+    # NOTHING until it finished, so a slow pass and a wedged one read the same
+    # from the journal (they read the same from a killed unit too: no line at
+    # all). Progress every _SNAP_PROGRESS_EVERY makes the difference legible
+    # while it is still happening.
+    skeys = _snap_keys(s3, ticker, d)
+    log.info("%s %s: reading %d recorder snapshots", ticker, d, len(skeys))
+    t_snaps = time.monotonic()
+    for i, skey in enumerate(skeys):
+        _check_budget()
+        if i and i % _SNAP_PROGRESS_EVERY == 0:
+            log.info("%s %s: %d/%d snapshots (%.0fs elapsed)",
+                     ticker, d, i, len(skeys), time.monotonic() - t_snaps)
         snap = _read_snap(s3, skey, tier)
         if snap is None:
             failed_reads += 1
@@ -230,17 +272,28 @@ def run(s3, ticker: str) -> int:
         return 0
     frames = [existing] if existing is not None and not existing.empty else []
     derived = 0
-    for d in todo:
-        row = derive_session(s3, ticker, d, has_tape=d in tape_dates)
-        if row is None:
-            continue
-        row["date"] = d
-        frames.append(pd.DataFrame([row]))
-        derived += 1
-        if derived % 10 == 0:
+    try:
+        for d in todo:
+            _check_budget()
+            row = derive_session(s3, ticker, d, has_tape=d in tape_dates)
+            if row is None:
+                continue
+            row["date"] = d
+            frames.append(pd.DataFrame([row]))
+            derived += 1
+            if derived % 10 == 0:
+                r2_put_parquet(s3, key, _combined(frames))
+                log.info("%s: %d/%d sessions derived (checkpointed)",
+                         ticker, derived, len(todo))
+    except _BudgetExhausted:
+        # Bank the completed sessions before unwinding. They are whole rows,
+        # deduped by date on write, so keeping them is strictly better than
+        # paying for them again next run.
+        if derived:
             r2_put_parquet(s3, key, _combined(frames))
-            log.info("%s: %d/%d sessions derived (checkpointed)",
-                     ticker, derived, len(todo))
+        log.error("%s: budget exhausted after %d/%d sessions (checkpointed). "
+                  "The rest retry next run.", ticker, derived, len(todo))
+        raise
     if derived:
         r2_put_parquet(s3, key, _combined(frames))
     log.info("%s: derived %d sessions → r2://%s", ticker, derived, key)
@@ -258,11 +311,28 @@ def main() -> int:
                         format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tickers", default="SPY,QQQ,IWM")
+    ap.add_argument("--budget-seconds", type=float,
+                    default=float(os.environ.get(
+                        "SKEPTIC_FLOW_BUDGET_SECONDS", "1200")),
+                    help="wall-clock budget for the whole step; 0 disables. "
+                         "Default 1200s against a ~400s healthy run, which "
+                         "leaves the collect-eod chain room to finish its "
+                         "remaining steps inside the unit's 2700s wall.")
     args = ap.parse_args()
+    _start_budget(args.budget_seconds)
     s3 = r2_client()
     n = 0
     for t in [x.strip().upper() for x in args.tickers.split(",") if x.strip()]:
-        n += run(s3, t)
+        try:
+            n += run(s3, t)
+        except _BudgetExhausted:
+            # Non-zero so collect-eod.sh marks THIS step failed and runs the
+            # rest. Dying inside the unit's wall instead took the whole chain
+            # down with it, which is the failure this budget exists to stop.
+            log.error("done: %d ticker-sessions derived before the %.0fs "
+                      "budget ran out. Step reported as FAILED so the chain "
+                      "continues.", n, args.budget_seconds)
+            return 1
     log.info("done: %d ticker-sessions derived", n)
     return 0
 
