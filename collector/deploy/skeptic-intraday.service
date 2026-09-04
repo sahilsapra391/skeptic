@@ -16,6 +16,10 @@ ExecStart=/usr/local/bin/uv run --env-file .env python intraday.py
 Restart=always
 RestartSec=10
 TimeoutStopSec=15
+# Python block-buffers stdout when it is a file, and StandardOutput= below IS
+# one, so a process that is killed loses its unflushed log tail. See
+# skeptic-collect-eod.service for the incident that found this.
+Environment=PYTHONUNBUFFERED=1
 StandardOutput=append:/var/log/skeptic/intraday.log
 StandardError=append:/var/log/skeptic/intraday.log
 

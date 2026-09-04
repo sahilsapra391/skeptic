@@ -86,6 +86,18 @@ Frontend (Vercel project, root `frontend/`):
 - Re-run a missed night: `sudo systemctl start skeptic-collect-eod.service`
   (the frontier state in R2 makes it idempotent). If the VM is the problem,
   Actions → collect-eod → Run workflow still works.
+- **A step that says `budget exhausted` is a slow lake, not a broken one.**
+  `derive_flow_inhouse.py` reads ~405 recorder snapshots per session and carries
+  a wall-clock budget (`--budget-seconds`, default 1200, or
+  `SKEPTIC_FLOW_BUDGET_SECONDS`). Past it the step banks the sessions it
+  finished, exits non-zero and lets the chain finish its remaining steps; the
+  skipped sessions are re-derived on the next run, so a single such night needs
+  no action. Two nights running means R2 is genuinely slow: check the
+  `N/405 snapshots (Ns elapsed)` progress lines in
+  `/var/log/skeptic/collect-eod.log` against the ~150s a healthy ticker takes.
+  This bound exists because on 2026-09-04 an unbounded stall in that loop ate
+  the unit's whole 2700s wall and the SIGKILL took the last four steps of the
+  chain with it.
 - Both hosts hold a lease in R2 (`state/collector.lock`) before spending the
   shared 200 req/min Alpaca budget, so a dispatch and the VM chain can no
   longer collide — whichever is second refuses, naming the first. If a lane

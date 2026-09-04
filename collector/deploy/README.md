@@ -182,6 +182,22 @@ How each lane reports failure after the move:
   the 45-min wall, an OOM kill, a reboot. That second path matters because
   `collect.py` pings SUCCESS as step 1 of 11: without it a chain killed at
   minute 44 would leave a green tile over derivations that never ran.
+- **A long-running step now fails alone instead of taking the chain.**
+  `derive_flow_inhouse.py` reads ~405 recorder snapshots per session and carries
+  a wall-clock budget (`--budget-seconds`, default 1200, env
+  `SKEPTIC_FLOW_BUDGET_SECONDS`). Past it the step banks the sessions it
+  finished and exits non-zero, so the tile body names one step and the chain
+  still runs the rest. On 2026-09-04 it had no such bound: R2 reads from this
+  box slowed roughly twentyfold, the step ate the whole 45-min wall, and the
+  SIGKILL took cross-source validation, fill calibration and the coverage ledger
+  with it. Read a red tile naming this step as "the lake was slow", not "the
+  lake is broken", and check the `N/405 snapshots (Ns elapsed)` progress lines.
+- **The logs are only truthful because the units say so.** All four Python
+  units (`collect-eod`, `intraday`, `improve`, `quality`) set
+  `PYTHONUNBUFFERED=1`. Python block-buffers stdout when it is a file, and every
+  one of those units logs to an `append:` file, so a killed process used to
+  flush nothing. That is why the 2026-09-04 log held a single stderr warning and
+  no trace of the 232 MB the step had actually read.
 - **`skeptic-improve` / `skeptic-quality` page only if you create their
   checks.** Both units call the same `hc-fail.sh` against
   `HEALTHCHECK_URL_IMPROVE` / `HEALTHCHECK_URL_QUALITY`; blank (the default)
