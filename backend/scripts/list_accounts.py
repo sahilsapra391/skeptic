@@ -24,12 +24,9 @@ from app import db  # noqa: E402
 
 
 def main() -> None:
-    db.init_db()
-    print(f"reading: {db.status()}")
-    if db.FALLBACK_REASON is not None:
-        raise SystemExit(
-            f"accounts DB unavailable ({db.FALLBACK_REASON}) — set DATABASE_URL to the real DB"
-        )
+    # connect_existing raises if the database is unreachable, so the old
+    # "did init_db fall back to SQLite?" check has nothing left to catch.
+    print(f"reading: {db.connect_existing()}")
     with db.session() as s:
         users = s.query(db.User).order_by(db.User.created_at).all()
         print(f"\n{len(users)} account(s):\n")

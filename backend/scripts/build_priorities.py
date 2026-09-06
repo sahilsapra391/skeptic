@@ -201,7 +201,7 @@ def main() -> int:
                          "(default: dry-run print)")
     args = ap.parse_args()
 
-    db.init_db()
+    db.connect_existing()
     payload = build()
     print(json.dumps(payload, indent=1))
     if args.execute:

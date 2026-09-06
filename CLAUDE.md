@@ -106,7 +106,11 @@ skeptic/
     `.claude/launch.json`. It is a PIN, not a removal: the preview spawner's
     environment carried a production Neon URL from an unidentified source, and
     pinning defends against any origin. Never set
-    `SKEPTIC_ALLOW_REMOTE_MIGRATION` to make a dev server start (V-188).
+    `SKEPTIC_ALLOW_REMOTE_MIGRATION` to make a dev server start (V-188), and
+    never to make a script run: only the deploy image migrates, and scripts
+    attach through `db.connect_existing()`, which cannot create, alter, or
+    fall back. A script the guard refuses is one that asked to migrate without
+    meaning to. Fix the ask, not the permission.
 - Frontend: `npm --prefix frontend i`, then the dev server via
   `.claude/launch.json`. Checks: `npm --prefix frontend run lint` and
   `... run typecheck`.

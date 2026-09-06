@@ -29,9 +29,9 @@ def main() -> None:
     ap.add_argument("--show", action="store_true", help="print the balance and exit, no change")
     args = ap.parse_args()
 
-    db.init_db()
-    if db.FALLBACK_REASON is not None:
-        raise SystemExit(f"accounts DB unavailable ({db.FALLBACK_REASON}) — refusing to write")
+    # Raises if the database is unreachable and never falls back to a local
+    # file, which for a script that WRITES is the only acceptable behaviour.
+    db.connect_existing()
 
     email = args.email.strip().lower()
     with db.session() as s:

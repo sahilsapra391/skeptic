@@ -162,7 +162,7 @@ class TestDatabaseUrlGuard:
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.setattr(sys, "argv", ["nightly_improve.py"])
         # would raise if the guard let execution reach the scan
-        monkeypatch.setattr(ni.db, "init_db", lambda: pytest.fail("scanned anyway"))
+        monkeypatch.setattr(ni.db, "connect_existing", lambda: pytest.fail("scanned anyway"))
 
         with caplog.at_level("ERROR", logger="nightly"):
             assert ni.main() == 1

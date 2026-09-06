@@ -106,6 +106,13 @@ Frontend (Vercel project, root `frontend/`):
   --force` takes it back when that holder is known dead. Every lease also
   self-expires (the chain's is 3000s), so a wedge is bounded, never overnight.
   Full design: `collector/deploy/README.md` → "The cross-host lock".
+- Nightly unlock scan: `skeptic-improve.timer` on the VM (Tue–Sat 07:15 UTC),
+  log at `/var/log/skeptic/improve.log`. It pages ONLY if
+  `HEALTHCHECK_URL_IMPROVE` is set in `collector/.env`; blank means a failed
+  scan is a line in that log and nothing else. The Saturday calibration +
+  priorities pass stayed on Actions (`nightly-improve.yml`, `30 7 * * 6`)
+  because it opens a proposal PR, and a red run there emails you. Both run
+  `backend/scripts/*` against Neon and must never migrate it (see "Neon").
 - Quality flags: `/api/data/coverage` (or the Data Observatory page) shows
   per-source ranges, quarantines and blind spots. DoltHub quarantine list
   lives in `collector/state/dolthub_backfill.json` (flag-and-exclude —
@@ -129,6 +136,26 @@ Frontend (Vercel project, root `frontend/`):
   inside the free 5 GB/month.
 - Never reset the `trial_counter` table casually — the deflated Sharpe's
   honesty depends on its cumulative counts.
+- **Only the deploy migrates.** `app.db` refuses to alter a remote schema
+  unless `SKEPTIC_ALLOW_REMOTE_MIGRATION=1`, and the ONE place that sets it is
+  `backend/Dockerfile`, because the container is the deploy and a schema
+  change should be something someone chose (V-149). A test reads the
+  Dockerfile for it and CI reads it back out of the built image.
+- **Scripts attach, they do not migrate.** Everything under `backend/scripts/`
+  connects through `db.connect_existing()`, which proves the database answers,
+  logs `DATABASE TARGET: ...`, and cannot create tables, alter columns, or
+  fall back to local SQLite. `init_db()` is the server's boot path and does
+  all three. If a script's log shows `RemoteMigrationRefused`, that script is
+  calling `init_db()`: change the call. Never give a unit, a workflow or a
+  laptop the flag to make a script run.
+- What it looked like when this went wrong: from 2026-08-22 the Saturday
+  `nightly-improve` workflow died in 15 s on that refusal three weeks running
+  (GitHub emailed each time), and the VM's `skeptic-improve` lane runs the
+  same guard with no flag and no `HEALTHCHECK_URL_IMPROVE`, so the same
+  refusal there reaches no tile at all. Fixed 2026-09-06 by making the four
+  database scripts attach instead of migrate. `/var/log/skeptic/improve.log`
+  holds what the VM lane actually did on those nights; read it, and give that
+  lane a tile.
 
 ## Cost dashboards
 

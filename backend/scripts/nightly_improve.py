@@ -270,7 +270,7 @@ def main() -> int:
                   "collector/.env.example).")
         return 1
 
-    db.init_db()
+    db.connect_existing()
     decisions = scan_unlocks()
     if not decisions:
         log.info("unlock scan: no refused runs waiting")
