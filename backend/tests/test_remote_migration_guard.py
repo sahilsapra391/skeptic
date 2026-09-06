@@ -203,3 +203,90 @@ class TestDeployPathSatisfiesTheGuard:
         assert "SKEPTIC_ALLOW_REMOTE_MIGRATION" in source
         assert "SKEPTIC_ALLOW_REMOTE_MIGRATION" in DOCKERFILE.read_text()
         assert os.environ.get("SKEPTIC_ALLOW_REMOTE_MIGRATION") in (None, "", "1")
+
+
+class TestScriptsAttachWithoutMigrating:
+    """The guard's second outage, and the rule that came out of it.
+
+    Fixing the deploy path (above) left four other processes still asking to
+    migrate production every time they ran: `build_priorities.py` on GitHub
+    Actions, `nightly_improve.py` on the collector VM, and the two operator
+    tools. None of them meant to. The Saturday workflow went red three weeks
+    running (2026-08-22 to 09-05); the VM lane has no Healthchecks URL, so the
+    same refusal there reached no tile. The error text told each of them to
+    set the flag, which would have handed an always-on box and a CI runner the
+    power to reshape the production schema. That is the wrong fix.
+
+    So scripts attach through `connect_existing()`, which can prove a database
+    answers and say which one it is, and cannot create, alter, or fall back.
+    These tests pin each of those properties, and pin that the scripts use it.
+    """
+
+    SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+    ATTACHING = (
+        "build_priorities.py", "nightly_improve.py", "list_accounts.py", "grant_credits.py"
+    )
+
+    def test_no_script_calls_init_db(self) -> None:
+        """Source-level, like the Dockerfile test: the claim is about files the
+        guard never reads. Every script, not a fixed list, so the next one
+        cannot copy the boot path from `main.py` unnoticed."""
+        offenders = [
+            p.name for p in sorted(self.SCRIPTS.glob("*.py")) if "init_db(" in p.read_text()
+        ]
+        assert not offenders, (
+            f"{offenders} call init_db(), which migrates. Against Neon without the "
+            "flag that raises RemoteMigrationRefused on every run; with the flag it "
+            "lets a script reshape production. Call db.connect_existing() instead."
+        )
+
+    def test_the_database_scripts_attach(self) -> None:
+        for name in self.ATTACHING:
+            assert "connect_existing(" in (self.SCRIPTS / name).read_text(), f"scripts/{name}"
+
+    def test_connect_existing_never_migrates(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import app.db as db
+
+        monkeypatch.setattr(db, "_ensure_columns", lambda: pytest.fail("ran the migration"))
+        monkeypatch.setattr(
+            db.Base.metadata, "create_all", lambda *a, **k: pytest.fail("created tables")
+        )
+        db.connect_existing()  # the SQLite test engine answers; nothing else may happen
+
+    def test_connect_existing_does_not_fall_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`init_db()` swaps an unreachable engine for local SQLite and carries
+        on. For a script that is the success-shaped no-op: a clean night
+        reported against an empty file. Here an unreachable database is an
+        error, and the engine is left exactly as it was."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.exc import OperationalError
+
+        import app.db as db
+
+        dead = create_engine("sqlite:////skeptic-no-such-dir-3f9c/runs.db")
+        monkeypatch.setattr(db, "_engine", dead)
+        with pytest.raises(OperationalError):
+            db.connect_existing()
+        assert db._engine is dead, "the engine was swapped: that is init_db's fallback"
+        assert db.FALLBACK_REASON is None
+
+    def test_connect_existing_announces_the_target(self, caplog: pytest.LogCaptureFixture) -> None:
+        """V-150: the thing that connected says what it connected to, in the
+        same words `main.py` uses, so one grep finds both."""
+        import app.db as db
+
+        with caplog.at_level("WARNING", logger="db"):
+            line = db.connect_existing()
+        assert "DATABASE TARGET" in caplog.text
+        assert line.startswith("LOCAL SQLite"), line
+        assert line in caplog.text
+
+    def test_the_refusal_points_scripts_away_from_the_flag(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The message is all an operator sees at 07:30 on a Saturday. It used
+        to say only 'set the flag', and four processes did not need to."""
+        monkeypatch.delenv("SKEPTIC_ALLOW_REMOTE_MIGRATION", raising=False)
+        with pytest.raises(RemoteMigrationRefused) as exc:
+            _refuse_remote_migration_if_unchosen(REMOTE_URL)
+        assert "connect_existing" in str(exc.value)

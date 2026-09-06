@@ -182,6 +182,24 @@ def test_saturday_weekly_pass_runs_after_the_vm_scan() -> None:
     assert (gh_h, gh_m) > (vm_h, vm_m), "the GitHub weekly pass must trail the VM scan"
 
 
+def test_no_scheduled_lane_holds_the_migration_flag() -> None:
+    """V-149's guard refused `nightly_improve.py` on this VM and
+    `build_priorities.py` on Actions for three weeks, and its error text said
+    to set SKEPTIC_ALLOW_REMOTE_MIGRATION. That is the fix for the deploy image
+    and for nothing else: a unit or workflow holding the flag is an always-on
+    box or a CI runner allowed to reshape production's schema. The scripts were
+    changed to attach without migrating instead (`db.connect_existing()`); this
+    pins that nobody reaches for the flag the next time the message suggests it."""
+    holders = [
+        p.name
+        for p in sorted(DEPLOY.glob("skeptic-*.service")) + sorted(WORKFLOWS.glob("*.yml"))
+        # ci.yml READS the flag back out of the built image to prove the deploy
+        # path set it; it grants nothing.
+        if p.name != "ci.yml" and "SKEPTIC_ALLOW_REMOTE_MIGRATION" in p.read_text()
+    ]
+    assert not holders, f"these let a scheduled lane migrate production: {holders}"
+
+
 HC_TEST_URL = "http://127.0.0.1:9/hc-test"
 
 

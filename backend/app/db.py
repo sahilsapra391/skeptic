@@ -461,6 +461,36 @@ def init_db() -> None:
         _ensure_columns()
 
 
+def connect_existing() -> str:
+    """Attach to the configured database AS IT IS: prove it answers, say what
+    it is, and change nothing about it. For scripts.
+
+    `init_db()` is the server's boot path, and it does three things a script
+    that only reads rows, or only writes rows, has no business doing: it
+    creates tables, it runs the additive migration in `_ensure_columns`, and
+    on any error it swaps the engine to local SQLite and carries on. The first
+    two are why V-149's guard refused `build_priorities.py` on GitHub Actions
+    three Saturdays running (2026-08-22 to 09-05) and fires identically for
+    `nightly_improve.py` on the collector VM, which sets no flag and pages
+    nobody: neither script meant to migrate anything, but both asked to. The
+    third is the "success-shaped no-op" that `nightly_improve.py`'s own
+    DATABASE_URL check exists to prevent, and `init_db()` could still have
+    produced it on any Neon hiccup by falling back underneath that check.
+
+    A schema change is something the deploy CHOOSES, once, in
+    `backend/Dockerfile`. Everything else attaches here. An unreachable
+    database is an error this raises; it is never a fallback.
+
+    Returns the target line (V-150), which it has also logged, so a caller
+    that prints rather than logs can show it too.
+    """
+    line = target_line()
+    log.warning("DATABASE TARGET: %s", line)
+    with _engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    return line
+
+
 def target_line() -> str:
     """V-150: what this process actually connected to, in plain terms.
 
@@ -527,9 +557,11 @@ def _refuse_remote_migration_if_unchosen(url: str) -> None:
         return
     host = url.split("@", 1)[-1].split("/", 1)[0]
     raise RemoteMigrationRefused(
-        f"refusing to migrate a remote database ({host}). Set "
-        "SKEPTIC_ALLOW_REMOTE_MIGRATION=1 if you mean it; "
-        "backend/Dockerfile sets it for the deploy."
+        f"refusing to migrate a remote database ({host}). If this process IS "
+        "the deploy, set SKEPTIC_ALLOW_REMOTE_MIGRATION=1 (backend/Dockerfile "
+        "does). If it only reads or writes rows, call db.connect_existing() "
+        "instead of init_db(): a script has no business reshaping production, "
+        "and handing it the flag is the wrong fix."
     )
 
 

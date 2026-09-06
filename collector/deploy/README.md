@@ -204,6 +204,12 @@ How each lane reports failure after the move:
   means log-only. Create two checks on healthchecks.io, drop the URLs in
   `.env`, done. They are deliberately separate from the EOD tile, whose
   meaning ("tonight's lake is whole") must stay single-purpose.
+  The gap is not theoretical. From 2026-08-17 the V-149 migration guard
+  refused `nightly_improve.py` on any host without
+  `SKEPTIC_ALLOW_REMOTE_MIGRATION`, this unit sets none, and the identical
+  refusal on GitHub Actions emailed within the hour while here it had nowhere
+  to go. The scripts now attach without migrating (`docs/RUNBOOK.md`, "Neon"),
+  which fixes the refusal. Only the URL fixes the silence.
 
 ### The cross-host lock
 

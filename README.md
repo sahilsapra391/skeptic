@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C334%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-1%2C341%20passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -186,6 +186,17 @@ all, and because no dashboard variable is visible to the repo, nothing could
 check the code's own claim that the deploy set it. Production healthchecked red
 until it did. It is now read by a test.
 
+The same guard then refused two jobs that never meant to migrate anything: the
+Saturday calibration pass on GitHub Actions, red three weeks running, and the
+nightly unlock scan on the collector VM, which sets no flag and has no
+Healthchecks tile, so the same refusal there pages nobody. Both had borrowed the
+server's boot path to connect, and the boot path migrates. The error text told
+them to set the flag. The rule that came out of it is narrower and better: only
+the deploy migrates, and every script attaches through a path that can prove the
+database answers and say which one it is, and cannot create, alter, or fall back
+to a local file. A script that cannot reach production now fails. It does not
+report a quiet night against an empty SQLite file.
+
 Three jobs need a language model: turning a plain-English strategy into a
 validated spec, writing the verdict, and answering questions about a finished
 run. All three go to DeepSeek V4 Pro through OpenRouter. It used to be two
@@ -308,10 +319,10 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           1,213 tests, engine fixtures hand-computed
+  tests/           1,219 tests, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
-  tests/           121 tests
+  tests/           122 tests
 docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 ```
 
@@ -319,7 +330,7 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,334 tests** (1,213 backend, 121 collector).
+**1,341 tests** (1,219 backend, 122 collector).
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on
