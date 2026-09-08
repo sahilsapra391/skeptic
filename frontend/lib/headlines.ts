@@ -1,5 +1,5 @@
 /**
- * The rotating hero promise — a different phrasing of the same idea each
+ * The rotating hero promise: a different phrasing of the same idea each
  * visit. Shared by the app's New Analysis screen and the landing hero so
  * both cycle the same line (sequential, persisted under `skeptic-headline`,
  * so it always changes on reload).
@@ -20,7 +20,7 @@ export const HEADLINES = [
 const KEY = "skeptic-headline";
 const CANONICAL = "Pitch me a trade. I'll play the skeptic.";
 
-/** This visit's headline WITHOUT advancing — safe for a useState seed so
+/** This visit's headline WITHOUT advancing, safe for a useState seed so
  * the client's first paint is already correct (no flash). SSR returns the
  * canonical line. */
 export function peekHeadline(): string {

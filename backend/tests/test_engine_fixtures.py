@@ -1,5 +1,5 @@
 """M2 acceptance: the engine must match every hand-computed fixture to the
-cent. The math lives in the fixture files' docstrings — if these numbers
+cent. The math lives in the fixture files' docstrings. If these numbers
 and the engine disagree, the fixture math wins until proven wrong by hand."""
 
 from datetime import date
@@ -83,7 +83,7 @@ def test_fixture_to_the_cent(module) -> None:
             assert by_date[date.fromisoformat(ds)] == pytest.approx(value, abs=0.005)
 
     # ruin halt (2026-07-15): a ruined fixture asserts the halt point; every
-    # OTHER fixture must never trip it — an accidental ruin is a math bug
+    # OTHER fixture must never trip it. An accidental ruin is a math bug
     if "ruin" in expect:
         assert result.ruined
         assert result.ruin_date == date.fromisoformat(expect["ruin"]["date"])

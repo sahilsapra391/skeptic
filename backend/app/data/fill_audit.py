@@ -1,23 +1,23 @@
-"""On-demand fill audit (ENGINE-V4 F7) — a run's fills vs an
+"""On-demand fill audit (ENGINE-V4 F7): a run's fills vs an
 INDEPENDENT vendor's trade record.
 
 Owner decisions (2026-07-08): on-demand only (the replay-receipt
-mechanics — deep verification you escalate to, never an ambient stage
+mechanics, deep verification you escalate to, never an ambient stage
 on the serialized engine); the audit re-runs the spec deterministically
 (same spec + data + seed ⇒ identical fills) and checks each regenerated
-option-leg fill against Alpaca minute TRADE bars — a vendor no fill
+option-leg fill against Alpaca minute TRADE bars, a vendor no fill
 price ever came from (independence is the point; guardrail #1's fill
 sources are DoltHub/iVol/CBOE/modeled, never Alpaca).
 
 The check per fill: trades for the same contract within ±AUDIT_WINDOW_MIN
-of the fill bar (whole session when the fill carries no bar time — daily
+of the fill bar (whole session when the fill carries no bar time, daily
 clock); the fill price must sit inside [min(low) − tol, max(high) + tol]
-of those prints, tol = max(ABS_TOL, REL_TOL × fill price) — the same
+of those prints, tol = max(ABS_TOL, REL_TOL × fill price), the same
 reviewed band as the nightly cross-validation. Verdicts per fill:
   within        the fill price sits inside the traded range band
-  outside       it doesn't — an example worth eyeballing (disclosed rows)
-  no_trades     the contract printed nothing in the window — honest
-                absence, NEVER counted against the run
+  outside       it doesn't, an example worth eyeballing (disclosed rows)
+  no_trades     the contract printed nothing in the window (honest
+                absence, NEVER counted against the run)
   no_coverage   the session has no Alpaca record at all
 The stored audit NEVER rewrites the run's verdict (receipt precedent).
 """
@@ -54,9 +54,9 @@ def audit_fills(
     """Audit structured fills against per-session Alpaca frames.
 
     Each fill carries its OWN bar_time (stamped by the engine at the bar
-    that produced it — a CLOSE audits around the CLOSE bar, review #4);
+    that produced it: a CLOSE audits around the CLOSE bar, review #4);
     a missing time degrades to a whole-session range check, disclosed by
-    kind. Fills whose SOURCE is alpaca_modeled are NEVER audited — their
+    kind. Fills whose SOURCE is alpaca_modeled are NEVER audited: their
     prices were built FROM these very prints, and self-confirmation is
     not independent verification (review #2); they count in a separate
     self_source bucket. `load_day` returns the session's Alpaca bars
@@ -71,7 +71,7 @@ def audit_fills(
             continue
         day = str(fill["day"])
         if day not in day_cache:
-            # fills are chronological — lookback never hits, so a deep
+            # fills are chronological, lookback never hits, so a deep
             # cache is pure resident memory (review #7): keep 2 frames,
             # projected to the audit's columns only
             if len(day_cache) >= 2:

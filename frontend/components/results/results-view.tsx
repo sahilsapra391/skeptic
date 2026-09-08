@@ -25,12 +25,12 @@ import { PANEL, PANEL_TITLE } from "@/components/results/panel";
 import { VerdictBlock } from "@/components/verdict/verdict-block";
 
 /** Plain-English one-liners for every stat surface (* = unblessed);
- * [institutional, retail] — the verbiage setting picks the register. */
+ * [institutional, retail]: the verbiage setting picks the register. */
 type HintPair = [string, string];
 
 const METRIC_HINTS: Record<string, HintPair> = {
   CAGR: [
-    "Compound annual growth rate — how fast the account grew per year, on average.",
+    "Compound annual growth rate: how fast the account grew per year, on average.",
     "How fast the account grew per year, on average.",
   ],
   SHARPE: [
@@ -38,19 +38,19 @@ const METRIC_HINTS: Record<string, HintPair> = {
     "Reward earned for the risk taken. Under about 1 is weak; higher is better.",
   ],
   SORTINO: [
-    "Like Sharpe, but only counts downside swings as risk — upside isn't punished.",
+    "Like Sharpe, but only counts downside swings as risk. Upside isn't punished.",
     "Like the risk score, but only the bad swings count against it.",
   ],
   "MAX DD": [
-    "Max drawdown — the deepest peak-to-trough loss the account suffered.",
-    "The deepest fall from a high point — how far down you'd have been at the worst moment.",
+    "Max drawdown: the deepest peak-to-trough loss the account suffered.",
+    "The deepest fall from a high point, how far down you'd have been at the worst moment.",
   ],
   "WIN RATE": [
     "Share of closed trades that made money.",
     "How many finished trades made money.",
   ],
   "P·FACTOR": [
-    "Profit factor — total gains divided by total losses. Above 1 = net profitable.",
+    "Profit factor: total gains divided by total losses. Above 1 = net profitable.",
     "All the wins divided by all the losses. Above 1 means net profitable.",
   ],
 };
@@ -58,7 +58,7 @@ const METRIC_HINTS: Record<string, HintPair> = {
 const HINT_EQUITY: HintPair = [
   "Account value over time, after commissions and slippage. The shaded strip is " +
     "out-of-sample history the strategy wasn't tuned on; the red line below is " +
-    "drawdown — how far the account sat below its previous peak.",
+    "drawdown, how far the account sat below its previous peak.",
   "Your account value over time, after costs. The shaded part is data the strategy " +
     "never saw during testing; the red line shows how far below its best the account was.",
 ];
@@ -69,9 +69,9 @@ const HINT_OOS: HintPair = [
     "works there. A real edge does; an over-tuned one falls apart.",
 ];
 const HINT_WF: HintPair = [
-  "P/L in rolling ~2-month windows. A real edge wins in most windows — not just " +
+  "P/L in rolling ~2-month windows. A real edge wins in most windows, not just " +
     "one lucky stretch that dominates the total.",
-  "Profit and loss in rolling two-month chunks. A real edge wins in most chunks — " +
+  "Profit and loss in rolling two-month chunks. A real edge wins in most chunks, " +
     "not one lucky streak carrying everything.",
 ];
 const HINT_MC: HintPair = [
@@ -98,7 +98,7 @@ const RETAIL_METRIC_LABEL: Record<string, string> = {
 };
 
 const HINT_TRADES: HintPair = [
-  "Every simulated fill, priced at bid/ask plus slippage — never mid. Skipped " +
+  "Every simulated fill, priced at bid/ask plus slippage, never mid. Skipped " +
     "entries are listed separately with the reason each was refused.",
   "Every simulated trade, priced at real buy/sell quotes plus slippage. Skipped " +
     "entries are listed separately with the reason each one was refused.",
@@ -108,18 +108,18 @@ const HINT_RECS: HintPair = [
   // V-26: the trial count named anywhere on this screen is the FAMILY TRIAL
   // counter, and it includes the sweeps the gauntlet ran. A variant's lineage
   // ordinal is a different number with a different meaning and never appears here.
-  "Each suggestion comes from this run's own gauntlet numbers — the sensitivity sweeps " +
+  "Each suggestion comes from this run's own gauntlet numbers. The sensitivity sweeps " +
     "really re-ran the engine. Nothing here is opinion, and acting on one starts " +
     "a new trial the deflated Sharpe will count, alongside the sweep trials it " +
     "already counted.",
-  "Every suggestion comes from tests we actually ran on this exact strategy — " +
+  "Every suggestion comes from tests we actually ran on this exact strategy. " +
     "nothing is opinion. But each retry makes good-looking numbers a little less " +
-    "trustworthy, and the math keeps score — including the tests it ran itself.",
+    "trustworthy, and the math keeps score, including the tests it ran itself.",
 ];
 
 const pick = (pair: HintPair, retail: boolean) => (retail ? pair[1] : pair[0]);
 
-/** Shape a raw series into SVG polyline points (chart shaping only —
+/** Shape a raw series into SVG polyline points (chart shaping only:
  * the numbers come from the backend untouched). */
 function seriesToPoints(
   series: SeriesPoint[],
@@ -219,20 +219,20 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
   return (
     <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
       {run.ruin && (
-        // the ruin banner (2026-07-15): amber WARN token — never P/L
+        // the ruin banner (2026-07-15): amber WARN token, never P/L
         // red/green, and it lives on the data panel, not the verdict band
         <div className="mb-3 rounded-[9px] border border-warn/60 bg-panel px-3 py-2 font-mono text-[11.5px] leading-[1.5] text-warn">
           {retailMode
-            ? `⚠ The account ran out of money on ${fmtDate(run.ruin.date)} — the test stopped right there (ended at ${fmtDollars(run.ruin.finalEquity)}). A real broker would likely have shut it down even earlier.`
-            : `⚠ Account wiped out on ${fmtDate(run.ruin.date)} — simulation halted at ${fmtDollars(run.ruin.finalEquity)}. The halt fires at $0, so this is the latest possible ruin date, not the actual.`}
+            ? `⚠ The account ran out of money on ${fmtDate(run.ruin.date)}. The test stopped right there (ended at ${fmtDollars(run.ruin.finalEquity)}). A real broker would likely have shut it down even earlier.`
+            : `⚠ Account wiped out on ${fmtDate(run.ruin.date)}, simulation halted at ${fmtDollars(run.ruin.finalEquity)}. The halt fires at $0, so this is the latest possible ruin date, not the actual.`}
         </div>
       )}
       <div className="mb-2.5 flex justify-between">
         <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
           {run.oosShadeX < 860
             ? retailMode
-              ? "ACCOUNT VALUE — UNSEEN DATA SHADED"
-              : "EQUITY — OUT-OF-SAMPLE SHADED"
+              ? "ACCOUNT VALUE, UNSEEN DATA SHADED"
+              : "EQUITY, OUT-OF-SAMPLE SHADED"
             : retailMode
               ? "ACCOUNT VALUE"
               : "EQUITY"}
@@ -270,7 +270,7 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
           )}
           <polyline points={equityPoints} fill="none" stroke="var(--chart-bright)" strokeWidth="1.8" />
           {run.ruin && series.length > 0 && (
-            // terminal ruin marker — the curve ENDS here (warn token)
+            // terminal ruin marker: the curve ENDS here (warn token)
             <>
               <line
                 x1={xFor(series.length - 1)}
@@ -323,7 +323,7 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
       </div>
       <div className="mt-1.5 flex items-baseline justify-between">
         <span className="font-mono text-[10.5px] text-ink-4">
-          drawdown — P/L red lives only here, never in the verdict
+          drawdown: P/L red lives only here, never in the verdict
         </span>
         {series.length > 0 && (
           <span className="font-mono text-[10px] text-ink-4">
@@ -334,7 +334,7 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
         )}
       </div>
       {run.resolutionMix && Object.keys(run.resolutionMix).length > 0 && (
-        // FX.1 (guardrail #6): a run that mixed bar resolutions says so —
+        // FX.1 (guardrail #6): a run that mixed bar resolutions says so.
         // per-session grid counts, right under the numbers they produced
         <div className="mt-1 font-mono text-[10.5px] text-ink-4">
           bar resolution per session:{" "}
@@ -342,7 +342,7 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
             .map(([k, v]) => `${k === "five_min" ? "5-min" : k} ${v.toLocaleString()}`)
             .join(" · ")}
           {run.resolutionMode === "finest" &&
-            " — finest honest grid per session; fills always at real 5-min NBBO stamps"}
+            " (finest honest grid per session; fills always at real 5-min NBBO stamps)"}
         </div>
       )}
     </div>
@@ -352,9 +352,9 @@ function EquityChart({ run, retailMode }: { run: RunPayload; retailMode: boolean
 const HINT_GREEKS: HintPair = [
   "Aggregate exposure of all open positions at each day's marks: delta/gamma in " +
     "share-equivalents, theta in $/day, vega in $ per vol point. Gaps are days " +
-    "the data carried no greek — shown as holes, never interpolated.",
+    "the data carried no greek, shown as holes, never interpolated.",
   "How exposed the open positions were each day, in plain units. Gaps mean the " +
-    "data had no greeks that day — we show a hole instead of making one up.",
+    "data had no greeks that day. We show a hole instead of making one up.",
 ];
 
 /** Null-gap polylines: one segment per contiguous run of known values, so a
@@ -412,13 +412,13 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
     { key: "vega", label: "V VEGA", unit: "$/vol-pt" },
   ];
 
-  const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
+  const pct = (v: number | null) => (v === null ? "n/a" : `${Math.round(v * 100)}%`);
 
   return (
     <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
       <div className="mb-2.5 flex justify-between">
         <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
-          {retailMode ? "OPEN-POSITION EXPOSURE, DAY BY DAY" : "PORTFOLIO GREEKS — DAILY MARKS"}
+          {retailMode ? "OPEN-POSITION EXPOSURE, DAY BY DAY" : "PORTFOLIO GREEKS, DAILY MARKS"}
           <Hint text={pick(HINT_GREEKS, retailMode)} />
         </span>
         <span className="font-mono text-[10.5px] text-ink-4">
@@ -453,7 +453,7 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
                 ))}
               </svg>
               <span className="text-right font-mono text-[11px] text-ink-3">
-                {last === null ? "—" : last.toLocaleString()}{" "}
+                {last === null ? "n/a" : last.toLocaleString()}{" "}
                 <span className="text-ink-4">{unit}</span>
               </span>
             </div>
@@ -464,14 +464,14 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
         <div className="mt-3 border-t border-line-softer pt-2.5 font-mono text-[11px] text-ink-3">
           fills {liq.option_leg_fills} · median spread{" "}
           {liq.median_spread_pct === null
-            ? "—"
+            ? "n/a"
             : `${(liq.median_spread_pct * 100).toFixed(1)}% of mid`}{" "}
           · {pct(liq.penalized_share)} thin-penalized · {pct(liq.unknown_liquidity_share)}{" "}
           liquidity unknown · {liq.skipped_illiquid} refused
           {liq.beyond_depth_share != null && liq.beyond_depth_share > 0 ? (
             <span
               className="text-warn"
-              title="share of depth-known fills whose quantity exceeded the displayed NBBO size — filled at the quote in the model; real execution may have walked the book"
+              title="share of depth-known fills whose quantity exceeded the displayed NBBO size (filled at the quote in the model); real execution may have walked the book"
             >
               {" "}·{" "}
               {liq.beyond_depth_share < 0.005
@@ -498,7 +498,7 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
       {run.fillAudit && !run.fillAudit.error ? (
         <div
           className="mt-2 font-mono text-[11px] text-ink-3"
-          title="on-demand fill audit — every regenerated fill checked against Alpaca minute TRADES (a vendor no fill price came from); no_trades = the contract printed nothing near the fill (honest absence, never counted against the run)"
+          title="on-demand fill audit: every regenerated fill checked against Alpaca minute TRADES (a vendor no fill price came from); no_trades = the contract printed nothing near the fill (honest absence, never counted against the run)"
         >
           fill audit ({run.fillAudit.vendor ?? "independent"}):{" "}
           {run.fillAudit.within}/{run.fillAudit.audited} within traded range
@@ -513,7 +513,7 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
       {run.dataConfidence?.pairs?.some((p) => p.agreement_rate != null) ? (
         <div
           className="mt-2 font-mono text-[11px] text-ink-3"
-          title="cross-source validation over this run's window — per-pair agreement rates with their audited-share denominators; reported, never scored"
+          title="cross-source validation over this run's window: per-pair agreement rates with their audited-share denominators; reported, never scored"
         >
           cross-source:{" "}
           {run.dataConfidence.pairs
@@ -530,8 +530,8 @@ function GreeksPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean
 }
 
 const HINT_LADDER: HintPair = [
-  "Where a scale-in ladder's realized P&L actually came from. The bars attribute P&L to the contracts added AT each rung depth — the test of whether the deep, riskiest adds pay for themselves. The table groups baskets by the deepest rung they reached (iVol's P&L-by-depth). Both views sum to the same realized total.",
-  "For a strategy that buys more as it falls: which depth made or lost the money. The deep add-ins are the dangerous part — this shows whether they actually earn their keep, or just quietly bleed.",
+  "Where a scale-in ladder's realized P&L actually came from. The bars attribute P&L to the contracts added AT each rung depth, the test of whether the deep, riskiest adds pay for themselves. The table groups baskets by the deepest rung they reached (iVol's P&L-by-depth). Both views sum to the same realized total.",
+  "For a strategy that buys more as it falls: which depth made or lost the money. The deep add-ins are the dangerous part. This shows whether they actually earn their keep, or just quietly bleed.",
 ];
 
 function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: boolean }) {
@@ -545,7 +545,7 @@ function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: bo
     <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
       <div className="mb-3 flex items-center justify-between">
         <span className={clsx(PANEL_TITLE, "flex items-center gap-2")}>
-          {retailMode ? "SCALE-IN — WHERE THE MONEY CAME FROM" : "SCALE-IN DEPTH ATTRIBUTION"}
+          {retailMode ? "SCALE-IN, WHERE THE MONEY CAME FROM" : "SCALE-IN DEPTH ATTRIBUTION"}
           <Hint text={pick(HINT_LADDER, retailMode)} />
         </span>
         <span className="font-mono text-[10.5px] text-ink-4">
@@ -578,8 +578,8 @@ function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: bo
         <div className="mt-3 font-mono text-[11px] text-warn">
           ⚠{" "}
           {retailMode
-            ? "the deepest add-ins lost money overall — they're dragging the strategy down, not carrying it"
-            : "the deepest adds are net negative — the edge does NOT come from the deep rungs"}
+            ? "the deepest add-ins lost money overall: they're dragging the strategy down, not carrying it"
+            : "the deepest adds are net negative: the edge does NOT come from the deep rungs"}
         </div>
       )}
 
@@ -616,7 +616,7 @@ function LadderDepthPanel({ run, retailMode }: { run: RunPayload; retailMode: bo
 function AuditButton({ run }: { run: RunPayload }) {
   const [busy, setBusy] = useState(false);
   const [kicked, setKicked] = useState(false);
-  // audited or refused — the lines above show it; a RUNNING marker
+  // audited or refused: the lines above show it; a RUNNING marker
   // keeps the button hidden while the engine re-run is in flight, and an
   // error leaves the button available for retry (review #8)
   if (run.fillAudit && !run.fillAudit.error) return null;
@@ -636,7 +636,7 @@ function AuditButton({ run }: { run: RunPayload }) {
     <div className="mt-2">
       {kicked ? (
         <span className="font-mono text-[11px] text-ink-4">
-          audit running — re-runs the spec deterministically, then checks
+          audit running: re-runs the spec deterministically, then checks
           every fill against Alpaca minute trades; reload in a minute
         </span>
       ) : (
@@ -644,7 +644,7 @@ function AuditButton({ run }: { run: RunPayload }) {
           onClick={audit}
           disabled={busy}
           className="rounded-[8px] border border-line px-3 py-1.5 font-mono text-[11px] text-ink-3 hover:border-line-hover"
-          title="check this run's fills against an independent vendor (Alpaca minute trades) — on demand; the verdict is never rewritten"
+          title="check this run's fills against an independent vendor (Alpaca minute trades), on demand; the verdict is never rewritten"
         >
           {busy ? "starting…" : "audit fills vs independent vendor"}
         </button>
@@ -671,7 +671,7 @@ function ReceiptBanner({ run }: { run: RunPayload }) {
 
   if (!latest && !run.replayEligible) return null;
 
-  const fmtS = (v: number | null) => (v === null ? "—" : v.toFixed(2));
+  const fmtS = (v: number | null) => (v === null ? "n/a" : v.toFixed(2));
 
   return (
     <div className="mt-3">
@@ -684,13 +684,13 @@ function ReceiptBanner({ run }: { run: RunPayload }) {
         >
           {latest.worse && (
             // owner amendment 4: the disagreement is PROMINENT and lowers
-            // the SHOWN confidence — the stored verdict above is untouched
+            // the SHOWN confidence: the stored verdict above is untouched
             <div className="mb-1.5 font-mono text-[11.5px] font-medium tracking-[.12em] text-warn">
-              ⚠ THE 5-MIN REPLAY DISAGREES — READ THE VERDICT ABOVE WITH REDUCED CONFIDENCE
+              ⚠ THE 5-MIN REPLAY DISAGREES: READ THE VERDICT ABOVE WITH REDUCED CONFIDENCE
             </div>
           )}
           <div className="font-mono text-[12.5px] text-ink-2">
-            RECEIPT — the daily backtest promised Sharpe {fmtS(latest.daily_sharpe)};
+            RECEIPT: the daily backtest promised Sharpe {fmtS(latest.daily_sharpe)};
             the 5-min replay says {fmtS(latest.five_min_sharpe)}.{" "}
             <a href={`/runs/${latest.replay_run_id}`} className="text-trust underline">
               see the replay
@@ -705,7 +705,7 @@ function ReceiptBanner({ run }: { run: RunPayload }) {
             )}
           </div>
           {latest.resolution_upgrade && (
-            // FX.4: a differing resolution mix is NAMED — never a silent shift
+            // FX.4: a differing resolution mix is NAMED, never a silent shift
             <div className="mt-1 font-mono text-[11.5px] text-ink-4">
               ⟲ {latest.resolution_upgrade}
             </div>
@@ -754,11 +754,11 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
       <div className={clsx(PANEL, "px-5 py-4")}>
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode ? "TIME PERIODS" : "WALK-FORWARD"}
-          {h.wf.length ? (retailMode ? ` — ALL ${h.wf.length}` : ` — ${h.wf.length} WINDOWS`) : ""}
+          {h.wf.length ? (retailMode ? `, ALL ${h.wf.length}` : `, ${h.wf.length} WINDOWS`) : ""}
           <Hint text={pick(HINT_WF, retailMode)} />
         </div>
         {h.wf.length > 0 ? (
-          // bars flex to span the panel whatever the window count — the full
+          // bars flex to span the panel whatever the window count, so the full
           // tested history reads as complete rather than half-empty
           <div className="flex h-16 items-end gap-[3px]">
             {h.wf.map((w, i) => (
@@ -775,7 +775,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
             ))}
           </div>
         ) : (
-          <div className="flex h-16 items-center font-mono text-[12px] text-ink-4">—</div>
+          <div className="flex h-16 items-center font-mono text-[12px] text-ink-4">no windows</div>
         )}
         <div className="mt-3 text-[14px] text-ink-2">{notes[1]}</div>
       </div>
@@ -784,10 +784,10 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode
             ? run.mc.p50
-              ? "LUCK TEST — 1,000 RESHUFFLES"
+              ? "LUCK TEST, 1,000 RESHUFFLES"
               : "LUCK TEST"
             : run.mc.p50
-              ? "MONTE CARLO — 1,000 RESAMPLES"
+              ? "MONTE CARLO, 1,000 RESAMPLES"
               : "MONTE CARLO"}
           <Hint text={pick(HINT_MC, retailMode)} />
         </div>
@@ -836,11 +836,11 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
       <div className={clsx(PANEL, "px-5 py-4")}>
         <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
           {retailMode
-            ? "NUDGE TEST — NEARBY SETTINGS"
+            ? "NUDGE TEST, NEARBY SETTINGS"
             : run.sensitivityRows?.length
-              ? "SENSITIVITY — PER-PARAMETER SWEEP"
+              ? "SENSITIVITY, PER-PARAMETER SWEEP"
               : run.sensitivity.length
-                ? "SENSITIVITY — Δ 15 → 45"
+                ? "SENSITIVITY, Δ 15 → 45"
                 : "SENSITIVITY"}
           <Hint text={pick(HINT_SENS, retailMode)} align="right" />
         </div>
@@ -852,7 +852,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
               <div key={row.name} className="flex items-center gap-2">
                 <span
                   className="w-[110px] shrink-0 truncate font-mono text-[10.5px] text-ink-4"
-                  title={row.cls ? `${row.name} — ${row.cls}` : row.name}
+                  title={row.cls ? `${row.name}, ${row.cls}` : row.name}
                 >
                   {row.name}
                   {row.cls ? ` · ${row.cls}` : ""}
@@ -880,7 +880,7 @@ function HonestyPanels({ run, retailMode }: { run: RunPayload; retailMode: boole
             ))}
             {/* endpoints are "lower/higher", not "±20%": floored condition
                 rows sweep absolute family-scale grids and shifted grids can
-                ring off-center — the cells carry the real values */}
+                ring off-center. The cells carry the real values */}
             <div className="mt-0.5 flex justify-between pl-[112px] font-mono text-[9.5px] text-ink-4">
               <span>lower</span>
               <span>as specced (ringed)</span>
@@ -950,7 +950,7 @@ function Recommendations({ run, retailMode }: { run: RunPayload; retailMode: boo
   return (
     <div className={clsx(PANEL, "mt-3.5 px-5 py-4")}>
       <div className={clsx(PANEL_TITLE, "mb-3 flex items-center gap-2")}>
-        WHAT WOULD IMPROVE IT — COMPUTED FROM THIS RUN
+        WHAT WOULD IMPROVE IT, COMPUTED FROM THIS RUN
         <Hint text={pick(HINT_RECS, retailMode)} />
       </div>
       <ul className="flex flex-col gap-2.5">
@@ -962,7 +962,7 @@ function Recommendations({ run, retailMode }: { run: RunPayload; retailMode: boo
         ))}
       </ul>
       <div className="mt-3 border-t border-grid pt-2.5 font-mono text-[10.5px] text-ink-4">
-        backtest-fit observations, not trading advice — every change re-enters the gauntlet
+        backtest-fit observations, not trading advice. Every change re-enters the gauntlet
         as a new trial
       </div>
     </div>
@@ -1031,7 +1031,7 @@ function TradeLog({ run, retailMode }: { run: RunPayload; retailMode: boolean })
             >
               <span>{showSkipped ? "▾" : "▸"}</span>
               <span>
-                {skipped.length} skipped entr{skipped.length === 1 ? "y" : "ies"} — with reasons
+                {skipped.length} skipped entr{skipped.length === 1 ? "y" : "ies"}, with reasons
               </span>
             </button>
           )}
@@ -1052,7 +1052,7 @@ export function ResultsView({
   run: RunPayload;
   onEditSpec?: () => void;
   /** The post-run flow passes its reset here (nav's New Analysis link can't
-   * reset same-route state); the saved-run screen omits it — its copy was
+   * reset same-route state); the saved-run screen omits it. Its copy was
    * redundant with the left nav and is replaced by the story toggle. */
   onNew?: () => void;
   onBack?: () => void;
@@ -1067,7 +1067,7 @@ export function ResultsView({
   // retail register: same computed numbers, everyday words. Static UI text
   // (titles, tooltips, tile names) follows the setting alone; run-computed
   // text (verdict, notes, recommendations) additionally needs the stored
-  // retail block — older runs fall back to institutional there.
+  // retail block. Older runs fall back to institutional there.
   const retailMode = settings.verbiage === "retail";
   const verdict = retailMode && run.retail
     ? {
@@ -1156,7 +1156,7 @@ export function ResultsView({
               Edit spec
             </button>
           )}
-          {/* V-02: one shared destination for both entry points — the
+          {/* V-02: one shared destination for both entry points, the
               variant boot at /new?variant=<id>. V-03: every owned run,
               refusals included. V-46: print-hidden (the row already is). */}
           {!run.demo && (
@@ -1171,7 +1171,7 @@ export function ResultsView({
               Run a variant
             </a>
           )}
-          {/* demo runs carry no provenance record — no dead story tab */}
+          {/* demo runs carry no provenance record, so no dead story tab */}
           {run.provenance && (
             <button
               onClick={() => setView(view === "story" ? "results" : "story")}
@@ -1223,7 +1223,7 @@ export function ResultsView({
 
           {run.verdict.refusal && (
             <div className="mb-1 mt-[18px] text-center font-mono text-[10.5px] font-medium tracking-[.18em] text-ink-4">
-              — UNBLESSED OUTPUT · MACHINERY CHECK ONLY —
+              UNBLESSED OUTPUT · MACHINERY CHECK ONLY
             </div>
           )}
 

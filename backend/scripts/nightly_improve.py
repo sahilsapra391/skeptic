@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""nightly_improve.py — the auto-improvement pass (ENGINE-V3 D3).
+"""nightly_improve.py: the auto-improvement pass (ENGINE-V3 D3).
 
 D3a ships the UNLOCK SCAN in dry-run: read refused runs' structured
 unlock_json, compare against what the lake covers NOW, and report which
@@ -31,12 +31,12 @@ from app.data import r2  # noqa: E402
 
 log = logging.getLogger("nightly")
 
-# Auto re-runs are capped per night (owner decision) — the queue drains
+# Auto re-runs are capped per night (owner decision). The queue drains
 # across nights rather than storming Railway and the LLM budget at once.
 AUTO_RERUNS_PER_NIGHT = 3
 
 # A refused run is worth re-running once this many NEW covered sessions
-# have arrived since the refusal — below that, thin-sample refusals would
+# have arrived since the refusal. Below that, thin-sample refusals would
 # re-run nightly and re-refuse nightly. Reviewed constant, like every
 # threshold (see docs/HONESTY.md).
 UNLOCK_MIN_NEW_SESSIONS = 20
@@ -53,10 +53,10 @@ class UnlockDecision:
 
 
 def _covered_sessions_now(ticker: str, clock: str, start: str, end: str) -> int:
-    """Sessions with usable quotes in [start, end] as the lake stands —
-    the ENGINE's counting rules, not raw listings: `sessions_at_refusal`
+    """Sessions with usable quotes in [start, end] as the lake stands.
+    The ENGINE's counting rules, not raw listings: `sessions_at_refusal`
     came from the engine, so the delta must too (raw dolthub listings carry
-    ~45 quarantined sessions the engine refuses to load — comparing raw to
+    ~45 quarantined sessions the engine refuses to load. Comparing raw to
     engine counts would mint phantom 'new sessions' and spurious re-runs)."""
     s3 = r2.r2_client()
     if clock == "5min":
@@ -73,7 +73,7 @@ def _covered_sessions_now(ticker: str, clock: str, start: str, end: str) -> int:
 
 def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
     """Refused runs whose unlock conditions may now be met. Pure decision
-    logic — execution (D3b) is a separate, capped step."""
+    logic. Execution (D3b) is a separate, capped step."""
     decisions: list[UnlockDecision] = []
     with db.session() as s:
         rows = (
@@ -84,7 +84,7 @@ def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
         # a child that ERRORED did not upgrade anything (review finding: a
         # staleness-refused re-run must not close its parent's unlock path
         # forever). Bounded retry: after 3 errored attempts the parent is
-        # retired LOUDLY — a permanently-refused spec (e.g. conditioned on
+        # retired LOUDLY. A permanently-refused spec (e.g. conditioned on
         # a frozen UW series) must not burn a nightly slot every night.
         children = (
             s.query(db.Run.parent_run_id, db.Run.status)
@@ -99,12 +99,12 @@ def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
         for pid, n in error_counts.items():
             if n >= 3 and pid not in superseded:
                 log.warning("unlock retired after %d errored re-runs: %s "
-                            "(see the child runs' errors — likely a signal "
+                            "(see the child runs' errors, likely a signal "
                             "feed frozen behind the requested window)", n, pid)
                 superseded.add(pid)
     for run_id, unlock_json in rows:
         if run_id in superseded:
-            continue  # already upgraded once — its successor carries on
+            continue  # already upgraded once, its successor carries on
         try:
             unlock = json.loads(unlock_json)
         except Exception:
@@ -129,14 +129,14 @@ def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
 
 
 def execute_unlocks(decisions: list[UnlockDecision]) -> int:
-    """Submit capped re-runs through the backend API (Railway executes —
+    """Submit capped re-runs through the backend API (Railway executes:
     warm caches, LLM key, same DB; this script never runs the engine).
     Returns how many were submitted."""
     import requests
 
     base = os.environ.get("SKEPTIC_API_URL", "").rstrip("/")
     if not base:
-        log.error("SKEPTIC_API_URL not set — cannot execute re-runs")
+        log.error("SKEPTIC_API_URL not set, cannot execute re-runs")
         return 0
     headers = {}
     token = os.environ.get("SKEPTIC_ACCESS_TOKEN")
@@ -173,9 +173,9 @@ def execute_unlocks(decisions: list[UnlockDecision]) -> int:
 
 
 # Receipt drain pacing (owner amendment 1): the workflow window is already
-# off-peak (07:00 UTC ≈ 02:00 ET); replays are additionally SERIALIZED —
-# one at a time, polled to completion, with this delay between submissions
-# — so the drain can never collide with a live backtest.
+# off-peak (07:00 UTC ≈ 02:00 ET); replays are additionally SERIALIZED
+# (one at a time, polled to completion, with this delay between submissions),
+# so the drain can never collide with a live backtest.
 RECEIPT_DELAY_SECONDS = 60
 RECEIPT_POLL_SECONDS = 10
 RECEIPT_POLL_TIMEOUT = 1200  # a stuck replay stops the drain, loudly
@@ -205,7 +205,7 @@ def eligible_for_receipt() -> list[str]:
 
 
 def drain_receipts(delay: int = RECEIPT_DELAY_SECONDS) -> int:
-    """Serialized replay submissions via the on-demand endpoint — ALL
+    """Serialized replay submissions via the on-demand endpoint: ALL
     eligible runs (owner decision), one at a time, polled to completion."""
     import time
 
@@ -213,7 +213,7 @@ def drain_receipts(delay: int = RECEIPT_DELAY_SECONDS) -> int:
 
     base = os.environ.get("SKEPTIC_API_URL", "").rstrip("/")
     if not base:
-        log.error("SKEPTIC_API_URL not set — cannot drain receipts")
+        log.error("SKEPTIC_API_URL not set, cannot drain receipts")
         return 0
     headers = {}
     token = os.environ.get("SKEPTIC_ACCESS_TOKEN")
@@ -241,7 +241,7 @@ def drain_receipts(delay: int = RECEIPT_DELAY_SECONDS) -> int:
             time.sleep(RECEIPT_POLL_SECONDS)
             waited += RECEIPT_POLL_SECONDS
         else:
-            log.error("receipt replay %s stuck past %ss — stopping the drain",
+            log.error("receipt replay %s stuck past %ss, stopping the drain",
                       replay_id, RECEIPT_POLL_TIMEOUT)
             return done
         done += 1
@@ -264,7 +264,7 @@ def main() -> int:
     # same silent-green class as the outage that moved this job to the VM (the
     # VM's .env predates this var), so refuse instead of guessing.
     if not os.environ.get("DATABASE_URL"):
-        log.error("DATABASE_URL is not set — refusing to scan a fallback SQLite "
+        log.error("DATABASE_URL is not set. Refusing to scan a fallback SQLite "
                   "database and report it as a clean night. Set it in the "
                   "environment (VM: /opt/skeptic/collector/.env, see "
                   "collector/.env.example).")
@@ -277,7 +277,7 @@ def main() -> int:
     else:
         for d in decisions:
             marker = "RE-RUN" if d.should_rerun else "still waiting"
-            log.info("[%s] %s %s@%s — %s", marker, d.run_id, d.ticker, d.clock, d.reason)
+            log.info("[%s] %s %s@%s: %s", marker, d.run_id, d.ticker, d.clock, d.reason)
         log.info("unlock scan: %d waiting, %d ready",
                  len(decisions), sum(1 for d in decisions if d.should_rerun))
     receipt_queue = eligible_for_receipt()

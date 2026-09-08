@@ -4,7 +4,7 @@ The 2026-07-14 consolidation replaced the audit/reproduce endpoints'
 duplicated read-check-write marker logic with ONE compare-and-swap claim.
 These tests pin the shared semantics: 404 without a completed run, 409
 while a fresh marker says a job is in flight, takeover once the marker is
-stale or non-running — and, the reason the CAS exists, a deliberate race
+stale or non-running, and (the reason the CAS exists) a deliberate race
 where two claims read the same prior marker admits exactly one.
 """
 
@@ -104,7 +104,7 @@ class TestClaimRunJob:
         """The TOCTOU the CAS closes: both racers pass the staleness check
         on the same prior marker before either writes. Rendezvous inside
         the claim (at the marker serialization, after the read, before the
-        swap) so the interleaving is deterministic — exactly one may win."""
+        swap) so the interleaving is deterministic: exactly one may win."""
         run_id = _add_run()
         barrier = threading.Barrier(2, timeout=10)
 
@@ -142,7 +142,7 @@ class TestMarkerAgeMinutes:
 
     def test_naive_stamp_reads_as_stale_not_500(self) -> None:
         # a tz-NAIVE stamp parses fine, then aware-minus-naive raises
-        # TypeError — persisted stamps from older writers must read as
+        # TypeError. Persisted stamps from older writers must read as
         # stale, never propagate out of a GET (review finding)
         naive = datetime.now(UTC).replace(tzinfo=None).isoformat()
         assert marker_age_minutes(naive, 30) == 31.0
@@ -153,7 +153,7 @@ class TestMarkerAgeMinutes:
 
 
 class TestSweepCoverageNotes:
-    """payload.sweep_coverage_notes — THE selector for the F8 sweep-coverage
+    """payload.sweep_coverage_notes, THE selector for the F8 sweep-coverage
     disclosure keys, shared by the app serializer and the notebook export."""
 
     def test_selects_both_notes_in_disclosure_order(self) -> None:

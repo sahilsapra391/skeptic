@@ -1,4 +1,4 @@
-"""Lake coverage — the real numbers behind /api/data/coverage.
+"""Lake coverage: the real numbers behind /api/data/coverage.
 
 Successor to collector/coverage.py (the M1 stand-in script), returning JSON
 for the Data Observatory and the composer's coverage chips. Everything here
@@ -33,30 +33,30 @@ TICKERS = ["SPY", "QQQ", "IWM"]
 EOD_SOURCES = ["ivolatility", "alphavantage", "cboe_eod", "yahoo", "dolthub"]
 INTRADAY_SOURCES = ["ivolatility", "cboe_delayed", "yahoo"]
 
-# What the 5-minute record actually covers (mirrors app/data/intraday.py) —
-# every intraday surface discloses the slice, per guardrail #6.
+# What the 5-minute record actually covers (mirrors app/data/intraday.py).
+# Every intraday surface discloses the slice, per guardrail #6.
 INTRADAY_SLICE_NOTE = (
     "5-min record is a short-DTE ATM slice: 0–2 trading-DTE, ATM±$8 "
     "(iVolatility NBBO; CBOE minute snapshots forward, ~15-min delayed)"
 )
 
 # fields the Observatory grades per source (D1d): what share of rows
-# actually carry each field — gaps visible, not discovered mid-backtest
+# actually carry each field: gaps visible, not discovered mid-backtest
 CHAIN_QUALITY_FIELDS = [
     "bid", "ask", "iv", "delta", "gamma", "theta", "vega", "rho",
     "volume", "open_interest",
 ]
 
 # the Alpaca minute lake counts as accruing while its newest session is
-# within this many days — ONE constant for the chip and the blind spot
+# within this many days (ONE constant for the chip and the blind spot)
 ALPACA_ACCRUING_DAYS = 7
 
-# (built_at, payload) written as ONE tuple — readers can never pair a fresh
+# (built_at, payload) written as ONE tuple. Readers can never pair a fresh
 # timestamp with an older payload the way two separate keys could
 _CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {"snap": (0.0, None)}
 CACHE_SECONDS = 300
 # past TTL but under this ceiling, answer from cache while ONE background
-# thread rebuilds — the numbers are real computed coverage with their age
+# thread rebuilds. The numbers are real computed coverage with their age
 # disclosed by generated_at, and the rebuild lands within seconds. Past the
 # ceiling (long idle) build in the foreground: a very old recorder heartbeat
 # must never be presented as current.
@@ -126,30 +126,30 @@ def _blind_spots(
         },
         {
             "id": "2026-07-01-eod-only",
-            "text": "2026-07-01 has EOD coverage only — the intraday recorder "
+            "text": "2026-07-01 has EOD coverage only: the intraday recorder "
             "starts 2026-07-02",
         },
         {
             "id": "recorder-best-effort",
-            "text": "Intraday recorder runs on the owner's machine — uptime is "
+            "text": "Intraday recorder runs on the owner's machine. Uptime is "
             "best-effort and gaps are recorded, not hidden",
         },
         {
             "id": "intraday-slice",
             "text": INTRADAY_SLICE_NOTE
-            + " — wider strikes and longer tenors have EOD coverage only",
+            + ". Wider strikes and longer tenors have EOD coverage only",
         },
     ]
-    # QQQ/IWM chain depth — computed, not asserted (the iVol EOD regroup
+    # QQQ/IWM chain depth: computed, not asserted (the iVol EOD regroup
     # and the cboe_eod record both move this date)
     qqq = chain_windows.get("QQQ")
     if qqq:
         spots.insert(2, {
             "id": "qqq-iwm-eod-depth",
-            "text": f"QQQ/IWM EOD chains begin {qqq['first']} — "
+            "text": f"QQQ/IWM EOD chains begin {qqq['first']}, "
             "no free source reaches earlier",
         })
-    # Alpaca minute lake — frozen vs accruing decided by the lake itself
+    # Alpaca minute lake: frozen vs accruing decided by the lake itself
     m = minute.get("SPY")
     if m:
         stale_days = _days_since(m.get("last"), today)
@@ -157,13 +157,13 @@ def _blind_spots(
             spots.append({
                 "id": "minute-lake-frozen",
                 "text": f"Alpaca minute bars stopped accruing {m['last']} "
-                "(OPRA entitlement) — a frozen window since",
+                "(OPRA entitlement), a frozen window since",
             })
         else:
             spots.append({
                 "id": "minute-lake-accruing",
-                "text": f"Alpaca minute bars accruing nightly (latest {m['last']}) "
-                "— trade-derived, never a fill source",
+                "text": f"Alpaca minute bars accruing nightly (latest {m['last']})"
+                ", trade-derived, never a fill source",
             })
     # vendor feed freezes + the in-house continuation (2026-07-08 decision)
     uw_last = vendor_lasts.get("uw")
@@ -171,7 +171,7 @@ def _blind_spots(
         spots.append({
             "id": "uw-frozen",
             "text": f"Unusual Whales families frozen at {uw_last} (no "
-            "subscription) — net premium, NOPE and market tide have no free "
+            "subscription). Net premium, NOPE and market tide have no free "
             "substitute; runs conditioned on them refuse windows running "
             "past coverage. PCR and max-pain continue in-house.",
         })
@@ -179,15 +179,15 @@ def _blind_spots(
     if ivs_last and (_days_since(ivs_last, today) or 0) > 7:
         spots.append({
             "id": "ivol-frozen",
-            "text": f"iVolatility feeds frozen at {ivs_last} (no subscription) "
-            "— IVX/HV/skew/term continue in-house from the CBOE close "
+            "text": f"iVolatility feeds frozen at {ivs_last} (no subscription). "
+            "IVX/HV/skew/term continue in-house from the CBOE close "
             "record; 5-min NBBO history ends there and forward intraday "
             "sessions come from the recorder (~15-min delayed)",
         })
     if inhouse_first:
         spots.append({
             "id": "inhouse-continuation",
-            "text": f"In-house signal continuations begin {inhouse_first} — a "
+            "text": f"In-house signal continuations begin {inhouse_first}, a "
             "disclosed convention change, measured against the vendor overlap "
             "by the cross-validation pairs below; runs crossing the seam "
             "carry the disclosure in their payload",
@@ -207,7 +207,7 @@ def _blind_spots(
 
 def _chain_quality(ticker: str) -> dict[str, Any] | None:
     """Per-source field completeness + monthly median spread, computed from
-    the LOCAL chains cache written by the engine loader — this endpoint
+    the LOCAL chains cache written by the engine loader. This endpoint
     never triggers a full lake pull. No cache yet → honestly absent
     (guardrail #6: nothing asserted that the lake hasn't already proven)."""
     cache_file = chains.CACHE_DIR / f"chains_{ticker}.parquet"
@@ -252,7 +252,7 @@ def _ivol_year_range(keys: list[str]) -> dict[str, Any] | None:
 
 
 def _ivs_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
-    """Window of the derived vol-surface signal artifact (F4) — guardrail
+    """Window of the derived vol-surface signal artifact (F4). Guardrail
     #6: any surface offering skew/term filters shows the window they were
     derived on, per signal (a session can carry one and not the other)."""
     if df is None or df.empty or "date" not in df.columns:
@@ -269,7 +269,7 @@ def _ivs_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
     }
 
 def _dealer_positioning_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
-    """Window of the banked UW greek_exposure series (F1) — guardrail #6:
+    """Window of the banked UW greek_exposure series (F1). Guardrail #6:
     the surface offering GEX/DEX filters shows the window they read, and
     the pre-run refusal quotes the same first session."""
     if df is None or df.empty or "date" not in df.columns:
@@ -293,7 +293,7 @@ def _dealer_positioning_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
 
 
 def _flow_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
-    """Window of the derived flow/pin artifact (F2/F3) — guardrail #6,
+    """Window of the derived flow/pin artifact (F2/F3). Guardrail #6,
     per-signal counts (a session can carry flow and honestly lack NOPE)."""
     if df is None or df.empty or "date" not in df.columns:
         return None
@@ -318,7 +318,7 @@ def _flow_signals_range(df: pd.DataFrame | None) -> dict[str, Any] | None:
 def _inhouse_range(
     chain_df: pd.DataFrame | None, hv_df: pd.DataFrame | None
 ) -> dict[str, Any] | None:
-    """Window of the in-house forward-record artifacts (2026-07-08) —
+    """Window of the in-house forward-record artifacts (2026-07-08):
     per-signal counts like every signal family, plus the HV window."""
     out: dict[str, Any] = {}
     if chain_df is not None and not chain_df.empty and "date" in chain_df.columns:
@@ -369,7 +369,7 @@ def build_coverage() -> dict[str, Any]:
     s3 = r2.r2_client()
     now = datetime.now(UTC)
 
-    # Every independent lake read goes through one pool — the identical
+    # Every independent lake read goes through one pool, the identical
     # reads producing the identical numbers, just concurrent. ~40 sequential
     # R2 round-trips was the whole reason the Observatory's first paint took
     # seconds. boto3 clients are thread-safe; all tasks are read-only.
@@ -519,7 +519,7 @@ def build_coverage() -> dict[str, Any]:
         }
 
     # the nightly EOD record: cboe_eod close chains + Yahoo snapshots (the
-    # 2026-07-08 forward-record decision) — a session captured by either leg
+    # 2026-07-08 forward-record decision): a session captured by either leg
     # counts, so one leg's bad night doesn't misreport the streak. Per-leg
     # LIVENESS is reported separately below: the union must never hide a
     # dead leg behind the other's heartbeat (review finding).
@@ -530,14 +530,14 @@ def build_coverage() -> dict[str, Any]:
     record = _range(record_dates) or {"sessions": 0, "first": None, "last": None}
 
     def _leg_fresh(rng: dict[str, Any] | None, days: int) -> bool:
-        """A collection leg is alive when its last object is recent —
-        existence alone would show a green chip forever on history."""
+        """A collection leg is alive when its last object is recent. Existence
+        alone would show a green chip forever on history."""
         last = (rng or {}).get("last")
         age = _days_since(last, today_iso) if last else None
         return age is not None and age <= days
 
     # per-ticker chain window across sources: DISTINCT sessions (the two
-    # nightly legs bank the same dates — summing per-source counts would
+    # nightly legs bank the same dates, so summing per-source counts would
     # overstate usable coverage by ~2/day, review finding). Dolthub counts
     # only its verified (quarantine-excluded) sessions.
     verified_set = set(verified)
@@ -551,7 +551,7 @@ def build_coverage() -> dict[str, Any]:
             dates.update(src_dates)
         chain_windows[ticker] = _range(sorted(dates))
 
-    # where each frozen vendor family last observed (SPY) — ONE construction
+    # where each frozen vendor family last observed (SPY), ONE construction
     # feeding both the payload and the blind spots (review finding: two
     # copies of the same fact WILL disagree eventually)
     vendor_lasts = {
@@ -577,13 +577,13 @@ def build_coverage() -> dict[str, Any]:
         "flow_signals": flow_cov,
         "market_tide": tide_cov,
         # in-house forward-record continuations (2026-07-08) + where each
-        # family's vendor series last observed — the Observatory's seam view
+        # family's vendor series last observed, the Observatory's seam view
         "inhouse_signals": inhouse_cov,
         "vendor_lasts": vendor_lasts,
         "cross_validation": xval_cov,
         "intraday_slice": INTRADAY_SLICE_NOTE,
         "quality": quality,
-        # D3d: the weekly demand ranking (build_priorities.py) — what the
+        # D3d: the weekly demand ranking (build_priorities.py), what the
         # collectors should want next, shown as the "collection wants" line
         "collection_priorities": collection_priorities,
         "dolthub": {
@@ -594,7 +594,7 @@ def build_coverage() -> dict[str, Any]:
         },
         # F0 (ENGINE-V4): per-session resolution mix + new-source windows.
         # Both are collector-built artifacts (state/resolution_map/*,
-        # state/source_coverage.json) — cheap reads, honest None until the
+        # state/source_coverage.json): cheap reads, honest None until the
         # ledger has run. Additive keys only; nothing above changes shape.
         "resolution_mix": resolution_mix,
         "new_sources": new_sources,
@@ -604,13 +604,13 @@ def build_coverage() -> dict[str, Any]:
         ),
         "sources_status": {
             # the two nightly EOD legs report LIVENESS (last object ≤ 4
-            # days old — the record-staleness banner's own bound), never
+            # days old, the record-staleness banner's own bound), never
             # bare existence: history alone must not keep a chip green
             "yahoo_eod": _leg_fresh(eod["yahoo"].get("SPY"), 4),
             "cboe_eod": _leg_fresh(eod["cboe_eod"].get("SPY"), 4),
             "dolthub_backfill": bool(eod["dolthub"].get("SPY")),
             "alpaca_minute": bool(minute.get("SPY")),
-            # frozen-vs-accruing decided HERE, once — the frontend chip and
+            # frozen-vs-accruing decided HERE, once: the frontend chip and
             # the blind spot read the same verdict (review finding)
             "alpaca_minute_accruing": _leg_fresh(minute.get("SPY"),
                                                  ALPACA_ACCRUING_DAYS),
@@ -631,7 +631,7 @@ def _refresh_in_background() -> None:
         try:
             payload = build_coverage()
             _CACHE["snap"] = (time.time(), payload)
-        except Exception:  # noqa: BLE001 — stale-but-real keeps serving
+        except Exception:  # noqa: BLE001 (stale-but-real keeps serving)
             logging.getLogger("coverage").exception("background coverage rebuild failed")
         finally:
             _build_lock.release()
@@ -647,7 +647,7 @@ def coverage_cached() -> dict[str, Any]:
     if payload is not None and age < CACHE_SECONDS + STALE_SERVE_SECONDS:
         _refresh_in_background()
         return payload
-    # nothing servable — build in the foreground, single-flight
+    # nothing servable: build in the foreground, single-flight
     with _build_lock:
         built_at, payload = _CACHE["snap"]
         if payload is not None and time.time() - built_at < CACHE_SECONDS:
@@ -662,7 +662,7 @@ def warm_coverage() -> None:
     Observatory visit after a deploy answers from memory."""
     try:
         coverage_cached()
-    except Exception:  # noqa: BLE001 — no creds / empty lake: routes report it
+    except Exception:  # noqa: BLE001 (no creds / empty lake: routes report it)
         pass
 
 

@@ -1,29 +1,29 @@
 #!/usr/bin/env python3
 """
-ledger.py — the coverage ledger (ENGINE-V3 D3a, data-arrival hook)
+ledger.py: the coverage ledger (ENGINE-V3 D3a, data-arrival hook)
            + the per-session resolution map (ENGINE-V4 F0).
 
 After every collection run, append one row PER TICKER to
 state/coverage_ledger.parquet recording what the lake holds right now:
 EOD chain sessions, intraday 5-minute sessions, IVX observations, and
-their latest dates (F0 adds UW minute/daily, IVS and Massive counts —
+their latest dates (F0 adds UW minute/daily, IVS and Massive counts:
 additive columns, old readers unaffected). Deltas between any two ledger
 rows are what the nightly auto-unlock scan (D3b) and the weekly priority
-ranking (D3d) reason from — "N new sessions arrived since this verdict
+ranking (D3d) reason from. "N new sessions arrived since this verdict
 was refused" becomes a computable fact instead of a hope.
 
 F0 additionally rebuilds two artifacts each run (self-improvement thesis:
 new data flows into runs automatically, no redeploy):
-  state/resolution_map/ticker={T}.parquet — per-session clock_resolution /
+  state/resolution_map/ticker={T}.parquet: per-session clock_resolution /
     quote_resolution (derivation imported from backend app/data/resolution.py
     so the honesty-critical mapping has exactly ONE implementation, tested
     in the backend battery)
-  state/source_coverage.json — new-source coverage windows (UW families,
-    IVS, Massive, tape) for /api/data/coverage — the backend never has to
+  state/source_coverage.json: new-source coverage windows (UW families,
+    IVS, Massive, tape) for /api/data/coverage. The backend never has to
     list these prefixes in a request path.
 
 Append-only; one row group per run keeps the file tiny (a year of nightly
-runs ≈ 750 rows). Never logs chain data rows — counts and dates only.
+runs ≈ 750 rows). Never logs chain data rows: counts and dates only.
 
 Run:  cd collector && uv run python ledger.py [--skip-resolution]
 Env:  R2_* vars (same as collect.py).
@@ -44,7 +44,7 @@ from pathlib import Path
 import pandas as pd
 
 # single-source the resolution derivation + UW family registry from the
-# backend (see module doc) — these import only pandas/boto3/stdlib
+# backend (see module doc). These import only pandas/boto3/stdlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.data.resolution import (  # noqa: E402
     RESOLUTION_MAP_KEY,
@@ -86,7 +86,7 @@ INTRADAY_PREFIXES = [
 
 def _date_prefixes(s3, prefix: str) -> list[str]:
     """Sorted ISO dates under date=YYYY-MM-DD/ sub-prefixes (cheap
-    Delimiter listing — mirrors backend app/data/r2.py)."""
+    Delimiter listing, mirrors backend app/data/r2.py)."""
     dates: list[str] = []
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=os.environ["R2_BUCKET"],
@@ -127,7 +127,7 @@ def _list_keys(s3, prefix: str) -> list[str]:
 
 def _uw_minute_by_session(s3, ticker: str) -> dict[str, int]:
     """session → distinct contracts with banked UW 1-min bars (full key
-    listing — collector context only, this never runs in a request path)."""
+    listing, collector context only, this never runs in a request path)."""
     per_date: dict[str, set[str]] = defaultdict(set)
     for key in _list_keys(s3, f"uw/option_intraday/ticker={ticker}/"):
         md = re.search(r"date=(\d{4}-\d{2}-\d{2})", key)
@@ -140,7 +140,7 @@ def _uw_minute_by_session(s3, ticker: str) -> dict[str, int]:
 def gather_uw(s3) -> dict:
     """One pass over the UW prefixes, shared by the ledger row, the
     resolution maps and the source-coverage artifact (the option_intraday
-    key listing is the expensive one — never list it three times)."""
+    key listing is the expensive one, so never list it three times)."""
     return {
         "minute": {t: _uw_minute_by_session(s3, t) for t in TICKERS},
         "fam_ticker": {
@@ -171,7 +171,7 @@ def _families_by_session(gathered: dict, ticker: str) -> dict[str, int]:
 
 def snapshot_rows(s3, gathered: dict | None = None) -> list[dict]:
     """One ledger row per ticker: the lake's coverage right now.
-    F0 columns are ADDITIVE — D3b/D3d readers of the original columns are
+    F0 columns are ADDITIVE. D3b/D3d readers of the original columns are
     untouched; pre-F0 rows read back with NaN in the new columns."""
     if gathered is None:
         gathered = gather_uw(s3)
@@ -213,7 +213,7 @@ def snapshot_rows(s3, gathered: dict | None = None) -> list[dict]:
 def build_resolution_maps(s3, gathered: dict | None = None) -> None:
     """Rebuild state/resolution_map/ticker={T}.parquet per ticker (F0).
     Derivation is the backend's single implementation; this side only
-    gathers the listings. Runs after every collection — new sessions and
+    gathers the listings. Runs after every collection. New sessions and
     finer data upgrade the map automatically (self-improvement thesis)."""
     if gathered is None:
         gathered = gather_uw(s3)
@@ -227,7 +227,7 @@ def build_resolution_maps(s3, gathered: dict | None = None) -> None:
             eod.update(list_chain_dates(s3, source, ticker))
         ivs = _date_prefixes(s3, f"reference/ivol/ivs/ticker={ticker}")
         families = _families_by_session(gathered, ticker)
-        # FX.1: 1-min underlying NBBO bars — the minute bar GRID; a
+        # FX.1: 1-min underlying NBBO bars, the minute bar GRID; a
         # minute-clock session is only steppable at 1-min when these exist
         und_1m = _date_prefixes(s3, f"bars_1m/source=ivolatility/ticker={ticker}")
         rows = derive_resolution_rows(
@@ -251,7 +251,7 @@ SOURCE_COVERAGE_KEY = "state/source_coverage.json"
 
 
 def build_source_coverage(s3, gathered: dict | None = None) -> None:
-    """New-source coverage windows for /api/data/coverage (F0) — computed
+    """New-source coverage windows for /api/data/coverage (F0), computed
     here so the backend never lists these prefixes in a request path."""
     if gathered is None:
         gathered = gather_uw(s3)

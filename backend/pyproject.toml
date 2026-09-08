@@ -1,7 +1,7 @@
 [project]
 name = "skeptic-backend"
 version = "0.1.0"
-description = "Skeptic FastAPI backend — see docs/TECH-SPEC.md"
+description = "Skeptic FastAPI backend (see docs/TECH-SPEC.md)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.111",
@@ -13,10 +13,10 @@ dependencies = [
     "requests>=2.32",
     "sqlalchemy>=2.0",
     "psycopg2-binary>=2.9",
-    # launch L1b: self-rolled credentials (owner decision — no third party
+    # launch L1b: self-rolled credentials (owner decision: no third party
     # in the login path); argon2id via passlib
     "passlib[argon2]>=1.7",
-    # launch L3: Stripe is the payment processor — its SDK is the canonical
+    # launch L3: Stripe is the payment processor, and its SDK is the canonical
     # client for Checkout sessions and, critically, webhook signature
     # verification (construct_event does the HMAC + timestamp/replay check;
     # hand-rolling that is where webhook bugs hide)

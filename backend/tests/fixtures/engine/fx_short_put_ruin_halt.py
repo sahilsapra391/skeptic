@@ -13,17 +13,17 @@ Timeline (SPY stand-in; capital $3,000):
 
   2025-01-07 → 01-09  no chain rows: marks stale, equity 2,989.35.
 
-  2025-01-10 (Fri)  CRASH — spot closes 25.00. Expiration:
+  2025-01-10 (Fri)  CRASH, spot closes 25.00. Expiration:
     short put ITM by 75.00 → assigned: buy 100 sh @ 100 = −10,000.00
       cash = 3,204.35 − 10,000                   = −6,795.65
       equity = −6,795.65 + 100 sh × 25.00        = −4,295.65  ≤ $0
     → RUIN HALT: HALT event, the position CLOSEd at its mark
       (reason ruin_halt), simulation stops. The 2025-01-13 session in the
-      window is NEVER simulated — dates/equity end at 2025-01-10.
+      window is NEVER simulated. Dates/equity end at 2025-01-10.
       position P/L = cash_flow + mark = (204.35 − 10,000) + 2,500
                                                  = −7,295.65
 
-  The halt fires at exactly $0 crossing — the LATEST possible ruin date
+  The halt fires at exactly $0 crossing, the LATEST possible ruin date
   (a real margin account is liquidated before zero; disclosed).
 """
 

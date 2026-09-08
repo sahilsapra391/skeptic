@@ -1,4 +1,4 @@
-"""FX.2 — continuous opportunity scanning (spec v4 entry.intraday_scan).
+"""FX.2: continuous opportunity scanning (spec v4 entry.intraday_scan).
 
 Hand-computed fixtures. Entry math convention: short put K=100 quoted
 2.00/2.10 → SELL = 2.05 − 0.5×0.05 = 2.025 → cash +202.50 − 0.65 = +201.85.
@@ -7,7 +7,7 @@ Signal: price_vs_sma_pct(period 2, 5min) > 0. The sampled series drives it,
 so with underlying 100 → 101 → 102 the first evaluable TRUE lands at 09:40
 (the 09:35 pct series has one non-NaN value; the evaluator needs two).
 Owner-decided semantics pinned here:
-  * one entry per EPISODE (false→true edge) — a persistent signal never
+  * one entry per EPISODE (false→true edge): a persistent signal never
     bursts; a reset-and-refire is a second setup;
   * episodes at the concurrency cap are consumed (skip counted), never
     re-armed on the same dip;
@@ -127,7 +127,7 @@ def _opens(result) -> list:  # type: ignore[no-untyped-def]
 class TestEpisodes:
     def test_persistent_signal_is_one_setup(self) -> None:
         # signal true 09:40 → 09:45 continuously: exactly ONE entry (09:40),
-        # despite cap 3 — a persistent signal never bursts
+        # despite cap 3, a persistent signal never bursts
         und = {k: RISE_RESET_RISE[k] for k in
                ("09:30", "09:35", "09:40", "09:45")}
         result = _run(_spec({"profit_target_pct": 500}), _slice(underlying=und))
@@ -140,8 +140,8 @@ class TestEpisodes:
         opens = _opens(result)
         assert [o.bar_time for o in opens] == ["09:40", "09:55"]
         assert result.filled == 2
-        # two independent credits: 2 × (+201.85) over 10,000 minus marks —
-        # the OPEN details pin the fill price (2.025 each)
+        # two independent credits: 2 × (+201.85) over 10,000 minus marks.
+        # The OPEN details pin the fill price (2.025 each)
         assert all("2.02" in o.detail for o in opens)
 
     def test_episode_at_cap_is_consumed_not_queued(self) -> None:
@@ -149,7 +149,7 @@ class TestEpisodes:
         opens = _opens(result)
         assert [o.bar_time for o in opens] == ["09:40"]  # second setup capped
         assert result.skip_reasons.get("max_concurrent") == 1
-        # signal persists at 10:00 — the consumed episode never re-arms
+        # signal persists at 10:00, the consumed episode never re-arms
         assert result.filled == 1
 
     def test_reentry_after_intraday_exit(self) -> None:
@@ -170,15 +170,15 @@ class TestEpisodes:
 
 class TestArmedOrders:
     def test_edge_at_quote_gap_fills_next_quoted_bar_even_if_faded(self) -> None:
-        # the signal edge lands at 09:40 — a bar whose chain is EMPTY (a
+        # the signal edge lands at 09:40, a bar whose chain is EMPTY (a
         # real iVol stamp gap). The armed order waits and FILLS at 09:45's
         # real quote (3.00/3.10 → credit 3.025 → +301.85) even though the
-        # signal has faded (underlying crashed to 85) — a submitted order
+        # signal has faded (underlying crashed to 85). A submitted order
         # can't be recalled. Both bars disclosed.
         und = {"09:30": 100.0, "09:35": 101.0, "09:40": 102.0, "09:45": 85.0}
         quotes = {"09:30": [_put(2.00, 2.10, EXP)],
                   "09:35": [_put(2.00, 2.10, EXP)],
-                  # 09:40 deliberately missing — the quote gap
+                  # 09:40 deliberately missing, the quote gap
                   "09:45": [_put(3.00, 3.10, EXP)]}
         result = _run(_spec({"profit_target_pct": 500}), _slice(quotes, und))
         opens = _opens(result)
@@ -186,11 +186,11 @@ class TestArmedOrders:
         assert opens[0].bar_time == "09:45"
         assert "armed 09:40" in opens[0].detail
         assert "3.02" in opens[0].detail  # filled at 09:45's quote, not 09:40's
-        # waiting bars are NOT skips — the order FILLED; nothing to count
+        # waiting bars are NOT skips: the order FILLED; nothing to count
         assert "no_quote_this_bar" not in result.skip_reasons
 
     def test_armed_order_dies_at_session_flat(self) -> None:
-        # an edge just before close_at_time never fills — the flatten bar
+        # an edge just before close_at_time never fills: the flatten bar
         # mints nothing and the armed order dies with the session
         und = {"09:30": 100.0, "09:35": 101.0, "09:40": 102.0, "09:45": 103.0}
         quotes = {"09:30": [_put(2.00, 2.10, EXP)],
@@ -206,7 +206,7 @@ class TestArmedOrders:
 
 class TestArmedHonestyBounds:
     def test_second_edge_while_armed_is_counted_order_in_flight(self) -> None:
-        # review finding: one working order at a time — an edge arriving
+        # review finding: one working order at a time. An edge arriving
         # while an order is armed is a REAL missed setup, counted and never
         # silently absorbed. Edges at 09:40 and 09:55 across a long quote
         # gap → ONE fill (10:00, the next quoted bar) + order_in_flight 1.
@@ -224,7 +224,7 @@ class TestArmedHonestyBounds:
 
     def test_armed_order_never_hunts_past_a_refusing_quote_bar(self) -> None:
         # review finding (test gap): the sharpest bound of the armed
-        # mechanism — the first quoted bar REFUSES the fill (zero bid on a
+        # mechanism: the first quoted bar REFUSES the fill (zero bid on a
         # short) and the episode is CONSUMED; later good quotes stay
         # untouched (no hunting).
         und = {"09:30": 100.0, "09:35": 101.0, "09:40": 102.0,
@@ -233,7 +233,7 @@ class TestArmedHonestyBounds:
                   "09:35": [_put(2.00, 2.10, EXP)],
                   # 09:40 gap arms; 09:45 quote is unfillable for a short
                   "09:45": [_put(0.00, 0.10, EXP)],
-                  "09:50": [_put(2.00, 2.10, EXP)]}  # good quote — must stay unused
+                  "09:50": [_put(2.00, 2.10, EXP)]}  # good quote, must stay unused
         result = _run(_spec({"profit_target_pct": 500}), _slice(quotes, und))
         assert result.filled == 0
         assert result.skip_reasons.get("zero_bid_short") == 1
@@ -241,8 +241,8 @@ class TestArmedHonestyBounds:
 
 class TestRunFillCap:
     def test_pathological_cycler_is_refused_loudly(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-        # review finding: scanning removes the one-entry-per-session bound —
-        # a per-bar cycler must hit a LOUD cap, never grind unbounded
+        # review finding: scanning removes the one-entry-per-session bound.
+        # A per-bar cycler must hit a LOUD cap, never grind unbounded
         from app.engine import engine as eng
 
         monkeypatch.setattr(eng, "MAX_RUN_FILLS", 2)
@@ -262,7 +262,7 @@ class TestUnconditionalCycling:
     def test_lifecycle_rearm_after_exit(self) -> None:
         # no conditions: enter at the window start (09:30, credit 2.025);
         # 09:40 quote 1.40/1.50 hits PT 25% → close (+53.70) and the SAME
-        # bar re-arms + re-enters at 1.425 credit (+141.85) — the
+        # bar re-arms + re-enters at 1.425 credit (+141.85). The
         # always-in-the-market premium seller cycles all day
         und = {"09:30": 100.0, "09:35": 100.5, "09:40": 100.5, "09:45": 100.5}
         quotes = {"09:30": [_put(2.00, 2.10, EXP)],
@@ -306,7 +306,7 @@ class TestSpecValidation:
 
     @pytest.mark.parametrize("mode", ["every_setup", "once_per_session"])
     def test_scan_refuses_scale_in(self, mode: str) -> None:
-        # ANY intraday_scan value + ladder is refused — "once_per_session"
+        # ANY intraday_scan value + ladder is refused: "once_per_session"
         # would misdescribe a rung-firing ladder (review finding)
         with pytest.raises(ValidationError, match="scale_in"):
             _spec({"profit_target_pct": 50}, scan=mode, conditions=[], scale_in={

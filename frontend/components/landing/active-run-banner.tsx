@@ -4,13 +4,13 @@
  * The background-run banner (launch L4, owner-reported behavior).
  *
  * From the moment a visitor submits a prompt, their run is "in progress":
- * this floating pill tracks it whenever the popup is minimized —
- * "setting up…" → "running in the background…" → "your run is ready —
- * view results". A landing run keeps going server-side while minimized, and
+ * this floating pill tracks it whenever the popup is minimized:
+ * "setting up…" → "running in the background…" → "your run is ready.
+ * View results". A landing run keeps going server-side while minimized, and
  * clicking the pill brings the live popup back (owner: don't lose the run,
- * and don't let them start a second one — send them here).
+ * and don't let them start a second one. Send them here).
  *
- * If the tracked run turns out to be a phantom (a 404 — a demo-fallback run
+ * If the tracked run turns out to be a phantom (a 404: a demo-fallback run
  * that didn't persist, or a lost run), it clears itself AND releases the
  * device's one-free-run gate so the visitor isn't stuck "used" with nothing.
  */
@@ -33,7 +33,7 @@ export function ActiveRunBanner({
 }: {
   // null until the backtest is actually created (parse/interview/spec phase)
   runId: string | null;
-  // a live run flow is still mounted this session — clicking reopens it,
+  // a live run flow is still mounted this session, so clicking reopens it,
   // rather than opening a fresh read-only view
   hasFlow: boolean;
   onReopen: () => void;
@@ -72,7 +72,7 @@ export function ActiveRunBanner({
           onPhantom();
           return;
         }
-        // transient — reschedule
+        // transient, reschedule
       }
       if (alive) timer.current = setTimeout(poll, 2500);
     };
@@ -92,7 +92,7 @@ export function ActiveRunBanner({
     return (
       <Pill onDismiss={dismiss}>
         <span className="text-ink-3">
-          That run didn&apos;t stick — your free backtest is still available.
+          That run didn&apos;t stick. Your free backtest is still available.
         </span>
       </Pill>
     );
@@ -106,8 +106,8 @@ export function ActiveRunBanner({
           className="flex items-center gap-2 text-left"
         >
           <span className="inline-block h-[7px] w-[7px] rounded-full bg-trust" />
-          <span className="font-semibold text-ink">Your run is ready</span>
-          <span className="text-trust">— view results →</span>
+          <span className="font-semibold text-ink">Your run is ready.</span>
+          <span className="text-trust">View results →</span>
         </button>
       </Pill>
     );
@@ -120,13 +120,13 @@ export function ActiveRunBanner({
           onClick={() => (hasFlow ? onReopen() : runId && onView(runId))}
           className="text-left text-ink-3"
         >
-          Your run hit a problem on our end — open it →
+          Your run hit a problem on our end. Open it →
         </button>
       </Pill>
     );
   }
 
-  // pending (setting up) or running — both open the live popup on click
+  // pending (setting up) or running, both open the live popup on click
   return (
     <Pill onDismiss={dismiss}>
       <button onClick={onReopen} className="flex items-center gap-2 text-left">

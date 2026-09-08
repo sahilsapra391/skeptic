@@ -1,4 +1,4 @@
-"""Flow / sentiment / pin signals (ENGINE-V4 F2/F3) — derive once, nightly.
+"""Flow / sentiment / pin signals (ENGINE-V4 F2/F3): derive once, nightly.
 
 Five spec-v7 indicators from UW's per-session families (91 sessions from
 2026-02-24, deepening nightly), reduced to one EOD row per session by
@@ -10,12 +10,12 @@ collector/derive_flow_signals.py into:
 
 Reduction conventions (probed 2026-07-07, pinned in fixtures):
   net_premium        Σ net_call_premium − Σ net_put_premium over the
-                     session's net_prem_ticks rows — the rows are
+                     session's net_prem_ticks rows. The rows are
                      per-minute BUCKETS (probe: last call_volume 10,366
                      vs session sum 7.57M), so the session total is the
                      SUM. Dollars (vendor units) → sign/rank vocabulary.
-  put_call_ratio     Σ put_volume / Σ call_volume (same rows) —
-                     dimensionless classic; raw thresholds legal.
+  put_call_ratio     Σ put_volume / Σ call_volume (same rows).
+                     Dimensionless classic; raw thresholds legal.
   nope_eod           the LAST stamp's `nope` (vendor-computed per stamp).
                      Dimensionless but a VENDOR IMPLEMENTATION of the
                      published metric → sign/rank only (owner decision
@@ -25,7 +25,7 @@ Reduction conventions (probed 2026-07-07, pinned in fixtures):
                      the nearest expiry STRICTLY AFTER the session (owner
                      decisions 2026-07-08: pin dynamics are a front-expiry
                      phenomenon, and with daily expirations the same-day
-                     expiry is already SETTLING — the value must reference
+                     expiry is already SETTLING. The value must reference
                      the pin the trade actually faces). Unit-free % → raw
                      thresholds legal.
   market_tide        the LAST row's net_call_premium − net_put_premium of
@@ -36,7 +36,7 @@ Reduction conventions (probed 2026-07-07, pinned in fixtures):
                      series for all tickers.
 
 Honesty: a session whose family file is missing or empty derives None
-for that family's signals — never a guess. Coverage-capped like F1:
+for that family's signals, never a guess. Coverage-capped like F1:
 specs conditioned on these refuse windows starting before the signal's
 first covered session, and the *_rank_1y forms stay unevaluable below
 126 trailing observations (unlock as UW data accrues).
@@ -75,7 +75,7 @@ def derive_flow_row(
         "net_call_premium", "net_put_premium", "call_volume", "put_volume",
     }.issubset(net_prem.columns):
         # min_count=1: an all-NaN column must yield NaN, not a fabricated
-        # 0.0 — "put/call ratio below 0.8" must never be True on missing
+        # 0.0. "put/call ratio below 0.8" must never be True on missing
         # data (review finding F2/F3 #1)
         ncp = _num(net_prem, "net_call_premium").sum(min_count=1)
         npp = _num(net_prem, "net_put_premium").sum(min_count=1)
@@ -106,10 +106,10 @@ def derive_flow_row(
         day = date.fromisoformat(session)
         # FRONT = nearest expiry STRICTLY AFTER the session (owner decision
         # 2026-07-08): with daily expirations, ">=" would reference the
-        # expiry settling TODAY — retrospective at the EOD stamp and a
+        # expiry settling TODAY, retrospective at the EOD stamp and a
         # ghost by the time next session's bars consume it. Forward-
         # referencing by CALENDAR (tomorrow's expiry DATE, known today;
-        # computed from today's OI at today's close) is PIT-clean — it is
+        # computed from today's OI at today's close) is PIT-clean. It is
         # not forward-looking into DATA, which stays forbidden.
         front = mp.loc[mp["_exp"].notna() & (mp["_exp"] > day)
                        & mp["_mp"].notna() & mp["_close"].notna()]
@@ -158,7 +158,7 @@ def load_flow_signals(
     s3: Any, ticker: str
 ) -> tuple[dict[date, float], dict[date, float], dict[date, float], dict[date, float]]:
     """(net_premium, put_call_ratio, nope_eod, max_pain_dist_pct) by
-    session from the derived artifact — empty dicts until the collector
+    session from the derived artifact, empty dicts until the collector
     has derived (honest absence; indicators evaluate False)."""
     from app.data import r2  # late import keeps module collector-importable
 
@@ -168,7 +168,7 @@ def load_flow_signals(
 
 
 def load_market_tide(s3: Any) -> dict[date, float]:
-    """Market-wide tide by session — ONE series regardless of ticker."""
+    """Market-wide tide by session: ONE series regardless of ticker."""
     from app.data import r2
 
     return _series_from(r2.get_parquet(s3, TIDE_KEY), "market_tide")

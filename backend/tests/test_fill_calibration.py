@@ -1,11 +1,11 @@
-"""Fill-model calibration (D3d) — hand-computed.
+"""Fill-model calibration (D3d), hand-computed.
 
 The measured quantity is the engine's own slip parameter: the fraction of
 the half-spread a real print conceded from mid toward the adverse quote.
 Fixtures use quote 2.00/2.10 → mid 2.05, half-spread 0.05, so slips are
 exact by hand. The per-print side comes from the tape's `tags` token
 (review 2026-07-13: the *_vol columns are cumulative contract-day
-counters — building sides from them mislabeled a third of prints and
+counters. Building sides from them mislabeled a third of prints and
 excluded 98% of a session as "multi-leg"). Exclusions are counted, never
 silently dropped; a session with nothing measurable still banks its
 accounting as a context-only row.
@@ -25,7 +25,7 @@ from app.data.fill_calibration import (
 
 def _print_row(price: float, size: int = 1, tags: str = "{ask_side,etf}",
                bid: float = 2.00, ask: float = 2.10) -> dict:
-    # tape columns are strings in the real parquet — fixtures match that
+    # tape columns are strings in the real parquet. Fixtures match that
     return {"price": str(price), "size": str(size), "nbbo_bid": str(bid),
             "nbbo_ask": str(ask), "tags": tags}
 
@@ -49,7 +49,7 @@ class TestCalibrateSession:
         assert (ask["b_le0"], ask["b_025"], ask["b_100"], ask["b_150"]) == (1, 1, 1, 1)
         assert ask["slip_median"] == round((0.2 + 1.0) / 2, 4)  # 0.6
         bid = by_key[("bid", "51-250")]
-        # slip 0.8 ∈ (0.75, 1.0] — bins are named by their UPPER edge
+        # slip 0.8 ∈ (0.75, 1.0] (bins are named by their UPPER edge)
         assert bid["n"] == 1 and bid["b_100"] == 1
         assert bid["slip_median"] == 0.8
 
@@ -89,7 +89,7 @@ class TestCalibrateSession:
     def test_unrecognized_shape_is_none(self) -> None:
         assert calibrate_session(pd.DataFrame({"x": [1]})) is None
         assert calibrate_session(pd.DataFrame()) is None
-        # tags is REQUIRED — without it no side is knowable
+        # tags is REQUIRED: without it no side is knowable
         assert calibrate_session(pd.DataFrame(
             [{"price": "2.05", "size": "1", "nbbo_bid": "2.00",
               "nbbo_ask": "2.10"}])) is None
@@ -106,7 +106,7 @@ class TestPooledSummary:
         return row
 
     def test_bins_sum_and_quantiles_estimate(self) -> None:
-        # two sessions of ask/1: bins sum to (2,0,0,0,2,0,0) over n=4 —
+        # two sessions of ask/1: bins sum to (2,0,0,0,2,0,0) over n=4.
         # p50's target 2.0 is reached inside b_le0 → clamps to 0.0; p75
         # (target 3.0) lands halfway through b_100 → 0.75 + 0.5·0.25
         out = pooled_summary(pd.DataFrame(

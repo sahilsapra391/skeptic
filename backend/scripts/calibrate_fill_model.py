@@ -1,10 +1,10 @@
 """ENGINE-V3 D3d (Loop C): calibrate the daily fill model against the
-5-minute NBBO record — evidence first, then a REVIEWED PR, never a hot
+5-minute NBBO record. Evidence first, then a REVIEWED PR, never a hot
 patch.
 
 WHAT IS MEASURED. The daily engine fills at the EOD chain's close quote:
 mid ± slippage_half_spread_fraction × half-spread (buys toward ask, sells
-toward bid — guardrail #1). For every contract-date present in BOTH the
+toward bid; guardrail #1). For every contract-date present in BOTH the
 winning EOD chain AND the intraday slice's closing bar (true NBBO,
 ivol_5min sessions only), we ask: how far from the TRUE closing mid does
 that daily fill land, in units of the TRUE half-spread?
@@ -13,10 +13,10 @@ that daily fill land, in units of the TRUE half-spread?
     excess_sell = (nbbo_mid − fill_daily_sell) / nbbo_half_spread
 
 The model intends each side's default (buys 0.85 / sells 0.90 since
-2026-07-13 — D3d tape-earned, side-aware). If EOD
+2026-07-13; D3d tape-earned, side-aware). If EOD
 quotes were perfect closing NBBO, the median excess would BE f. Stale or
 wide EOD marks push it off; the measured median is the truth the default
-must answer to. Calibration targets the BASE fraction only — the OI-
+must answer to. Calibration targets the BASE fraction only. The OI-
 scaled thin-liquidity slip and commission are separate, unchanged layers.
 
 DECISION RULE (owner amendments 2+3, docs/HONESTY.md):
@@ -29,12 +29,12 @@ DECISION RULE (owner amendments 2+3, docs/HONESTY.md):
 - inside the bar, or below the sample floor → no proposal; the evidence
   doc says so and the pass re-runs next week on more data.
 
-The proposal edits the REAL defaults (app/models/spec.py + the schema) —
-no config indirection (owner amendment 2). The parser prompt's example
+The proposal edits the REAL defaults (app/models/spec.py + the schema).
+No config indirection (owner amendment 2). The parser prompt's example
 value and the frontend Settings default are deliberately NOT auto-edited
 (each has its own review gate); the PR body lists them as follow-ups.
 
-Aggregates only are written anywhere — never chain data rows.
+Aggregates only are written anywhere, never chain data rows.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ CAL_OPTIMISTIC_BAR = 0.50  # … and 2× the divergence (owner amendment 3)
 CAL_CLOSE_BAR_MIN = dtime(15, 45)  # a session's "close" NBBO must be ≥15:45 ET
 CAL_ROUND = 0.05  # proposed defaults land on a 0.05 grid
 
-# Anchors for the auto-PR's edits — exact strings; a miss aborts loudly.
+# Anchors for the auto-PR's edits: exact strings; a miss aborts loudly.
 SPEC_PY = Path(__file__).resolve().parents[1] / "app" / "models" / "spec.py"
 SCHEMA = Path(__file__).resolve().parents[2] / "docs" / "strategy-spec.schema.json"
 CAL_STATE_KEY = "state/calibration_latest.json"
@@ -74,7 +74,7 @@ CAL_STATE_KEY = "state/calibration_latest.json"
 
 @dataclass
 class Calibration:
-    """Aggregate result of one calibration pass. Distribution stats only —
+    """Aggregate result of one calibration pass. Distribution stats only;
     no per-contract rows leave the process (legal rail)."""
 
     measured_at: str
@@ -150,7 +150,7 @@ def measure(ticker: str = "SPY") -> Calibration:
         eod = store.chains[day]
         # cheap pre-filter on the in-memory chain: without a contract the
         # intraday slice could even HOLD (≤ cap trading-DTE ≈ cap+2 calendar
-        # days), there is nothing to compare — skip without touching the
+        # days), there is nothing to compare, so skip without touching the
         # intraday store. On the dolthub-era record (no <11 DTE expirations)
         # this skips ~every historical session, which keeps the weekly
         # Actions pass from cold-loading thousands of session slices.
@@ -195,7 +195,7 @@ def _valid(bid: float | None, ask: float | None) -> bool:
 
 
 def decide(cal: Calibration) -> Decision:
-    """The documented decision rule — asymmetric by direction (amendment 3)."""
+    """The documented decision rule, asymmetric by direction (amendment 3)."""
     if not cal.excess:
         return Decision(False, "none", None, "no overlapping contract-days measured")
     m = statistics.median(cal.excess)
@@ -204,27 +204,27 @@ def decide(cal: Calibration) -> Decision:
     if abs(div) < CAL_BASE_BAR:
         return Decision(
             False, "none", None,
-            f"median excess {m:.3f} within ±{CAL_BASE_BAR} of intended {f} — aligned",
+            f"median excess {m:.3f} within ±{CAL_BASE_BAR} of intended {f}, aligned",
         )
     if div < 0:  # daily fills cheaper than reality → raising f is conservative
         if cal.n < CAL_BASE_MIN_N:
             return Decision(
                 False, "none", None,
                 f"conservative divergence ({m:.3f} vs {f}) but n={cal.n} "
-                f"< {CAL_BASE_MIN_N} — waiting for more shared history",
+                f"< {CAL_BASE_MIN_N}, waiting for more shared history",
             )
         return Decision(True, "conservative", _rescale(f, m), f"daily fills concede only "
-                        f"{m:.3f} true half-spreads vs intended {f} — model too optimistic")
+                        f"{m:.3f} true half-spreads vs intended {f}. Model too optimistic")
     # div > 0: daily fills MORE punitive → lowering f is optimism-increasing
     if cal.n < CAL_OPTIMISTIC_MIN_N or div < CAL_OPTIMISTIC_BAR:
         return Decision(
             False, "none", None,
             f"optimism-increasing divergence ({m:.3f} vs {f}) below the higher bar "
             f"(needs n≥{CAL_OPTIMISTIC_MIN_N} and ≥{CAL_OPTIMISTIC_BAR}; "
-            f"n={cal.n}, div={div:.3f}) — never a silent nudge toward rosier numbers",
+            f"n={cal.n}, div={div:.3f}); never a silent nudge toward rosier numbers",
         )
     return Decision(True, "optimism_increasing", _rescale(f, m), f"daily fills concede "
-                    f"{m:.3f} true half-spreads vs intended {f} — model overcharges; "
+                    f"{m:.3f} true half-spreads vs intended {f}. Model overcharges; "
                     f"higher evidence bar met")
 
 
@@ -240,15 +240,15 @@ def evidence_markdown(cal: Calibration, decision: Decision, today: str) -> str:
     from typing import cast
 
     s = cal.stats()
-    placeholder: dict[str, object] = {"median": "—", "p25": "—", "p75": "—"}
+    placeholder: dict[str, object] = {"median": "n/a", "p25": "n/a", "p75": "n/a"}
     excess = cast(dict[str, object], s["excess"]) if s["excess"] else placeholder
     ratio = cast(dict[str, object], s["spread_ratio"]) if s["spread_ratio"] else placeholder
     lines = [
-        f"# Fill-model calibration — {today}",
+        f"# Fill-model calibration: {today}",
         "",
         "Weekly evidence pass (ENGINE-V3 D3d). Daily-model close fills vs the",
         "true closing NBBO (last ≥15:45 ET bar of the ivol_5min record), for",
-        "every contract-date present in BOTH records. Aggregates only — no",
+        "every contract-date present in BOTH records. Aggregates only, no",
         "chain rows are reproduced here (legal rail).",
         "",
         f"- current default `slippage_half_spread_fraction`: **{cal.f_current}**",
@@ -256,7 +256,7 @@ def evidence_markdown(cal: Calibration, decision: Decision, today: str) -> str:
         f"(used {cal.sessions_used}, no short tenor on the EOD chain "
         f"{cal.sessions_skipped_no_short_tenor}, non-NBBO {cal.sessions_skipped_source}, "
         f"early close-bar {cal.sessions_skipped_early}) · window "
-        f"{cal.first_shared or '—'} → {cal.last_shared or '—'}",
+        f"{cal.first_shared or 'n/a'} → {cal.last_shared or 'n/a'}",
         f"- contract-day sides measured: **n = {cal.n}**",
         f"- excess (true half-spreads conceded by the daily fill): "
         f"median **{excess['median']}**, p25 {excess['p25']}, p75 {excess['p75']}",
@@ -284,7 +284,7 @@ def evidence_markdown(cal: Calibration, decision: Decision, today: str) -> str:
         "(owner amendment 3)",
         "",
         "Known context: the historical EOD chains (dolthub era) carry no <11 DTE",
-        "expirations, and the intraday slice is 0–2 trading-DTE — contract",
+        "expirations, and the intraday slice is 0–2 trading-DTE, so contract",
         "overlap begins with the Yahoo 0–60 DTE capture (2026-07-01). n grows",
         "with every session the capture banks; this pass re-runs weekly.",
         "",
@@ -297,7 +297,7 @@ def _edit_defaults(f_new: float) -> None:
     """Anchored, exact-string edits to the REAL defaults. A missing anchor
     aborts before anything is written."""
     # anchors updated 2026-07-13 (two-field earned model). The auto-edit
-    # still proposes ONE f and moves the BUY default only — the sell field
+    # still proposes ONE f and moves the BUY default only; the sell field
     # (0.90) evolves behind its own owner gate; the PR body names it as a
     # human follow-up. A two-sided decision model is a future redesign.
     spec_old = "slippage_half_spread_fraction: float = Field(default=0.85, gt=0, le=1)"
@@ -309,7 +309,7 @@ def _edit_defaults(f_new: float) -> None:
     spec_text = SPEC_PY.read_text()
     schema_text = SCHEMA.read_text()
     if spec_old not in spec_text or schema_old not in schema_text:
-        raise SystemExit("calibration anchors not found — defaults moved; update anchors")
+        raise SystemExit("calibration anchors not found: defaults moved; update anchors")
     SPEC_PY.write_text(spec_text.replace(spec_old, spec_new, 1))
     SCHEMA.write_text(schema_text.replace(schema_old, schema_new, 1))
 
@@ -331,12 +331,12 @@ def open_pr(cal: Calibration, decision: Decision, today: str) -> None:
         f"Automated weekly calibration proposal (ENGINE-V3 D3d). Evidence: `{doc_rel}` "
         f"(in this PR).\n\n{decision.reason}.\n\n"
         "Edits the REAL defaults only (app/models/spec.py + docs/strategy-spec.schema.json"
-        " — owner amendment 2). Human follow-ups on merge, each behind its own gate:\n"
+        "; owner amendment 2). Human follow-ups on merge, each behind its own gate:\n"
         "- parser prompt example value (requires parser-eval re-ACCEPT)\n"
         "- frontend Settings default (frontend/lib/settings.ts)\n"
-        "- the SELL-side default (slippage_half_spread_fraction_sell) — "
+        "- the SELL-side default (slippage_half_spread_fraction_sell): "
         "this loop calibrates the BUY field only\n\n"
-        "Merging is the review — nothing changed until this lands.\n\n"
+        "Merging is the review; nothing changed until this lands.\n\n"
         "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
     )
     def run(*args: str) -> None:
@@ -377,7 +377,7 @@ def main() -> int:
     ap.add_argument("--ticker", default="SPY")
     ap.add_argument("--execute", action="store_true",
                     help="write R2 state and open the proposal PR when warranted "
-                         "(default: dry-run — print the evidence, touch nothing)")
+                         "(default: dry-run; print the evidence, touch nothing)")
     ap.add_argument("--write-doc", action="store_true",
                     help="write docs/calibration/<today>.md locally (evidence artifact)")
     args = ap.parse_args()
@@ -398,7 +398,7 @@ def main() -> int:
         if decision.proposal:
             open_pr(cal, decision, today)
         else:
-            log.info("no proposal — %s", decision.reason)
+            log.info("no proposal: %s", decision.reason)
     return 0
 
 

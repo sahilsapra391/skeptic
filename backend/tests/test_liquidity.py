@@ -1,4 +1,4 @@
-"""Liquidity-aware fill model (D1b) — hand-computed, like every engine test.
+"""Liquidity-aware fill model (D1b), hand-computed, like every engine test.
 
 effective_slip, base 0.5, min_oi 10 → knee at 10×floor = 100:
   OI None → 0.5 (unknown is disclosed, never penalized)

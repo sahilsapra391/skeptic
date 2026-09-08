@@ -1,11 +1,11 @@
 /**
- * DEMO fixtures — server-side only, used by the API route handlers when the
+ * DEMO fixtures: server-side only, used by the API route handlers when the
  * backend answers 501 (engine/parser milestones M2–M4 not built yet) or is
  * unreachable in dev.
  *
  * Every payload from this file carries `demo: true` and the UI labels it.
  * Numbers here are the approved design's illustrative content
- * (docs/design/Skeptic App.dc.html) — they are NOT computed results and are
+ * (docs/design/Skeptic App.dc.html). They are NOT computed results and are
  * never presented as such. This file is deleted the day M2–M4 land.
  */
 
@@ -37,7 +37,7 @@ const MC = {
   p05: "0,80 100,84 200,86 300,89 400,92",
 };
 
-// terminal $ per band — illustrative, mirrors the shape real runs now carry
+// terminal $ per band (illustrative, mirrors the shape real runs now carry)
 const MC_TERM = { p95: "$41,900", p50: "$32,400", p05: "$24,100" };
 
 const SENSITIVITY = [
@@ -49,11 +49,11 @@ const WF_FADES = [46, 30, -18, 52, 38, -16, 44, 34, 50, -22, 40, 46];
 
 const TRADES: TradeRow[] = [
   { d: "Jun 26 ’26", a: "CLOSE", det: "−1P 543 · opened Jun 5 · cr $3.42", pl: "+$164", plSign: "pos", n: "profit target 50%" },
-  { d: "Jun 20 ’26", a: "OPEN", det: "−1P 545 · 45 DTE · Δ.30 · cr $3.38", pl: "—", plSign: "none", n: "schedule: weekly" },
-  { d: "Jun 13 ’26", a: "SKIP", det: "—", pl: "—", plSign: "none", n: "zero bid on .30Δ strike", skip: true },
+  { d: "Jun 20 ’26", a: "OPEN", det: "−1P 545 · 45 DTE · Δ.30 · cr $3.38", pl: "n/a", plSign: "none", n: "schedule: weekly" },
+  { d: "Jun 13 ’26", a: "SKIP", det: "n/a", pl: "n/a", plSign: "none", n: "zero bid on .30Δ strike", skip: true },
   { d: "Jun 6 ’26", a: "CLOSE", det: "−1P 538 · opened May 16", pl: "−$389", plSign: "neg", n: "stop: 2× credit" },
   { d: "May 30 ’26", a: "CLOSE", det: "−1P 531 · opened May 9", pl: "+$171", plSign: "pos", n: "profit target 50%" },
-  { d: "May 23 ’26", a: "SKIP", det: "—", pl: "—", plSign: "none", n: "spread 14% of mid — quote quality", skip: true },
+  { d: "May 23 ’26", a: "SKIP", det: "n/a", pl: "n/a", plSign: "none", n: "spread 14% of mid: quote quality", skip: true },
   { d: "May 16 ’26", a: "CLOSE", det: "−1P 527 · opened Apr 25", pl: "+$158", plSign: "pos", n: "21 DTE time exit" },
   { d: "May 9 ’26", a: "CLOSE", det: "−1P 522 · opened Apr 18", pl: "+$149", plSign: "pos", n: "profit target 50%" },
 ];
@@ -84,7 +84,7 @@ function fadesOos(): FixtureBundle {
       ],
       breaks: [
         "In-sample Sharpe 1.42 → 0.44 out-of-sample (−69%)",
-        "11 high-VIX weeks account for 58% of all P/L — calm markets are flat-to-negative",
+        "11 high-VIX weeks account for 58% of all P/L (calm markets are flat-to-negative)",
       ],
       caveat:
         "68 OOS trades · one volatility regime · self-collected data. Treat as suggestive, not proven.",
@@ -104,10 +104,10 @@ function fadesOos(): FixtureBundle {
       bar2: "27%",
       wf: wf(WF_FADES),
       notes: [
-        "−69% decay — fails ✗",
+        "−69% decay, fails ✗",
         "9 / 12 windows positive ✓",
         "5th pctile −31% ⚠ · median +9%",
-        "Δ .30 optimum is a cliff — neighbors lose ✗",
+        "Δ .30 optimum is a cliff: neighbors lose ✗",
       ],
     },
   };
@@ -125,16 +125,16 @@ function survives(): FixtureBundle {
       marker: "66%",
       chips: ["OOS ✓", "walk-fwd ✓", "monte carlo ✓", "sensitivity ✓", "sample ✗"],
       evidence: [
-        "OOS Sharpe 1.18 vs 1.31 in-sample — only −10% decay",
+        "OOS Sharpe 1.18 vs 1.31 in-sample, only −10% decay",
         "Walk-forward: 11 of 12 windows positive",
-        "Δ sweep is a plateau — neighbors hold up",
+        "Δ sweep is a plateau: neighbors hold up",
       ],
       breaks: [
         "Sample spans one volatility regime (’24–’26)",
-        "Monte Carlo 5th percentile: −14% drawdown — survivable, not painless",
+        "Monte Carlo 5th percentile: −14% drawdown (survivable, not painless)",
       ],
       caveat:
-        "Strong within the record we have — but the record is short. This verdict re-runs automatically as data accrues.",
+        "Strong within the record we have, but the record is short. This verdict re-runs automatically as data accrues.",
     },
     mtiles: [
       { v: "13.8%", l: "CAGR" },
@@ -151,10 +151,10 @@ function survives(): FixtureBundle {
       bar2: "82%",
       wf: wf([46, 30, 18, 52, 38, 16, 44, 34, 50, -22, 40, 46]),
       notes: [
-        "−10% decay — holds ✓",
+        "−10% decay, holds ✓",
         "11 / 12 windows positive ✓",
         "5th pctile −14% · median +11% ✓",
-        "Δ .25–.35 all profitable — plateau ✓",
+        "Δ .25–.35 all profitable, plateau ✓",
       ],
     },
   };
@@ -165,7 +165,7 @@ function refusal(ticker: Ticker): FixtureBundle {
     verdict: {
       kind: "refusal",
       refusal: true,
-      headline: `Verdict withheld. The ${ticker} options record began 2026-07-01 — days of data can’t answer this honestly.`,
+      headline: `Verdict withheld. The ${ticker} options record began 2026-07-01. Days of data can’t answer this honestly.`,
       survived: "NOT EVALUATED",
       chips: [],
       evidence: [],
@@ -184,16 +184,16 @@ function refusal(ticker: Ticker): FixtureBundle {
       { v: "1.70", l: "P·FACTOR*" },
     ],
     honesty: {
-      isSharpe: "—",
-      oosSharpe: "—",
+      isSharpe: "n/a",
+      oosSharpe: "n/a",
       bar1: "0%",
       bar2: "0%",
       wf: [],
       notes: [
-        "not run — sample too thin",
-        "not run — sample too thin",
-        "not run — sample too thin",
-        "not run — sample too thin",
+        "not run: sample too thin",
+        "not run: sample too thin",
+        "not run: sample too thin",
+        "not run: sample too thin",
       ],
     },
   };
@@ -227,7 +227,7 @@ export function demoParse(text: string): SpecDraft {
   const strikeDelta = Math.min(50, Math.max(10, Math.round(rawDelta / 5) * 5));
 
   // entry DTE: skip matches that belong to an exit clause ("close at /
-  // exit at / roll at / or 21 DTE") — those are exits, not tenor
+  // exit at / roll at / or 21 DTE"). Those are exits, not tenor
   const dteCandidates = Array.from(t.matchAll(/(\d{1,3})\s*(?:dte|[- ]?days?)/g));
   const exitContext = /(?:close|exit|roll|stop|or|at)\s*(?:at\s*)?$/;
   const entryDte = dteCandidates.find(
@@ -242,7 +242,7 @@ export function demoParse(text: string): SpecDraft {
   else if (t.includes("friday")) cadence = "weekly · fri";
   else if (t.includes("monday") || t.includes("week")) cadence = "weekly · mon";
 
-  // exit: only what the text actually says — otherwise null and the spec
+  // exit: only what the text actually says, otherwise null and the spec
   // screen asks (guardrail #3, alive even in the demo)
   const parts: string[] = [];
   const profit = t.match(
@@ -286,7 +286,7 @@ const N_STAGES = 6;
 
 function bundleFor(draft: SpecDraft): FixtureBundle {
   // Honest demo routing: SPY has 6.5y of chains in the lake, so it may show
-  // a full (demo) verdict. QQQ/IWM chains began 2026-07-01 — the only honest
+  // a full (demo) verdict. QQQ/IWM chains began 2026-07-01. The only honest
   // demo verdict is the refusal state.
   if (draft.ticker !== "SPY") return refusal(draft.ticker);
   return draft.structure === "put_credit_spread" ? survives() : fadesOos();
@@ -295,7 +295,7 @@ function bundleFor(draft: SpecDraft): FixtureBundle {
 function runName(draft: SpecDraft): string {
   if (draft.fromChart) {
     const n = draft.examples ?? 1;
-    return `${draft.ticker} pullback short put — taught by ${n} pinned example${n === 1 ? "" : "s"}`;
+    return `${draft.ticker} pullback short put, taught by ${n} pinned example${n === 1 ? "" : "s"}`;
   }
   const structure = draft.structure.replace(/_/g, " ");
   return `${draft.ticker} .${draft.strikeDelta}Δ ${draft.cadence.startsWith("weekly") ? "weekly " : ""}${structure}`;
@@ -323,7 +323,7 @@ export function createDemoRun(draft: SpecDraft): string {
     mc: MC,
     mcTerm: MC_TERM,
     sensitivity: SENSITIVITY,
-    tradeHeader: "Trade log — 412 filled · 37 skipped, with reasons",
+    tradeHeader: "Trade log: 412 filled · 37 skipped, with reasons",
     trades: TRADES,
   };
   runs.set(id, { createdAt: Date.now(), payload });
@@ -340,7 +340,7 @@ export function getDemoRun(id: string): RunPayload | null {
 }
 
 export function demoAskAnswer(): string {
-  return "Worst month: Apr ’25, −6.8% — the dip you anchored on. Remove it and CAGR drops 11.2% → 8.9%; the verdict does not change. Computed from this run’s trade log only — no new numbers were invented.";
+  return "Worst month: Apr ’25, −6.8% (the dip you anchored on). Remove it and CAGR drops 11.2% → 8.9%; the verdict does not change. Computed from this run’s trade log only. No new numbers were invented.";
 }
 
 // ------------------------------------------------------- seeded library
@@ -371,7 +371,7 @@ function seededRun(
       mc: MC,
       mcTerm: MC_TERM,
       sensitivity: SENSITIVITY,
-      tradeHeader: "Trade log — 412 filled · 37 skipped, with reasons",
+      tradeHeader: "Trade log: 412 filled · 37 skipped, with reasons",
       trades: TRADES,
     },
   };
@@ -458,7 +458,7 @@ export function listDemoRuns(): RunSummary[] {
       demo: true,
       name: "IWM 16Δ iron condor",
       meta: "Jun 24 ’26 · condor · withheld",
-      quote: "“Verdict withheld — days of IWM data can’t answer this honestly.”",
+      quote: "“Verdict withheld. Days of IWM data can’t answer this honestly.”",
       kind: "refusal",
     },
   ];

@@ -3,8 +3,8 @@
 The market is a zero-drift geometric random walk (NO true edge exists by
 construction) with Black-Scholes-priced chains and a VIX that cycles
 through all three regime buckets. The optimizer sweeps 108 parameter
-combinations against the FULL sample and keeps the best in-sample Sharpe —
-textbook curve-fitting. The gauntlet must catch it, forever
+combinations against the FULL sample and keeps the best in-sample Sharpe.
+Textbook curve-fitting. The gauntlet must catch it, forever
 (tests/test_overfit_fixture.py is in the permanent required set).
 
 Run `uv run python -m tests.fixtures.synthetic_market` to (re)generate
@@ -123,7 +123,7 @@ def _spec(delta: float, dte: int, profit: float, stop: float) -> dict:
         "spec_version": 1,
         "meta": {
             "name": f"overfit SPY {int(delta * 100)}d {dte}dte {int(profit)}pt {int(stop)}sl",
-            "description_raw": "deliberately overfit fixture — tuned on the full sample",
+            "description_raw": "deliberately overfit fixture, tuned on the full sample",
         },
         "underlying": {"ticker": "SPY"},
         "position": {
@@ -182,7 +182,7 @@ def optimize_on_full_sample(seed: int) -> tuple[dict, float]:
 
 def build_fixture() -> dict:
     """Search data seeds until the optimizer's pick is (a) not sample-capped
-    — so the gauntlet judges it on the merits — and (b) caught: trust ≤ 2
+    (so the gauntlet judges it on the merits) and (b) caught: trust ≤ 2
     with the OOS degradation flagged. The mechanism is fully real; the seed
     is pinned so the required test is deterministic forever."""
     from app.engine.runner import run_backtest
@@ -208,10 +208,10 @@ def build_fixture() -> dict:
                 "in_sample_sharpe": round(is_sharpe, 4),
                 "note": (
                     "parameters tuned on the FULL zero-edge sample by "
-                    "tests/fixtures/synthetic_market.py — the gauntlet must always catch this"
+                    "tests/fixtures/synthetic_market.py. The gauntlet must always catch this"
                 ),
             }
-    raise RuntimeError("no seed produced a seductive-but-catchable overfit — widen the search")
+    raise RuntimeError("no seed produced a seductive-but-catchable overfit. Widen the search")
 
 
 if __name__ == "__main__":

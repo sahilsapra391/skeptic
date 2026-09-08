@@ -24,28 +24,28 @@ export default function PrivacyPage() {
         <Bullets
           items={[
             <>
-              <span className="font-semibold text-ink">Account information</span> — your
+              <span className="font-semibold text-ink">Account information</span>: your
               email address, and a salted <span className="font-mono text-[12.5px]">argon2id</span>{" "}
               hash of your password. We never store your password in readable form.
             </>,
             <>
-              <span className="font-semibold text-ink">Your runs</span> — the strategy
+              <span className="font-semibold text-ink">Your runs</span>: the strategy
               descriptions you submit and the backtest results and settings associated with
               your account.
             </>,
             <>
-              <span className="font-semibold text-ink">Authentication data</span> — a
+              <span className="font-semibold text-ink">Authentication data</span>: a
               session identifier stored as an httpOnly cookie so you stay signed in, and
               single-use email-verification tokens.
             </>,
             <>
-              <span className="font-semibold text-ink">Limited technical logs</span> — for
+              <span className="font-semibold text-ink">Limited technical logs</span>: for
               security, abuse prevention, and rate-limiting we process transient data such
               as IP address and request metadata. We do not use this to build advertising
               profiles.
             </>,
             <>
-              <span className="font-semibold text-ink">Payment information</span> — if you
+              <span className="font-semibold text-ink">Payment information</span>: if you
               purchase credits, our payment processor handles your card details directly.
               We receive a confirmation and a transaction reference; we never receive or
               store your full card number.
@@ -57,9 +57,9 @@ export default function PrivacyPage() {
       <Section n={2} title="How we use it">
         <Bullets
           items={[
-            "To provide the Service — authenticate you, run your backtests, and keep your run library.",
+            "To provide the Service: authenticate you, run your backtests, and keep your run library.",
             "To send transactional email such as address verification. We do not send marketing email without your consent.",
-            "To secure the Service — detect and prevent abuse, fraud, and automated attacks, and enforce our Terms.",
+            "To secure the Service: detect and prevent abuse, fraud, and automated attacks, and enforce our Terms.",
             "To operate and improve the Service and fix problems.",
           ]}
         />
@@ -78,7 +78,7 @@ export default function PrivacyPage() {
         <p>We do not sell your personal information. We share it only with:</p>
         <Bullets
           items={[
-            "Service providers who process data on our behalf under contract — our hosting and database providers, our email sender, and our payment processor — solely to operate the Service;",
+            "Service providers who process data on our behalf under contract (our hosting and database providers, our email sender, and our payment processor) solely to operate the Service;",
             "Authorities, if required by law, legal process, or to protect the rights, safety, and security of SpecHawk, our users, or the public; and",
             "A successor in the event of a merger, acquisition, or asset sale, subject to this Policy.",
           ]}

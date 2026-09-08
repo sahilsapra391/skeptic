@@ -1,4 +1,4 @@
-"""D3c: verdict receipts — a daily verdict faces its 5-minute replay.
+"""D3c: verdict receipts. A daily verdict faces its 5-minute replay.
 The receipt attaches to the ORIGINAL run at read time; the stored verdict
 is never rewritten (owner amendment 4). Replays are origin=receipt runs
 and never bump the family trial counter."""
@@ -51,7 +51,7 @@ class TestReplaySpecRules:
     def test_eligibility(self) -> None:
         assert replay_eligible_spec(R_SPEC)  # daily, band 1–2 fits the slice
         # a WIDE band (min 1, target 11, max 30) is NOT eligible: its daily
-        # run trades 11–16 DTE while a replay would trade ≤2 — apples to
+        # run trades 11–16 DTE while a replay would trade ≤2, apples to
         # oranges dressed as a like-for-like receipt
         assert not replay_eligible_spec(fx.SPEC)
         long_tenor = json.loads(json.dumps(R_SPEC))
@@ -89,7 +89,7 @@ class TestReplaySpecRules:
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # Empty, not deleted: scripts/nightly_improve.py runs load_local_env()
     # at import (its db engine binds at import, so env must load first),
-    # and setdefault would RESURRECT a deleted key mid-test — turning the
+    # and setdefault would RESURRECT a deleted key mid-test, turning the
     # template-verdict path into real 100-second LLM calls. An empty var
     # survives setdefault and still reads as "not configured".
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")

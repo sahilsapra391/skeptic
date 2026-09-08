@@ -1,4 +1,4 @@
-# Skeptic — operational entry points (ENGINE-V3 D3).
+# Skeptic: operational entry points (ENGINE-V3 D3).
 # `make nightly` is the acceptance target: what the nightly Actions
 # workflow runs, runnable locally against the same lake and DB.
 

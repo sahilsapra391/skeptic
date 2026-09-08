@@ -5,7 +5,7 @@
 # <sha>" marker so a future session can tell how stale the duplicated live-ID
 # index is. Twice this phase that marker was wrong in a way no test could see:
 # once typed from recall instead of copied from `git rev-parse` (V-136), and
-# once left naming a commit that an `git commit --amend` had orphaned — it
+# once left naming a commit that an `git commit --amend` had orphaned. It
 # resolved locally, and no clone could ever find it.
 #
 # Both are the same wrong case, so this makes the wrong case unwritable rather
@@ -28,7 +28,7 @@
 # comment nobody has a reason to reword, so editing the surrounding prose cannot
 # kill it. And a missing anchor is now LOUD: if the pointer file exists and the
 # anchor does not, this escalates rather than shrugging. That is the V-58
-# posture, applied to a guard instead of a test — fail, never skip — and it is
+# posture, applied to a guard instead of a test (fail, never skip), and it is
 # the specific lesson from a guard that died silently once already.
 #
 # Silent (exit 0, no stdout) ONLY when the pointer file is gone, which means the

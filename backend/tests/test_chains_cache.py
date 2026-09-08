@@ -1,6 +1,6 @@
 """Loader cache versioning (D1a): widening COLUMNS changed the cached
 artifact's shape, so pre-D1a caches (manifests without the "v" field) must
-rebuild automatically — a stale narrow cache would silently starve the
+rebuild automatically. A stale narrow cache would silently starve the
 engine of the greeks it now reads."""
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def test_non_finite_rows_are_honest_absences(loader_env: dict[str, Any],
                                              monkeypatch: pytest.MonkeyPatch) -> None:
     # every evaluability surface (the staleness/coverage refusals, the
     # composer's rank unlock dates) reasons from the store's *_dates
-    # lists — a date must never point at a value the engine refuses.
+    # lists, and a date must never point at a value the engine refuses.
     # Loaders drop NaN, but pandas' NaN-only filters keep ±inf.
     daily = pd.DataFrame({
         "date": pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"]),
@@ -83,7 +83,7 @@ def test_non_finite_rows_are_honest_absences(loader_env: dict[str, Any],
     })
     monkeypatch.setattr(chains, "_underlying_frames", lambda _t: (daily, vix, None))
     d2, d3, d4 = (pd.Timestamp(f"2024-01-0{n}").date() for n in (2, 3, 4))
-    # ivx and hv load inside ONE guard — stub both or the except zeroes both
+    # ivx and hv load inside ONE guard, so stub both or the except zeroes both
     monkeypatch.setattr(chains.ivol_analytics, "load_ivx_30d",
                         lambda _s3, _t: {d2: 0.20, d3: float("inf"), d4: float("nan")})
     monkeypatch.setattr(chains.ivol_analytics, "load_hv_30d", lambda _s3, _t: {})
@@ -96,7 +96,7 @@ def test_non_finite_rows_are_honest_absences(loader_env: dict[str, Any],
     assert store.gex_dates == [d2]
     assert store.net_gex == {d2: 1.5e9}
     assert store.dex_dates == [d2]
-    # vix_dates is rebuilt WITH its filtered values — a poisoned session
+    # vix_dates is rebuilt WITH its filtered values: a poisoned session
     # must not leave a date pointing at a missing key
     assert store.vix_dates == [d2]
     assert store.vix_close == {d2: 14.5}

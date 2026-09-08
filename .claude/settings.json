@@ -21,6 +21,13 @@
           },
           {
             "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/no-em-dash.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking the staged text for em-dashes..."
+          },
+          {
+            "type": "command",
             "if": "Bash(git push *)",
             "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/pointer-sha-ancestor.sh\"",
             "timeout": 15,

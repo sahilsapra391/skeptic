@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * MarketChart — brokerage-grade price chart for SPY/QQQ/IWM.
+ * MarketChart: brokerage-grade price chart for SPY/QQQ/IWM.
  *
  * Interaction model (replicating the owner's reference recording):
  * grab-and-drag panning that tracks the pointer 1:1 with inertia on release,
@@ -37,11 +37,11 @@ const PAD_Y = 12;
 const MAX_DRAWN = 700; // display decimation threshold
 const PAGE_SIZE = 1000;
 const MIN_SPAN = 12;
-// buffer ceiling per interval view — beyond this, a coarser interval is the
+// buffer ceiling per interval view. Beyond this, a coarser interval is the
 // right tool (deep 5m history at full zoom-out would page in ~120k bars)
 const MAX_BUFFER = 12_000;
 
-const UP = "var(--pl-pos)"; // pl-pos — market up/down is P/L-family data
+const UP = "var(--pl-pos)"; // pl-pos: market up/down is P/L-family data
 const DOWN = "var(--pl-neg)"; // pl-neg
 const LINE = "var(--chart)";
 const GRID = "var(--grid)";
@@ -210,7 +210,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
   viewRef.current = view;
   bufferRef.current = buffer;
 
-  /** Rect reads are transiently 0 during render/hydration thrash — a
+  /** Rect reads are transiently 0 during render/hydration thrash, and a
    * poisoned divisor turns one pointer step into thousands of bars. Only
    * trust plausible measurements; otherwise reuse the last good one. */
   const measureWidth = useCallback(() => {
@@ -247,7 +247,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     setTimeout(flush, 32);
   }, []);
 
-  // set the moment the user pans/zooms — the phase-2 tail swap must never
+  // set the moment the user pans/zooms. The phase-2 tail swap must never
   // reset a view the user has touched (an explicit flag, not view
   // arithmetic: "panned back to the origin" still counts as touched)
   const userTouchedView = useRef(false);
@@ -276,10 +276,10 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
   }, []);
 
   // ---------------------------------------------------------------- loading
-  // Two-phase (2026-07-15): phase 1 is lake-only (`tail: false` — the exact
+  // Two-phase (2026-07-15): phase 1 is lake-only (`tail: false`, the exact
   // URL prefetchBars warmed, and the backend skips its blocking live-tail
   // fetch), so "reading bars…" ends at the cached lake. Phase 2 fetches the
-  // tail-carrying view behind the paint and swaps it in — the delayed badge
+  // tail-carrying view behind the paint and swaps it in. The delayed badge
   // appears when it lands. loadSeq guards against a stale swap after the
   // ticker/interval changed mid-flight.
   const loadSeq = useRef(0);
@@ -323,9 +323,9 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     try {
       const full: BarsPayload = await getBars(ticker, interval, window_, serverSpecs);
       // never yank a view the user has touched (they're exploring the
-      // phase-1 paint — the tail arrives on their next hard load), and
+      // phase-1 paint, so the tail arrives on their next hard load), and
       // never swap mid-page (loadOlder's in-flight merge would clobber the
-      // swapped buffer and drop the tail — review finding 2026-07-15)
+      // swapped buffer and drop the tail, review finding 2026-07-15)
       if (seq !== loadSeq.current || userTouchedView.current || pagingRef.current) return;
       apply(full, true);
     } catch {
@@ -372,8 +372,8 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
       // Advance the view by the prepended count in the SAME commit as the
       // buffer. If the (longer) buffer landed a render before the view moved,
       // React would paint one frame of the new bars against the old start≈0
-      // view — the just-prepended OLD bars flashing at the left edge with a
-      // y-axis jump — and, because start is still < 150 there, the paging
+      // view (the just-prepended OLD bars flashing at the left edge with a
+      // y-axis jump) and, because start is still < 150 there, the paging
       // effect would re-fire on that frame: the flicker loop. Batching buffer
       // and view removes both the flash and the re-trigger. (Deferred commit
       // is only right for high-frequency GESTURE updates; here it's a race.)
@@ -387,7 +387,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
       setBuffer(merged);
       setView(next);
     } catch {
-      // transient — the next pan retriggers
+      // transient: the next pan retriggers
     } finally {
       pagingRef.current = false;
     }
@@ -437,7 +437,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
     pollRef.current = setTimeout(async () => {
       try {
         // fresh: the poll must bypass the client cache (its TTL is now 5min
-        // for paint reuse — a cached poll would freeze the live tail)
+        // for paint reuse, and a cached poll would freeze the live tail)
         const p = await getBars(ticker, interval, window_, serverSpecs, {
           limit: 120,
           fresh: true,
@@ -445,7 +445,7 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         const cur = bufferRef.current;
         if (!cur || !p.bars.length) return;
         const splice = cur.bars.findIndex((b) => b.t === p.bars[0].t);
-        if (splice < 0) return; // gap — next hard load reconciles
+        if (splice < 0) return; // gap: next hard load reconciles
         const nOld = cur.bars.length;
         const bars = [...cur.bars.slice(0, splice), ...p.bars];
         const sliceInd = (e: IndicatorSeries, pv: IndicatorSeries): IndicatorSeries => {
@@ -468,14 +468,14 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         setBuffer({ ...cur, bars, indicators, live: p.live, liveLabel: p.live_label ?? cur.liveLabel, asOf: p.as_of });
         const v = viewRef.current;
         if (v.start + v.span >= nOld - 1.5) {
-          // following the live edge — stay pinned to it
+          // following the live edge, stay pinned to it
           applyView({ start: bars.length - v.span, span: v.span });
         }
       } catch {
         // best-effort
       }
       // 60s: the poll bypasses the client cache (fresh) and each hit pays
-      // the backend's tail fetch — the old 15s cadence was silently
+      // the backend's tail fetch. The old 15s cadence was silently
       // throttled to ~1/min by the cache TTL anyway, and the recorder
       // snapshots land ~2min apart, so a faster poll bought nothing
       // (review finding 2026-07-15)
@@ -518,8 +518,8 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
         if (dt > 0) drag.vel = 0.8 * drag.vel + 0.2 * (stepPx / dt);
         drag.lastX = e.clientX;
         drag.lastT = now;
-        // delta-based: composes safely with page-prepend index shifts —
-        // an absolute write from a stale base would stomp them
+        // delta-based: composes safely with page-prepend index shifts.
+        // An absolute write from a stale base would stomp them
         applyDeltaPx(-stepPx, measureWidth());
       }
       return;
@@ -788,14 +788,14 @@ export function MarketChart({ ticker, pinMode, pins, onBarClick, onViewChange, o
             <b style={{ color: readoutUp ? UP : DOWN }}>{fmtVol(readout.v)}</b>
           </span>
         ) : (
-          <span className="text-ink-4">{loading ? "reading bars…" : "—"}</span>
+          <span className="text-ink-4">{loading ? "reading bars…" : "n/a"}</span>
         )}
         <span className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-4">
           {buffer?.live && <span className="inline-block h-[7px] w-[7px] animate-pin-pulse rounded-full bg-trust" />}
           {buffer
             ? buffer.live
               ? (buffer.liveLabel ?? "live")
-              : `through ${buffer.asOf ? fmtTime(buffer.asOf, intraday) : "—"} · ${buffer.liveLabel ?? "nightly lake"}`
+              : `through ${buffer.asOf ? fmtTime(buffer.asOf, intraday) : "n/a"} · ${buffer.liveLabel ?? "nightly lake"}`
             : ""}
         </span>
       </div>

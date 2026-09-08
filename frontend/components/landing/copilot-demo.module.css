@@ -1,10 +1,10 @@
-/* B5 copilot demo — one shared 14s replay loop. Keyframes are VERBATIM from
+/* B5 copilot demo: one shared 14s replay loop. Keyframes are VERBATIM from
    the approved design (docs/design/landing/Skeptic Landing.dc.html lines
    41–52); do not retime without a design update. Timeline: the cursor pauses
    12–22% / 43–50% / 70–78% at the three anchor candles; sk-m1/m2 reveal the
    fill dots + flag pills after the first two pauses; sk-l1..l6 accumulate the
    reasoning rail in sync (l2 with m1, l4 with m2, l5 with sig3); everything
-   fades 94–100% and loops. Easing lives on the cursor element only — every
+   fades 94–100% and loops. Easing lives on the cursor element only. Every
    other artifact runs the default ease, exactly like the design. */
 
 .cursor {
@@ -61,7 +61,7 @@
 @keyframes sk-l5{0%,70%{opacity:0}73%,94%{opacity:1}98%,100%{opacity:0}}
 @keyframes sk-l6{0%,84%{opacity:0}87%,94%{opacity:1}98%,100%{opacity:0}}
 
-/* reduced motion: freeze the replay legibly — every card, pill, dot and rail
+/* reduced motion: freeze the replay legibly, with every card, pill, dot and rail
    line visible at once; the cursor parks at the STAND ASIDE pause (70–78%). */
 @media (prefers-reduced-motion: reduce) {
   .cursor {

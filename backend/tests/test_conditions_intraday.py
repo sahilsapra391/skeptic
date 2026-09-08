@@ -1,10 +1,10 @@
-"""5-minute timeframe conditions + time-of-day entries (D2c) — hand-computed.
+"""5-minute timeframe conditions + time-of-day entries (D2c), hand-computed.
 
 VWAP hand math (equal volume 100/bar):
   lasts 100, 99, 98 → VWAP after 3 bars = 99.0
   pct at bar 3 = (98/99 − 1)×100 = −1.0101…%
   → "price_vs_vwap_pct < −1" fires exactly at bar 3, not bar 2
-    (at bar 2: VWAP 99.5, pct = (99/99.5−1)×100 = −0.5025% — no trigger).
+    (at bar 2: VWAP 99.5, pct = (99/99.5−1)×100 = −0.5025%, no trigger).
 
 RSI warmup at 5-min (Wilder, period 3, monotonic-down lasts → RSI exactly 0
 once seeded): rsi values start at index 3; crossing checks need TWO valid
@@ -58,7 +58,7 @@ class TestVwapUnit:
                          value=-1, timeframe=Timeframe.FIVE_MIN)
         # bar 3: vwap 99.0, last 98 → −1.0101% < −1 ✓
         assert evaluate_condition(_FakeBar([100.0, 99.0, 98.0], 99.0), cond)
-        # bar 2: vwap 99.5, last 99 → −0.5025% — no trigger
+        # bar 2: vwap 99.5, last 99 → −0.5025%, no trigger
         assert not evaluate_condition(_FakeBar([100.0, 99.0], 99.5), cond)
 
     def test_no_vwap_is_unevaluable(self) -> None:
@@ -67,7 +67,7 @@ class TestVwapUnit:
         assert not evaluate_condition(_FakeBar([100.0, 99.0, 98.0], None), cond)
 
     def test_non_finite_vwap_is_unevaluable(self) -> None:
-        # an inf vwap launders into pct of exactly -100.0 — "below VWAP"
+        # an inf vwap launders into pct of exactly -100.0, and "below VWAP"
         # must refuse on a poisoned session anchor, never fire
         cond = Condition(indicator=Indicator.PRICE_VS_VWAP_PCT, operator=Operator.LT,
                          value=-1, timeframe=Timeframe.FIVE_MIN)
@@ -202,7 +202,7 @@ class TestEngineIntegration:
                         "value": -1, "timeframe": "5min"}])
         assert result.filled == 1
         opens = [t for t in result.trades if t.action == "OPEN"]
-        assert "09:40" in opens[0].detail  # bar 3 — module-docstring math
+        assert "09:40" in opens[0].detail  # bar 3, module-docstring math
 
     def test_time_of_day_holds_entries(self) -> None:
         lasts = [100.0] * 8  # bars 09:30 … 10:05

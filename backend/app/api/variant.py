@@ -39,7 +39,7 @@ from collections import Counter
 from typing import Any
 
 # the seven structures the dials can build, and the leg count each implies.
-# Mirrors `legs()` in frontend/lib/spec.ts — a spec whose shape disagrees
+# Mirrors `legs()` in frontend/lib/spec.ts. A spec whose shape disagrees
 # cannot be rebuilt from the dials at all.
 STRUCTURE_LEGS: dict[str, int] = {
     "short_put": 1,
@@ -146,7 +146,7 @@ def classify(spec: dict[str, Any]) -> Representability:
 
 def _effective_window(stats: dict[str, Any] | None) -> dict[str, str] | None:
     """What the parent actually tested, shown as context in every window state.
-    Lives in the honesty report, not the spec — the spec records what was
+    Lives in the honesty report, not the spec. The spec records what was
     REQUESTED, coverage decides what was reached."""
     report = ((stats or {}).get("honesty_report") or {})
     start, end = report.get("effective_start"), report.get("effective_end")
@@ -165,8 +165,8 @@ def window_state(
     A run with a stored draft recorded the KIND the user picked, including
     "all", so that choice carries forward intact. A run without one leaves
     `backtest.start` NULL for two different reasons that the record cannot
-    tell apart — the user chose "all", or the run predates the window
-    directive — so it goes to the unset state rather than guessing (V-50).
+    tell apart (the user chose "all", or the run predates the window
+    directive), so it goes to the unset state rather than guessing (V-50).
     """
     effective = _effective_window(stats)
     meta: dict[str, Any] = {"parentRunId": parent_run_id, "parentEffective": effective}
@@ -179,7 +179,7 @@ def window_state(
         meta["state"] = "carried_all" if kind == "all" else "carried"
         return dict(stored), meta
 
-    # V-39: no stored draft, but the spec names explicit dates — that IS the
+    # V-39: no stored draft, but the spec names explicit dates. That IS the
     # requested window, so carry it as a custom range.
     backtest = spec.get("backtest") or {}
     if backtest.get("start"):
@@ -191,7 +191,7 @@ def window_state(
 
     # V-50: leave it unset with the parent's effective window as context, and
     # keep the run locked until the user picks. V-132: this is a routine first
-    # screen, not a degraded one — a third of stored runs land here.
+    # screen, not a degraded one. A third of stored runs land here.
     meta["state"] = "unset"
     return None, meta
 
@@ -206,7 +206,7 @@ def build_variant_draft(
     """Project a stored spec onto the dials, enriched with everything
     `spec_to_draft` drops: costs, seed, and the window with its state.
 
-    `spec_to_draft` is imported from the parser and NEVER edited — the parser
+    `spec_to_draft` is imported from the parser and NEVER edited. The parser
     tree is frozen for this phase.
     """
     from app.parser.parse import spec_to_draft
@@ -234,7 +234,7 @@ def build_variant_draft(
     variant_window["parentLabel"] = parent_label
     draft["window"] = window
     draft["variantWindow"] = variant_window
-    # V-154: the composer's "Here's what I heard" is FALSE on this path — the
+    # V-154: the composer's "Here's what I heard" is FALSE on this path. The
     # quoted prompt is the parent's, not something this user said. The screen
     # needs to know it is on the variant path to say so.
     draft["variantOf"] = {"runId": parent_run_id, "label": parent_label}
@@ -245,7 +245,7 @@ def build_variant_draft(
 
 
 def canonical_spec(spec: dict[str, Any]) -> dict[str, Any]:
-    """THE canonicalizer — shared with the V-18 round-trip guard, which imports
+    """THE canonicalizer, shared with the V-18 round-trip guard, which imports
     this function rather than keeping its own (V-163: two canonicalizers is the
     two-code-paths-one-comparison structure that produced four defects in the
     audit script's date handling).
@@ -338,7 +338,7 @@ def _numeric(text: str) -> tuple[bool, float | None]:
 
     Non-finite is the V-220 crash. `float()` accepts "inf", "-inf", "Infinity",
     "nan" and "1e400", and every one of them reached `_number_token`, whose
-    `int()` raised OverflowError or ValueError — out of canonical_token, out of
+    `int()` raised OverflowError or ValueError: out of canonical_token, out of
     reconcile, out of creation_record, and out of POST /api/backtest as a 500. A
     user can type any of them into a clarifying answer, and "1e400" is a typo
     rather than an attack. Rejected here, where the value stops being a string
@@ -514,15 +514,15 @@ def diff_specs(
     """The field-level diff between a parent's stored spec and a submitted
     variant. ONE function, one output, consumed by every reader (V-162):
 
-        the V-22 lock check          — prefix-matches `field` against lockedPaths
-        the V-10/V-19 zero-edit guard — empty list = same run, block pre-debit
-        provenance section 5          — rendered as the what-changed record
-        A2's telemetry reconciler     — value-matches answers against `parent`
+        the V-22 lock check:           prefix-matches `field` against lockedPaths
+        the V-10/V-19 zero-edit guard: empty list = same run, block pre-debit
+        provenance section 5:          rendered as the what-changed record
+        A2's telemetry reconciler:     value-matches answers against `parent`
 
     Output rows are {"field", "parent", "variant"}, ordered by path.
 
     FIELD PATHS ARE A CONTRACT (V-164): dotted spec-schema paths with list
-    indices in brackets — "backtest.start", "exit.profit_target_pct",
+    indices in brackets: "backtest.start", "exit.profit_target_pct",
     "position.legs[0].strike_selection.value",
     "position.expiration_selection.target_dte". Renaming one is a breaking
     change to the stored record and to every reader of it. (This paragraph used

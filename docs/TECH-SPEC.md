@@ -1,4 +1,4 @@
-# Skeptic — Technical Specification
+# Skeptic: Technical Specification
 *Consumer: Claude Code. Companion docs: DATA-PIPELINE.md, BUILD-PLAN.md,
 strategy-spec.schema.json. Product context: the PRD and PoC in docs/.*
 
@@ -35,8 +35,8 @@ strategy-spec.schema.json. Product context: the PRD and PoC in docs/.*
   deflated Sharpe correction), `backfill_state`.
 - **LLM:** Anthropic API, structured outputs (tool/JSON schema) for the parser;
   a constrained generation + post-hoc numeric validation for the verdict.
-- **DECIDED (owner, July 2026): LLM access is via OpenRouter** —
-  `OPENROUTER_API_KEY`, OpenAI-compatible endpoint — not a direct Anthropic
+- **DECIDED (owner, July 2026): LLM access is via OpenRouter**
+  (`OPENROUTER_API_KEY`, OpenAI-compatible endpoint), not a direct Anthropic
   key. Wherever this or the companion docs say "Anthropic API" /
   `ANTHROPIC_API_KEY`, read OpenRouter. Structured-output and
   numeric-validation requirements are unchanged.
@@ -62,17 +62,17 @@ All routes under `/api`, JSON, authenticated by a single bearer token
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/parse` | POST | `{text, answers?}` → spec or clarifying questions. `answers` carries responses to prior questions so the loop converges. |
-| `/api/runs/{id}/variant` | GET | Everything the spec screen needs to reopen a stored run on the dials: projected draft, spec, representability tier, locked field paths, carried conversation, costs, seed, and the parent's requested vs effective window. Costs nothing and commits to nothing — the credit is debited at submit. |
-| `/api/runs/{id}/argue-back` | POST | `{spec}` → the parent's own stored sensitivity cell for that exact edit, or `{"hit": null}`. Read-only and free: no engine call, no credit, no run, no write. Renders only what the stored sweep contains for the exact cell — no interpolation, no extension past the swept range. |
+| `/api/runs/{id}/variant` | GET | Everything the spec screen needs to reopen a stored run on the dials: projected draft, spec, representability tier, locked field paths, carried conversation, costs, seed, and the parent's requested vs effective window. Costs nothing and commits to nothing. The credit is debited at submit. |
+| `/api/runs/{id}/argue-back` | POST | `{spec}` → the parent's own stored sensitivity cell for that exact edit, or `{"hit": null}`. Read-only and free: no engine call, no credit, no run, no write. Renders only what the stored sweep contains for the exact cell: no interpolation, no extension past the swept range. |
 | `/api/backtest` | POST | `{spec, seed?}` → `{run_id}`. Runs synchronously if estimated < 15 s (EOD single run), else enqueues; response includes `status`. |
 | `/api/runs/{id}` | GET | Full run: status, stats, honesty payload, verdict, trade log, equity/drawdown series, data window used. |
 | `/api/runs` | GET | Library list with compact trust levels. |
 | `/api/runs/{id}/ask` | POST | `{question}` → grounded answer. Implementation: LLM plans a re-slice (predefined analysis functions: filter trades by period/regime, worst-N, recompute subset metrics), backend executes, LLM narrates ONLY the returned numbers. Same numeric validator as verdicts. |
 | `/api/sweep` | POST | `{spec, param_path, values[]}` → sweep job → sensitivity matrix. Registers `len(values)` trials in `trial_counter`. |
 | `/api/data/coverage` | GET | Per ticker/source: date ranges, snapshot counts, backfill frontier, quality flags, collector last-seen. Powers the Data Observatory. |
-| `/api/runs/{id}/notebook` | GET | The completed run as an `.ipynb` download (parity Tier 1). Opens with the provenance story (prompt → Q&A → decision grid → mechanics) as markdown, then API-backed cells: headline stats with their window, equity/drawdown, trade log + skips, fill provenance, F7 per-pair agreement, D5b ladder depth (ladder runs), the honesty gauntlet with the F8 sweep-coverage disclosure baked in, the verdict, and the reproduce loop. Never embeds the token — cells read `SKEPTIC_ACCESS_TOKEN`. |
-| `/api/runs/{id}/report` | GET | The completed run as a standalone HTML document (owner ask 2026-07-14: a format anyone can open) — the notebook's story rendered statically from the stored run with inline-SVG equity/drawdown, three-voice typography, print-to-PDF CSS, all user text escaped, disclaimer opening and closing. No live calls; never embeds the token or market-data rows. |
-| `/api/runs/{id}/reproduce` | POST/GET | Deterministic re-execution proof: same spec + seed, the ORIGINAL effective window pinned, and the recorded per-session resolution map pinned (a replay never silently re-resolves — D3 receipts semantics). POST kicks a background engine re-run (serialized behind the engine lock, like audits); GET returns the stored report: stored-vs-fresh headline stats within tolerance, resolution divergence (disclosed, never papered over), build then/now. Stored like receipts — the run's verdict is never rewritten. |
+| `/api/runs/{id}/notebook` | GET | The completed run as an `.ipynb` download (parity Tier 1). Opens with the provenance story (prompt → Q&A → decision grid → mechanics) as markdown, then API-backed cells: headline stats with their window, equity/drawdown, trade log + skips, fill provenance, F7 per-pair agreement, D5b ladder depth (ladder runs), the honesty gauntlet with the F8 sweep-coverage disclosure baked in, the verdict, and the reproduce loop. Never embeds the token. Cells read `SKEPTIC_ACCESS_TOKEN`. |
+| `/api/runs/{id}/report` | GET | The completed run as a standalone HTML document (owner ask 2026-07-14: a format anyone can open), the notebook's story rendered statically from the stored run with inline-SVG equity/drawdown, three-voice typography, print-to-PDF CSS, all user text escaped, disclaimer opening and closing. No live calls; never embeds the token or market-data rows. |
+| `/api/runs/{id}/reproduce` | POST/GET | Deterministic re-execution proof: same spec + seed, the ORIGINAL effective window pinned, and the recorded per-session resolution map pinned (a replay never silently re-resolves, D3 receipts semantics). POST kicks a background engine re-run (serialized behind the engine lock, like audits); GET returns the stored report: stored-vs-fresh headline stats within tolerance, resolution divergence (disclosed, never papered over), build then/now. Stored like receipts: the run's verdict is never rewritten. |
 | `/api/health` | GET | Liveness + R2/DB/Anthropic reachability. |
 
 Async model: a lightweight in-process job runner (FastAPI BackgroundTasks +
@@ -118,12 +118,12 @@ safer than bending an equity framework. Design:
   explicitly: `slip ∈ [0,1]` is the fraction of the half-spread conceded from
   mid toward the adverse side. Defaults are EARNED from the D3d tape
   calibration (233M real prints, 2026-07-13 owner decision): buys 0.85,
-  sells 0.90 — side-aware, because seller-aggressor prints measurably
+  sells 0.90. Side-aware, because seller-aggressor prints measurably
   concede more (p50 ~0.90, 17-26% beyond the displayed bid) than buyers
   (~0.85-0.87, ~3% beyond the ask). Buys: `mid + slip*(ask-mid)`. Sells:
   `mid - slip_sell*(mid-bid)`. `slip=1.0` = full adverse quote, `0`
   forbidden by config validation (mid fills banned; the tape vindicates
-  this — 0.1% of real prints fill at mid or better). A single user-stated
+  this: 0.1% of real prints fill at mid or better). A single user-stated
   slippage number sets BOTH sides at the parser; asymmetry only ever comes
   from the defaults or an explicit two-value request. Commission per
   contract per side (default $0.65). All configurable in `spec.costs`.
@@ -154,7 +154,7 @@ computed by hand in the fixture file comments; engine must match to the cent.
 Include: short put expiring OTM, short put assigned, credit spread hitting
 stop, iron condor profit-target exit, skipped trade on zero-bid.
 
-## 6. Honesty layer (`app/honesty/`) — the product
+## 6. Honesty layer (`app/honesty/`): the product
 
 Runs automatically after every backtest, in stages (each stage emits a
 `run_event` for UI progress):
@@ -179,7 +179,7 @@ Runs automatically after every backtest, in stages (each stage emits a
    López de Prado) using `trial_counter` for this strategy family (family key:
    underlying + structure). Every HUMAN-INITIATED RUN and every sweep value
    increments trials (V-73: broadened from "every parse-to-run", which a
-   variant is not — it reopens a stored spec without parsing. Broadening the
+   variant is not: it reopens a stored spec without parsing. Broadening the
    rule rather than carving out a variant case matches HONESTY.md's
    human-initiated framing and stops the next surface having to ask whether it
    counts). Report DSR and the plain-English implication.

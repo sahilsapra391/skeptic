@@ -6,7 +6,7 @@ You describe a strategy in plain English. It backtests it on real end-of-day
 options data. Then it spends most of its effort trying to prove the result is
 noise.
 
-![tests](https://img.shields.io/badge/tests-1%2C341%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-passing-brightgreen)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![next](https://img.shields.io/badge/Next.js-14-black)
 ![license](https://img.shields.io/badge/license-all%20rights%20reserved-red)
@@ -36,11 +36,13 @@ flowchart LR
     D --> E["Honesty<br/>gauntlet"]
     E --> F["Trust gate"]
     F --> G["Grounded<br/>verdict"]
-    G --> H["Numeric<br/>validator"]
+    G --> N["Text<br/>normalizer"]
+    N --> H["Numeric<br/>validator"]
     H -.->|"rejects any number<br/>not in the stats"| G
 
     style E fill:#1f6feb,color:#fff
     style F fill:#1f6feb,color:#fff
+    style N fill:#8957e5,color:#fff
     style H fill:#8957e5,color:#fff
 ```
 
@@ -127,6 +129,7 @@ Enforced in code and in tests, not in a style guide.
 | **Point-in-time correctness** | A simulation at date T reads only data observed on or before T. | Lookahead is invisible in results and fatal to them. Tests exist purely to prove its absence. |
 | **Grounded verdict** | Every number in the verdict text must exist in the computed stats. A validator rejects the text otherwise. | Stops the language model inventing a figure that sounds right. |
 | **Prompt isolation** | The verdict model receives computed statistics only, never the raw user prompt. | It cannot be talked into a conclusion by how the question was phrased. |
+| **House punctuation** | No em-dash reaches a screen. Model-written text is normalized the moment it arrives, before any validator sees it, again when a payload is assembled, and once more at the point anything is rendered, user-typed prose included. Storage keeps the original bytes and numbers are never touched. | House voice is not decoration on a tool whose whole claim is that it does not sound like a machine talking itself into a conclusion. Normalizing on the wire and at the render site rather than in storage keeps the record of what was actually written. |
 | **Thin samples capped** | Below the minimum-trades bar, or inside one volatility regime, trust is capped at `insufficient_evidence`. | Good numbers on 11 trades are not good numbers. |
 | **Re-grading at read time** | Saved runs re-grade when the viewer's evidence bar differs from the one they were scored at. | A verdict is a function of policy, not a frozen label. |
 | **Honest coverage** | Any surface showing results also shows the data window they came from. | Results without their window are unfalsifiable. |
@@ -141,6 +144,8 @@ Enforced in code and in tests, not in a style guide.
 flowchart TB
     subgraph browser["Browser"]
         FE["Next.js 14<br/>App Router, TypeScript<br/>Tailwind, shadcn/ui"]
+        FNORM["display normalizer<br/>on rendered prose only,<br/>never on what is resubmitted"]
+        FE --- FNORM
     end
 
     subgraph railway["FastAPI on Railway"]
@@ -149,6 +154,7 @@ flowchart TB
         ENG["engine/<br/>fills, selection<br/>margin, metrics"]
         HON["honesty/<br/>stages, trust<br/>gauntlet"]
         VER["verdict/<br/>grounded text<br/>plus validator"]
+        NORM["text normalizer<br/>every model-written string,<br/>on write and on read"]
     end
 
     subgraph store["Cloudflare R2 and DuckDB"]
@@ -169,9 +175,15 @@ flowchart TB
     ENG -->|"point-in-time reads"| LAKE
     TIMERS --> COLL
     COLL -->|"nightly writes"| LAKE
+    PARSE -.->|"clarifying questions"| NORM
+    HON -.->|"answers about a run"| NORM
+    VER -.->|"verdict text"| NORM
+    NORM -->|"clean prose on the wire,<br/>byte-exact text in storage"| API
 
     style HON fill:#1f6feb,color:#fff
     style VER fill:#8957e5,color:#fff
+    style NORM fill:#8957e5,color:#fff
+    style FNORM fill:#8957e5,color:#fff
 ```
 
 Frontend on Vercel. Backend on Railway. Data in R2, queried with DuckDB.
@@ -209,6 +221,44 @@ none, which is precisely what guardrail 3 forbids.
 None of the guardrails below depend on that choice. The verdict validator
 checks numbers against computed stats no matter which model wrote the
 sentence, and swapping the model is an environment variable, not a deploy.
+
+Everything those three write passes through one normalizer before anything else
+touches it, because a model left alone will punctuate like a model. An em-dash
+becomes a comma, and it happens on arrival, ahead of the numeric validator and
+the non-Latin language check, so what those two approve is exactly what ships.
+The substitution is mechanical, and the surrounding whitespace collapses with it
+so nothing lands as a stranded space or a doubled comma. It never emits another
+dash: a slightly narrower one is the same tell. It catches the lookalikes too,
+the HTML entity spellings and a double hyphen standing between two spaces, while
+a leading double hyphen is left alone because `--project` is a flag, not
+punctuation. Digits are never touched, so a normalized sentence carries exactly
+the numeric tokens it arrived with and the verdict validator keeps holding over
+it.
+
+The same function runs again where an outbound payload is assembled, and that
+second pass is what makes runs saved before this rule clean on screen. Storage is
+not rewritten. The database keeps the byte-exact record of what the model said
+and the wire carries the normalized text, so provenance stays a record rather
+than a rendering of one.
+
+Two surfaces never reach the frontend at all. The shareable HTML report and the
+notebook export are rendered by the server and opened directly, so they clean
+everything they render, the prompt included, at the point prose enters the
+document. Both are terminal artifacts: nothing in either file is ever submitted
+back, which is what makes normalizing a person's own words correct there.
+
+The frontend is the last layer for everything else, and it normalizes for
+display rather than in transit. Anything about to be rendered is cleaned, including prose the user
+typed themselves, because the rule is about what appears on a page and your own
+em-dash echoed back at you fails it just as plainly. What is never cleaned is
+the value the client will send back. Where a string is both shown and
+re-submitted, the display copy is normalized and the submitted one is not, since
+a normalized string accepted by the server as authoritative would edit a stored
+record nobody asked to edit.
+
+All three prompts also ask the model to avoid the character. Worth doing, worth
+nothing by itself: a prompt is a request, and the normalizer is the part that
+cannot be talked out of it.
 
 ---
 
@@ -319,10 +369,10 @@ backend/
   app/honesty/     stages, gauntlet, trust, ask, report
   app/verdict/     grounded text generation plus numeric validator
   app/data/        R2 and DuckDB access, coverage, point-in-time reads, signals
-  tests/           1,219 tests, engine fixtures hand-computed
+  tests/           pytest, engine fixtures hand-computed
 collector/         nightly pipeline, intraday recorder, cross-host lock
   deploy/          systemd units, bootstrap, autoupdate, health hooks
-  tests/           122 tests
+  tests/           pytest, lock and schedule coverage
 docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 ```
 
@@ -330,7 +380,13 @@ docs/              TECH-SPEC, DATA-PIPELINE, RUNBOOK, strategy-spec.schema.json
 
 ## Testing
 
-**1,341 tests** (1,219 backend, 122 collector).
+Two pytest suites, backend and collector, with ruff and a strict mypy pass over
+the backend, and lint, typecheck and build on the frontend. All of them gate CI,
+and nothing is called done until they are green.
+
+A test count is a snapshot, not a fact about the project, and one written into a
+README goes stale the same week. As of 2026-09-08 the backend suite passes
+1,772 tests and the collector suite 122. What matters is the shape of them.
 
 Every honesty-layer statistic is tested against a **hand-computed fixture**
 rather than a golden file. A golden file blesses whatever the code produced on
@@ -339,6 +395,27 @@ stays wrong until a human works out why.
 
 The deliberately overfit strategy fixture must always be flagged. A green run on
 it is a failing build, not a passing one.
+
+CI also fails the build if any tracked file contains an em-dash in any spelling
+that reaches a reader as one: the literal character, the HTML entities, the CSS
+escape, the percent-encoded bytes in a URL, and a string escape, which decodes
+back to the glyph in a JSON fixture and in a TypeScript literal alike. The
+literal character is a violation in every file without exception, the guard and
+the normalizer included, because a checker carrying what it forbids needs an
+exemption and the exemption is the hole. Naming the character as an escape is
+allowed in one short list of paths, the two normalizers and the tests that drive
+them, and the guard tests that the list has not grown. Everything else builds it
+from the code point. A local `git commit` hook says the same thing sooner, but CI
+is the gate that matters: it cannot be clicked through.
+
+Two paths are excluded, both under `docs/design`: the vendored design-system
+bundle under `_ds/`, and the two generated canvas runtimes (`support.js` at
+`docs/design/` and `docs/design/landing/`). Both are design-tool output whose
+first line reads GENERATED, do not edit, and the runtimes are loaded only by the
+`.dc.html` design canvases, never by frontend source, so nothing in either
+reaches a page. The exclusion is keyed on the path rather than on that banner,
+because a banner is prose and prose gets reworded, which is how another guard in
+this repo went quiet for a day without anyone noticing.
 
 ---
 

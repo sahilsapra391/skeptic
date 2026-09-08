@@ -1,10 +1,10 @@
-"""UW flow/sentiment/pin signals (ENGINE-V4 F2/F3) — hand-computed.
+"""UW flow/sentiment/pin signals (ENGINE-V4 F2/F3), hand-computed.
 
 Reduction conventions pinned against the 2026-07-07 probes:
 net_prem_ticks rows are per-minute BUCKETS → session totals are SUMS;
 market_tide is CUMULATIVE → the session value is the LAST row; NOPE is
 the last stamp's vendor value; max pain reads the FRONT expiry (owner
-decision: pin dynamics are a front-expiry phenomenon — the convention
+decision: pin dynamics are a front-expiry phenomenon. The convention
 is the concept). Dollar-valued signals are sign/rank vocabulary;
 put_call_flow_ratio and max_pain_distance_pct are unit-free (raw legal).
 Deferred with disclosure (owner decision): oi_change_signal (top-50
@@ -60,9 +60,9 @@ class TestDeriveFlowRow:
 
     def _max_pain(self) -> pd.DataFrame:
         # session 2026-07-02: expired 06-30 ignored; the SAME-DAY 07-02
-        # expiry is SETTLING (not front — owner decision 2026-07-08: the
+        # expiry is SETTLING (not front, per owner decision 2026-07-08: the
         # value must reference the pin the trade actually faces, and the
-        # forward reference is by CALENDAR, not by data — PIT-clean);
+        # forward reference is by CALENDAR, not by data, and so PIT-clean);
         # front = 07-06 (max pain 743 vs close 744.78 → −0.2390%)
         return pd.DataFrame({
             "expiry": ["2026-06-30", "2026-07-06", "2026-07-02"],
@@ -103,7 +103,7 @@ class TestDeriveFlowRow:
         assert row["max_pain_dist_pct"] is None
 
     def test_all_nan_columns_fabricate_nothing(self) -> None:
-        # review finding F2/F3 #1: an all-NaN column must yield None —
+        # review finding F2/F3 #1: an all-NaN column must yield None.
         # "put/call ratio below 0.8" must never be True on missing data
         df = pd.DataFrame({
             "net_call_premium": [None, None],
@@ -118,7 +118,7 @@ class TestDeriveFlowRow:
 
 class TestDeriveTideRow:
     def test_cumulative_last_row_wins(self) -> None:
-        # cumulative series: the LAST row is the session total — never sum
+        # cumulative series: the LAST row is the session total, never sum
         tide = pd.DataFrame({
             "timestamp": ["2026-07-02T13:31:00Z", "2026-07-02T20:10:00Z",
                           "2026-07-02T16:00:00Z"],

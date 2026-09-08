@@ -2,7 +2,7 @@
 
 /**
  * The landing's modal shell (launch L4): the product experience opens in
- * a popup ON the landing — visitors are never redirected into the app
+ * a popup ON the landing. Visitors are never redirected into the app
  * shell (owner 2026-07-17). Backdrop/ESC close, body scroll locked while
  * open, panel scrolls internally.
  */
@@ -23,14 +23,14 @@ export function LandingModal({
   label: string; // a11y name + the header kicker
   wide?: boolean; // run/results panels want near-full width
   conversionCta?: string; // header CTA text → /signup (omit to hide)
-  // when hidden, the modal is display:none but its children STAY MOUNTED —
-  // a landing run keeps running with live progress while the popup is
+  // when hidden, the modal is display:none but its children STAY MOUNTED.
+  // A landing run keeps running with live progress while the popup is
   // minimized to the background-run banner (owner 2026-07-17)
   hidden?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
-    if (hidden) return; // minimized — don't trap ESC or lock scroll
+    if (hidden) return; // minimized, don't trap ESC or lock scroll
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };

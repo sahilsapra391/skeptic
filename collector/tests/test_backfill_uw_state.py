@@ -3,7 +3,7 @@
 A transient failure (network down → _get returns -1, or 429/5xx after backoff
 exhausted) must NEVER be recorded in reference/state/uw_backfill.json: on
 2026-07-10 a DNS-hijacked guest network made every request fail and 89
-endpoint scopes banked that date as "empty" — permanently, because state is
+endpoint scopes banked that date as "empty", permanently, because state is
 the resume ledger. These tests pin the fix: only 200 and 403 are final
 outcomes; anything else leaves state untouched so a later run retries, and
 per-date sweeps refuse to finalize the current session before the options
@@ -78,7 +78,7 @@ def test_run_daily_final_outcomes_still_recorded(monkeypatch):
 def test_run_daily_transient_date_is_skipped_not_blocked(monkeypatch):
     """A transient date is skipped, the sweep continues to older sessions, and
     a later 403 depth floor must NOT drag the skipped (newer) date into
-    blocked — it stays unrecorded for the next run."""
+    blocked. It stays unrecorded for the next run."""
     bodies = {
         "2024-06-14": (-1, None),
         "2024-06-13": (200, {"data": [{"v": 1}]}),
@@ -203,7 +203,7 @@ def test_run_tape_non200_leaves_date_unrecorded(monkeypatch):
 
 def test_run_tape_parse_error_counts_toward_breaker(monkeypatch):
     """A 200 whose payload is a corrupt zip leaves the date unrecorded AND
-    counts toward TRANSIENT_STOP — N consecutive corrupt days must not keep
+    counts toward TRANSIENT_STOP: N consecutive corrupt days must not keep
     downloading ~1.8 GB each, unbounded."""
     class _Resp:
         status_code = 200
@@ -253,7 +253,7 @@ def test_last_complete_session_allows_today_after_close(monkeypatch):
 # ------------------------------------------------------------ network breaker
 class TestNetworkDownBreaker:
     """A dead network must abort visibly, not grind every scope to its
-    TRANSIENT_STOP and then exit 0 ("done") — that exit code is how the
+    TRANSIENT_STOP and then exit 0 ("done"). That exit code is how the
     2026-07-09/-10 outages stayed invisible to daily alerting."""
 
     @pytest.fixture(autouse=True)
@@ -271,7 +271,7 @@ class TestNetworkDownBreaker:
     def test_final_answer_resets_the_streak(self):
         for _ in range(uw.NETWORK_DOWN_AFTER - 1):
             uw._note_outcome(-1)
-        uw._note_outcome(200)  # the network answered — not an outage
+        uw._note_outcome(200)  # the network answered, not an outage
         for _ in range(uw.NETWORK_DOWN_AFTER - 1):
             uw._note_outcome(-1)  # a fresh streak, no raise yet
         assert uw._net["consecutive"] == uw.NETWORK_DOWN_AFTER - 1
@@ -282,6 +282,6 @@ class TestNetworkDownBreaker:
         uw._note_outcome(-1)
         uw._note_outcome(200)
         uw._note_outcome(429)
-        uw._note_outcome(403)  # final — resets the streak, not the total
+        uw._note_outcome(403)  # final: resets the streak, not the total
         assert uw._net["transient_total"] == 2
         assert uw._net["consecutive"] == 0

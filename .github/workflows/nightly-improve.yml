@@ -4,12 +4,12 @@ name: nightly-improve
 # 02:00–03:00 ET), after the nightly collectors and the coverage ledger.
 # The scan decides WHAT should re-run; the Railway backend executes via
 # POST /api/backtest (this workflow never runs the engine). Capped re-runs
-# per night — see backend/scripts/nightly_improve.py.
+# per night (see backend/scripts/nightly_improve.py).
 #
 # SPLIT ACROSS TWO HOSTS on 2026-08-04 (after the Jul 27–31 billing block). The Tue–Sat nightly scan moved to the
 # collector VM (systemd skeptic-improve.timer, 07:00 UTC). Only the Saturday
 # weekly pass stayed here, because it opens a proposal PR and that needs repo
-# write — the VM holds a read-only deploy key by deliberate design, and an
+# write. The VM holds a read-only deploy key by deliberate design, and an
 # always-on box should not gain push access to the repo that deploys prod.
 
 on:
@@ -29,7 +29,7 @@ on:
         default: false
 
 # contents+pull-requests write: the WEEKLY calibration step may open a
-# reviewed proposal PR (D3d, owner amendment 2) — defaults change only
+# reviewed proposal PR (D3d, owner amendment 2). Defaults change only
 # through that PR, never at runtime. Everything else only reads the repo.
 permissions:
   contents: write
@@ -79,7 +79,7 @@ jobs:
       # D3d weekly pass (Saturdays, after the week's collection): demand
       # ranking + fill-model calibration. A calibration divergence beyond
       # the documented bar opens a PROPOSAL PR (asymmetric evidence bar;
-      # optimism-increasing changes carry the title prefix) — nothing
+      # optimism-increasing changes carry the title prefix). Nothing
       # changes until a human merges it.
       - name: Weekly calibration + collection priorities (Saturdays)
         working-directory: backend
@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$(date -u +%u)" != "6" ] && [ "${{ inputs.weekly }}" != "true" ]; then
-            echo "not Saturday — weekly pass skipped"
+            echo "not Saturday, weekly pass skipped"
             exit 0
           fi
           git config user.name "sahilsapra391"

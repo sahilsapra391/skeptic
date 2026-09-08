@@ -17,21 +17,43 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-      # V-58: the V-18 round-trip guard runs the REAL frontend/lib/spec.ts
-      # through node's native type stripping (22.6+). It is a HARD dependency
-      # of this suite — without node the guard fails rather than skipping, so
-      # node is pinned here instead of relying on whatever the runner ships.
+      # V-58: two guards in this suite run REAL TypeScript through node's
+      # native type stripping (22.6+) rather than a Python copy of it: the V-18
+      # round-trip guard on frontend/lib/spec.ts, and the normalizer parity
+      # guard on frontend/lib/punctuation.ts. Node is a HARD dependency of
+      # both. Without it they fail rather than skipping, so it is pinned here
+      # instead of relying on whatever the runner happens to ship.
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run mypy app
+      # V-221: a guard that can vanish without a sound is not a guard. The step
+      # below runs the whole suite, and a suite is silent about a test that is
+      # no longer in it: delete the em-dash guard, rename it, or add it to an
+      # ignore list and `uv run pytest -q` goes green having checked nothing.
+      # That is how the pointer-sha hook died, and it took a day to notice.
+      #
+      # So the three em-dash guards are named BY PATH here, which makes their
+      # absence a hard error instead of a quiet subtraction. `test -f` catches a
+      # delete or a rename; pytest then exits 5 ("no tests collected") if the
+      # files are on disk but something suppressed them. Paths are relative to
+      # this job's working-directory (backend), the same as the suite below.
+      - name: the em-dash guards exist and run
+        run: |
+          test -f tests/test_no_em_dash.py
+          test -f tests/test_normalizer_parity.py
+          test -f tests/test_em_dash_runtime.py
+          uv run pytest -q \
+            tests/test_no_em_dash.py \
+            tests/test_normalizer_parity.py \
+            tests/test_em_dash_runtime.py
       - run: uv run pytest -q
 
   # F0 guard: collector/ledger.py imports backend modules by path
-  # (app.data.resolution + app.data.uw). This smoke-import fails in CI —
-  # instead of at the 2 AM nightly ledger — if that chain ever grows a
+  # (app.data.resolution + app.data.uw). This smoke-import fails in CI
+  # (instead of at the 2 AM nightly ledger) if that chain ever grows a
   # dependency the collector env doesn't ship (the resolution-map rebuild
   # the self-improvement loop depends on rides on this import).
   # The deploy image had never been built by anything except Railway itself.
@@ -76,7 +98,7 @@ jobs:
             [ "$code" = "200" ] && { echo "healthy after ${i}s"; cat /tmp/health.json; exit 0; }
             sleep 1
           done
-          echo "NEVER BECAME HEALTHY — this is the Railway failure, caught pre-merge"
+          echo "NEVER BECAME HEALTHY: this is the Railway failure, caught pre-merge"
           docker logs ci-boot 2>&1 | tail -40
           exit 1
       - name: stop

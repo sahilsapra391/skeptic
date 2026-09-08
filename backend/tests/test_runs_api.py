@@ -53,7 +53,7 @@ def test_backtest_happy_path_full_gauntlet(client: TestClient) -> None:
     actions = [t["a"] for t in payload["trades"]]
     assert "ASSIGN" in actions and "OPEN" in actions
 
-    # curation (launch L4): the default listing is examples-only — a fresh
+    # curation (launch L4): the default listing is examples-only. A fresh
     # unowned run appears via include= (the caller's own id)
     listing = client.get(f"/api/runs?include={run_id}").json()
     assert listing["demo"] is False
@@ -86,7 +86,7 @@ def test_example_curation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -
     own = next(r for r in runs if r["id"] == second)
     assert "example" not in own
 
-    # the example's full payload says so too — the run screen banners it
+    # the example's full payload says so too, and the run screen banners it
     assert client.get(f"/api/runs/{first}").json()["example"] is True
     assert "example" not in client.get(f"/api/runs/{second}").json()
 
@@ -100,7 +100,7 @@ def test_examples_survive_a_heavy_users_own_runs(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A flat limit(50) trimmed the OLDER pinned examples out from under 50
-    newer own runs (review finding) — the curated branch must keep both."""
+    newer own runs (review finding). The curated branch must keep both."""
     import json as _json
     import uuid as _uuid
     from datetime import UTC, datetime, timedelta
@@ -173,7 +173,7 @@ def test_ask_answers_from_stored_stats(
         seen["question"] = question
         seen["stats"] = stats
         seen["retail"] = retail
-        return "This run closed 1 trade — too few for a verdict."
+        return "This run closed 1 trade, too few for a verdict."
 
     monkeypatch.setattr(ask_module, "answer_question", fake_answer)
     resp = client.post(f"/api/runs/{run_id}/ask", json={"question": "how many trades?"})

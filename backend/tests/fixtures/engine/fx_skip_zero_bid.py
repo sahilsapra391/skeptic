@@ -1,4 +1,4 @@
-"""Fixture: scheduled entry skipped — the selected short strike has a zero
+"""Fixture: scheduled entry skipped. The selected short strike has a zero
 bid (selling into no market is never modeled as a fill; TECH-SPEC §5).
 
   2025-01-06 (Mon)  entry day. Spot 100.00.

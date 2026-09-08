@@ -2,10 +2,10 @@
 
 Session order of operations (every clock):
   1. unwind assignment stock at today's OPEN (scheduled yesterday)
-  2. decisions —
+  2. decisions:
        clock="daily": exits at today's close quotes, then entries
        clock="5min":  per 5-minute bar, exits THEN entries (so a position
-       opened at bar t is first exit-evaluated at bar t+1 — owner
+       opened at bar t is first exit-evaluated at bar t+1. Owner
        amendment 2: a stop can never fire on its own entry bar)
   3. expiration settlement at the close (0DTE settles same session)
   4. mark-to-market at conservative liquidation prices → ONE equity point
@@ -14,13 +14,13 @@ Session order of operations (every clock):
 
 Exit priority, canonical at every clock (owner amendment 3): stop_loss →
 delta_stop → profit_target → theta_harvest → time_exit → condition exits.
-DTE basis: calendar days at clock="daily" (v1 semantics, bit-identical —
+DTE basis: calendar days at clock="daily" (v1 semantics, bit-identical:
 the pinned regression proves it); TRADING days at clock="5min".
 
 Positions are marked and exited with the SAME fill model used to open
-them (guardrail #1), from REAL quote records only — every leg fill logs
+them (guardrail #1), from REAL quote records only. Every leg fill logs
 its provenance (fill_sources). Sessions without quotes mark stale and
-cannot fill exits — honest behavior on checkpoint-marked history; the
+cannot fill exits, honest behavior on checkpoint-marked history; the
 settlement path still works because it uses underlying closes.
 """
 
@@ -74,13 +74,13 @@ DteFn = Callable[[date], int]
 
 
 class SliceCoverageError(ValueError):
-    """The spec needs more than the intraday record covers — refused BEFORE
+    """The spec needs more than the intraday record covers, refused BEFORE
     running (owner amendment 4): a plain reason beats a zero-fill grind."""
 
 
 # FX.2: continuous scanning removes the one-entry-per-session bound, so a
 # pathological spec (e.g. an always-true condition exit cycling every bar)
-# could mint hundreds of thousands of positions across a full-history run —
+# could mint hundreds of thousands of positions across a full-history run,
 # unbounded payloads and hours of CPU inside the serialized engine lane.
 # A run that hits this cap is REFUSED loudly (never silently truncated).
 MAX_RUN_FILLS = 20_000
@@ -99,12 +99,12 @@ class _State:
     # 2026-07-15): entries whose requirement exceeds what's left are
     # skipped `insufficient_buying_power`, never silently resized
     reserved: float = 0.0
-    # (basket_pid, rung_index) pairs that hit the buying-power gate — the
+    # (basket_pid, rung_index) pairs that hit the buying-power gate. The
     # ladder depth table attributes these as UNAFFORDABLE (owner amendment)
     unaffordable_rungs: set[tuple[int, int]] = field(default_factory=set)
     next_pid: int = 1
     last_entry_month: tuple[int, int] | None = None
-    # liquidity bookkeeping (D1b) — one record per option-LEG fill
+    # liquidity bookkeeping (D1b): one record per option-LEG fill
     fill_spread_pcts: list[float] = field(default_factory=list)
     option_leg_fills: int = 0
     fills_penalized: int = 0
@@ -121,7 +121,7 @@ class _State:
     # FX.2: every skip COUNTED with its reason (the trade log stays deduped;
     # the counts are the honest denominator behind "maximum honest fills")
     skip_counts: dict[str, int] = field(default_factory=dict)
-    # FX.2 (review finding): the LIVE book — every hot per-bar path iterates
+    # FX.2 (review finding): the LIVE book. Every hot per-bar path iterates
     # this, never the full historical positions list. Scanning makes position
     # count scale with BARS (a cycler can open thousands per run); iterating
     # history per bar would go quadratic (the OOM-guard directive). Swept
@@ -134,7 +134,7 @@ class _State:
 class _BasketState:
     """The scale-in ladder's live state (D5a). `basket` is the one active
     accumulating position (or None); `armed` gates whether a fresh basket may
-    open — after a basket closes it is False until the rearm signal passes, so
+    open. After a basket closes it is False until the rearm signal passes, so
     the ladder can't loop forever. At the 5-min clock a flat ladder re-arms at
     each covered session (a new oversold episode per day, matching how a human
     runs this); a basket carried overnight keeps accumulating."""
@@ -148,7 +148,7 @@ def _record_leg_fill(state: _State, q: Quote, eff_slip: float, base_slip: float,
                      qty: int) -> str | None:
     """Per-leg fill bookkeeping. Returns an F5 depth note ("qty 20 > ask
     size 3") when the fill quantity exceeded the traded side's displayed
-    NBBO size — DISCLOSURE only, the price is untouched (owner decision
+    NBBO size. DISCLOSURE only, the price is untouched (owner decision
     2026-07-07: beyond-L1 liquidity exists; a model must be earned by
     calibration, a hard gate would be pessimism reality doesn't show)."""
     state.option_leg_fills += 1
@@ -184,7 +184,7 @@ def _position_desc(pos: Position) -> str:
 
 
 class BarView:
-    """One intraday bar through the MarketViewLike surface — the SAME
+    """One intraday bar through the MarketViewLike surface. The SAME
     entry/exit/fill code runs at every clock. Daily-history reads
     (condition indicators, VIX, ATM-IV) are bounded at the PREVIOUS
     session's close: today's daily close does not exist yet at an
@@ -209,7 +209,7 @@ class BarView:
         # FX.3: whether THIS bar is a 5-min indicator stamp (always True on
         # 5-min grids; on minute grids only the und5 stamps are). Off-stamp
         # bars evaluate price-vs conditions against the live print with the
-        # latest SAMPLED value as prev — crosses stay stamp-anchored.
+        # latest SAMPLED value as prev. Crosses stay stamp-anchored.
         self._is_stamp = is_indicator_stamp
 
     @property
@@ -246,7 +246,7 @@ class BarView:
     def daily_series_pair(self, cond: Condition) -> list[float] | None:
         # the SAME previous-session bound closes_upto() uses: today's daily
         # close does not exist yet at an intraday bar. Keep these two
-        # together — a cache bound at BarView.as_of would read today
+        # together: a cache bound at BarView.as_of would read today
         # (guardrail #2; app/engine/daily_series.py)
         return self._prev.daily_series_pair(cond)
 
@@ -256,7 +256,7 @@ class BarView:
     def atm_iv_history(self) -> list[float]:
         return self._prev.atm_iv_history()
 
-    # IVX/HV are EOD series — today's observation doesn't exist yet at an
+    # IVX/HV are EOD series. Today's observation doesn't exist yet at an
     # intraday bar, so these are bounded at the previous session too
     def ivx_30d(self) -> float | None:
         return self._prev.ivx_30d()
@@ -267,7 +267,7 @@ class BarView:
     def hv_30d(self) -> float | None:
         return self._prev.hv_30d()
 
-    # F4: surface signals are EOD fits — bounded at the previous session
+    # F4: surface signals are EOD fits, bounded at the previous session
     # at intraday bars, like IVX (today's fit doesn't exist at 10:15)
     def skew_25d(self) -> float | None:
         return self._prev.skew_25d()
@@ -275,7 +275,7 @@ class BarView:
     def term_structure_slope(self) -> float | None:
         return self._prev.term_structure_slope()
 
-    # F1: dealer positioning is an EOD series — previous session at
+    # F1: dealer positioning is an EOD series, previous session at
     # intraday bars, like IVX (stale-but-true beats fresh-but-leaky;
     # intraday spot_exposures is a deferred later chunk)
     def gex_level(self) -> float | None:
@@ -290,7 +290,7 @@ class BarView:
     def dex_history(self) -> list[float]:
         return self._prev.dex_history()
 
-    # F2/F3: flow/pin reductions are EOD series — previous session at
+    # F2/F3: flow/pin reductions are EOD series, previous session at
     # intraday bars, like every daily analytic
     def net_premium_level(self) -> float | None:
         return self._prev.net_premium_level()
@@ -318,7 +318,7 @@ class BarView:
 
     def intraday_closes_upto(self) -> list[float]:
         # AT MOST the trailing lookback window. Copying the WHOLE prefix
-        # here was O(bars²) across a run — a full-history 5-min backtest
+        # here was O(bars²) across a run. A full-history 5-min backtest
         # spent most of its 40 minutes copying lists, and the multi-MB
         # per-bar churn ballooned the allocator until Railway OOM-killed
         # the process (incident 2026-07-06). No consumer reads deeper:
@@ -339,7 +339,7 @@ def _calendar_dte_fn(as_of: date) -> DteFn:
 
 def _trading_dte_fn(store: MarketStore, as_of: date) -> DteFn:
     """Trading-day DTE (owner-confirmed 5-min basis): sessions strictly
-    after `as_of` up to and including the expiry — 0DTE = 0, Friday's
+    after `as_of` up to and including the expiry: 0DTE = 0, Friday's
     "1DTE" = Monday's expiry."""
     sessions = store.sessions
 
@@ -352,22 +352,22 @@ def _trading_dte_fn(store: MarketStore, as_of: date) -> DteFn:
 
 
 # Quote records whose fills ALWAYS pay the full adverse price: modeled
-# quotes (trade prints + modeled spread) carry no real NBBO — stress
+# quotes (trade prints + modeled spread) carry no real NBBO. Stress
 # slippage stays on until quote sources accumulate (D2d, per the brief).
 STRESSED_SOURCES = frozenset({"alpaca_modeled"})
 
 # progress-callback cadence at the 5-min clock (~12 reports on a
-# full-history run) — frequent enough to prove life, rare enough to
+# full-history run), frequent enough to prove life, rare enough to
 # stay off the hot path
 PROGRESS_EVERY_SESSIONS = 250
 
 
 def _close_slip(q: Quote, costs: Costs, action: str, stressed: bool = False) -> float:
     """The slip a close-side price uses: the SIDE-AWARE base (closing a
-    long sells, closing a short buys back — each pays its own measured
+    long sells, closing a short buys back, and each pays its own measured
     concession), OI-scaled when OI is known and thin (fills.effective_slip).
     Exit triggers, exit fills and marks all price through here, so open and
-    close share one fill model. Modeled quotes are always stressed — slip
+    close share one fill model. Modeled quotes are always stressed: slip
     1.0, both directions."""
     if stressed:
         return 1.0
@@ -430,7 +430,7 @@ def _portfolio_greeks(
     """Aggregate (delta, gamma, theta, vega) of all open positions at
     today's quotes. Signed: long +, short −; option greeks × qty × MULT,
     stock at 1Δ per share. Per-greek honesty: a flat book is 0.0; if ANY
-    open leg lacks a greek today, THAT aggregate is None — a partial sum
+    open leg lacks a greek today, THAT aggregate is None. A partial sum
     would silently understate exposure."""
     delta = gamma = theta = vega = 0.0
     ok = {"delta": True, "gamma": True, "theta": True, "vega": True}
@@ -509,7 +509,7 @@ def _risk_per_contract(
 
 def _leg_cash_delta(px: float, side: Side, qty: int, commission: float) -> float:
     """Signed cash of ONE leg fill: shorts credit, longs debit, commission
-    always out. THE entry-economics formula — the buying-power gate and the
+    always out. THE entry-economics formula: the buying-power gate and the
     fill loop both call this so they can never drift apart (a gate pricing
     buying power off a stale formula would admit/refuse entries the fill
     can't honor)."""
@@ -519,7 +519,7 @@ def _leg_cash_delta(px: float, side: Side, qty: int, commission: float) -> float
 
 def _release_reserve(state: _State, pos: Position) -> None:
     """Release a position's buying-power reserve on FULL close (margin.py).
-    Partial settles keep the reserve — conservative and deterministic."""
+    Partial settles keep the reserve, conservative and deterministic."""
     if pos.margin_reserved:
         state.reserved -= pos.margin_reserved
         pos.margin_reserved = 0.0
@@ -551,13 +551,13 @@ def _try_entry(
     """`skip_conditions=True` is the FX.2 armed-order path: the signal was
     validated at its trigger bar and the order fills at THIS bar's real
     quote even if the signal faded meanwhile (a submitted order can't be
-    recalled because RSI ticked back) — everything else (quotes, liquidity
+    recalled because RSI ticked back). Everything else (quotes, liquidity
     gates, sizing) validates normally."""
     day = view.as_of
     commission = spec.costs.commission_per_contract
 
     def skip(reason: str, detail: str = "") -> None:
-        # every skip is COUNTED (FX.2 — the run carries the distribution);
+        # every skip is COUNTED (FX.2, the run carries the distribution);
         # at the 5-min clock an entry is attempted at every bar, so the
         # LOG stays deduped per session, not 80 lines (dedupe set is
         # per-session, supplied by the bar loop; daily passes None)
@@ -621,7 +621,7 @@ def _try_entry(
         base = fills.base_slip(spec.costs, action)
         eff = 1.0 if stressed else fills.effective_slip(base, q, spec.costs.min_open_interest)
         px = fills.fill_price(q, action, eff)
-        if px is None:  # pragma: no cover — quote_problem gates this
+        if px is None:  # pragma: no cover (quote_problem gates this)
             skip("missing_quote")
             return
         entry_fills.append(px)
@@ -630,7 +630,7 @@ def _try_entry(
         leg_stressed.append(stressed)
 
     # vega cap (spec v2, owner amendment 2): |NET vega| of the contract-set
-    # in dollars per vol point — leg vegas sum SIGNED (long +, short −,
+    # in dollars per vol point. Leg vegas sum SIGNED (long +, short −,
     # × ratio), so a spread's cancelling legs net. Missing vega data makes
     # the user's rule unevaluable → skip, never silently ignore it.
     cap = spec.position.max_vega_per_contract
@@ -665,9 +665,9 @@ def _try_entry(
         return
 
     # buying-power gate (owner decision 2026-07-15, docs/HONESTY.md): the
-    # account must fund the fill — post-fill cash covers debits, and short
+    # account must fund the fill: post-fill cash covers debits, and short
     # legs reserve the broker-standard requirement (margin.py). An entry
-    # that can't be funded is a REAL skip, named — trading with money that
+    # that can't be funded is a REAL skip, named. Trading with money that
     # doesn't exist is the same fabrication class as filling at mid.
     entry_cash_delta = sum(
         _leg_cash_delta(px, leg.side, leg.ratio * contracts, commission)
@@ -698,8 +698,8 @@ def _try_entry(
     )
     state.next_pid += 1
 
-    # covered call buys the shares first (reference close, no added costs —
-    # documented approximation per TECH-SPEC §5)
+    # covered call buys the shares first (reference close, no added costs,
+    # a documented approximation per TECH-SPEC §5)
     if spec.position.structure is Structure.COVERED_CALL:
         shares = 100 * contracts
         cost = shares * spot
@@ -728,7 +728,7 @@ def _try_entry(
             OpenLeg(key=key, side=leg.side.value, qty=qty, entry_price=px, last_mark=px)
         )
 
-    # book the reserve the gate computed — held until FULL close
+    # book the reserve the gate computed, held until FULL close
     state.reserved += reserve
     pos.margin_reserved = reserve
 
@@ -749,7 +749,7 @@ def _try_entry(
     state.opens += 1
     if state.opens > MAX_RUN_FILLS:
         raise RunFillCapError(
-            f"run exceeded {MAX_RUN_FILLS:,} filled positions — narrow "
+            f"run exceeded {MAX_RUN_FILLS:,} filled positions, narrow "
             "the window or slow the entry cadence (intraday_scan "
             "every_setup fills every setup it can)"
         )
@@ -768,7 +768,7 @@ def _try_entry(
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# SCALE-IN BASKET (D5a) — one accumulating position with a blended cost basis.
+# SCALE-IN BASKET (D5a): one accumulating position with a blended cost basis.
 # Gated entirely behind spec.entry.scale_in: the non-ladder path never runs
 # any of this, so daily-clock output stays bit-identical (pinned regression).
 # ══════════════════════════════════════════════════════════════════════════
@@ -805,7 +805,7 @@ def _fire_rungs(
     are clamped to max_total_contracts (flagged cap_clamped); once the cap is
     reached no deeper rung fires. Rungs fired AT the opening bar fold into the
     OPEN event (opening=True → no ADD events); later fires emit ADD events.
-    Every fill reads only the current bar's quote — the add can never peek at a
+    Every fill reads only the current bar's quote. The add can never peek at a
     future bar (the intraday lookahead canary asserts this)."""
     si = spec.entry.scale_in
     assert si is not None
@@ -815,7 +815,7 @@ def _fire_rungs(
     action = fills.open_action(leg.side)  # "buy" for a long basket
     base = fills.base_slip(spec.costs, action)  # side-aware (D3d-earned)
     # F5 review finding #2: opening-bar rung fills fold into the OPEN event,
-    # so their depth notes must travel back to _open_basket — a beyond-depth
+    # so their depth notes must travel back to _open_basket: a beyond-depth
     # FIRST rung (often the ladder's largest) is named, not just counted
     opening_notes: list[str] = []
     for idx, rung in enumerate(si.rungs):
@@ -825,7 +825,7 @@ def _fire_rungs(
             continue
         remaining = si.max_total_contracts - basket.contracts
         if remaining <= 0:
-            break  # cap reached — deeper rungs cannot fire
+            break  # cap reached, deeper rungs cannot fire
         q = view.quote(key)
         problem = fills.quote_problem(q, action)
         if problem is not None:
@@ -844,7 +844,7 @@ def _fire_rungs(
             stressed = True  # stress mode: pay the full adverse quote
         eff = 1.0 if stressed else fills.effective_slip(base, q, spec.costs.min_open_interest)
         px = fills.fill_price(q, action, eff)
-        if px is None:  # pragma: no cover — quote_problem gates this
+        if px is None:  # pragma: no cover (quote_problem gates this)
             _basket_skip(state, view, session_skips, "missing_quote")
             continue
 
@@ -855,7 +855,7 @@ def _fire_rungs(
             clamped = True
 
         # buying-power gate (owner amendment 2026-07-15): buying power is
-        # reality's cap on a ladder — max_total_contracts is only the
+        # reality's cap on a ladder. max_total_contracts is only the
         # user's. An unaffordable rung stays unfired (it may retry at a
         # cheaper bar) and is attributed as UNAFFORDABLE in the depth
         # table, never as merely unprofitable.
@@ -868,7 +868,7 @@ def _fire_rungs(
                        f" · needs ${shortfall:,.0f} more",
             )
             if basket.contracts > 0:
-                # only established baskets are attributable — a provisional
+                # only established baskets are attributable: a provisional
                 # basket that never fills is discarded and its pid reused
                 # (_open_basket); its funding failure still lands in the log
                 state.unaffordable_rungs.add((basket.pid, idx))
@@ -919,7 +919,7 @@ def _fire_rungs(
                 )
             )
         if clamped:
-            break  # the cap was hit exactly on this rung — stop deepening
+            break  # the cap was hit exactly on this rung, stop deepening
     return opening_notes
 
 
@@ -935,7 +935,7 @@ def _open_basket(
     """Open a fresh basket: select the single-leg contract once, then fire
     every already-satisfied rung at this bar. If nothing fills (gap / gated /
     zero quote) the provisional basket is discarded and the open retries next
-    bar — an empty basket is never recorded."""
+    bar. An empty basket is never recorded."""
     day = view.as_of
     if not view.has_chain:
         _basket_skip(state, view, session_skips, "no_chain_data")
@@ -964,7 +964,7 @@ def _open_basket(
     opening_notes = _fire_rungs(spec, state, view, pos, opening=True,
                                 bar_time=bar_time, session_skips=session_skips)
     if pos.contracts <= 0:
-        return  # nothing filled this bar — discard, retry next bar
+        return  # nothing filled this bar: discard, retry next bar
 
     state.next_pid += 1
     state.positions.append(pos)
@@ -972,7 +972,7 @@ def _open_basket(
     state.opens += 1
     if state.opens > MAX_RUN_FILLS:
         raise RunFillCapError(
-            f"run exceeded {MAX_RUN_FILLS:,} filled positions — narrow "
+            f"run exceeded {MAX_RUN_FILLS:,} filled positions, narrow "
             "the window or slow the entry cadence (intraday_scan "
             "every_setup fills every setup it can)"
         )
@@ -1000,7 +1000,7 @@ def _manage_basket(
     bar_time: str | None,
 ) -> None:
     """One bar of the ladder state machine. Runs AFTER exits, so an add at bar
-    t is first exit-evaluated at t+1 (owner amendment 2 — a stop can never
+    t is first exit-evaluated at t+1 (owner amendment 2: a stop can never
     fire on its own add bar)."""
     si = spec.entry.scale_in
     assert si is not None
@@ -1020,7 +1020,7 @@ def _manage_basket(
 
 def _force_flat(spec: StrategySpec, state: _State, view: MarketViewLike) -> None:
     """exit.close_at_time force-flat: close every open position at this bar
-    (reason session_flat). A leg without a usable quote here can't fill — it
+    (reason session_flat). A leg without a usable quote here can't fill. It
     carries and is retried next bar (honest, never synthetic)."""
     for pos in state.live:
         if pos.closed or all(leg.settled for leg in pos.legs):
@@ -1033,8 +1033,8 @@ def _close_position(
 ) -> bool:
     """Close all unsettled option legs at today's quotes. False if any leg
     lacks a usable quote (the attempt is retried on later sessions).
-    Exits are never liquidity-gated — a position can always pay the quoted
-    price to close — but thin known OI scales the slip like everywhere else."""
+    Exits are never liquidity-gated (a position can always pay the quoted
+    price to close), but thin known OI scales the slip like everywhere else."""
     commission = spec.costs.commission_per_contract
     liq = _liq_value_per_share(pos, view, spec.costs)
     if liq is None:
@@ -1089,7 +1089,7 @@ def _close_position(
 def _delta_stop_hit(pos: Position, view: MarketViewLike, threshold: float) -> bool:
     """True when any WATCHED leg's |delta| reaches the threshold at today's
     quotes. Watched = short legs when the position has any, else all legs.
-    Legs without a delta today are unevaluable — the rule waits on them,
+    Legs without a delta today are unevaluable: the rule waits on them,
     it never guesses (spec-v2 contract)."""
     unsettled = [leg for leg in pos.legs if not leg.settled]
     shorts = [leg for leg in unsettled if leg.side == "short"]
@@ -1103,7 +1103,7 @@ def _delta_stop_hit(pos: Position, view: MarketViewLike, threshold: float) -> bo
 
 def _latch_note(pos: Position, day: date) -> str:
     """The trigger disclosure: dated when the fill lands on a later
-    session (overnight/gap carry — review finding)."""
+    session (overnight/gap carry, review finding)."""
     if pos.latched_day is not None and pos.latched_day != day:
         return f"{pos.latched_day} {pos.latched_bar}"
     return pos.latched_bar or "?"
@@ -1114,7 +1114,7 @@ def _try_complete_latch(
 ) -> bool:
     """Complete a pending latched exit at THIS view's real quotes; on
     success the CLOSE event discloses the trigger. False = still no
-    fillable quote (the latch persists — no expiry)."""
+    fillable quote (the latch persists, no expiry)."""
     if _close_position(pos, view, state, spec, pos.exit_latched or "condition_exit"):
         state.trades[-1].detail += f" · triggered {_latch_note(pos, view.as_of)}"
         return True
@@ -1188,7 +1188,7 @@ def _check_exits(
             closed = _close_position(pos, view, state, spec, "condition_exit")
             if not closed and latch:
                 # the trigger was OBSERVED but this bar cannot fill the
-                # close — latch it (completed at the next fillable quote)
+                # close. Latch it (completed at the next fillable quote)
                 pos.exit_latched = "condition_exit"
                 pos.latched_bar = bar_hhmm
                 pos.latched_day = view.as_of
@@ -1282,7 +1282,7 @@ def _settle_expirations(spec: StrategySpec, state: _State, view: MarketViewLike)
             leg.last_mark = 0.0
 
         if had_latch is not None and all(leg.settled for leg in pos.legs):
-            # settlement won the race with a pending latched exit — never
+            # settlement won the race with a pending latched exit. Never
             # silently swallow the trigger (review finding): disclose it on
             # the final settlement event and clear the latch
             state.trades[-1].detail += (
@@ -1315,22 +1315,22 @@ def _halt_on_ruin(
     req_end: date,
 ) -> None:
     """The ruin halt (owner decision 2026-07-15, docs/HONESTY.md · buying
-    power): the session's equity closed ≤ $0 — the account is gone and the
+    power): the session's equity closed ≤ $0. The account is gone and the
     simulation stops RIGHT HERE. Open positions get CLOSE events at their
     marks (cash untouched: the just-appended equity already IS the mark);
     dates/equity end at this session by construction. The halt fires at
-    exactly $0, which makes ruin_date the LATEST possible ruin date — a
+    exactly $0, which makes ruin_date the LATEST possible ruin date. A
     real margin account would have been liquidated earlier (disclosed).
 
     The check rides the equity MARK: a session without a close price
     appends no equity point and cannot measure ruin, so the halt fires at
-    the next MARKED session — no honest mark, no halt (inventing a close
+    the next MARKED session: no honest mark, no halt (inventing a close
     to measure against would be a synthetic price)."""
     equity = result.equity[-1]
     state.trades.append(
         TradeEvent(
             day=day, action="HALT", reason="ruin",
-            detail=f"account wiped out — equity ${equity:,.2f} ≤ $0; simulation halted",
+            detail=f"account wiped out (equity ${equity:,.2f} ≤ $0); simulation halted",
         )
     )
     for pos in state.live:
@@ -1352,7 +1352,7 @@ def _halt_on_ruin(
     result.ruin_equity = equity
     # the simulation ENDED here: the effective window is what actually ran
     # (annualization, the coverage panel and the verdict window line all
-    # read this — claiming the full window was tested would be a lie)
+    # read this. Claiming the full window was tested would be a lie)
     result.effective_end = day
     result.requested_sessions_to_ruin = sum(
         1 for d in store.sessions if req_start <= d <= min(req_end, day)
@@ -1384,7 +1384,7 @@ def _unwind_pending_stock(state: _State, view: MarketView) -> None:
 
 def _check_slice_coverage(spec: StrategySpec, intraday: IntradayProvider) -> None:
     """Owner amendment 4: refuse BEFORE running when the spec needs more
-    than the intraday record covers — a plain reason, never a zero-fill
+    than the intraday record covers: a plain reason, never a zero-fill
     grind. Until D2d, intraday quotes are the short-DTE ATM capture slice."""
     sel = spec.position.expiration_selection
     cap = intraday.slice_max_trading_dte
@@ -1392,12 +1392,12 @@ def _check_slice_coverage(spec: StrategySpec, intraday: IntradayProvider) -> Non
         raise SliceCoverageError(
             f"requested {sel.min_dte}–{sel.max_dte} DTE at the 5-minute clock; "
             f"intraday quotes cover 0–{cap} trading-DTE (ATM±$8, the short-DTE "
-            f"slice) — use clock \"daily\" for longer tenors"
+            f"slice). Use clock \"daily\" for longer tenors"
         )
     if not intraday.sessions():
         raise SliceCoverageError(
-            f"no intraday sessions in the lake for {spec.underlying.ticker.value} — "
-            "the 5-minute record has not reached this ticker yet; use clock \"daily\""
+            f"no intraday sessions in the lake for {spec.underlying.ticker.value}. "
+            "The 5-minute record has not reached this ticker yet; use clock \"daily\""
         )
 
 
@@ -1405,7 +1405,7 @@ def _check_slice_coverage(spec: StrategySpec, intraday: IntradayProvider) -> Non
 # conditioned on one of these refuses pre-run when its window starts
 # before the signal's first covered session (owner decision 2026-07-07):
 # the uncovered stretch would sit in forced flat cash and CORRUPT the
-# stats — Sharpe over zero-variance years, diluted drawdowns — a long
+# stats (Sharpe over zero-variance years, diluted drawdowns), a long
 # window as costume. Detectable from spec + store alone, so prevention
 # beats correction (the D2 slice-refusal precedent).
 _SIGNAL_SERIES: dict[Indicator, tuple[str, str]] = {
@@ -1413,7 +1413,7 @@ _SIGNAL_SERIES: dict[Indicator, tuple[str, str]] = {
     Indicator.GEX_RANK_1Y: ("dealer positioning (UW)", "gex_dates"),
     Indicator.DEX_LEVEL: ("dealer positioning (UW)", "dex_dates"),
     Indicator.DEX_RANK_1Y: ("dealer positioning (UW)", "dex_dates"),
-    # F2/F3: flow/sentiment/pin reductions (UW, 2026-02-24+) — thinner
+    # F2/F3: flow/sentiment/pin reductions (UW, 2026-02-24+), thinner
     # still than dealer positioning; the same cap machinery
     Indicator.NET_PREMIUM_LEVEL: ("options flow (UW)", "flow_dates"),
     Indicator.NET_PREMIUM_RANK_1Y: ("options flow (UW)", "flow_dates"),
@@ -1438,7 +1438,7 @@ def _spec_conditions(spec: StrategySpec) -> list[Condition]:
 
 # rank indicators carry an extra evaluability bound: the D1 floor makes
 # them unevaluable until 126 trailing observations exist, so the refusal
-# names THAT date too — the offered window must not hide six structurally
+# names THAT date too: the offered window must not hide six structurally
 # flat months inside itself (review finding F1 #2)
 _RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y,
                     Indicator.NET_PREMIUM_RANK_1Y, Indicator.MARKET_TIDE_RANK_1Y,
@@ -1446,14 +1446,14 @@ _RANK_INDICATORS = {Indicator.GEX_RANK_1Y, Indicator.DEX_RANK_1Y,
 
 # Tail-staleness bound (owner decision 2026-07-08): the PIT reads serve the
 # most recent observation ≤ as_of, so a signal whose feed DIED keeps
-# forward-filling its last value into every later session — silently. A few
+# forward-filling its last value into every later session, silently. A few
 # sessions of vendor publishing lag is normal; past this many sessions the
 # tail is a dead feed wearing a live filter, and the run refuses with the
 # covered window named. 5 sessions ≈ one trading week.
 STALE_TAIL_GRACE_SESSIONS = 5
 
 # The spliced vol-family series get the SAME tail protection (review
-# finding: the in-house continuation can die exactly like a vendor feed —
+# finding: the in-house continuation can die exactly like a vendor feed:
 # recorder down, derive failing) but keep their historical START semantics:
 # sessions before the series begins evaluate False (D1c warmup behavior),
 # they are not start-refused like the UW coverage-capped families.
@@ -1475,7 +1475,7 @@ def _check_stale_tail(label: str, scope: str, indicator_name: str,
     (≥ win_start), and the offered window can never invert: a window lying
     entirely after coverage is offered the series' own covered window."""
     if not dates:
-        return  # honest absence — warmup/evaluate-False semantics apply
+        return  # honest absence, warmup/evaluate-False semantics apply
     last = dates[-1]
     lo = max(bisect_right(sessions, last), bisect_left(sessions, win_start))
     hi = bisect_right(sessions, win_end)
@@ -1485,18 +1485,18 @@ def _check_stale_tail(label: str, scope: str, indicator_name: str,
     first = dates[0]
     covered_start = max(win_start, first)
     if covered_start > last:
-        # the whole window sits after the last observation — offering
+        # the whole window sits after the last observation. Offering
         # "covered_start → last" would be inverted (the F1 #1 class)
         raise SliceCoverageError(
             f"{label} data{scope} was last observed {last.isoformat()}; the "
-            f"requested window lies entirely after it — all {stale} sessions "
+            f"requested window lies entirely after it. All {stale} sessions "
             f"would re-read that one stale observation. Run "
             f"{first.isoformat()} → {last.isoformat()} instead, or wait for "
             "the signal feed to catch up."
         )
     raise SliceCoverageError(
         f"{label} data{scope} was last observed {last.isoformat()}; "
-        f"the requested window runs {stale} sessions past it — the "
+        f"the requested window runs {stale} sessions past it. The "
         f"{indicator_name} filter would silently re-read that "
         f"one stale observation across the whole tail. Run "
         f"{covered_start.isoformat()} → {last.isoformat()} instead, "
@@ -1508,7 +1508,7 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
                           win_start: date, win_end: date) -> None:
     """Refuse BEFORE running when a condition's signal series starts after
     the (session-aligned) window does, or last observed more than
-    STALE_TAIL_GRACE_SESSIONS before the window ends — plain reason,
+    STALE_TAIL_GRACE_SESSIONS before the window ends: plain reason,
     covered window offered. `win_start`/`win_end` are the run's first/last
     simulated sessions."""
     for cond in _spec_conditions(spec):
@@ -1525,12 +1525,12 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
         if not dates:
             raise SliceCoverageError(
                 f"{label} data is not banked for {spec.underlying.ticker.value} "
-                f"yet — the {cond.indicator.value} filter cannot be evaluated "
+                f"yet. The {cond.indicator.value} filter cannot be evaluated "
                 "on any session"
             )
         first = dates[0]
         last = dates[-1]
-        # a market-wide series isn't "for SPY" — drop the ticker from the
+        # a market-wide series isn't "for SPY". Drop the ticker from the
         # phrasing (review finding F2/F3 #10)
         scope = ("" if label.startswith("market-wide")
                  else f" for {spec.underlying.ticker.value}")
@@ -1543,14 +1543,14 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
             unlock = (dates[125].isoformat() if len(dates) > 125
                       else "once 126 sessions accrue")
             rank_note = (" Rank filters additionally need 126 trailing "
-                         f"observations — evaluable from {unlock}.")
+                         f"observations, evaluable from {unlock}.")
         if win_end < first:
-            # the requested window lies ENTIRELY before coverage — offering
+            # the requested window lies ENTIRELY before coverage. Offering
             # "first → win_end" would be an inverted, impossible window
             # (review finding F1 #1); offer the real covered window instead
             raise SliceCoverageError(
                 f"{label} data{scope} starts {first.isoformat()}; the "
-                f"requested window ends {win_end.isoformat()} — entirely "
+                f"requested window ends {win_end.isoformat()}, entirely "
                 f"before coverage begins. Run {first.isoformat()} → "
                 f"{last.isoformat()} instead.{rank_note}"
             )
@@ -1558,7 +1558,7 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
         # the offer can never itself trip the tail-staleness refusal
         raise SliceCoverageError(
             f"{label} data{scope} starts {first.isoformat()}; the "
-            f"requested window starts {win_start.isoformat()} — the uncovered "
+            f"requested window starts {win_start.isoformat()}. The uncovered "
             f"stretch would sit in flat cash and corrupt the stats. Run "
             f"{first.isoformat()} → {min(win_end, last).isoformat()} "
             f"instead.{rank_note}"
@@ -1567,7 +1567,7 @@ def check_signal_coverage(spec: StrategySpec, store: MarketStore,
 
 # Forward-record provenance (2026-07-08): which store splice seams each
 # indicator can cross. A spliced series serves vendor values through the
-# seam and the in-house continuation after it — runs whose window reaches
+# seam and the in-house continuation after it. Runs whose window reaches
 # the seam disclose the convention change in their payload (guardrail #6:
 # a surface showing results shows what they were computed on).
 _PROVENANCE_SERIES: dict[Indicator, tuple[str, ...]] = {
@@ -1601,7 +1601,7 @@ def data_provenance(spec: StrategySpec, store: MarketStore,
                     win_start: date, win_end: date) -> list[dict[str, str]]:
     """Convention-seam disclosures for the run payload: one entry per
     spliced series the spec's conditions read, when the window reaches the
-    seam. Windows ending before every seam return [] — pre-splice runs are
+    seam. Windows ending before every seam return []: pre-splice runs are
     bit-identical AND undecorated."""
     out: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -1621,7 +1621,7 @@ def data_provenance(spec: StrategySpec, store: MarketStore,
                 "series": key,
                 "inhouse_from": seam.isoformat(),
                 "note": (f"{vendor} froze before this window ended; sessions "
-                         f"from {seam.isoformat()} read the {inhouse} — a "
+                         f"from {seam.isoformat()} read the {inhouse}, a "
                          "disclosed convention change, measured on the vendor "
                          "overlap by cross-validation"),
             })
@@ -1648,21 +1648,21 @@ def run_engine(
     (D2d): shifts the session's entry WINDOW by N 5-minute bars. Positive
     delays entries past the session start / time_of_day; negative moves a
     time_of_day gate earlier (clamped to the session start). It is not
-    spec vocabulary — runs made with it are gauntlet probes.
+    spec vocabulary. Runs made with it are gauntlet probes.
 
     `progress(done_sessions, total_sessions)` fires every
-    PROGRESS_EVERY_SESSIONS covered 5-min sessions — a full-history
+    PROGRESS_EVERY_SESSIONS covered 5-min sessions. A full-history
     intraday run takes minutes and a silent stage is indistinguishable
     from a dead one (incident 2026-07-06). Gauntlet probes pass None.
 
     `pinned_resolutions` (Tier 1 notebook reproduce): the RECORDED
-    per-session bar resolution of an earlier run — {session: "minute" |
+    per-session bar resolution of an earlier run: {session: "minute" |
     "five_min"}. A pinned session serves exactly the recorded grid even
     when the lake has since upgraded it (D3 receipts semantics: a fresh
     run may resolve finer, a REPLAY never silently re-resolves). Sessions
     absent from the map (none, when the window is pinned too) resolve
     live. A "minute" pin whose grid can no longer be built falls back to
-    5-min and is RECORDED as five_min — the caller compares recorded maps
+    5-min and is RECORDED as five_min. The caller compares recorded maps
     and discloses the divergence rather than trusting the pin blindly."""
     five_min = spec.backtest.clock is Clock.FIVE_MIN
 
@@ -1675,7 +1675,7 @@ def run_engine(
         covered = [d for d in intraday.sessions() if d in store.underlying_close]
         if not covered:
             raise SliceCoverageError(
-                "no intraday sessions overlap the underlying record — nothing to simulate"
+                "no intraday sessions overlap the underlying record, nothing to simulate"
             )
         req_start = spec.backtest.start or covered[0]
         req_end = spec.backtest.end or covered[-1]
@@ -1684,7 +1684,7 @@ def run_engine(
         last_chain = covered[-1]
     else:
         if not store.chain_dates:
-            raise ValueError("no options coverage for this window — nothing to simulate")
+            raise ValueError("no options coverage for this window, nothing to simulate")
         first_chain, last_chain = store.chain_dates[0], store.chain_dates[-1]
         req_start = spec.backtest.start or first_chain
         req_end = spec.backtest.end or store.sessions[-1]
@@ -1695,11 +1695,11 @@ def run_engine(
     if not clock:
         raise ValueError("effective window is empty after bounding by coverage")
     # F1: coverage-capped signal filters refuse windows the signal can't
-    # honestly cover — at BOTH clocks, before any simulation work
+    # honestly cover, at BOTH clocks, before any simulation work
     check_signal_coverage(spec, store, clock[0], clock[-1])
 
     # what the user asked to test, so the honesty layer can compare it against
-    # the sessions that actually carried quotes (the seventeen-fills gap —
+    # the sessions that actually carried quotes (the seventeen-fills gap:
     # at the 5-min clock "carried quotes" means an intraday slice)
     requested_sessions = sum(1 for d in store.sessions if req_start <= d <= req_end)
 
@@ -1717,8 +1717,8 @@ def run_engine(
 
     # FX.1: per-session bar resolution. FINEST asks the provider which
     # sessions the F0 resolution map marks minute-eligible (an O(1) artifact
-    # lookup done ONCE per run); everything else — and every run without the
-    # v4 field — steps the 5-min grid exactly as D2 shipped it. The chosen
+    # lookup done ONCE per run); everything else (and every run without the
+    # v4 field) steps the 5-min grid exactly as D2 shipped it. The chosen
     # resolution of every covered session is recorded for disclosure,
     # receipts, and FX.4's mixed-resolution honesty.
     finest = five_min and spec.backtest.resolution is Resolution.FINEST
@@ -1753,7 +1753,7 @@ def run_engine(
     # (arm at the window start and again when a position closes). An armed
     # order is valid until the next QUOTED bar: it fills there at the real
     # NBBO even if the signal faded (a submitted order can't be recalled),
-    # and is consumed fill-or-skip — never re-armed on the same dip.
+    # and is consumed fill-or-skip, never re-armed on the same dip.
     scanning = five_min and spec.entry.intraday_scan is IntradayScan.EVERY_SETUP
     has_conditions = bool(spec.entry.conditions)
 
@@ -1766,7 +1766,7 @@ def run_engine(
             pin = pinned_resolutions.get(day) if pinned_resolutions else None
             if pin is not None:
                 # replay: the recorded resolution wins over live "finest"
-                # in BOTH directions — a since-upgraded session stays on
+                # in BOTH directions: a since-upgraded session stays on
                 # its recorded 5-min grid (never silently re-resolve)
                 want_minute = pin == RES_MINUTE
             else:
@@ -1811,7 +1811,7 @@ def run_engine(
                 if last is not None:
                     # timeframe-"5min" indicators mean ONE thing at every
                     # session of a run: on a minute grid the rolling series
-                    # samples ONLY the slice's 5-min underlying stamps —
+                    # samples ONLY the slice's 5-min underlying stamps:
                     # the same artifact, values and session bounds the 5-min
                     # grid reads (owner decision 4: resolution must never
                     # silently change signal meaning). Minute bars carry no
@@ -1834,13 +1834,13 @@ def run_engine(
                 if past_flat:
                     # close_at_time overrides everything at/after its bar: flat
                     # the book, mint nothing (no exits/adds beyond the flatten,
-                    # and any armed order dies unfilled — counted once)
+                    # and any armed order dies unfilled, counted once)
                     if scanning and scan_armed:
                         _count_skip(state, session_skips, day, "no_quote_this_bar")
                     scan_armed = False
                     if finest:
                         # a pending latched exit first fillable here closes
-                        # under its OWN reason, not session_flat — the
+                        # under its OWN reason, not session_flat. The
                         # trade log must not misattribute a triggered exit
                         # (review finding)
                         for pos in state.live:
@@ -1855,14 +1855,14 @@ def run_engine(
                         bstate.armed = False
                 else:
                     # exits BEFORE entries at every bar: a position opened at
-                    # bar t is first evaluated at bar t+1 (owner amendment 2 —
+                    # bar t is first evaluated at bar t+1 (owner amendment 2:
                     # a stop can never fire on its own entry bar)
                     _check_exits(spec, state, bview, dte_fn,
                                  latch=finest, bar_hhmm=bar_hhmm)
-                    # event-based (O(events-this-bar), never O(positions) —
+                    # event-based (O(events-this-bar), never O(positions),
                     # post-OOM rule); only the condition-less lifecycle
                     # re-arm consumes it. NOTE: a covered-call CLOSE keeps
-                    # its stock (slot not freed) — the fresh episode is then
+                    # its stock (slot not freed). The fresh episode is then
                     # consumed as max_concurrent, honest accounting noise.
                     closed_this_bar = scanning and not has_conditions and any(
                         ev.action == "CLOSE" for ev in state.trades[events_before:]
@@ -1887,18 +1887,18 @@ def run_engine(
                             passes = all_conditions_pass(bview, spec.entry.conditions)
                             if passes and not scan_cond_prev:
                                 if not scan_armed:
-                                    scan_armed = True  # a fresh setup — one entry
+                                    scan_armed = True  # a fresh setup, one entry
                                     scan_armed_bar = bar_hhmm
                                 else:
                                     # one working order at a time: an edge
                                     # arriving while an order is armed is a
-                                    # REAL missed setup — counted, disclosed
+                                    # REAL missed setup: counted, disclosed
                                     _count_skip(state, session_skips, day,
                                                 "order_in_flight")
                             scan_cond_prev = passes
                         elif not scan_armed and (first_window_bar or closed_this_bar):
                             # condition-less: the position lifecycle is the
-                            # episode — arm at the window start and re-arm
+                            # episode: arm at the window start and re-arm
                             # when a position closes (cycling)
                             scan_armed = True
                             scan_armed_bar = bar_hhmm
@@ -1906,10 +1906,10 @@ def run_engine(
                             open_count = sum(1 for p in state.live if not p.closed)
                             if open_count >= spec.entry.max_concurrent_positions:
                                 _count_skip(state, session_skips, day, "max_concurrent")
-                                scan_armed = False  # consumed — never re-armed
+                                scan_armed = False  # consumed, never re-armed
                             elif not bview.has_chain:
                                 # one-QUOTED-bar validity: the armed order
-                                # WAITS through quote-less bars — waiting is
+                                # WAITS through quote-less bars. Waiting is
                                 # not a skip; the episode is counted only if
                                 # it dies unfilled (session end / flatten)
                                 pass
@@ -1950,17 +1950,17 @@ def run_engine(
                         ev.bar_time = bar_hhmm
                         ev.detail += f" · {ev.bar_time}"
                 # F7 review #4: the structured fill log gets ITS OWN bar
-                # time the same way — a CLOSE fill must be audited in a
+                # time the same way: a CLOSE fill must be audited in a
                 # window around the CLOSE bar, never the OPEN's
                 for row in state.fill_log[fills_before:]:
                     row["bar_time"] = bar_hhmm
-                # retire closed positions from the live book — O(open) per
+                # retire closed positions from the live book. O(open) per
                 # bar keeps every hot path bounded however many positions a
                 # scanning run mints (OOM-guard directive)
                 state.live[:] = [p for p in state.live if not p.closed]
             if scanning and scan_armed:
                 # an armed order that never met a quoted bar dies with the
-                # session — counted once per episode, never per waiting bar
+                # session, counted once per episode, never per waiting bar
                 _count_skip(state, session_skips, day, "no_quote_this_bar")
             _settle_expirations(spec, state, view)  # 0DTE settles at the close
             state.live[:] = [p for p in state.live if not p.closed]
@@ -1981,7 +1981,7 @@ def run_engine(
                 if open_positions:
                     result.days_in_market += 1
                 if result.equity[-1] <= 0.0:
-                    # ruin halt — both clock branches stop the day loop here
+                    # ruin halt: both clock branches stop the day loop here
                     _halt_on_ruin(state, result, store, day, close_px,
                                   req_start, req_end)
                     break
@@ -1989,8 +1989,8 @@ def run_engine(
 
         # ------------------------------ daily close path (also the 5-min
         # clock's fallback on sessions without an intraday slice: exits,
-        # settlement and marks use the REAL EOD chain — coarser timing,
-        # never synthetic — and NO new entries are minted)
+        # settlement and marks use the REAL EOD chain (coarser timing,
+        # never synthetic), and NO new entries are minted)
         _check_exits(spec, state, view)
         _settle_expirations(spec, state, view)
         state.live[:] = [p for p in state.live if not p.closed]
@@ -1998,7 +1998,7 @@ def run_engine(
         if scale_in is not None and not five_min:
             # daily-clock ladder (the degenerate case: adds land on successive
             # SESSIONS as the daily signal deepens). Only on the true daily
-            # clock — a 5-min gap session never mints a basket.
+            # clock. A 5-min gap session never mints a basket.
             if day <= last_chain and _schedule_matches(spec, state, day):
                 if bstate.basket is not None and bstate.basket.closed:
                     bstate.basket = None
@@ -2039,7 +2039,7 @@ def run_engine(
     if five_min:
         result.sessions_with_chain = covered_sessions
     else:
-        # a ruin halt truncates the honest numerator too — sessions after
+        # a ruin halt truncates the honest numerator too: sessions after
         # the halt were never simulated, chain or not
         halt = result.ruin_date if result.ruined else None
         result.sessions_with_chain = sum(

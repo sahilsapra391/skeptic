@@ -3,7 +3,7 @@
 /**
  * The compile-time thinking state (owner ask 2026-07-14): submitting a
  * strategy used to show only a dull pulsing dot for the parser's 10–30s
- * round-trip. This is the Claude-chat treatment instead — the prompt
+ * round-trip. This is the Claude-chat treatment instead. The prompt
  * becomes a message and a shimmering status line narrates the stages the
  * parser actually goes through, with honest elapsed time.
  */
@@ -12,19 +12,19 @@ import { useEffect, useState } from "react";
 
 import { PulsingDots } from "@/components/pulsing-dots";
 
-/** Statuses advance with elapsed time and never loop back — each one is
+/** Statuses advance with elapsed time and never loop back. Each one is
  * TRUE of the parse in flight (read → disambiguate → compile → validate);
  * nothing here claims progress the backend can't confirm. */
 const STATUSES: { at: number; text: string }[] = [
   { at: 0, text: "Reading your strategy…" },
-  { at: 3, text: "Marking what you stated — entry, exit, sizing…" },
+  { at: 3, text: "Marking what you stated: entry, exit, sizing…" },
   { at: 7, text: "Hunting for ambiguity. I don't guess…" },
   { at: 12, text: "Compiling the spec…" },
   { at: 18, text: "Validating every field against the schema…" },
-  { at: 26, text: "Double-checking — no field gets a silent default…" },
+  { at: 26, text: "Double-checking. No field gets a silent default…" },
   { at: 38, text: "Still working. A slow answer beats a wrong one…" },
 ];
-// newest-threshold-first, computed once — the per-render lookup just scans
+// newest-threshold-first, computed once. The per-render lookup just scans
 const STATUSES_DESC = [...STATUSES].reverse();
 
 export function ThinkingIndicator() {
@@ -44,7 +44,7 @@ export function ThinkingIndicator() {
       <div className="flex items-center gap-3">
         <PulsingDots />
         {/* key remounts the wrapper per status so fade-rise replays on
-            advance; the shimmer lives on the inner span — both animate,
+            advance; the shimmer lives on the inner span. Both animate,
             neither clobbers the other's `animation` shorthand */}
         <span key={status.text} className="animate-fade-rise">
           <span className="thinking-shimmer text-[15px] font-medium">{status.text}</span>

@@ -1,4 +1,4 @@
-"""Transactional email (launch L1b): exactly one job — deliver the
+"""Transactional email (launch L1b): exactly one job, deliver the
 verification link. Sender is env-picked so the owner can swap providers
 without code: RESEND_API_KEY → Resend, SKEPTIC_SMTP_HOST → any SMTP,
 neither → the link is logged server-side (dev / pre-sender deploys; the
@@ -26,15 +26,15 @@ def app_url() -> str:
 
 def send_verification(email: str, token: str) -> bool:
     """True when handed to a real sender; False when only logged (no
-    sender configured) or delivery failed — callers surface that honestly
+    sender configured) or delivery failed. Callers surface that honestly
     instead of pretending mail is on its way."""
     link = f"{app_url()}/verify?token={token}"
-    subject = "Verify your email — Skeptic"
+    subject = "Verify your email for Skeptic"
     body = (
         "Confirm this address to finish setting up your Skeptic account:\n\n"
         f"{link}\n\n"
         "The link works once and expires in 3 days. If you didn't create "
-        "this account, ignore this email — nothing happens without the link."
+        "this account, ignore this email. Nothing happens without the link."
     )
 
     resend_key = os.environ.get("RESEND_API_KEY")
@@ -79,7 +79,7 @@ def send_verification(email: str, token: str) -> bool:
             log.exception("smtp delivery failed")
             return False
 
-    # no sender configured — the owner-visible dev path; the LINK is logged
+    # no sender configured, the owner-visible dev path; the LINK is logged
     # (it's single-use and short-lived), never any credential
-    log.warning("no mail sender configured — verification link for %s: %s", email, link)
+    log.warning("no mail sender configured, verification link for %s: %s", email, link)
     return False

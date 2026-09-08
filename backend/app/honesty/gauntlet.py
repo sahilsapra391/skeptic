@@ -3,7 +3,7 @@
 `on_stage(index, label, preview)` fires as each stage begins so the API
 can write run_events and the UI can show the strategy being attacked
 live. `preview` is a REAL one-line stat from the stage that just
-finished (never a fabrication) — the progress screen's teaser feed.
+finished (never a fabrication): the progress screen's teaser feed.
 Stage indices match the frontend's gauntlet screen:
   0 backtest (already done) · 1 IS/OOS · 2 walk-forward · 3 Monte Carlo ·
   4 sensitivity · 5 verdict
@@ -37,9 +37,9 @@ def _both(pro: str, retail: str) -> Preview:
 def _backtest_preview(result: RunResult, initial: float) -> Preview:
     final = result.equity[-1] if result.equity else initial
     return _both(
-        f"backtest done — {result.filled} fills · "
+        f"backtest done: {result.filled} fills · "
         f"${initial:,.0f} → ${final:,.0f} net of costs",
-        f"backtest done — {result.filled} trades · "
+        f"backtest done: {result.filled} trades · "
         f"started ${initial:,.0f}, ended ${final:,.0f} after costs",
     )
 
@@ -53,9 +53,9 @@ def _oos_preview(oos: OosSplit) -> Preview:
     verdict = "fading ⚠" if oos.flagged else "holding ✓"
     return _both(
         f"unseen data: Sharpe {oos.oos_sharpe:.2f} vs {oos.is_sharpe:.2f} "
-        f"in training — {verdict}",
+        f"in training ({verdict})",
         f"on data it never saw: risk-adjusted score {oos.oos_sharpe:.2f} vs "
-        f"{oos.is_sharpe:.2f} in training — {verdict}",
+        f"{oos.is_sharpe:.2f} in training ({verdict})",
     )
 
 
@@ -114,16 +114,16 @@ def run_gauntlet(
 
     # "nudged around your values", not "±20%": small condition thresholds
     # sweep an absolute family-scale grid wider than ±20% (stages.py
-    # _COND_FAMILY_FLOORS) — the preview must not misstate the probe
+    # _COND_FAMILY_FLOORS). The preview must not misstate the probe
     if sens.verdict == "plateau":
         sens_preview = _both(
             "parameter nudges: the optimum is a plateau",
-            "settings nudged around your values: stable — small changes don't wreck it",
+            "settings nudged around your values: stable (small changes don't wreck it)",
         )
     elif sens.verdict == "cliff":
         sens_preview = _both(
             "parameter nudges: the optimum is a cliff",
-            "settings nudged around your values: fragile — only works at exactly your settings",
+            "settings nudged around your values: fragile (only works at exactly your settings)",
         )
     else:
         sens_preview = _both(

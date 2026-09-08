@@ -32,13 +32,13 @@ def _cal(excess: list[float], f: float = 0.5) -> Calibration:
 
 class TestDecisionRule:
     def test_aligned_inside_bar_no_proposal(self) -> None:
-        # median 0.6 vs intended 0.5 — inside ±0.25, whatever the n
+        # median 0.6 vs intended 0.5, inside ±0.25, whatever the n
         d = decide(_cal([0.6] * 5_000))
         assert not d.proposal and d.direction == "none"
 
     def test_conservative_at_base_bar(self) -> None:
         # daily fills concede only 0.2 true half-spreads vs intended 0.5:
-        # model too optimistic — raising the default opens at the base bar
+        # model too optimistic, so raising the default opens at the base bar
         d = decide(_cal([0.2] * CAL_BASE_MIN_N))
         assert d.proposal and d.direction == "conservative"
         assert d.f_new is not None and d.f_new > 0.5
@@ -49,7 +49,7 @@ class TestDecisionRule:
 
     def test_optimistic_needs_higher_bar(self) -> None:
         # daily fills concede 0.9 vs intended 0.5 (divergence 0.4): beyond
-        # the base bar but BELOW the optimism bar (0.5) — blocked, loudly
+        # the base bar but BELOW the optimism bar (0.5), so blocked, loudly
         d = decide(_cal([0.9] * CAL_OPTIMISTIC_MIN_N))
         assert not d.proposal
         assert "never a silent nudge" in d.reason
@@ -78,7 +78,7 @@ class TestRescale:
 
     def test_clamped_to_valid_range(self) -> None:
         assert _rescale(0.5, 0.01) == 1.0  # never above full adverse quote
-        assert _rescale(0.5, 100.0) == 0.05  # never 0 — mid fills forbidden
+        assert _rescale(0.5, 100.0) == 0.05  # never 0, mid fills forbidden
 
 
 class TestEvidenceDoc:
@@ -102,7 +102,7 @@ class TestEvidenceDoc:
 class TestPriorities:
     def test_data_skip_vocabulary_matches_engine(self) -> None:
         # the reasons the engine actually emits (engine.py/fills.py/
-        # selection.py) — a rename there must break THIS, not silently
+        # selection.py), so a rename there must break THIS, not silently
         # drop the demand signal
         assert {"no_expiration_in_window", "missing_quote",
                 "illiquid_spread", "no_chain_data"} <= DATA_SKIP_REASONS

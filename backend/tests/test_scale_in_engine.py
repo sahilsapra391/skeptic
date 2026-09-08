@@ -1,9 +1,9 @@
-"""Scale-in basket engine (D5a) — hand-computed fixtures.
+"""Scale-in basket engine (D5a), hand-computed fixtures.
 
 The ladder is a LONG single-leg call whose contracts accumulate into ONE
 basket with a blended cost basis; the whole basket exits together. Rungs are
 driven here by SMA(period 2) on the 5-min underlying lasts so the firing bar
-of each rung is unambiguous and the P&L is hand-computable — the basket state
+of each rung is unambiguous and the P&L is hand-computable. The basket state
 machine is indicator-agnostic, and the RSI(14) 5-min path the founder's real
 prompt uses is exercised by test_conditions_intraday.py, which owns the RSI
 math. SMA(2) at bar i = mean(last[i-1], last[i]); a rung `sma <= X` fires the
@@ -81,7 +81,7 @@ def _ladder_spec(rungs: list[dict], exit_rules: dict, max_total: int) -> Strateg
         "sizing": {"method": "fixed_contracts", "value": 1},
         # max_spread_pct wide: deep-OTM rung quotes here have big spreads (a
         # real property of cheap options); the entry spread-gate is exercised
-        # in test_liquidity.py — these fixtures isolate the ladder mechanics.
+        # in test_liquidity.py. These fixtures isolate the ladder mechanics.
         "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.5,
                                                    "slippage_half_spread_fraction_sell": 0.5,
                   "max_spread_pct": 500},
@@ -174,7 +174,7 @@ def test_cascade_to_loss_force_closed_books_full_loss() -> None:
     assert result.filled == 1
     assert len(_adds(result)) == 3
     assert [rf.qty for rf in result.rung_fills] == [2, 3, 5, 10]
-    # the deepest rung is the biggest single commitment — the martingale tell
+    # the deepest rung is the biggest single commitment (the martingale tell)
     assert max(result.rung_fills, key=lambda rf: rf.qty).threshold == 98.0
     closes = _closes(result)
     assert len(closes) == 1 and closes[0].reason == "session_flat"
@@ -185,7 +185,7 @@ def test_cascade_to_loss_force_closed_books_full_loss() -> None:
 # ───────────────────────────────────────────────── fixture 3: re-arm
 def test_no_second_basket_until_signal_leaves_the_zone() -> None:
     """Basket 1 opens (+2 @0.675) and hits PT next bar. The signal is STILL
-    in the zone (SMA ≤ 99.5) at 09:55 — NO second basket may open there. Only
+    in the zone (SMA ≤ 99.5) at 09:55. NO second basket may open there. Only
     after the rearm (SMA > 99.5) at 10:05 does a dip at 10:15 open basket 2.
     """
     slc = build_fixture_slice(
@@ -194,7 +194,7 @@ def test_no_second_basket_until_signal_leaves_the_zone() -> None:
             "09:30": [_call(1.00, 1.10)], "09:35": [_call(1.00, 1.10)],
             "09:40": [_call(0.60, 0.70)], "09:45": [_call(0.60, 0.70)],  # basket1 opens
             "09:50": [_call(1.00, 1.10)],  # PT (0.925/0.675 = +37%? see below)
-            "09:55": [_call(0.60, 0.70)],  # still in zone — must NOT reopen
+            "09:55": [_call(0.60, 0.70)],  # still in zone, must NOT reopen
             "10:00": [_call(0.60, 0.70)], "10:05": [_call(0.60, 0.70)],  # rearm bar
             "10:10": [_call(0.60, 0.70)], "10:15": [_call(0.60, 0.70)],  # basket2 opens
             "10:20": [_call(1.00, 1.10)],  # basket2 PT
@@ -210,7 +210,7 @@ def test_no_second_basket_until_signal_leaves_the_zone() -> None:
 
     opens = [t for t in result.trades if t.action == "OPEN"]
     closes = _closes(result)
-    assert len(opens) == 2, "exactly two baskets — the second only after rearm"
+    assert len(opens) == 2, "exactly two baskets, the second only after rearm"
     assert len(closes) == 2 and all(c.reason == "profit_target" for c in closes)
     # basket 1 opened at 09:45; basket 2 could not open at 09:55 (still in zone)
     assert opens[0].bar_time == "09:45"

@@ -1,16 +1,16 @@
 """Shared machinery for on-demand background jobs over a STORED run.
 
 Two endpoints re-run a completed run's engine deterministically and attach
-the outcome beside it — the fill audit (runs.py) and the notebook reproduce
+the outcome beside it: the fill audit (runs.py) and the notebook reproduce
 (notebook.py). Both need the same two pieces, consolidated here 2026-07-14
 once #96/#98 released runs.py:
 
-* `claim_run_job` — single-flight admission: one job per run at a time,
+* `claim_run_job`, single-flight admission: one job per run at a time,
   409 while one is honestly in flight, takeover once a marker is stale
   (a worker died mid-job). The claim is an atomic compare-and-swap on the
   marker column, so two racing POSTs can never both start an engine run
   (the old read-check-write let them).
-* `pinned_engine_rerun` — the re-run scaffold: pin the ORIGINAL effective
+* `pinned_engine_rerun`, the re-run scaffold: pin the ORIGINAL effective
   window from the stored honesty report, then run the engine behind
   ENGINE_LOCK with refresh=False stores.
 """
@@ -51,7 +51,7 @@ def marker_age_minutes(started_at: Any, stale_minutes: int) -> float:
                 ).total_seconds() / 60
     except (TypeError, ValueError):
         # ValueError: unparseable stamp. TypeError: a tz-NAIVE stamp parses
-        # fine and then the aware-minus-naive subtraction raises — persisted
+        # fine and then the aware-minus-naive subtraction raises. Persisted
         # stamps from older writers must read as stale, never 500 a GET
         return float(stale_minutes + 1)
 
@@ -64,16 +64,16 @@ def claim_run_job(run_id: str, *, column: str, running_status: str,
     stamp) is written to `column`.
 
     The write is a compare-and-swap against the marker value the staleness
-    check was made on — the losing side of a race sees rowcount 0 and gets
+    check was made on. The losing side of a race sees rowcount 0 and gets
     the same 409 a straight read would have produced a moment later."""
     marker_col = getattr(db.Run, column)
     # read and swap run in SEPARATE short transactions on purpose: holding
     # the read open across the UPDATE adds nothing (the atomicity lives in
     # the swap's WHERE), and on SQLite it would escalate a shared read lock
-    # into the write — the classic busy-timeout deadlock shape
+    # into the write, the classic busy-timeout deadlock shape
     with db.session() as s:
         row = s.execute(
-            # the spec is only checked for presence — don't ship its body
+            # the spec is only checked for presence, so don't ship its body
             select(db.Run.status,
                    func.coalesce(db.Run.spec_json, "") != "",
                    marker_col)
@@ -100,7 +100,7 @@ def claim_run_job(run_id: str, *, column: str, running_status: str,
                         "started_at": datetime.now(UTC).isoformat()})
     with db.session() as s:
         # DML through Session.execute is a CursorResult at runtime; the
-        # stubs type it as Result, which hides rowcount — hence the cast.
+        # stubs type it as Result, which hides rowcount, hence the cast.
         # `marker_col == prior` renders IS NULL when prior is None.
         result = cast("CursorResult[Any]", s.execute(
             update(db.Run)
@@ -135,8 +135,8 @@ def pinned_engine_rerun(
     would let the lake's newest sessions extend the sim, and the job would
     describe a different run than the one it verifies).
 
-    Loads AND the re-run happen behind ENGINE_LOCK — two overlapping store
-    loads/peaks are the OOM concurrency class — with refresh=False: these
+    Loads AND the re-run happen behind ENGINE_LOCK (two overlapping store
+    loads/peaks are the OOM concurrency class) with refresh=False: these
     jobs compare against the stored run, and a TTL rebuild mid-job would
     swap the lake under them. The warm store the run used is the honest
     input; a cold container still builds once, and each job's own drift

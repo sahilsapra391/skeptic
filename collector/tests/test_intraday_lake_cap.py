@@ -49,7 +49,7 @@ def test_cap_exceeded_returns_measured_size(monkeypatch):
 
 def test_default_cap_blank_or_malformed_is_uncapped(monkeypatch, caplog):
     """A blank or non-numeric INTRADAY_MAX_GB resolves to 0 (uncapped) and must
-    never crash startup — a crash-loop that records nothing is the exact trap
+    never crash startup. A crash-loop that records nothing is the exact trap
     the guard exists to avoid."""
     monkeypatch.delenv("INTRADAY_MAX_GB", raising=False)
     assert intraday.default_lake_cap_gb() == 0.0

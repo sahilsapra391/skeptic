@@ -2,8 +2,8 @@
 
 /**
  * Launch L1b: email-verification landing. The token is read from
- * window.location.search in a mount effect — NOT useSearchParams, which
- * would force a Suspense split through the page for one query param —
+ * window.location.search in a mount effect (NOT useSearchParams, which
+ * would force a Suspense split through the page for one query param),
  * then POSTed once. Every terminal state is honest: verified names the
  * account, failure shows the backend's own refusal.
  */
@@ -27,7 +27,7 @@ export function VerifyClient() {
       setState({
         phase: "failed",
         detail:
-          "this link is missing its verification token — open the full link from the email",
+          "this link is missing its verification token, open the full link from the email",
       });
       return;
     }
@@ -42,7 +42,7 @@ export function VerifyClient() {
             detail:
               err instanceof ApiError
                 ? err.detail
-                : "the server could not be reached — try the link again",
+                : "the server could not be reached, try the link again",
           }),
       );
     return () => {

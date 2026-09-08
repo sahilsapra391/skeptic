@@ -1,7 +1,7 @@
 """Fixture: the far-OTM fantasy fill is refused (D1b acceptance).
 
 Before the liquidity gates, this strategy "worked": sell a 30Δ put quoted
-bid 0.02 / ask 0.30 and bank the credit — a fill no live market would give.
+bid 0.02 / ask 0.30 and bank the credit, a fill no live market would give.
 
   Both sessions. Spot 100.00. Exp 2025-01-17.
     put K=95: bid 0.02 / ask 0.30 → mid 0.16

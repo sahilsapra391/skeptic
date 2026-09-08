@@ -1,6 +1,6 @@
-"""Minute-scale lookahead canary — permanent required check (guardrail #2
+"""Minute-scale lookahead canary: permanent required check (guardrail #2
 at the 5-minute clock, mirror of test_lookahead_canary.py). A view at bar T
-must never see bar T+1's quotes or underlying — the profitable strategy at
+must never see bar T+1's quotes or underlying. The profitable strategy at
 minute scale is exactly "read the next bar", and it must be structurally
 impossible, forever. If this goes red, everything stops."""
 
@@ -46,7 +46,7 @@ def test_quote_at_serves_only_the_current_bar() -> None:
     got = view.quote_at(KEY)
     assert got is not None
     quote, source = got
-    assert quote.bid == 2.00  # the 09:30 quote — not the collapsed 09:35 one
+    assert quote.bid == 2.00  # the 09:30 quote, not the collapsed 09:35 one
     assert source == "ivol_5min"
     # there is deliberately NO API to ask for another bar's quote
     assert not hasattr(view, "quote_at_ts")
@@ -80,7 +80,7 @@ def test_chain_is_current_bar_only() -> None:
 
 # ─────────────────── scale-in add-on-current-bar bound (D5a) ───────────────
 # The profitable strategy at minute scale is "add at the NEXT bar's better
-# price". A ladder add must fill at the bar it is REACHED, never a future bar —
+# price". A ladder add must fill at the bar it is REACHED, never a future bar,
 # structurally impossible (the fill only ever reads the current IntradayView).
 
 def _scale_in_spec() -> StrategySpec:
@@ -140,7 +140,7 @@ def test_scale_in_add_fills_at_the_reached_bar_never_the_next() -> None:
                 "bid": bid, "ask": ask}
 
     # rung1 (SMA ≤ 99.0) is REACHED at 09:55 (ask 0.50 → buy 0.475). The very
-    # next bar collapses to ask 0.10 — the cheaper add a peeker would bank. The
+    # next bar collapses to ask 0.10, the cheaper add a peeker would bank. The
     # add must fill at 09:55, not 10:00.
     slc = build_fixture_slice(
         "2025-01-06",
@@ -148,7 +148,7 @@ def test_scale_in_add_fills_at_the_reached_bar_never_the_next() -> None:
             "09:30": [call(1.00, 1.10)], "09:35": [call(1.00, 1.10)],
             "09:40": [call(0.60, 0.70)], "09:45": [call(0.60, 0.70)],  # rung0 opens
             "09:50": [call(0.40, 0.50)], "09:55": [call(0.40, 0.50)],  # rung1 reached
-            "10:00": [call(0.05, 0.10)],  # the "future" cheap add — must be invisible
+            "10:00": [call(0.05, 0.10)],  # the "future" cheap add, must be invisible
             "15:45": [call(0.40, 0.50)],
         },
         underlying={"09:30": 100.0, "09:35": 100.0, "09:40": 99.5, "09:45": 99.5,
@@ -161,7 +161,7 @@ def test_scale_in_add_fills_at_the_reached_bar_never_the_next() -> None:
 
     rung1 = [rf for rf in result.rung_fills if rf.rung_index == 1]
     assert len(rung1) == 1
-    assert rung1[0].bar_time == "09:55"  # reached here — not the next bar
+    assert rung1[0].bar_time == "09:55"  # reached here, not the next bar
     assert rung1[0].fill_price == pytest.approx(0.475)  # 09:55 ask, not 10:00's 0.10
 
 
@@ -189,7 +189,7 @@ def test_minute_bar_cannot_read_forward_underlying() -> None:
 
 
 def test_minute_bar_between_stamps_has_no_quotes() -> None:
-    # guardrail #1 mechanics: a quote-less minute bar serves NO chain — the
+    # guardrail #1 mechanics: a quote-less minute bar serves NO chain. The
     # collapsed 09:35 quote is unreachable from 09:31 by construction
     view = IntradayView(_minute_grid_slice(), datetime(2025, 1, 6, 9, 31))
     assert view.chain() == {}

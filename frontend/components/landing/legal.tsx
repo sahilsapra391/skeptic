@@ -1,6 +1,6 @@
 /**
  * Shared building blocks for the legal pages (terms / privacy / refunds).
- * Section headings are sans (Archivo) — the serif stays reserved for the
+ * Section headings are sans (Archivo). The serif stays reserved for the
  * page h1 in SubpageShell (typography rule).
  */
 

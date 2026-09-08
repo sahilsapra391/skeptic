@@ -1,4 +1,4 @@
-"""Fill model — guardrail #1. Never at mid.
+"""Fill model (guardrail #1). Never at mid.
 
 slip ∈ (0, 1] is the fraction of the half-spread conceded from mid toward
 the adverse quote (TECH-SPEC §5):
@@ -10,8 +10,8 @@ Liquidity awareness (D1b). Two mechanisms, both hand-computable:
 
   * Entry gates (`liquidity_gate`): a quote whose spread exceeds
     max_spread_pct of mid, or whose KNOWN open interest / volume sits below
-    the configured floors, is not silently filled at fantasy prices —
-    the entry skips with a reason, or fills at the full adverse quote in
+    the configured floors, is not silently filled at fantasy prices.
+    The entry skips with a reason, or fills at the full adverse quote in
     stress mode. Exits are never gated: a real position can always pay the
     quoted price to get out.
   * OI-scaled slippage (`effective_slip`): when open interest is known and
@@ -19,7 +19,7 @@ Liquidity awareness (D1b). Two mechanisms, both hand-computable:
     to ~1.0 (at the floor):
         p = max(0, 1 − oi / (10 · min_open_interest))
         slip_eff = base + (1 − base) · p
-    Unknown OI is NEVER penalized — it is counted and disclosed in the
+    Unknown OI is NEVER penalized. It is counted and disclosed in the
     run's liquidity profile instead (fixtures and greek-less sources stay
     at base slip). Applied identically to entries, exit triggers, exit
     fills and marks, so open and close always use the same fill model.
@@ -78,7 +78,7 @@ def spread_pct(q: Quote) -> float | None:
 
 
 def base_slip(costs: Costs, action: str) -> float:
-    """Side-aware base slip for `action` ("buy" | "sell") — the D3d-earned
+    """Side-aware base slip for `action` ("buy" | "sell"). The D3d-earned
     defaults: 233M real prints put seller-aggressor concessions measurably
     above buyers' (p50 ~0.90 vs ~0.85-0.87). A single user-stated slippage
     number sets both spec fields at the parser, so asymmetry only ever

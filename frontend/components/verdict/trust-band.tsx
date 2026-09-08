@@ -1,11 +1,11 @@
 /**
- * The trust band — the signature element's scale, rendered at two sizes
+ * The trust band: the signature element's scale, rendered at two sizes
  * (hero inside the Verdict Block, card in library rows). It deliberately
  * reads as a confidence interval, not a score: a band of plausible trust
  * with a marker, never a number or a grade. Refusal renders as a dashed
  * full-width "withheld" band.
  *
- * Trust hue only — P/L tokens are forbidden in this file.
+ * Trust hue only. P/L tokens are forbidden in this file.
  */
 
 const LABELS = ["noise", "weak", "suggestive", "robust", "proven"];

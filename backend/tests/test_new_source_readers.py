@@ -1,10 +1,10 @@
-"""F0 new-source PIT readers — hand-computed truncation fixtures.
+"""F0 new-source PIT readers, hand-computed truncation fixtures.
 
 Every reader established in the F0 data spine proves, per source:
   (a) row-level truncation at an intra-session as_of (files carry intraday
-      timestamps — file-date filtering alone is not point-in-time),
+      timestamps, and file-date filtering alone is not point-in-time),
   (b) LookaheadError on any request beyond as_of,
-  (c) honest `unavailable` (None) when the lake has nothing — never a guess,
+  (c) honest `unavailable` (None) when the lake has nothing, never a guess,
   (d) collector metadata (captured_at) is never used as observation time.
 
 r2 is monkeypatched; no live lake. The deliberately-lookahead "evil reader"
@@ -119,11 +119,11 @@ def test_uw_rows_without_timestamps_hidden_intrasession(
 
 
 def test_uw_naive_stamps_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    # review finding: a tz-naive stamp could mean ET or UTC — localizing by
+    # review finding: a tz-naive stamp could mean ET or UTC, and localizing by
     # assumption can hide a session of lookahead, so rows whose wall-clock
     # reference is unknowable are UNOBSERVABLE at an intra-session moment
     frame = pd.DataFrame({
-        "timestamp": [f"{D} 09:30:00", f"{D} 15:30:00"],  # naive — ET? UTC?
+        "timestamp": [f"{D} 09:30:00", f"{D} 15:30:00"],  # naive: ET? UTC?
         "net_call_premium": [1.0, 2.0],
     })
     _install(monkeypatch, {f"uw/market_tide/date={D}/rows.parquet": frame})
@@ -176,7 +176,7 @@ def test_uw_series_truncates_by_observation_date(monkeypatch: pytest.MonkeyPatch
 
 
 def test_uw_series_same_day_hidden_intrasession(monkeypatch: pytest.MonkeyPatch) -> None:
-    # review finding: series rows are END-OF-DAY observations — at 09:35 ET
+    # review finding: series rows are END-OF-DAY observations: at 09:35 ET
     # on D, D's own observation must NOT exist yet (only strictly-earlier
     # sessions), matching the daily-close rule in docs/HONESTY.md
     frame = pd.DataFrame({
@@ -216,8 +216,8 @@ def test_uw_minute_bars_truncate_and_sort(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_uw_minute_bars_have_no_nbbo_columns(monkeypatch: pytest.MonkeyPatch) -> None:
     """Documents the clock-vs-quote split (owner decision 2026-07-07): UW
-    minute bars carry NO bid/ask. If UW ever adds NBBO columns this goes red
-    — the signal to revisit the fill-source ban, not to silently fill."""
+    minute bars carry NO bid/ask. If UW ever adds NBBO columns this goes red.
+    That is the signal to revisit the fill-source ban, not to silently fill."""
     key = f"uw/option_intraday/ticker=SPY/symbol=SPY260706C00739000/date={D}/bars.parquet"
     _install(monkeypatch, {key: _minute_frame()})
     out = uw.minute_bars(None, "SPY", "SPY260706C00739000", D, D)
@@ -263,7 +263,7 @@ def test_massive_agg_nothing_visible_is_unavailable(
 
 
 def test_massive_same_day_hidden_intrasession(monkeypatch: pytest.MonkeyPatch) -> None:
-    # review finding: daily OHLCV aggregates are END-OF-DAY observations —
+    # review finding: daily OHLCV aggregates are END-OF-DAY observations:
     # at 09:35 ET on D, D's own row must not exist yet
     key = "reference/massive/option_agg/ticker=QQQ/symbol=O:QQQTEST.parquet"
     _install(monkeypatch, {key: _agg_frame()})
@@ -275,7 +275,7 @@ def test_massive_same_day_hidden_intrasession(monkeypatch: pytest.MonkeyPatch) -
 def test_massive_contracts_reference_returns_a_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # review finding: never hand out the cached frame — caller mutation must
+    # review finding: never hand out the cached frame. Caller mutation must
     # not poison the process-wide cache
     key = "reference/massive/contracts/ticker=QQQ.parquet"
     _install(monkeypatch, {key: pd.DataFrame({"ticker": ["O:QQQTEST"]})})
@@ -317,7 +317,7 @@ def test_ivs_surface_absent_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> N
 def test_ivs_surface_same_day_hidden_intrasession(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # review finding: a surface is an END-OF-DAY fit — at 09:35 ET on D,
+    # review finding: a surface is an END-OF-DAY fit: at 09:35 ET on D,
     # D's own surface does not exist yet (honest None, not a raise: the
     # session itself is not beyond as_of)
     key = f"reference/ivol/ivs/ticker=SPY/date={D}/surface.parquet"
@@ -333,7 +333,7 @@ def _evil_daily_rows(
     s3: Any, family: str, ticker: str | None, session: date, as_of: date | datetime
 ) -> pd.DataFrame | None:
     """Deliberately-lookahead variant: same signature, NO truncation. The
-    PIT property test must fail against it — proving the canary bites."""
+    PIT property test must fail against it, proving the canary bites."""
     key = (f"uw/{family}/date={session}/rows.parquet" if ticker is None
            else f"uw/{family}/ticker={ticker}/date={session}/rows.parquet")
     return r2.get_parquet(None, key)

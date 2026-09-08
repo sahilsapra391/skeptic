@@ -1,17 +1,17 @@
-"""In-house forward flow family (post-UW continuation candidate — derived,
+"""In-house forward flow family (post-UW continuation candidate: derived,
 validated, NOT spliced).
 
 The UW flow families froze with the trial (net_prem_ticks through
 2026-07-10; rank forms locked). This module rebuilds the same session
 quantities from sources we own forever: Alpaca per-contract minute TRADE
 bars (side-blind) classified against the CBOE recorder's minute quotes
-(15-min feed lag, measured — the derive slices bars into each snapshot's
+(15-min feed lag, measured: the derive slices bars into each snapshot's
 shifted validity window via the same recorder_tape_window helper the
 tape cross-validation uses).
 
 Classification is quote-rule (Lee-Ready style): a bar whose VWAP sits
 above the contemporaneous mid is buyer-aggressor (+1), below is seller
-(−1), exactly at mid is a MID bucket — counted, never signed. Its
+(−1), exactly at mid is a MID bucket, counted, never signed. Its
 accuracy is MEASURED against the UW tape's true per-print sides on the
 frozen overlap sessions and carried per row (tape_side_agreement), so
 the family's trustworthiness is a number, not a hope.
@@ -21,17 +21,17 @@ flow_inhouse_vs_uw cross-validation pair compares like with like):
   net_premium           Σ sign·vwap·volume·100 over calls MINUS the same
                         over puts (dollar units, own capture → the
                         engine may only ever consume sign/rank forms)
-  put_call_flow_ratio   Σ put volume / Σ call volume over ALL bars —
+  put_call_flow_ratio   Σ put volume / Σ call volume over ALL bars,
                         classification-independent
   nope_eod              Σ sign·delta·volume·100 / underlying session
                         volume (deltas from the matched snapshot; own
                         NOPE implementation → sign/rank only)
 
-Honesty: every bar is accounted — classified, mid, quote-less
+Honesty: every bar is accounted as classified, mid, quote-less
 (volume_unquoted) or delta-less (delta_missing_volume for the NOPE sum).
 An empty/unrecognized session derives None per signal, never a guess.
 This artifact is a NEW family with its own history start (first recorder
-∩ Alpaca session); it is never spliced into the frozen UW columns — any
+∩ Alpaca session); it is never spliced into the frozen UW columns. Any
 future unfreeze/substitution is an owner decision citing the
 cross-validation and tape-agreement numbers this module produces.
 """
@@ -116,7 +116,7 @@ def reduce_flow_session(
 
 def tape_side_truth(tape: pd.DataFrame) -> pd.DataFrame | None:
     """Per (contract, minute) majority TRUE side from tape prints (the
-    tags token — see fill_calibration's schema note). Returns columns
+    tags token, see fill_calibration's schema note). Returns columns
     [expiration, right, strike, minute_ts, true_sign, true_volume] for
     the accuracy join; None on unrecognized shape."""
     need = {"executed_at", "expiry", "option_type", "strike", "size", "tags"}
@@ -130,7 +130,7 @@ def tape_side_truth(tape: pd.DataFrame) -> pd.DataFrame | None:
     tags = t["tags"].astype(str)
     is_ask = tags.str.contains("ask_side", regex=False)
     is_bid = ~is_ask & tags.str.contains("bid_side", regex=False)
-    # build on the FULL frame, then filter once — .assign of full-index
+    # build on the FULL frame, then filter once: .assign of full-index
     # Series onto an empty filtered frame resurrects rows (the documented
     # fill_calibration footgun; an all-mid tape day must yield None, not
     # a fabricated all-sell truth frame)
@@ -152,6 +152,6 @@ def tape_side_truth(tape: pd.DataFrame) -> pd.DataFrame | None:
          .reset_index())
     g.columns = ["expiration", "right", "strike", "minute_ts",
                  "net", "true_volume"]
-    g = g[g["net"] != 0]  # a tied minute has no majority side — excluded
+    g = g[g["net"] != 0]  # a tied minute has no majority side, excluded
     g["true_sign"] = g["net"].apply(lambda x: 1.0 if x > 0 else -1.0)
     return g.drop(columns=["net"])

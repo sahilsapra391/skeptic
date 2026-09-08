@@ -1,5 +1,5 @@
 """Admin surface (launch L5). Owner-only: award / claw back credits and read
-launch telemetry. Admin = an email on SKEPTIC_ADMIN_EMAILS (env) — there is no
+launch telemetry. Admin = an email on SKEPTIC_ADMIN_EMAILS (env). There is no
 self-serve path to becoming one, and every credit change is an audited
 admin_adjust row on the append-only ledger (balance stays SUM(delta)).
 """
@@ -36,7 +36,7 @@ class GrantRequest(BaseModel):
 
 @router.post("/admin/grant-credits")
 def grant_credits(req: GrantRequest, _: db.User = _admin) -> dict[str, Any]:
-    """Award (or claw back, negative) a user's credits — the web equivalent of
+    """Award (or claw back, negative) a user's credits, the web equivalent of
     scripts/grant_credits.py. One audited admin_adjust ledger row."""
     if req.credits == 0:
         raise HTTPException(status_code=422, detail="credits must be non-zero")
@@ -58,7 +58,7 @@ def grant_credits(req: GrantRequest, _: db.User = _admin) -> dict[str, Any]:
 
 @router.get("/admin/metrics")
 def metrics(_: db.User = _admin) -> dict[str, Any]:
-    """Launch telemetry — accounts, runs, the credit economy, anon trials."""
+    """Launch telemetry: accounts, runs, the credit economy, anon trials."""
     now = datetime.now(UTC)
     week_ago = now - timedelta(days=7)
     day_ago = now - timedelta(hours=24)
@@ -113,9 +113,9 @@ def metrics(_: db.User = _admin) -> dict[str, Any]:
             },
             "revenue": {
                 # each purchase is one $10 checkout; each chargeback reverses one
-                # $10 payment (a Stripe refund OR a dispute — both land as a
+                # $10 payment (a Stripe refund OR a dispute, both land as a
                 # 'chargeback' row), so net revenue = (purchases − chargebacks).
-                # (engine credit-refunds aren't money — they're in credits above.)
+                # (engine credit-refunds aren't money; they're in credits above.)
                 "purchases": purchases,
                 "chargebacks": chargebacks,
                 "gross_usd": purchases * PURCHASE_USD,

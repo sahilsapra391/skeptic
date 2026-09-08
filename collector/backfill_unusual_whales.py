@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-backfill_unusual_whales.py — bank Unusual Whales options/flow/vol data for
+backfill_unusual_whales.py: bank Unusual Whales options/flow/vol data for
 SPY · QQQ · IWM into the R2 lake. Built to run the moment a trial token exists.
 
 Auth: HTTP header `Authorization: Bearer <UW_API_TOKEN>` (env, collector/.env).
@@ -11,24 +11,24 @@ headers off every response (`x-uw-req-per-minute-remaining`,
 `x-uw-token-req-limit`, `x-uw-daily-req-count`) and paces itself under the
 per-minute ceiling, stopping cleanly when the daily budget is nearly spent.
 Everything is resumable (an R2 object or a state entry = done) and faithful
-(rows are banked via json_normalize — we collect now, interpret in the engine
+(rows are banked via json_normalize: we collect now, interpret in the engine
 later, exactly the owner's instruction).
 
 State only records FINAL outcomes: 200 (a definitive body, even empty) and 403
-(tariff/depth floor). Transient failures — network errors, 429/5xx after
-backoff, stray 4xx — leave the date/unit unrecorded so a later run retries it,
+(tariff/depth floor). Transient failures (network errors, 429/5xx after
+backoff, stray 4xx) leave the date/unit unrecorded so a later run retries it,
 and per-date sweeps never include the current session before the options close
 (16:15 ET): a pre-close sweep would finalize a partial day.
 
 Modes:
-  probe      hit ONE call per manifest endpoint; report status, row count, and —
-             crucially — how many distinct dates a no-date call returns, so we
+  probe      hit ONE call per manifest endpoint; report status, row count, and
+             (crucially) how many distinct dates a no-date call returns, so we
              learn which `date?` endpoints are one-call series vs per-date. Also
              prints the account's real daily/minute budget. RUN THIS FIRST.
   series     P0/P1 one-call endpoints (histories + snapshots), all tickers
   daily      P2/P3 per-date sweeps, newest session first, budget-gated
   contracts  per-contract daily history (OHLC+NBBO+IV+OI) for every option symbol
-             seen in the banked option_chains listings — the QQQ/IWM chain rebuild
+             seen in the banked option_chains listings, the QQQ/IWM chain rebuild
   all        series → daily → contracts, in that order
 
 Prefixes:  reference/uw/{name}/...   (series/ohlc)
@@ -104,15 +104,15 @@ def _load_dotenv() -> None:
 
 
 class BudgetExhausted(RuntimeError):
-    """Daily request budget nearly spent — stop cleanly, resume tomorrow."""
+    """Daily request budget nearly spent. Stop cleanly, resume tomorrow."""
 
 
 class NetworkDown(RuntimeError):
-    """Transient outcomes on every recent request across scopes — the host,
+    """Transient outcomes on every recent request across scopes. The host,
     not the API, is failing. TRANSIENT_STOP already caps each scope at 3
     futile tries, but with ~50 scopes a dead network still grinds for hours
     (each try survives 4 in-function retries with up to 90 s timeouts) and
-    then exits 0 — invisible to the collection-guaranteed-daily alerting.
+    then exits 0, invisible to the collection-guaranteed-daily alerting.
     Abort instead: unrecorded work retries next run by design."""
 
 
@@ -189,7 +189,7 @@ def _get(path: str, params: dict | None = None) -> tuple[int, object]:
         _LIM.wait()
         try:
             r = requests.get(f"{BASE}{path}", params=params or {}, headers=headers, timeout=TIMEOUT)
-        except Exception as exc:  # noqa: BLE001 — retry then give up
+        except Exception as exc:  # noqa: BLE001 (retry then give up)
             if attempt == RETRIES - 1:
                 log.warning("request error %s: %s", path, exc)
                 _note_outcome(-1)
@@ -207,7 +207,7 @@ def _get(path: str, params: dict | None = None) -> tuple[int, object]:
             time.sleep(BACKOFF_BASE * 2**attempt)
             continue
         _note_outcome(r.status_code)
-        return r.status_code, None  # 400/403 — no retry (tariff/param)
+        return r.status_code, None  # 400/403, no retry (tariff/param)
     _note_outcome(429)
     return 429, None
 
@@ -217,7 +217,7 @@ def _transient(code: int) -> bool:
     never be recorded in state. Only 200 (a definitive body, even an empty one)
     and 403 (tariff/depth floor) are final answers; -1 (network down after all
     retries), 429/5xx (backoff exhausted) and stray 4xx (expired token) would
-    permanently poison the date as "empty" if banked — a DNS-hijacked network
+    permanently poison the date as "empty" if banked. A DNS-hijacked network
     did exactly that to 89 scopes on 2026-07-10."""
     return code not in FINAL_CODES
 
@@ -234,7 +234,7 @@ def _last_complete_session(end: str) -> str:
     if (now.hour, now.minute) >= OPTIONS_CLOSE_ET:
         return today
     clamped = (now.date() - timedelta(days=1)).isoformat()
-    log.info("end %s clamped to %s — today's options session isn't closed yet (16:15 ET)",
+    log.info("end %s clamped to %s: today's options session isn't closed yet (16:15 ET)",
              end, clamped)
     return clamped
 
@@ -360,7 +360,7 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
                     units[uid] = "empty"
                     continue
                 if _transient(code):
-                    log.warning("%s %s: transient %d — unit left unrecorded", name, t, code)
+                    log.warning("%s %s: transient %d, unit left unrecorded", name, t, code)
                     continue
                 rows = rows_of(body)
                 key = f"reference/uw/{name}/ticker={t}.parquet"
@@ -376,7 +376,7 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
                 continue
             code, body = _get(path)
             if _transient(code):
-                log.warning("%s: transient %d — unit left unrecorded", name, code)
+                log.warning("%s: transient %d, unit left unrecorded", name, code)
                 continue
             rows = rows_of(body)
             key = f"reference/uw/{name}.parquet"
@@ -392,7 +392,7 @@ def run_series(s3, state: dict, tickers: list[str], priorities: set[int], dry: b
                         continue
                     code, body = _get(path.format(ticker=t, candle=candle))
                     if _transient(code):
-                        log.warning("ohlc %s %s: transient %d — unit left unrecorded",
+                        log.warning("ohlc %s %s: transient %d, unit left unrecorded",
                                     t, candle, code)
                         continue
                     rows = rows_of(body)
@@ -428,20 +428,20 @@ def run_daily(s3, state: dict, tickers: list[str], priorities: set[int],
                 code, body = _get(url, {"date": d})
                 if code == 403:
                     # newest-first: a 403 IS this endpoint's history-depth floor
-                    # on the current tariff — every OLDER date is unavailable too.
+                    # on the current tariff. Every OLDER date is unavailable too.
                     # Mark the remaining un-fetched dates blocked (never touching
                     # already-done ones) and stop this scope.
                     remaining = todo[i:]
                     st["blocked"].extend(x for x in remaining if x not in seen)
-                    log.info("%s %s: history floor at %s — %d newer captured, %d older blocked",
+                    log.info("%s %s: history floor at %s, %d newer captured, %d older blocked",
                              name, scope, d, len(st["done"]), len(remaining))
                     break
                 if _transient(code):
                     transient += 1
-                    log.warning("%s %s %s: transient %d — date left unrecorded",
+                    log.warning("%s %s %s: transient %d, date left unrecorded",
                                 name, scope, d, code)
                     if transient >= TRANSIENT_STOP:
-                        log.warning("%s %s: %d consecutive transient failures — "
+                        log.warning("%s %s: %d consecutive transient failures, "
                                     "scope abandoned this run", name, scope, transient)
                         break
                     continue
@@ -500,10 +500,10 @@ def run_expiry(s3, state: dict, tickers: list[str], dry: bool) -> None:
                     break
                 if _transient(code):
                     transient += 1
-                    log.warning("%s %s %s: transient %d — expiry left unrecorded",
+                    log.warning("%s %s %s: transient %d, expiry left unrecorded",
                                 name, t, e, code)
                     if transient >= TRANSIENT_STOP:
-                        log.warning("%s %s: %d consecutive transient failures — "
+                        log.warning("%s %s: %d consecutive transient failures, "
                                     "scope abandoned this run", name, t, transient)
                         break
                     continue
@@ -523,7 +523,7 @@ def _contract_symbols(s3, ticker: str) -> list[str]:
     keys.append(f"reference/uw/option_contracts/ticker={ticker}.parquet")
     for key in keys:
         try:
-            df = pd.read_parquet(  # noqa: PD901 — small per-day file
+            df = pd.read_parquet(  # noqa: PD901 (small per-day file)
                 __import__("io").BytesIO(
                     s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)["Body"].read()
                 )
@@ -557,7 +557,7 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
                     blocked = True
                     break
                 if _transient(code):
-                    log.warning("contracts %s %s: transient %d — symbol left unrecorded",
+                    log.warning("contracts %s %s: transient %d, symbol left unrecorded",
                                 sub, sym, code)
                     failed = True
                     break
@@ -570,7 +570,7 @@ def run_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
             if failed:
                 transient += 1
                 if transient >= TRANSIENT_STOP:
-                    log.warning("%s contracts: %d consecutive transient failures — "
+                    log.warning("%s contracts: %d consecutive transient failures, "
                                 "abandoned this run", t, transient)
                     return
                 continue
@@ -609,12 +609,12 @@ def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end:
             for d in [x for x in sessions if x not in seen]:
                 code, body = _get(f"/api/option-contract/{sym}/intraday", {"date": d})
                 if code == 403:
-                    st["complete"] = True  # depth floor — older is unavailable
+                    st["complete"] = True  # depth floor: older is unavailable
                     break
                 if _transient(code):
                     # break WITHOUT complete: the date stays unrecorded and the
                     # whole contract walk resumes on the next run
-                    log.warning("intraday %s %s: transient %d — walk paused", sym, d, code)
+                    log.warning("intraday %s %s: transient %d, walk paused", sym, d, code)
                     failed = True
                     break
                 rows = rows_of(body)
@@ -639,7 +639,7 @@ def run_contracts_intraday(s3, state: dict, tickers: list[str], start: str, end:
             if failed:
                 transient += 1
                 if transient >= TRANSIENT_STOP:
-                    log.warning("intraday %s: %d consecutive transient walks — "
+                    log.warning("intraday %s: %d consecutive transient walks, "
                                 "abandoned this run", t, transient)
                     return
             else:
@@ -654,8 +654,8 @@ def _underlying_col(df: pd.DataFrame) -> str | None:
 
 
 def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: bool) -> None:
-    """FINEST granularity: the full options tape — EVERY trade market-wide per day
-    (~1.8 GB zipped CSV each) — streamed, unzipped and filtered to our tickers.
+    """FINEST granularity: the full options tape, EVERY trade market-wide per day
+    (~1.8 GB zipped CSV each), streamed, unzipped and filtered to our tickers.
     One request per session, newest-first, depth-floor aware, resumable.
     → uw/option_tape/ticker={T}/date={D}/trades.parquet."""
     end = _last_complete_session(end)
@@ -669,13 +669,13 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
     transient = 0
 
     def _trip(d: str, why: str) -> bool:
-        """Count one transient failure (the date stays unrecorded — retried
+        """Count one transient failure (the date stays unrecorded, retried
         next run); True = TRANSIENT_STOP hit, abandon the sweep this run."""
         nonlocal transient
         transient += 1
-        log.warning("tape %s: %s — date left unrecorded", d, why)
+        log.warning("tape %s: %s, date left unrecorded", d, why)
         if transient >= TRANSIENT_STOP:
-            log.warning("tape: %d consecutive transient failures — abandoned this run",
+            log.warning("tape: %d consecutive transient failures, abandoned this run",
                         transient)
             return True
         return False
@@ -718,7 +718,7 @@ def run_tape(s3, state: dict, tickers: list[str], start: str, end: str, dry: boo
                                     tt = hit[hit[col].str.upper() == t]
                                     if len(tt):
                                         parts[t].append(tt)
-            except Exception as exc:  # noqa: BLE001 — bad zip/csv → retry next run
+            except Exception as exc:  # noqa: BLE001 (bad zip/csv → retry next run)
                 # counts toward the breaker: N consecutive corrupt days must not
                 # keep downloading ~1.8 GB each, unbounded
                 if _trip(d, f"parse error: {exc}"):
@@ -787,17 +787,17 @@ def main() -> int:
             run_tape(s3, state, tickers, args.start, end, args.dry_run)
     except BudgetExhausted as exc:
         _flush(s3, state)
-        log.warning("STOPPED: %s — rerun tomorrow to resume", exc)
+        log.warning("STOPPED: %s, rerun tomorrow to resume", exc)
         return 0
     except NetworkDown as exc:
         _flush(s3, state)  # transient work is unrecorded → retried next run
-        log.error("ABORTED: %s — exiting non-zero so the outage is visible",
+        log.error("ABORTED: %s, exiting non-zero so the outage is visible",
                   exc)
         return 1
     _flush(s3, state)
     if _net["transient_total"]:
-        # completed the walk, but transient failures left work unrecorded —
-        # a partial run must LOOK partial to daily alerting (exit 0 + "done"
+        # completed the walk, but transient failures left work unrecorded.
+        # A partial run must LOOK partial to daily alerting (exit 0 + "done"
         # is how the 2026-07-09/-10 outages stayed invisible)
         log.warning("done DEGRADED (mode=%s, requests=%d, %d transient "
                     "failures left work unrecorded for retry)",

@@ -1,5 +1,5 @@
 """Spec IR contract tests (M0 acceptance): a valid spec round-trips, invalid
-specs are rejected — including the guardrail-encoding rejections (mid fills,
+specs are rejected, including the guardrail-encoding rejections (mid fills,
 empty exit)."""
 
 import copy
@@ -117,8 +117,8 @@ def test_too_many_legs_rejected() -> None:
 
 def test_atm_normalizes_to_50_delta_at_the_model() -> None:
     """ATM IS the 50-delta strike. The rewrite lives on StrikeSelection so
-    EVERY ingress — parser, POST /api/backtest, stored specs re-validated
-    for a run — lands on the same editable .50Δ."""
+    EVERY ingress (parser, POST /api/backtest, stored specs re-validated
+    for a run) lands on the same editable .50Δ."""
     spec = copy.deepcopy(CANONICAL)
     spec["position"]["legs"][0]["strike_selection"] = {"method": "atm", "value": 0}
     model = StrategySpec.model_validate(spec)
@@ -128,7 +128,7 @@ def test_atm_normalizes_to_50_delta_at_the_model() -> None:
 
 
 def test_width_from_leg_requires_positive_width() -> None:
-    """Zero/negative widths are structural nonsense — 422 at the boundary,
+    """Zero/negative widths are structural nonsense: 422 at the boundary,
     never reinterpreted per-entry inside the engine."""
     for bad in (0, -5):
         spec = copy.deepcopy(CANONICAL)

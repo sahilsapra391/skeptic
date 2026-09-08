@@ -6,7 +6,7 @@
  * results. One primary action per phase.
  *
  * Two mounts (launch L4): the /new page (URL params drive the boot), and
- * the landing's run popup (`embedded` — props drive the boot, the modal
+ * the landing's run popup (`embedded`: props drive the boot, the modal
  * owns the conversion chrome). Same parser, same engine, no demo fork.
  */
 
@@ -27,6 +27,7 @@ import {
   type ArgueBackHit,
 } from "@/lib/api";
 import { draftToSpec } from "@/lib/spec";
+import { stripEmDashes } from "@/lib/punctuation";
 import { HEADLINES } from "@/lib/headlines";
 import { confirmDefaults } from "@/lib/confirm";
 import { getSettings } from "@/lib/settings";
@@ -138,8 +139,8 @@ export function RunFlow({
   // launch L4: the landing learns the run id the instant it's created, so
   // its background-run banner can track the run even if this popup closes
   onRunStarted?: (runId: string, demo: boolean) => void;
-  // launch L4 anon armor: the backend refused this device's free run (402) —
-  // the landing swaps this popup for the create-an-account gate. The reason is
+  // launch L4 anon armor: the backend refused this device's free run (402).
+  // The landing swaps this popup for the create-an-account gate. The reason is
   // the backend's honest detail (device-used vs trials-busy) so the gate shows
   // the right message.
   onTrialExhausted?: (reason?: string) => void;
@@ -176,7 +177,7 @@ export function RunFlow({
   const [qIndex, setQIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [qInput, setQInput] = useState("");
-  // the parser's validated spec + the draft it projected — an unedited draft
+  // the parser's validated spec + the draft it projected. An unedited draft
   // runs the parser spec verbatim, dial edits rebuild from the dials
   const parsedSpecRef = useRef<Record<string, unknown> | null>(null);
   // V-14: the parent's own stored sweep result for whatever is on the dials right
@@ -190,8 +191,8 @@ export function RunFlow({
   // Recomputed as the dials move, debounced, and deliberately silent about its own
   // failures: this is an optional grace note on the confirm step, so a network
   // hiccup must never block a submit or show an error. An aborted or failed lookup
-  // is indistinguishable from "the parent did not run this", which is correct —
-  // both mean there is nothing we can honestly say.
+  // is indistinguishable from "the parent did not run this", which is correct.
+  // Both mean there is nothing we can honestly say.
   useEffect(() => {
     const parent = draft?.variantOf?.runId;
     if (!draft || !parent || !draft.exit) {
@@ -221,7 +222,7 @@ export function RunFlow({
     };
   }, [draft]);
   const parsedDraftRef = useRef<string | null>(null);
-  // Chunk A: the clarifying conversation, chronological with timestamps —
+  // Chunk A: the clarifying conversation, chronological with timestamps.
   // `questions`/`answers` above are working state (each round REPLACES
   // `questions`); this ref is the accumulated record that rides the run
   // request into provenance_json. Reset alongside `answers`.
@@ -246,7 +247,7 @@ export function RunFlow({
   useEffect(() => {
     if (!embedded) return;
     let alive = true;
-    // a signed-in account holder opening the landing popup is NOT anon —
+    // a signed-in account holder opening the landing popup is NOT anon:
     // resolve identity once so the trial framing only shows to visitors
     fetchMe()
       .then(() => alive && setIsAnon(false))
@@ -254,7 +255,7 @@ export function RunFlow({
         if (!alive) return;
         // a definite 401 = anonymous; any other error (network / transient
         // 5xx) stays "unknown" (null) so a signed-in user isn't shown false
-        // trial framing on a hiccup — null still mounts the human check, so a
+        // trial framing on a hiccup: null still mounts the human check, so a
         // true anon whose /me hiccuped is still gated by the backend
         setIsAnon(e instanceof ApiError && e.status === 401 ? true : null);
       });
@@ -269,7 +270,7 @@ export function RunFlow({
 
   const speech = useSpeechToText((segment) => {
     // segments arrive already polished (lowercase, digits, canonical
-    // tickers) — join verbatim, no sentence-casing
+    // tickers), join verbatim, no sentence-casing
     setText((t) => {
       const sep = t && !/\s$/.test(t) ? " " : "";
       return t + sep + segment;
@@ -280,8 +281,21 @@ export function RunFlow({
     ? `${text}${text && !text.endsWith(" ") ? " " : ""}${speech.interim}`
     : text;
 
+  /* The prompt bubble, as a DISPLAY COPY. `text` itself is never touched:
+   * it is the textarea's value, the string handed to /api/parse, and (via
+   * the draft's quote) the provenance the run is stored with. Normalizing
+   * it in place would edit a person's words on their way to the database,
+   * which is corruption wearing a fix's clothes. Normalizing the echo is
+   * the requirement instead: an em-dash a visitor typed, painted back at
+   * them, is still an em-dash on a Skeptic page.
+   *
+   * Same reason `composerValue` above is left alone. That one IS the input,
+   * not a copy of it, and rewriting punctuation under a cursor mid-sentence
+   * would be a hostile textarea. */
+  const promptEcho = stripEmDashes(composerValue);
+
   // the chatbox grows a line at a time with its content (capped, then
-  // scrolls). Empty clears the inline height instead of measuring — a
+  // scrolls). Empty clears the inline height instead of measuring. A
   // mount-time measurement before styles settle froze a bogus 200px into
   // the empty box on the landing's clone of this effect; same guard here
   useEffect(() => {
@@ -306,7 +320,7 @@ export function RunFlow({
       setHeadline(HEADLINES[i]);
       localStorage.setItem("skeptic-headline", String((i + 1) % HEADLINES.length));
     } catch {
-      /* private mode — keep the default */
+      /* private mode, keep the default */
     }
     // warm the chart's first bars request so "Show on Chart" opens instantly
     prefetchBars();
@@ -317,8 +331,8 @@ export function RunFlow({
       })
       .catch(() => undefined);
     // presets follow usage: structures you actually run float to the front
-    // (the pinned showcase examples are not usage — scoring them would give
-    // every fresh visitor the same example-biased order)
+    // (the pinned showcase examples are not usage, and scoring them would
+    // give every fresh visitor the same example-biased order)
     listRuns()
       .then(({ runs }) => {
         const history = runs
@@ -341,7 +355,7 @@ export function RunFlow({
   }, []);
 
   // boot handoff (launch L4). Page mount: /new?pitch=<text> prefills +
-  // auto-compiles, /new?mode=chart opens chart-teach — read via
+  // auto-compiles, /new?mode=chart opens chart-teach. Read via
   // location.search, NOT useSearchParams (the hook forces a Suspense split
   // of a client page at build, Next 14), one-shot, params consumed so a
   // refresh doesn't re-fire the parse. Embedded mount (landing popup):
@@ -358,7 +372,7 @@ export function RunFlow({
       modeParam = params.get("mode");
       // V-08: /new?variant=<runId> reopens a stored run on the dials. Same
       // one-shot consumption as the other boot params, so a refresh does not
-      // re-fetch — and, like them, it lands on a phase rather than a route.
+      // re-fetch. Like them, it lands on a phase rather than a route.
       const variantOf = params.get("variant");
       if (params.has("pitch") || params.has("mode") || params.has("variant")) {
         window.history.replaceState(null, "", "/new");
@@ -387,10 +401,18 @@ export function RunFlow({
     try {
       const v = await getVariantDraft(runId);
       if (!v.draft || v.tier === "c") {
-        // V-128: the honest reason, never a generic error
+        // V-128: the honest reason, never a generic error.
+        // The variant payload is one of the two the fetch layer must not
+        // clean, so this reason arrives with whatever punctuation the stored
+        // spec gave it (a tier-c reason quotes the spec's own structure name
+        // back at the reader). It is display-only and never re-submitted, so
+        // the punctuation rule applies HERE, at the render site, the same way
+        // the spec screen applies it to the quote.
         setError(
-          Object.values(v.reasons)[0] ??
-            "this run's strategy cannot be reopened on the dials",
+          stripEmDashes(
+            Object.values(v.reasons)[0] ??
+              "this run's strategy cannot be reopened on the dials",
+          ),
         );
         return;
       }
@@ -418,18 +440,18 @@ export function RunFlow({
       const input = source ?? text;
       if (!input.trim() || busy) return;
       const gen = ++compileGenRef.current;
-      // the thinking view has no mic control — a live dictation must not
+      // the thinking view has no mic control. A live dictation must not
       // keep appending to the prompt behind it
       if (speech.listening) speech.stop();
       setBusy(true);
       setError(null);
       try {
-        // a fresh compile starts a fresh story — even when it goes straight
+        // a fresh compile starts a fresh story: even when it goes straight
         // to a spec, an earlier attempt's conversation must not ride along;
         // a re-compile with answers is the same conversation continuing
         if (!withAnswers) transcriptRef.current = [];
         const res = await parseText(input, withAnswers);
-        if (gen !== compileGenRef.current) return; // cancelled — drop it
+        if (gen !== compileGenRef.current) return; // cancelled, drop it
         if (res.status === "questions") {
           const asked = new Date().toISOString();
           transcriptRef.current.push(
@@ -463,7 +485,7 @@ export function RunFlow({
     [text, busy, speech],
   );
 
-  // live ref so the one-shot boot effect never calls a stale closure — the
+  // live ref so the one-shot boot effect never calls a stale closure, the
   // same pattern use-speech.ts uses for onSegmentRef
   const compileTextRef = useRef(compileText);
   compileTextRef.current = compileText;
@@ -485,7 +507,7 @@ export function RunFlow({
       const q = questions[qIndex];
       if (!q || !answer.trim()) return;
       // a double-submit (chip double-click / repeated Enter) re-invokes with
-      // a stale qIndex before re-render — never record the same answer twice
+      // a stale qIndex before re-render. Never record the same answer twice
       const last = transcriptRef.current[transcriptRef.current.length - 1];
       if (!(last?.kind === "answer" && last.id === q.id)) {
         transcriptRef.current.push({
@@ -508,27 +530,27 @@ export function RunFlow({
   );
 
   const runGauntlet = useCallback(async () => {
-    // exit AND data window are required choices — never defaults
+    // exit AND data window are required choices, never defaults
     if (!draft?.exit || !draft.window || busy) return;
-    // claim the run synchronously — the human-check refresh below is awaited,
+    // claim the run synchronously. The human-check refresh below is awaited,
     // and without this a second click would slip past the busy guard and
     // start a duplicate run during that await
     setBusy(true);
     setError(null);
     // mint a FRESH human-check token for THIS run (not one from mount) so the
     // first run isn't rejected on a stale token; null means the widget can't
-    // produce one yet — nudge instead of spending the engine on a free run
+    // produce one yet. Nudge instead of spending the engine on a free run
     let turnstileToken: string | null = null;
     if (humanCheckOn) {
       turnstileToken = (await turnstileRef.current?.refresh()) ?? null;
       if (!turnstileToken) {
         setBusy(false);
-        setError("just finishing a quick human check — hit run once more in a second");
+        setError("just finishing a quick human check, hit run once more in a second");
         return;
       }
     }
-    // a narration-upgrade poll may still be armed for the PREVIOUS run —
-    // kill it so its stale closure can't overwrite the new run's state
+    // a narration-upgrade poll may still be armed for the PREVIOUS run.
+    // Kill it so its stale closure can't overwrite the new run's state
     if (pollRef.current) clearTimeout(pollRef.current);
     try {
       const untouched = parsedDraftRef.current === JSON.stringify(draft);
@@ -543,7 +565,7 @@ export function RunFlow({
         setTrialNote({ queue: queuePosition ?? 0, constraint: trialConstraint });
       }
       onRunStarted?.(run_id, demo);
-      // a signed-in run just debited a credit — refresh the nav balance
+      // a signed-in run just debited a credit. Refresh the nav balance
       // (no navigation happens here, so it would otherwise go stale)
       notifyCreditsChanged();
       setPhase("running");
@@ -563,13 +585,13 @@ export function RunFlow({
           setRun(payload);
           if (payload.status === "done") {
             setPhase("results");
-            // a refusal refunds the credit at completion — refresh the balance
+            // a refusal refunds the credit at completion. Refresh the balance
             if (!balanceNotified) {
               balanceNotified = true;
               notifyCreditsChanged();
             }
             // numbers are final; the narration upgrade is being written
-            // off the critical path — keep a slow poll until it lands
+            // off the critical path. Keep a slow poll until it lands
             if (payload.narrationPending) {
               pollRef.current = setTimeout(poll, 3000);
             }
@@ -585,7 +607,7 @@ export function RunFlow({
             return;
           }
         } catch {
-          // transient — fall through and reschedule
+          // transient, fall through and reschedule
         }
         if (!pollCancelledRef.current) pollRef.current = setTimeout(poll, 1200);
       };
@@ -601,15 +623,15 @@ export function RunFlow({
         // the account gate; a SIGNED-IN account out of credits → the honest
         // message inline. isAnon===false = a resolved account (even in the
         // embedded landing popup), so a signed-in user is NEVER sent to the
-        // "create a free account" gate — they already have one.
+        // "create a free account" gate. They already have one.
         if (onTrialExhausted && isAnon !== false) onTrialExhausted(e.detail);
         else setError(e.detail);
         return;
       }
       if (e instanceof ApiError && e.status === 403) {
         // refresh() already mints a fresh token on the next run, so no reset
-        // bookkeeping here — just tell the visitor to run again
-        setError("the human check didn't pass — give it a moment and run again");
+        // bookkeeping here, just tell the visitor to run again
+        setError("the human check didn't pass, give it a moment and run again");
       } else {
         setError(e instanceof Error ? e.message : "backtest failed");
       }
@@ -644,7 +666,7 @@ export function RunFlow({
       <div>
         <GauntletProgress
           stage={run?.stage ?? 0}
-          name={run?.name ?? draft?.quote ?? ""}
+          name={stripEmDashes(run?.name ?? draft?.quote ?? "")}
           previews={run?.previews}
         />
         {/* anon trial: honest queue position + the run's stated limits */}
@@ -673,7 +695,7 @@ export function RunFlow({
         </button>
         <div className="mb-4 flex justify-end">
           <div className="max-w-[75%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-ink-2">
-            “{text}”
+            “{promptEcho}”
           </div>
         </div>
         <ThinkingIndicator />
@@ -693,23 +715,31 @@ export function RunFlow({
         </button>
         <div className="mb-4 flex justify-end">
           <div className="max-w-[75%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-3.5 py-2.5 font-mono text-[13px] leading-[1.55] text-ink-2">
-            “{text}”
+            “{promptEcho}”
           </div>
         </div>
         <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
           <div className="mb-1 font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
-            QUESTION {qIndex + 1} OF {questions.length} — I DON&apos;T GUESS
+            QUESTION {qIndex + 1} OF {questions.length}: I DON&apos;T GUESS
           </div>
-          <div className="mb-3.5 text-[16.5px] font-semibold leading-snug">{q.question}</div>
+          {/* /api/parse is one of the two payloads the fetch layer must not
+              clean, because this question becomes the transcript that rides
+              the next run as provenance. So it is normalized HERE, for the
+              page, and pushed into `transcriptRef` verbatim. */}
+          <div className="mb-3.5 text-[16.5px] font-semibold leading-snug">
+            {stripEmDashes(q.question)}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {q.options.map((opt) => (
               <button
                 key={opt}
+                /* the LABEL is normalized, the VALUE is not: clicking this
+                   chip records the option's own bytes as the answer */
                 onClick={() => answerQuestion(opt)}
                 disabled={busy}
                 className="rounded-full border border-trust-border px-3.5 py-[6px] text-[13px] text-trust hover:bg-trust/10"
               >
-                {opt}
+                {stripEmDashes(opt)}
               </button>
             ))}
           </div>
@@ -758,16 +788,16 @@ export function RunFlow({
           earliestYear={earliestYear}
           argueBack={argueBack}
         />
-        {/* anon trial framing — honest about the free run's limits, so the
+        {/* anon trial framing, honest about the free run's limits, so the
             visitor picks a daily ≤3y window instead of hitting the backend's
             refusal. Only shown to a confirmed anonymous visitor. */}
         {embedded && isAnon === true && (
           <p className="mt-3 text-center font-mono text-[11px] leading-[1.6] text-ink-4">
-            free trial run — daily resolution, up to a 3-year window · create a
+            free trial run: daily resolution, up to a 3-year window · create a
             free account for intraday and the full history
           </p>
         )}
-        {/* the human check (invisible unless Cloudflare challenges) — mounted
+        {/* the human check (invisible unless Cloudflare challenges), mounted
             here so it has solved by the time RUN is clicked */}
         {embedded && isAnon !== false && (
           <div className="mt-3">
@@ -822,8 +852,8 @@ export function RunFlow({
 
   return (
     <div>
-      {/* embedded in the landing popup, the modal supplies the framing —
-          drop the big headline so it's just the composer/chart (owner) */}
+      {/* embedded in the landing popup, the modal supplies the framing.
+          Drop the big headline so it's just the composer/chart (owner) */}
       {!embedded && (
         <div className="mx-auto mb-9 mt-[9vh] flex max-w-[900px] flex-col items-center">
           <h1 className="text-center font-serif text-[clamp(32px,3.6vw,44px)] font-medium leading-[1.12] tracking-[-.01em]">
@@ -832,7 +862,7 @@ export function RunFlow({
         </div>
       )}
 
-      {/* the landing's chart-teach popup is chart-only (owner 2026-07-17) —
+      {/* the landing's chart-teach popup is chart-only (owner 2026-07-17):
           no Describe It escape hatch; the composer lives on the hero */}
       {!(embedded && initialMode === "chart") && (
         <div className="mb-4 flex justify-center">{modeChips}</div>
@@ -912,7 +942,7 @@ export function RunFlow({
             </div>
             {(speech.listening || speech.error) && (
               <div className={clsx("pb-1 pt-0.5 text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
-                {speech.error ?? "Listening — tap the mic again to stop."}
+                {speech.error ?? "Listening. Tap the mic again to stop."}
               </div>
             )}
           </div>
@@ -950,18 +980,18 @@ export function RunFlow({
           <ChartTeach
             onCompile={(d) => {
               // the deferred device gate (owner 2026-07-17): opening the
-              // chart is browsing — the free-run check lands HERE, when
+              // chart is browsing. The free-run check lands HERE, when
               // "That's the idea" turns the pins into a run attempt. Only a
               // CONFIRMED anonymous visitor gates client-side; unresolved
-              // identity (null — /me still in flight or hiccuped) falls
-              // through to the backend armor at RUN, which is the authority
-              // — a signed-in user with a stale my-runs breadcrumb must
+              // identity (null: /me still in flight or hiccuped) falls
+              // through to the backend armor at RUN, which is the authority.
+              // A signed-in user with a stale my-runs breadcrumb must
               // never be shown the create-an-account gate.
               if (embedded && isAnon === true && myRunIds().length > 0) {
                 onTrialExhausted?.(undefined);
                 return;
               }
-              // a chart draft supersedes any earlier chat parse — clear the
+              // a chart draft supersedes any earlier chat parse. Clear the
               // verbatim-spec refs so a stale spec can never ride along
               // (and the abandoned conversation, so it can't enter the
               // chart run's provenance)

@@ -1,10 +1,10 @@
-"""IVS-derived vol-surface signals (ENGINE-V4 F4) — wiring tests.
+"""IVS-derived vol-surface signals (ENGINE-V4 F4): wiring tests.
 
 Spec v5 gating, JSON-schema parity, point-in-time accessor boundedness,
 the BarView previous-session rule, and condition dispatch semantics.
 
 Units contract under test: the derived artifact stores VOL POINTS
-(already ×100 — skew_25d 5.2 means "puts 5.2 vol points over calls").
+(already ×100, so skew_25d 5.2 means "puts 5.2 vol points over calls").
 Conditions therefore compare the stored value DIRECTLY: "skew above 5"
 → value 5. This is deliberately unlike ivx_level_30d (lake stores
 decimals, condition multiplies by 100); re-multiplying here would make
@@ -12,7 +12,7 @@ every threshold wrong by ×100, which is the exact drift class the
 derive-once design exists to kill.
 
 The derivation MATH (interpolation exactness, ATM rows, honest absence
-per missing tenor) is fixture-tested separately — this file proves the
+per missing tenor) is fixture-tested separately. This file proves the
 plumbing from artifact to verdict-eligible condition.
 """
 
@@ -107,7 +107,7 @@ class TestPointInTimeAccessors:
         }, days=days5)
         # on an observation day: that day's value
         assert MarketView(store, days[2]).skew_25d() == 3.0
-        # the view is bounded — never the later values
+        # the view is bounded, never the later values
         assert MarketView(store, days[0]).skew_25d() == 1.0
 
     def test_gap_day_reads_most_recent_prior(self) -> None:
@@ -150,7 +150,7 @@ class TestBarViewPreviousSessionRule:
 
 class TestConditionDispatch:
     def test_skew_compares_vol_points_directly(self) -> None:
-        # stored 5.2 vol points; "skew above 5" → value 5 — NO re-×100
+        # stored 5.2 vol points; "skew above 5" → value 5, NO re-×100
         days = _weekdays(date(2024, 1, 1), 3)
         store, _ = _store(skew={days[-1].isoformat(): 5.2}, days=days)
         view = MarketView(store, days[-1])
@@ -181,7 +181,7 @@ class TestConditionDispatch:
 
 # ------------------------------------------------- derivation math (F4)
 # Hand-computed surface fixtures for the derive-once math in
-# app/data/ivs_signals.py — the SINGLE implementation the collector imports.
+# app/data/ivs_signals.py, the SINGLE implementation the collector imports.
 
 import pandas as pd  # noqa: E402
 
@@ -194,8 +194,8 @@ def _surf(rows: list[tuple]) -> pd.DataFrame:
 
 
 # tenor 30: puts bracket 25Δ at |0.20|→0.30 and |0.30|→0.34; calls at
-# 0.20→0.25 and 0.30→0.27. ATM rows (OTM% = 0) carry their own deltas —
-# they sit OUTSIDE the 25Δ bracket and must not disturb it.
+# 0.20→0.25 and 0.30→0.27. ATM rows (OTM% = 0) carry their own deltas.
+# They sit OUTSIDE the 25Δ bracket and must not disturb it.
 _BASE_ROWS = [
     (30, "P", -0.20, 0.30, -10), (30, "P", -0.30, 0.34, -5),
     (30, "C", 0.20, 0.25, 10), (30, "C", 0.30, 0.27, 5),
@@ -307,7 +307,7 @@ def _gated_run_result():
     the condition true on exactly ONE session: 3.0 on day 0, 6.0 on day 1,
     4.0 on day 2. Days 3-4 have no derived row, so the accessor CARRIES
     FORWARD day 2's 4.0 (most recent at-or-before, like every daily
-    analytic series) — which fails the > 5 test. Carry-forward staleness
+    analytic series), which fails the > 5 test. Carry-forward staleness
     is unbounded by design, matching the IVX precedent; a series with NO
     prior observation at all is unevaluable (pinned above)."""
     days = _weekdays(date(2024, 1, 1), 5)
@@ -355,7 +355,7 @@ class TestConditionGatedRun:
 
 class TestLadderVocabularyGate:
     """Review finding (F4 #2): a Rung IS a Condition and the rearm is one
-    too — a v3 ladder must not smuggle v5 vocabulary past the gate."""
+    too. A v3 ladder must not smuggle v5 vocabulary past the gate."""
 
     def _ladder_doc(self, rung_indicator: str, rearm_indicator: str) -> dict:
         doc = copy.deepcopy(CANONICAL)
@@ -398,7 +398,7 @@ class TestLadderVocabularyGate:
 
 
 class TestDtypeCoercion:
-    """Review finding (F4 #3): vendor JSON dtypes are untrusted — a
+    """Review finding (F4 #3): vendor JSON dtypes are untrusted. A
     string-typed surface must derive the same numbers, never a silent
     all-None row."""
 

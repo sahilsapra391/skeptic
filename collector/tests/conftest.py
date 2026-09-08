@@ -1,5 +1,5 @@
 """Make the collector scripts importable as top-level modules (they live flat
-in collector/, not in a package — same layout the CI smoke-import relies on)."""
+in collector/, not in a package, the same layout the CI smoke-import relies on)."""
 
 import os
 import sys

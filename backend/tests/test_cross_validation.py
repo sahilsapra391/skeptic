@@ -1,10 +1,10 @@
-"""Cross-source validation + fill audit (ENGINE-V4 F7) — hand-computed.
+"""Cross-source validation + fill audit (ENGINE-V4 F7), hand-computed.
 
 Owner decisions 2026-07-08: per-pair agreement rates with audited-share
 denominators, NO blended score; REPORTED never scored (thresholds are
 earned from accumulated history, the D3d staging); the fill audit is
 on-demand and checks deterministically regenerated fills against Alpaca
-minute TRADES — a vendor no fill price ever came from. no_trades is
+minute TRADES, a vendor no fill price ever came from. no_trades is
 honest absence, never counted against the run.
 """
 
@@ -121,7 +121,7 @@ class TestQuoteClose:
 
 
 class TestMassiveVsIvol5m:
-    # the two vendors format the OCC differently — Massive "O:QQQ...",
+    # the two vendors format the OCC differently: Massive "O:QQQ...",
     # iVol pads the root ("QQQ   250620P00100000"). The comparator must
     # NORMALIZE before joining (real-lake acceptance 2026-07-08: the raw
     # join found nothing, so every session read 0/0).
@@ -133,7 +133,7 @@ class TestMassiveVsIvol5m:
             "bid": [2.00, 1.90], "ask": [2.10, 2.00],
         })
         rec = compare_massive_ivol5m(massive, ivol)
-        # day range [1.90, 2.10]; close 2.05 inside — and the join SUCCEEDS
+        # day range [1.90, 2.10]; close 2.05 inside, and the join SUCCEEDS
         assert rec == {"joined": 1, "checked": 1, "within_band": 1,
                        "agreement_rate": 1.0}
 
@@ -163,7 +163,7 @@ class TestSignalValues:
         assert rec["within_band"] == 0 and rec["checked"] == 1
 
     def test_sign_mode_agrees_on_sign_only(self) -> None:
-        # GEX −4.7e9 vs +8.9e5 disagree; DEX 4.8e10 vs 8.6e7 agree —
+        # GEX −4.7e9 vs +8.9e5 disagree; DEX 4.8e10 vs 8.6e7 agree,
         # the real 2026-07-02 overlap shape
         rec = compare_signal_values([
             (-4.7e9, 8.9e5, "sign", 0.0, 0.0),
@@ -330,7 +330,7 @@ class TestAuditFills:
         assert audit["no_coverage"] == 1
 
     def test_missing_bar_time_degrades_to_session_range(self) -> None:
-        # review #15: the kind is observable on OUTSIDE examples — a
+        # review #15: the kind is observable on OUTSIDE examples, a
         # time-less fill outside the day range must say session_range
         audit = audit_fills([self._fill(3.00, bar_time=None)],
                             lambda d: self._bars(1.95, 2.05))
@@ -339,13 +339,13 @@ class TestAuditFills:
 
     def test_modeled_fills_are_never_self_audited(self) -> None:
         # review BLOCKER #2: alpaca_modeled prices were built FROM these
-        # prints — self-confirmation is not independent verification
+        # prints, self-confirmation is not independent verification
         audit = audit_fills([self._fill(2.00, source="alpaca_modeled")],
                             lambda d: self._bars(1.95, 2.05))
         assert audit["self_source"] == 1 and audit["audited"] == 0
 
     def test_close_audits_around_its_own_bar(self) -> None:
-        # review MAJOR #4: a 14:10 close must be checked near 14:10 —
+        # review MAJOR #4: a 14:10 close must be checked near 14:10,
         # trades exist near the open at very different prices
         bars = pd.DataFrame({
             "expiration": ["2025-01-06"] * 2, "right": ["put"] * 2,
@@ -364,7 +364,7 @@ class TestRecorderVsUwTape:
     """Hand-computed: recorder displayed quotes vs tape prints in one
     snap window. Contract A quotes 2.00/2.10 (mid 2.05, tol 0.05 → band
     [1.95, 2.15]); C quotes 5.00/5.50 (mid 5.25, tol 0.105 → band
-    [4.895, 5.605]); B has no bid — joined, never checked."""
+    [4.895, 5.605]); B has no bid (joined, never checked)."""
 
     def _snap(self, right_a: str = "call") -> pd.DataFrame:
         return pd.DataFrame({
@@ -386,7 +386,7 @@ class TestRecorderVsUwTape:
     def test_hand_computed_counts_and_directions(self) -> None:
         rec = compare_recorder_tape_window(self._snap(), self._trades())
         assert rec is not None
-        # the 999 strike is unlisted — joins zero (honest absence)
+        # the 999 strike is unlisted, joins zero (honest absence)
         assert rec["joined"] == 4
         # the no-bid put print is joined but never checked
         assert rec["checked"] == 3
@@ -440,7 +440,7 @@ class TestRecorderTapeWindow:
         ts = self._ts()
         _, _, end = recorder_tape_window(ts, "2026-07-08 14:00:00")
         # the next snap repeats the stamp (feed stall): clamped to the
-        # previous end, the window is empty — the same prints are never
+        # previous end, the window is empty: the same prints are never
         # judged twice
         lo2, hi2, _ = recorder_tape_window(ts, "2026-07-08 14:00:00", end)
         assert lo2 >= hi2
@@ -448,7 +448,7 @@ class TestRecorderTapeWindow:
     def test_partial_overlap_clamps_to_new_coverage_only(self) -> None:
         ts = self._ts()
         _, _, end = recorder_tape_window(ts, "2026-07-08 14:00:00")
-        # 30 s later stamp: only [13:46:00, 13:46:30) is new — the print
+        # 30 s later stamp: only [13:46:00, 13:46:30) is new, the print
         # at 13:46:00 is picked up exactly once
         lo2, hi2, _ = recorder_tape_window(ts, "2026-07-08 14:00:30", end)
         assert (lo2, hi2) == (4, 5)
@@ -497,7 +497,7 @@ class TestCrossedQuoteGuard:
 class TestOutOfOrderStampClamp:
     def test_out_of_order_stamp_never_rewinds_the_clamp(self) -> None:
         # an out-of-order source_ts (feed hiccup / timestamp fallback)
-        # empties its own window AND must not rewind not_before — a
+        # empties its own window AND must not rewind not_before: a
         # rewound clamp would let the next normal snap re-slice rows
         # already consumed (double-counted volume, banked forever)
         ts = pd.Series(pd.to_datetime(

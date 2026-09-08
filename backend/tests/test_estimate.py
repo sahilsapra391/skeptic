@@ -1,5 +1,5 @@
 """Pre-run time estimates (2026-07-06): session counts are real coverage,
-time estimates are MEDIANS of measured runs (runs.perf_json) — an
+time estimates are MEDIANS of measured runs (runs.perf_json). An
 unmeasured clock answers null and says the first run calibrates. Never an
 invented number."""
 
@@ -77,14 +77,14 @@ def _cleanup(ids: list[str]) -> None:
 class TestEstimate:
     def test_unmeasured_clock_is_honest(self, client: TestClient) -> None:
         # other test files may have completed 5min fixture runs in this
-        # shared DB — clear their measurements so "unmeasured" is true
+        # shared DB. Clear their measurements so "unmeasured" is true
         # regardless of suite ordering
         with db.session() as s:
             for row in s.query(db.Run).filter(db.Run.perf_json.isnot(None)).all():
                 row.perf_json = None
             s.commit()
         r = client.get("/api/data/estimate?ticker=SPY&clock=5min")
-        # no 5min runs have perf rows in this test DB — estimates are null
+        # no 5min runs have perf rows in this test DB. Estimates are null
         # and the basis says so; 5min needs the intraday store though, so
         # accept a 503 when the fixture env has no R2 (honest refusal)
         if r.status_code == 200:
@@ -132,7 +132,7 @@ class TestEstimate:
 
 class TestPerfRecorded:
     def test_completed_run_stores_measured_cost(self, client: TestClient) -> None:
-        import app.data.chains as chains_module  # noqa: F401 — patched in fixture
+        import app.data.chains as chains_module  # noqa: F401 (patched in fixture)
 
         run_id = client.post("/api/backtest", json={"spec": fx.SPEC}).json()["run_id"]
         client.get(f"/api/runs/{run_id}")

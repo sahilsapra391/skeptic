@@ -3,11 +3,11 @@
 /**
  * The landing's three product popups (launch L4, owner 2026-07-17):
  *
- * - RunFlowModal — the REAL run flow (parse → interview → gauntlet →
+ * - RunFlowModal, the REAL run flow (parse → interview → gauntlet →
  *   results) embedded in a popup; the visitor never leaves the landing.
- * - RunViewModal — a stored run rendered start-to-finish (the showcase
+ * - RunViewModal, a stored run rendered start-to-finish (the showcase
  *   rows + "read the full run"); real payload, real ResultsView.
- * - DeviceGateModal — one free run per device: a second attempt is asked
+ * - DeviceGateModal, one free run per device: a second attempt is asked
  *   to create an account instead (client-remembered for now; the anon
  *   token + Turnstile armor is the accounts-chunk's server half).
  *
@@ -52,11 +52,11 @@ export function RunFlowModal({
   pitch?: string;
   mode?: "chart";
   onRunStarted?: (runId: string, demo: boolean) => void;
-  // the backend refused this device's free run (armor) — swap to the gate,
+  // the backend refused this device's free run (armor), so swap to the gate,
   // carrying the honest reason (device-used vs trials-busy)
   onTrialExhausted?: (reason?: string) => void;
   onClose: () => void;
-  // minimized to the banner while the run keeps going — children stay mounted
+  // minimized to the banner while the run keeps going: children stay mounted
   hidden?: boolean;
 }) {
   return (
@@ -85,7 +85,7 @@ export function RunViewModal({ runId, onClose }: { runId: string; onClose: () =>
   useEffect(() => {
     let alive = true;
     // decided before any parallel pruner (the banner's own 404 poll) can
-    // edit the list under us — the copy must not depend on who pruned first
+    // edit the list under us: the copy must not depend on who pruned first
     const mine = myRunIds().includes(runId);
     getRun(runId)
       .then((p) => {
@@ -95,7 +95,7 @@ export function RunViewModal({ runId, onClose }: { runId: string; onClose: () =>
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 404) {
-          // a remembered run that's gone server-side is a phantom — forget
+          // a remembered run that's gone server-side is a phantom, so forget
           // it (even if the modal already closed) so the device's stale
           // breadcrumb releases instead of pointing at a run that can't be
           // shown (owner 2026-07-17). No promise about the free run: the
@@ -118,12 +118,12 @@ export function RunViewModal({ runId, onClose }: { runId: string; onClose: () =>
       onClose={onClose}
       label="The full run"
       wide
-      conversionCta="Create an account — run one like this, 5 free"
+      conversionCta="Create an account: run one like this, 5 free"
     >
       {error && (
         <div className="py-16 font-mono text-[12px] text-warn">{error}</div>
       )}
-      {!error && !run && <LoadingLine text="opening the run — every number recomputed from the stored payload…" />}
+      {!error && !run && <LoadingLine text="opening the run, every number recomputed from the stored payload…" />}
       {run && (
         <>
           {run.example && (
@@ -148,7 +148,7 @@ export function DeviceGateModal({
   reason,
 }: {
   onClose: () => void;
-  // the backend's honest 402 detail — "busy" means the global daily budget
+  // the backend's honest 402 detail: "busy" means the global daily budget
   // was hit (a first-time visitor), not this device's run being spent
   reason?: string;
 }) {
@@ -169,18 +169,18 @@ export function DeviceGateModal({
         <p className="mt-3 text-[14px] leading-[1.65] text-ink-2">
           {busy
             ? "We cap free runs per day so everyone gets a fair shot at the engine. A free account skips the line: 5 backtests, no card, and a library that keeps every run."
-            : "The first one is on the house — the next ones come with a free account: 5 more backtests, a library that keeps your runs, and the run you already made comes with you."}
+            : "The first one is on the house. The next ones come with a free account: 5 more backtests, a library that keeps your runs, and the run you already made comes with you."}
         </p>
         <p className="mt-2.5 font-mono text-[11.5px] leading-[1.7] text-ink-4">
-          a &ldquo;not enough evidence&rdquo; verdict refunds its credit — you
-          only spend on graded verdicts
+          a &ldquo;not enough evidence&rdquo; verdict refunds its credit, and
+          you only spend on graded verdicts
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Link
             href="/signup"
             className="rounded-[10px] bg-trust px-5 py-2.5 text-[14px] font-bold text-on-accent"
           >
-            Create a free account — 5 backtests
+            Create a free account: 5 backtests
           </Link>
           {firstRun && (
             <button

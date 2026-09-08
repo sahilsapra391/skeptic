@@ -1,6 +1,6 @@
 """IntradayStore (D2a): loader normalization, per-session disk cache with
 versioned manifests, bounded LRU, and the owner-amendment-1 source ranking
-(ivol_5min — true NBBO — outranks the ~15-min-delayed cboe_minute wherever
+(ivol_5min, true NBBO, outranks the ~15-min-delayed cboe_minute wherever
 both exist; CBOE serves forward coverage only)."""
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _ivol_opt_frame(d: str) -> pd.DataFrame:
 
 
 def _ivol_und_frame(d: str) -> pd.DataFrame:
-    # volume is CUMULATIVE in the vendor feed (probed) — per-bar is the diff
+    # volume is CUMULATIVE in the vendor feed (probed). Per-bar is the diff
     return pd.DataFrame([
         {"minute_ts": f"{d} 09:30:00", "last": 100.0, "volume": 1_000},
         {"minute_ts": f"{d} 09:35:00", "last": 100.4, "volume": 1_600},
@@ -123,8 +123,8 @@ class TestIvolSessions:
         self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A single unparseable cumulative-volume cell mid-session must NOT
-        inject the whole session cumulative (~52M) as one bar's volume —
-        the affected bars sit out of session-anchored VWAP instead."""
+        inject the whole session cumulative (~52M) as one bar's volume.
+        The affected bars sit out of session-anchored VWAP instead."""
         und = pd.DataFrame([
             {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
             {"minute_ts": f"{D} 09:35:00", "last": 100.4, "volume": 1_600},
@@ -143,7 +143,7 @@ class TestIvolSessions:
         assert datetime(2025, 1, 6, 9, 45) not in slc.underlying_volume
 
         # session VWAP exactly as the engine accumulates it (missing → 0):
-        # (100.0×1000 + 100.4×600) / 1600 = 100.15 — hand-computed. The old
+        # (100.0×1000 + 100.4×600) / 1600 = 100.15 (hand-computed). The old
         # fillna(cum_vol) put 52M on the 09:45 bar, dragging VWAP to ~120.
         pv = sum(slc.underlying[b] * slc.underlying_volume.get(b, 0.0)
                  for b in slc.bars if b in slc.underlying)
@@ -152,7 +152,7 @@ class TestIvolSessions:
         assert vol == 1_600
         assert pv / vol == pytest.approx(100.15)
 
-        # the unknown bars must survive the disk-cache round-trip too — a
+        # the unknown bars must survive the disk-cache round-trip too. A
         # future cast/fillna in _write_cache would regress ONLY cached reads
         cached = intraday.IntradayStore("SPY").slice_for(date(2025, 1, 6))
         assert cached is not None
@@ -183,12 +183,12 @@ class TestIvolSessions:
         self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A duplicated stamp's cumulative diff is 0 and its dict insert
-        used to ERASE the bar's real volume in _build_slice — the
+        used to ERASE the bar's real volume in _build_slice. The
         last-written row per stamp must win instead."""
         und = pd.DataFrame([
             {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
             {"minute_ts": f"{D} 09:35:00", "last": 100.4, "volume": 1_600},
-            # vendor restatement of the same bar — later row supersedes
+            # vendor restatement of the same bar, later row supersedes
             {"minute_ts": f"{D} 09:35:00", "last": 100.5, "volume": 1_700},
         ])
 
@@ -204,7 +204,7 @@ class TestIvolSessions:
         self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A payload missing its opening bars starts mid-session; its first
-        cumulative is hours of volume, not one bar's — it must stay unknown
+        cumulative is hours of volume, not one bar's. It must stay unknown
         (out of VWAP), not dominate it."""
         und = pd.DataFrame([
             {"minute_ts": f"{D} 13:00:00", "last": 100.0, "volume": 30_000_000},
@@ -223,7 +223,7 @@ class TestIvolSessions:
         self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """One unparseable minute_ts cell (in either frame) must cost that
-        row only — it used to raise ValueError and kill the whole session."""
+        row only. It used to raise ValueError and kill the whole session."""
         und = pd.DataFrame([
             {"minute_ts": f"{D} 09:30:00", "last": 100.0, "volume": 1_000},
             {"minute_ts": "not-a-time", "last": 100.2, "volume": 1_600},
@@ -248,7 +248,7 @@ class TestIvolSessions:
         self, env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A non-null unparseable expiration cell survives the NaN-only
-        dropna and used to raise in _build_slice — AFTER the frame was
+        dropna and used to raise in _build_slice, AFTER the frame was
         cached, so every retry re-raised from the version-valid cache."""
         opt = _ivol_opt_frame(D)
         bad = opt.iloc[[0]].assign(expiration="2026-O7-08", strike=101.0)
@@ -302,7 +302,7 @@ class TestIvolSessions:
     ) -> None:
         """A refetch whose underlying GET fails (r2 swallows errors → None)
         must not leave the prior version's und parquet behind the fresh
-        manifest — _read_cached serves whatever und file exists, so a stale
+        manifest. _read_cached serves whatever und file exists, so a stale
         frame would ride along under the new schema version forever."""
         state = {"und_available": True}
 
@@ -370,7 +370,7 @@ class TestCboeDownsampling:
             f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1436Z.parquet",
         ]
         snaps = {keys[0]: _cboe_snap_frame(D, bid=2.00),
-                 keys[1]: _cboe_snap_frame(D, bid=5.00),  # same bar — must NOT be used
+                 keys[1]: _cboe_snap_frame(D, bid=5.00),  # same bar, must NOT be used
                  keys[2]: _cboe_snap_frame(D, bid=1.50)}
 
         def fake_prefixes(_s3: Any, prefix: str) -> list[str]:
@@ -400,10 +400,10 @@ class TestCboeDownsampling:
                                                    monkeypatch: pytest.MonkeyPatch) -> None:
         """Recorder snapshots bank the underlying's cumulative session share
         volume; the reader diffs it per bar. The FIRST bar's baseline is
-        UNKNOWN — the feed's open-minutes value can be the prior session's
+        UNKNOWN: the feed's open-minutes value can be the prior session's
         rollover total (incident 2026-07-08), so it is never seeded. Diffs
         after (1,000 → 1,600 = 600) are real; a snapshot without the column
-        leaves ITS bar out of VWAP — never a fabricated zero."""
+        leaves ITS bar out of VWAP, never a fabricated zero."""
         keys = [
             f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1430Z.parquet",
             f"options_intraday/source=cboe_delayed/ticker=SPY/date={D}/snap_20250106T1435Z.parquet",
@@ -422,7 +422,7 @@ class TestCboeDownsampling:
         store = intraday.IntradayStore("SPY")
         slc = store.slice_for(date(2025, 1, 6))
         assert slc is not None
-        # 09:30's baseline is unknown (rollover hazard) — sits out of VWAP
+        # 09:30's baseline is unknown (rollover hazard), sits out of VWAP
         assert datetime(2025, 1, 6, 9, 30) not in slc.underlying_volume
         assert slc.underlying_volume[datetime(2025, 1, 6, 9, 35)] == 600
         # the column-less snap's bar sits OUT of the volume record
@@ -473,7 +473,7 @@ class TestRecorderPerBarVolume:
 
     def test_mid_session_restart_has_unknown_baseline(self) -> None:
         # recorder restarted at 13:00: first cumulative is half a day of
-        # volume — a baseline, never one bar's volume
+        # volume, a baseline, never one bar's volume
         from app.data.bars import recorder_per_bar_volume
 
         cum = pd.Series([25_000_000.0, 25_075_120.0])
@@ -498,7 +498,7 @@ def test_pinned_live_session_loads_real_nbbo() -> None:
 
     load_local_env()
     if not r2.r2_configured():
-        pytest.skip("no R2 credentials — lake probe runs on the owner's machine")
+        pytest.skip("no R2 credentials, lake probe runs on the owner's machine")
 
     store = intraday.load_intraday_store("SPY")
     slc = store.slice_for(date(2026, 7, 2))

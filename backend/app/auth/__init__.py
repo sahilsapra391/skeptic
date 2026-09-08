@@ -1,27 +1,27 @@
-"""Auth interface (launch L1b — self-rolled, owner decision reversing D1).
+"""Auth interface (launch L1b: self-rolled, owner decision reversing D1).
 Routes and middleware see only gate_allows / require_user / resolve_user;
 the provider behind them changed from Clerk JWTs to in-house sessions
-without touching a single route — the swappable-interface promise kept.
+without touching a single route, the swappable-interface promise kept.
 
 Principals per request:
 
-- SERVICE — the Authorization bearer equals SKEPTIC_ACCESS_TOKEN. The
+- SERVICE: the Authorization bearer equals SKEPTIC_ACCESS_TOKEN. The
   automation principal (nightly-improve, workflows, the pre-launch proxy).
   It authenticates the SYSTEM and can never act as a person.
-- USER — an opaque session token (httpOnly cookie `skeptic_session`, or
+- USER: an opaque session token (httpOnly cookie `skeptic_session`, or
   x-skeptic-session when a caller prefers the header) resolved against
   the auth_sessions table. DB truth: revocation works instantly.
 
 Identity resolution stays LAZY (L1 review finding): only paths that need
 a person pay the DB lookup, and an accounts-DB outage 503s only account
-surfaces — charts and the automation lane stay up.
+surfaces; charts and the automation lane stay up.
 
 The gate: service passes everything (unchanged since the single-user
 era); a signed-in user passes the app surface (USER_PATH_PREFIXES); the
 auth endpoints and health stay open to everyone (you can't sign in from
 behind a sign-in gate). With SKEPTIC_ACCESS_TOKEN unset (local dev),
 everything is open. Anonymous armored run access arrives with the
-anon-trial chunk — until the public flip, the proxy's service bearer
+anon-trial chunk. Until the public flip, the proxy's service bearer
 keeps today's behavior byte-identical.
 """
 
@@ -49,11 +49,11 @@ __all__ = [
 ]
 
 # reachable without ANY principal: probes, the doorway itself, and the Stripe
-# webhook (launch L3 — Stripe posts to it directly, no proxy / session; the
+# webhook (launch L3: Stripe posts to it directly, no proxy / session; the
 # signature verification inside the handler is its auth)
 OPEN_PATH_PREFIXES: tuple[str, ...] = ("/api/health", "/api/auth", "/api/stripe")
 
-# the surface a signed-in user may reach — the app (launch L1b widened
+# the surface a signed-in user may reach, the app (launch L1b widened
 # this from just /api/me: the product is account-gated now)
 USER_PATH_PREFIXES: tuple[str, ...] = (
     "/api/me",
@@ -75,10 +75,10 @@ def _bearer(request: Request) -> str | None:
 
 
 def is_service(request: Request) -> bool:
-    """TRUE automation only — the nightly/workflow principal that calls the
+    """TRUE automation only: the nightly/workflow principal that calls the
     backend DIRECTLY with an Authorization bearer. It is the ONLY thing
     granted data-layer bypass (reading any run, scope=all). CRITICAL: the
-    Next proxy must NOT trip this — it forwards a person's request and opens
+    Next proxy must NOT trip this; it forwards a person's request and opens
     the gate with x-skeptic-gate instead (review finding: when the proxy
     sent the service bearer, is_service was true for ALL browser traffic and
     the run-ownership 404 never fired)."""
@@ -93,9 +93,9 @@ def is_service(request: Request) -> bool:
 
 def _has_gate_key(request: Request) -> bool:
     """The trusted-proxy gate opener (x-skeptic-gate). Passes the middleware
-    gate exactly as the old proxy bearer did — preserving today's behavior
-    (all proxied traffic reaches the app; the anon landing run still works)
-    — but is NEVER a data-layer bypass: a proxied request is a person or an
+    gate exactly as the old proxy bearer did, preserving today's behavior
+    (all proxied traffic reaches the app; the anon landing run still works),
+    but is NEVER a data-layer bypass: a proxied request is a person or an
     anon, never automation, so ownership/scope decisions ignore it."""
     service_token = os.environ.get("SKEPTIC_ACCESS_TOKEN", "")
     supplied = request.headers.get("x-skeptic-gate", "")
@@ -119,7 +119,7 @@ def session_presented(request: Request) -> bool:
 
 
 def resolve_user(request: Request) -> db.User | None:
-    """The person behind the request — memoized per request, resolved on
+    """The person behind the request, memoized per request, resolved on
     first need. Raises AccountsUnavailableError when a session is presented
     while the accounts DB sits on the throwaway SQLite fallback."""
     cached = getattr(request.state, "auth_user", _UNRESOLVED)
@@ -146,11 +146,11 @@ def gate_allows(request: Request) -> bool:
     """Pass/block for the middleware. Only resolves identity when the path
     actually requires a person. May raise AccountsUnavailableError."""
     if not os.environ.get("SKEPTIC_ACCESS_TOKEN"):
-        return True  # local dev — unchanged behavior
+        return True  # local dev, unchanged behavior
     path = request.url.path
     if _on(path, OPEN_PATH_PREFIXES):
         return True
-    # automation OR trusted-proxy traffic passes the gate — the gate is not
+    # automation OR trusted-proxy traffic passes the gate; the gate is not
     # the privacy boundary (data-layer ownership is); it preserves the
     # single-user era's "the proxy is the only client" trust until the
     # anon-armor chunk flips to real public mode
@@ -169,7 +169,7 @@ def require_user(request: Request) -> db.User:
     except AccountsUnavailableError as exc:
         raise HTTPException(
             status_code=503,
-            detail="accounts are unavailable — the accounts database is "
+            detail="accounts are unavailable: the accounts database is "
             "unreachable right now; charts and existing runs stay up",
         ) from exc
     if user is not None:
@@ -177,19 +177,19 @@ def require_user(request: Request) -> db.User:
     if session_presented(request):
         raise HTTPException(
             status_code=401,
-            detail="session expired or signed out — sign in again",
+            detail="session expired or signed out; sign in again",
         )
     if is_service(request):
         raise HTTPException(
             status_code=401,
-            detail="the service token is not a user account — sign in for "
+            detail="the service token is not a user account; sign in for "
             "account surfaces",
         )
     raise HTTPException(status_code=401, detail="sign in required")
 
 
 def _admin_emails() -> set[str]:
-    """The admin allowlist (launch L5) — a comma-separated env var the owner
+    """The admin allowlist (launch L5): a comma-separated env var the owner
     sets on the backend. Empty = no admins (the portal is inert until set),
     so a misconfigured deploy fails CLOSED, never open."""
     raw = os.environ.get("SKEPTIC_ADMIN_EMAILS", "")
@@ -198,12 +198,12 @@ def _admin_emails() -> set[str]:
 
 def is_admin(user: db.User | None) -> bool:
     """True when this account's email is on the admin allowlist AND the email
-    is VERIFIED. No DB flag — admin is an env-controlled property of the email.
+    is VERIFIED. No DB flag. Admin is an env-controlled property of the email.
     The verified gate binds admin power to proven mailbox control: without it,
     an allowlisted email that isn't registered yet could be SQUATTED (sign up
     with it → instant admin). An owner with no mail sender still verifies via
     the link the mailer logs. (SKEPTIC_REQUIRE_VERIFIED only gates runs, not
-    this — the admin surface always requires it.)"""
+    this; the admin surface always requires it.)"""
     return (
         user is not None
         and user.verified_at is not None
@@ -212,8 +212,8 @@ def is_admin(user: db.User | None) -> bool:
 
 
 def require_admin(request: Request) -> db.User:
-    """FastAPI dependency for the admin surface. 404 (not 403) for a non-admin
-    — the admin routes' existence is nobody else's business."""
+    """FastAPI dependency for the admin surface. 404 (not 403) for a non-admin:
+    the admin routes' existence is nobody else's business."""
     user = require_user(request)  # 401/503 first if not even signed in
     if not is_admin(user):
         raise HTTPException(status_code=404, detail="not found")

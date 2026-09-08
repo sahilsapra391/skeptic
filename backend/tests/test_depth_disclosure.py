@@ -1,13 +1,13 @@
-"""Fill-vs-displayed-depth disclosure (ENGINE-V4 F5) — hand-computed.
+"""Fill-vs-displayed-depth disclosure (ENGINE-V4 F5), hand-computed.
 
-Owner decisions 2026-07-07: DISCLOSE FIRST, model later — fills keep
+Owner decisions 2026-07-07: DISCLOSE FIRST, model later. Fills keep
 FX.2 semantics (real NBBO + configured slippage, prices untouched);
 every option-leg fill compares its quantity against the traded side's
 displayed NBBO size (buy → ask_size, sell → bid_size); exceedances are
 counted, named in the trade log, and reported by the liquidity profile
 (REPORTED, never scored). A price-impact model must be EARNED by the
 D3d calibration loop; a hard depth gate would be pessimistic in a way
-reality isn't (beyond-L1 liquidity exists — the FX.2 doctrine). EOD
+reality isn't (beyond-L1 liquidity exists: the FX.2 doctrine). EOD
 quotes carry no sizes → depth-unknown, counters untouched, daily
 digests bit-identical.
 """
@@ -82,7 +82,7 @@ class TestDepthCounters:
         assert result.fills_beyond_depth == 0
 
     def test_exact_depth_boundary_is_within(self) -> None:
-        # qty == displayed size fills the whole displayed quote — honest
+        # qty == displayed size fills the whole displayed quote, honest
         result = _run(40, bid_size=40, ask_size=40)
         assert result.fills_beyond_depth == 0
 
@@ -116,7 +116,7 @@ class TestDepthCounters:
                               FixtureIntraday({session: slc}))
         opens = [t for t in result.trades if t.action == "OPEN"]
         assert not any("size" in t.detail for t in opens)
-        # ...and the quote-priced CLOSE is a BUY (close of a short) — it
+        # ...and the quote-priced CLOSE is a BUY (close of a short), so it
         # reads ask_size 3 and flags there (a SETTLEMENT close has no NBBO
         # and honestly carries no depth at all)
         closes = [t for t in result.trades if t.action == "CLOSE"]
@@ -129,7 +129,7 @@ class TestDepthCounters:
         assert result.fills_beyond_depth == 0
 
     def test_prices_are_untouched_by_depth(self) -> None:
-        # owner decision: disclosure only — identical fills either way
+        # owner decision: disclosure only, identical fills either way
         thin = _run(20, bid_size=1, ask_size=1)
         deep = _run(20, bid_size=500, ask_size=500)
         assert thin.equity == deep.equity
@@ -138,7 +138,7 @@ class TestDepthCounters:
 
 class TestDailyClockUnchanged:
     def test_eod_fills_carry_no_depth(self) -> None:
-        # EOD chains have no sizes — the daily clock's counters stay zero
+        # EOD chains have no sizes, so the daily clock's counters stay zero
         # (the bit-identity guarantee behind the pinned digests)
         days = [date(2024, 1, 1), date(2024, 1, 2)]
         chains = {d.isoformat(): [{
@@ -166,7 +166,7 @@ class TestDailyClockUnchanged:
                       "slippage_half_spread_fraction": 0.5,
                       "slippage_half_spread_fraction_sell": 0.5},
             # 50 ATM contracts reserve $100,000 under the buying-power gate
-            # (2026-07-15) — capital sized so the gate never binds here
+            # (2026-07-15), capital sized so the gate never binds here
             "backtest": {"start": None, "end": None,
                          "initial_capital": 250_000, "seed": 42},
         })
@@ -201,7 +201,7 @@ class TestLiquidityProfileDisclosure:
 
 class TestReviewFixes:
     def test_counts_are_grounded_numbers(self) -> None:
-        # review fix F5 #1: the note quotes its own counts ("45 of 120") —
+        # review fix F5 #1: the note quotes its own counts ("45 of 120"), and
         # they must be harvestable or the verdict/Q&A that echoes the
         # disclosure is falsely flagged ungrounded (the WF fold-count class)
         from app.honesty.verdict import _harvest_numbers
@@ -263,7 +263,7 @@ class TestReviewFixes:
         })
         result = run_backtest(spec, store, FixtureIntraday({session: slc}))
         opens = [t for t in result.trades if t.action == "OPEN"]
-        assert opens, "ladder never opened — fixture broken"
+        assert opens, "ladder never opened, fixture broken"
         assert any("qty 5 > ask size 2" in t.detail for t in opens)
 
     def test_negative_vendor_size_is_unknown_not_exceedance(self) -> None:

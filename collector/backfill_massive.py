@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-backfill_massive.py — Massive (formerly Polygon.io) Options Basic FREE tier:
-per-contract EOD OHLCV for QQQ / IWM, ~2 years deep.
+backfill_massive.py: Massive (formerly Polygon.io) Options Basic FREE tier.
+Per-contract EOD OHLCV for QQQ / IWM, ~2 years deep.
 
-HONEST SCOPE: the free tier serves per-contract daily aggregates only —
-open/high/low/close/volume/VWAP/transactions. NO bid/ask, NO greeks, NO IV.
+HONEST SCOPE: the free tier serves per-contract daily aggregates only
+(open/high/low/close/volume/VWAP/transactions). NO bid/ask, NO greeks, NO IV.
 So this is a COVERAGE / CROSS-VALIDATION / VOLUME source, never a fill source
 (guardrail #1 forbids filling without a real bid/ask). Most useful for QQQ/IWM,
 where the chain lake is otherwise nearly empty.
@@ -14,14 +14,14 @@ Base: https://api.massive.com   ·   Rate: ~5 req/min on Basic (paced + 429 back
 
 Endpoints:
   contracts   GET /v3/reference/options/contracts?underlying_ticker=QQQ&expired=… &limit=1000
-              paginated via next_url — the 2-yr symbol universe (active + expired)
+              paginated via next_url, the 2-yr symbol universe (active + expired)
   aggregates  GET /v2/aggs/ticker/{O:SYMBOL}/range/1/day/{from}/{to}
               one call per contract → its full daily OHLCV history
 
 Modes:
   probe       validate key, endpoints, rate headers, universe size. RUN FIRST.
   enumerate   build + bank the contract universe per ticker
-  aggs        per-contract daily OHLCV (resumable) — the long backfill
+  aggs        per-contract daily OHLCV (resumable), the long backfill
   all         enumerate then aggs
 
 Prefixes:  reference/massive/contracts/ticker={T}.parquet
@@ -70,7 +70,7 @@ def _load_dotenv() -> None:
 
 class RateGate:
     """Spaces requests 60/per_min apart. Free tier is ~5/min, so this is the
-    binding constraint — the backfill is slow by design, never rude."""
+    binding constraint. The backfill is slow by design, never rude."""
 
     def __init__(self, per_min: float) -> None:
         self.interval = 60.0 / max(per_min, 1.0)
@@ -115,7 +115,7 @@ def _get(path: str | None, params: dict | None = None,
             except Exception:
                 return 200, None
         if r.status_code == 429 or r.status_code >= 500:
-            # free-tier throttle — wait out the minute and retry
+            # free-tier throttle. Wait out the minute and retry
             time.sleep(min(15 * (attempt + 1), 65))
             continue
         return r.status_code, None
@@ -133,7 +133,7 @@ def _flush(s3, state: dict) -> None:
 
 # ------------------------------------------------------------ enumerate
 def enumerate_contracts(s3, state: dict, tickers: list[str], dry: bool) -> None:
-    # the reference lists contracts back to 2011, but aggregates only cover ~2yr —
+    # the reference lists contracts back to 2011, but aggregates only cover ~2yr,
     # so restrict to contracts EXPIRING within the aggregate window (their trading
     # life then overlaps it), else we'd make thousands of zero-bar aggregate calls.
     exp_floor = (datetime.now(timezone.utc).date() - timedelta(days=HISTORY_DAYS)).isoformat()
@@ -188,9 +188,9 @@ def _parse_occ(sym: str):
 def _prioritize(s3, ticker: str, todo: list[str],
                 atm_window: float) -> list[str]:
     """Owner decision 2026-07-07 (F5, $0 ramp): crawl ATM-at-expiry
-    contracts FIRST — the ones whose final trading days overlap the iVol
+    contracts FIRST (the ones whose final trading days overlap the iVol
     short-DTE ATM slice, i.e. the rows F7's cross-source validation will
-    actually join on — newest expiries first within each class. The rest
+    actually join on), newest expiries first within each class. The rest
     of the census follows behind at the same 5/min; nothing is dropped,
     only reordered (the state file keeps every symbol resumable)."""
     from collect import r2_get_parquet
@@ -203,7 +203,7 @@ def _prioritize(s3, ticker: str, todo: list[str],
         closes = {day: float(v) for day, v in zip(d, c)
                   if pd.notna(day) and pd.notna(v)}
     if not closes:
-        log.warning("%s: no underlying closes — crawling unordered", ticker)
+        log.warning("%s: no underlying closes, crawling unordered", ticker)
         return todo
     close_days = sorted(closes)
 
@@ -236,25 +236,25 @@ def pull_aggs(s3, state: dict, tickers: list[str], dry: bool,
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=HISTORY_DAYS)
     # two phases ACROSS tickers: every ticker's ATM-at-expiry band first,
-    # then every census remainder — otherwise ticker #1's full census
+    # then every census remainder. Otherwise ticker #1's full census
     # (~weeks at 5/min) would starve ticker #2's high-value band
     phases: list[tuple[str, list[str]]] = []
     remainders: list[tuple[str, list[str]]] = []
     for t in tickers:
         universe = state["contracts"].get(t, [])
         if not universe:
-            log.warning("%s: no enumerated universe — run enumerate first", t)
+            log.warning("%s: no enumerated universe, run enumerate first", t)
             continue
         done = set(state["aggs_done"].get(t, []))
         todo = _prioritize(s3, t, [s for s in universe if s not in done],
                            atm_window)
-        # _prioritize sorted ATM first — split at the boundary
+        # _prioritize sorted ATM first, split at the boundary
         split = next((i for i, sym in enumerate(todo)
                       if not _atm_flag.get(sym, False)), len(todo))
         phases.append((t, todo[:split]))
         remainders.append((t, todo[split:]))
         rate = 60.0 / _GATE.interval  # the CONFIGURED rate, not the default
-        log.info("%s: %d ATM-band + %d census contracts (%d done) — band "
+        log.info("%s: %d ATM-band + %d census contracts (%d done), band "
                  "~%.1f h at %.0f/min", t, split, len(todo) - split, len(done),
                  split / max(rate, 1) / 60, rate)
     for t, todo in phases + remainders:
@@ -280,7 +280,7 @@ def pull_aggs(s3, state: dict, tickers: list[str], dry: bool,
         _flush(s3, state)
         done_n = len(state["aggs_done"].get(t, []))
         total_n = len(state["contracts"].get(t, []))
-        log.info("%s: segment complete — %d/%d contracts banked overall",
+        log.info("%s: segment complete: %d/%d contracts banked overall",
                  t, done_n, total_n)
 
 
@@ -300,7 +300,7 @@ def probe(s3) -> int:
         rows = b2.get("results", []) if b2 else []
         print(f"aggregates ({sym}): HTTP {c2} · {len(rows)} daily bars"
               + (f" · keys {sorted(rows[0].keys())}" if rows else ""))
-    print("NOTE: free tier = OHLCV only (no bid/ask/greeks) — coverage source, not fills.")
+    print("NOTE: free tier = OHLCV only (no bid/ask/greeks), coverage source, not fills.")
     return 0 if code == 200 else 1
 
 

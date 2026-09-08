@@ -1,15 +1,15 @@
 """iVolatility analytics loader: the banked IVX / HV series → engine series.
 
-reference/ivol/ivx/ticker={T}/year={Y}.parquet — per-session rows with a
+reference/ivol/ivx/ticker={T}/year={Y}.parquet holds per-session rows with a
 per-tenor IV index grid; we read the 30d IV Mean (the canonical "IVX").
-reference/ivol/hv/... — realized-vol tenors; we read the 30d HV.
+reference/ivol/hv/... holds realized-vol tenors; we read the 30d HV.
 Both series run 2005 → now on SPY/QQQ/IWM (22 year-files each) and store
-DECIMALS (0.2255 = 22.55% — verified against the lake, 2026-07-05).
+DECIMALS (0.2255 = 22.55%, verified against the lake, 2026-07-05).
 
 These power the spec-v2 market-condition filters (ivx_rank_1y,
 ivx_level_30d, hv_iv_spread_30d): the depth the chain-derived
 iv_percentile_1y can never have on QQQ/IWM. Missing series are honest
-absences — the indicators evaluate False, never a guess.
+absences: the indicators evaluate False, never a guess.
 """
 
 from __future__ import annotations
@@ -68,14 +68,14 @@ def load_hv_30d(s3: Any, ticker: str) -> dict[date, float]:
 
 
 # ── IVS surfaces (F0, ENGINE-V4 data spine) ─────────────────────────────────
-# reference/ivol/ivs/ticker={T}/date={D}/surface.parquet — one fitted vol
+# reference/ivol/ivs/ticker={T}/date={D}/surface.parquet holds one fitted vol
 # surface per session (2007+ · ~4,905 sessions/ticker · period × strike ×
 # call/put grid, IV and delta as decimals). PIT-bounded here so the F4
 # skew/term-structure phase inherits the contract; nothing consumes it yet.
 
 _IVS_NUMERIC = ["period", "strike", "IV", "delta"]
 _IVS_CACHE: OrderedDict[str, pd.DataFrame] = OrderedDict()
-_IVS_CACHE_MAX = 16  # bounded — post-OOM rule
+_IVS_CACHE_MAX = 16  # bounded (post-OOM rule)
 
 
 def load_ivs_surface(
@@ -83,10 +83,10 @@ def load_ivs_surface(
 ) -> pd.DataFrame | None:
     """The fitted vol surface observed on `session`, or None if not banked.
 
-    Raises LookaheadError when session lies beyond as_of (guardrail #2 —
+    Raises LookaheadError when session lies beyond as_of (guardrail #2:
     a surface is a same-day observation; reading tomorrow's fit is lookahead).
     A surface is an END-OF-DAY fit, so at an intra-session moment the as_of
-    session's own surface does not exist yet — honest None (docs/HONESTY.md).
+    session's own surface does not exist yet: honest None (docs/HONESTY.md).
     """
     bound, moment = as_of_parts(as_of)
     if session > bound:
@@ -115,6 +115,6 @@ def load_ivs_surface(
 
 
 def ivs_sessions(s3: Any, ticker: str) -> list[str]:
-    """Sessions with a banked surface (coverage/ledger use — lake listing,
+    """Sessions with a banked surface (coverage/ledger use: lake listing,
     never called from an engine hot path)."""
     return r2.list_date_prefixes(s3, f"reference/ivol/ivs/ticker={ticker}/")

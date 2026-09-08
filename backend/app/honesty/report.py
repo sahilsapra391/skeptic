@@ -1,4 +1,4 @@
-"""HonestyReport — the single output of the gauntlet (TECH-SPEC §6) and
+"""HonestyReport: the single output of the gauntlet (TECH-SPEC §6) and
 the ONLY input the verdict writer ever sees (guardrail #4)."""
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ class WalkForwardFold(BaseModel):
     end: str
     ret: float
     trades: int
-    # FX.4 (owner decision: disclosure lives in the RUN, not only docs) —
-    # the share of this fold's sessions that ran the MINUTE grid. A fold
+    # FX.4 (owner decision: disclosure lives in the RUN, not only docs).
+    # The share of this fold's sessions that ran the MINUTE grid. A fold
     # whose out-performance coincides with a high minute share must be
     # readable as resolution-flavored, never silently as regime robustness.
     # None on runs without a resolution mix (bit-identical off finest).
@@ -60,7 +60,7 @@ class MonteCarlo(BaseModel):
     max_drawdown_p95: float | None
     p_loss: float | None  # fraction of paths ending below initial capital
     # fraction of paths ABSORBED at $0 (owner 2026-07-15): a reshuffled path
-    # that crosses zero ends there — you can't keep trading a dead account.
+    # that crosses zero ends there (you can't keep trading a dead account).
     # None on stored pre-absorption reports; 0.0 when no path crossed.
     p_ruin: float | None = None
     # percentile equity paths for the fan chart (downsampled)
@@ -90,11 +90,11 @@ class Sensitivity(BaseModel):
     window_note: str | None = None
     # F8: which entry conditions were NOT swept and why (sign tests /
     # cost cap), and which swept an absolute family-scale grid instead
-    # of ±20% — surfaced so absence or a reshaped grid is never misread
+    # of ±20%, surfaced so absence or a reshaped grid is never misread
     # as an oversight.
     conditions_note: str | None = None
     # Small strike-selection deltas sweep absolute 0.025Δ steps instead
-    # of ±20% (stages._DELTA_STEP_FLOOR — a ±20% cell often cannot move
+    # of ±20% (stages._DELTA_STEP_FLOOR: a ±20% cell often cannot move
     # one strike on a discrete chain). Disclosed like conditions_note;
     # None on multiplicative sweeps and on runs saved before the floor.
     delta_note: str | None = None
@@ -119,7 +119,7 @@ class RegimeSample(BaseModel):
     regimes_present: int  # buckets holding ≥ 10% of days
     capped: bool
     cap_reason: str | None
-    # the evidence bar this run was scored at — a user setting since
+    # the evidence bar this run was scored at, a user setting since
     # 2026-07-14 (floor 1, standard 15). Stored so a read-time re-grade
     # knows the original bar; defaulted so pre-setting dumps still parse.
     min_trades: int = 15
@@ -143,13 +143,13 @@ class Coverage(BaseModel):
     materially_short: bool
     reason: str | None
     # the run halted at ruin (owner 2026-07-15): the denominator above is
-    # the requested window UP TO THE HALT — the shortfall past it is the
+    # the requested window UP TO THE HALT. The shortfall past it is the
     # account dying, never a data gap (materially_short must not fire on it)
     halted_at_ruin: bool = False
 
 
 class LiquidityProfile(BaseModel):
-    """How real this run's fills were (D1b). Reporting only in D1 — the
+    """How real this run's fills were (D1b). Reporting only in D1. The
     profile discloses, it does not cap trust. Every number is counted at
     fill time by the engine; unknown liquidity (missing OI) is disclosed,
     never punished."""
@@ -166,13 +166,13 @@ class LiquidityProfile(BaseModel):
     stressed_share: float | None  # gated but filled at full adverse (stress mode)
     unknown_liquidity_share: float | None  # OI unknown at fill time
     skipped_illiquid: int  # entry candidates refused by the gates
-    # F5: fill quantity vs displayed NBBO depth on the traded side —
+    # F5: fill quantity vs displayed NBBO depth on the traded side.
     # REPORTED, never scored (disclosure-first; a price-impact model must
     # be earned by the D3d calibration loop). depth_known_share is of ALL
     # option-leg fills; beyond_depth_share is of the DEPTH-KNOWN ones.
     depth_known_share: float | None
     beyond_depth_share: float | None
-    # raw counts as NUMERIC fields so the grounding harvester admits them —
+    # raw counts as NUMERIC fields so the grounding harvester admits them:
     # the note says "15 of 228" and a verdict/Q&A echoing those numbers must
     # never be flagged ungrounded (review finding F5 #1; the WF-fold class)
     fills_depth_known: int
@@ -182,9 +182,9 @@ class LiquidityProfile(BaseModel):
 
 
 class PairConfidence(BaseModel):
-    """One source-pair's agreement over THIS run's window — REPORTED,
+    """One source-pair's agreement over THIS run's window. REPORTED,
     never scored (owner decision 2026-07-08: rates travel with their
-    audited-share denominators; no blended score — weights across
+    audited-share denominators; no blended score: weights across
     incommensurable pairs would be an invented convention wearing a
     number; trust consequences wait until accumulated history earns
     thresholds, the D3d staging). All counts are numeric fields so the
@@ -214,7 +214,7 @@ class DataConfidence(BaseModel):
 
 class Concentration(BaseModel):
     """Is the P&L a distribution or a handful of days? (D1d). Reported flag
-    + verdict reason only — promoting it to a trust cap is a future reviewed
+    + verdict reason only. Promoting it to a trust cap is a future reviewed
     threshold change, not this model's job."""
 
     model_config = ConfigDict(extra="forbid")
@@ -251,15 +251,15 @@ class ResolutionBucket(BaseModel):
 class ResolutionSplit(BaseModel):
     """Mixed-resolution defense (FX.4, masterplan owner decision 4a): the
     headline recomputed on the 5-MIN-ONLY sub-window from recorded returns
-    and fills — cheap, no re-run. A SIGN FLIP (full-run edge positive,
+    and fills (cheap, no re-run). A SIGN FLIP (full-run edge positive,
     5-min-only negative) is a DATA-VALIDITY finding, not a robustness
     signal: the edge appears only on the recent minute slice and reverses
-    on the resolution the deep history was tested at — a granularity
+    on the resolution the deep history was tested at, a granularity
     mirage until proven otherwise → hard cap (insufficient_evidence),
     refused not weakly blessed. The cap only ARMS on real evidence
     (judged=True: both subsets ≥ 15 sessions AND the 5-min subset ≥
     MIN_TRADES closed trades); below the floors the run carries a
-    "too thin to cross-check" caveat instead — disclosed, never a
+    "too thin to cross-check" caveat instead. Disclosed, never a
     noise-cap and never a silent pass."""
 
     model_config = ConfigDict(extra="forbid")
@@ -280,8 +280,8 @@ class ResolutionSplit(BaseModel):
 
 class SessionSplit(BaseModel):
     """Where in the session the entries earn (D2d): open (09:30–10:30),
-    mid (10:30–15:00), close (15:00–16:15) ET. Reported, never scored —
-    a strategy whose whole edge is one hour of the day should have to
+    mid (10:30–15:00), close (15:00–16:15) ET. Reported, never scored.
+    A strategy whose whole edge is one hour of the day should have to
     say so out loud."""
 
     model_config = ConfigDict(extra="forbid")
@@ -301,7 +301,7 @@ class UnlockNeed(BaseModel):
 
 
 class UnlockConditions(BaseModel):
-    """What a REFUSED verdict is waiting for (D3a) — the same numbers the
+    """What a REFUSED verdict is waiting for (D3a), the same numbers the
     refusal text shows, stored structured so the nightly auto-unlock scan
     can compare them against the coverage ledger instead of parsing prose.
     Only the binding constraints are present."""
@@ -315,7 +315,7 @@ class UnlockConditions(BaseModel):
     coverage: UnlockNeed | None = None  # chain-coverage ratio of the window
     trades: UnlockNeed | None = None  # closed trades vs MIN_TRADES
     regimes: UnlockNeed | None = None  # volatility regimes present vs 2
-    # coverage state when refused — the delta baseline for "N new sessions"
+    # coverage state when refused, the delta baseline for "N new sessions"
     sessions_at_refusal: int = 0
 
 
@@ -339,7 +339,7 @@ class LadderTier(BaseModel):
 
 class LadderRung(BaseModel):
     """Marginal analysis: the P&L attributable to fills added AT this rung
-    depth (not just baskets that reached it) — answers 'are the deep adds
+    depth (not just baskets that reached it). Answers 'are the deep adds
     themselves net negative', the question that kills or saves a martingale."""
 
     model_config = ConfigDict(extra="forbid")
@@ -352,7 +352,7 @@ class LadderRung(BaseModel):
     marginal_pl: float  # P&L attributable to fills at this depth (ties out to total)
     net_negative: bool
     # baskets where this rung hit the buying-power gate (owner amendment
-    # 2026-07-15): a deep add the account couldn't fund is UNAFFORDABLE —
+    # 2026-07-15): a deep add the account couldn't fund is UNAFFORDABLE,
     # a distinct fact from unprofitable. Buying power is reality's cap on
     # a ladder; max_total_contracts is only the user's.
     unaffordable_baskets: int = 0
@@ -366,7 +366,7 @@ class LadderDepth(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     baskets: int  # closed baskets attributed
-    realized_total: float  # sum of closed basket P&L — the tie-out anchor
+    realized_total: float  # sum of closed basket P&L, the tie-out anchor
     tiers: list[LadderTier]  # ordered by depth ascending
     rungs: list[LadderRung]  # ordered by rung_index
     deepest_net_negative: bool  # are the deepest-reached adds net negative?
@@ -396,9 +396,9 @@ class ScaleInHonesty(BaseModel):
     ruin_flagged: bool  # fat ruin tail → HARD cap
 
     # deep-rung dependency: recompute realized P&L WITHOUT the deepest rung's
-    # fills (from the recorded marginals — cheap, no re-run). If a positive
+    # fills (from the recorded marginals: cheap, no re-run). If a positive
     # edge flips negative without the deepest, riskiest adds, the edge DEPENDS
-    # on them — a martingale sign-flip → HARD cap.
+    # on them, a martingale sign-flip → HARD cap.
     deepest_threshold: float
     realized_total: float
     total_without_deepest: float
@@ -406,7 +406,7 @@ class ScaleInHonesty(BaseModel):
     deep_rung_flagged: bool  # deepest rung materially moves the total (reported)
 
     # basket-size concentration: one deep-basket day dominating P&L is the
-    # martingale tell (reported, never a cap on its own — D1d posture).
+    # martingale tell (reported, never a cap on its own: D1d posture).
     top_basket_share: float | None  # share of gross |basket P&L| from the top basket
     concentration_flagged: bool
 
@@ -417,7 +417,7 @@ class ScaleInHonesty(BaseModel):
 class RuinDisclosure(BaseModel):
     """The account was wiped out and the simulation halted (owner decision
     2026-07-15, docs/HONESTY.md · buying power). The halt fires at exactly
-    $0, so `ruin_date` is the LATEST possible ruin date — a real margin
+    $0, so `ruin_date` is the LATEST possible ruin date: a real margin
     account is liquidated before zero; maintenance thresholds are
     broker-specific and deliberately not modeled. The verdict caveat says
     so in both registers."""
@@ -433,7 +433,7 @@ class FundingProfile(BaseModel):
     """How much of the described strategy the account could actually fund
     (owner decision 2026-07-15). Entries and scale-in rungs that hit the
     buying-power gate are counted here; when the skipped share is material
-    the verdict must say so — a strategy that only 'works' if you could
+    the verdict must say so. A strategy that only 'works' if you could
     fund 3× your account isn't working for the user running it."""
 
     model_config = ConfigDict(extra="forbid")

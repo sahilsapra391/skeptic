@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-check_ivol_ratelimit_scope.py — is the iVol trial's ~90/min throttle PER-KEY or
+check_ivol_ratelimit_scope.py: is the iVol trial's ~90/min throttle PER-KEY or
 PER-ACCOUNT?  Decides whether extra API keys multiply capture throughput.
 
 Method: burst key[0] alone (baseline), then burst ALL keys CONCURRENTLY. If the
@@ -103,14 +103,14 @@ def main() -> int:
     nk = len(keys)
     print(f"\n=== verdict (combined/baseline = {round(ratio,2)}×, ideal {nk}×) ===")
     if ratio >= 0.8 * nk:
-        print(f"PER-KEY — near-linear scaling. Keys are independent buckets.")
+        print(f"PER-KEY: near-linear scaling. Keys are independent buckets.")
         print(f" -> use all {nk} keys → ~{nk}× capture. Split the work across them.")
     elif ratio <= 1.25:
-        print("PER-ACCOUNT — concurrency did NOT raise throughput (one shared bucket).")
+        print("PER-ACCOUNT: concurrency did NOT raise throughput (one shared bucket).")
         print(" -> extra keys give no speedup. Keep one job; use a spare key as rotation.")
     else:
         eff = max(2, int(round(ratio)))
-        print(f"SHARED-WITH-HEADROOM — ~{round(ratio,1)}× gain, plateaus ≈ {combined}/min.")
+        print(f"SHARED-WITH-HEADROOM: ~{round(ratio,1)}× gain, plateaus ≈ {combined}/min.")
         print(f" -> ~{eff} keys saturate it; more won't help.")
     return 0
 

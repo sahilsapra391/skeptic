@@ -1,8 +1,8 @@
-"""Fixture: covered call — stock rallies through the strike, called away.
+"""Fixture: covered call, stock rallies through the strike, called away.
 
   2025-01-06 (Mon)  entry. Spot closes 100.00. Capital 12,000.
     BUY 100 shares @ close 100.00 = −10,000.00 (stock legs: reference
-      print, no added spread/commission — documented approximation)
+      print, no added spread/commission: documented approximation)
     SELL 1 call K=105, exp 2025-01-17: bid 1.50 / ask 1.60
       fill = 1.55 − 0.5 × (1.55 − 1.50) = 1.525 → +152.50 − 0.65 = +151.85
     cash after entry: 12,000 − 10,000 + 151.85 = 2,151.85

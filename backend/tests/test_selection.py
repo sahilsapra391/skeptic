@@ -1,5 +1,5 @@
 """Leg selection: protective wings must land strictly beyond the reference
-strike — never ON it, never on the wrong side — and within a width tolerance
+strike (never ON it, never on the wrong side) and within a width tolerance
 (deviation ≤ the requested width) so a coarse grid produces an honest skip,
 not a silently wider spread. Also: the 50Δ strike IS the ATM strike, so it
 stays selectable on sessions whose source carries no greeks."""
@@ -66,7 +66,7 @@ def test_call_wing_lands_above_reference() -> None:
 
 
 def test_coarse_grid_is_an_honest_skip_not_a_wider_spread() -> None:
-    # $25 spacing, $5 width: nearest-below sits $20 off target — filling it
+    # $25 spacing, $5 width: nearest-below sits $20 off target. Filling it
     # would trade 5× the specified max loss, so the entry must skip
     chain = _chain([450.0, 475.0, 500.0])
     resolved, reason = select_legs(chain, EXP, _spread_legs(5.0), spot=500.0)
@@ -75,7 +75,7 @@ def test_coarse_grid_is_an_honest_skip_not_a_wider_spread() -> None:
 
 
 def test_moderate_grid_within_tolerance_fills() -> None:
-    # $5 spacing, $4 width: ref-5 deviates $1 ≤ width — acceptable fill
+    # $5 spacing, $4 width: ref-5 deviates $1 ≤ width, an acceptable fill
     chain = _chain([490.0, 495.0, 500.0])
     resolved, reason = select_legs(chain, EXP, _spread_legs(4.0), spot=500.0)
     assert reason is None and resolved is not None
@@ -108,7 +108,7 @@ def test_iron_condor_wings_straddle_both_shorts() -> None:
 
 
 def test_50_delta_falls_back_to_spot_when_chain_has_no_greeks() -> None:
-    # ATM ≡ 50Δ: yahoo-sourced sessions store delta=None on every row — the
+    # ATM ≡ 50Δ: yahoo-sourced sessions store delta=None on every row, so the
     # definitional nearest-to-spot pick keeps those sessions tradable
     chain = _chain([495.0, 500.0, 505.0], with_delta=False)
     legs = [_leg("put", "short", {"method": "delta", "value": 0.5})]
@@ -136,7 +136,7 @@ AS_OF = date(2026, 6, 15)  # a Monday
 
 
 def _exp_chain(dtes: list[int]) -> dict[ContractKey, Quote]:
-    """select_expiration reads only the keys — one dummy contract per expiry."""
+    """select_expiration reads only the keys, so one dummy contract per expiry."""
     return {
         ContractKey(expiration=AS_OF + timedelta(days=d), right="put", strike=100.0):
             Quote(bid=1.0, ask=1.2, delta=-0.30)
@@ -155,7 +155,7 @@ def test_expiration_nearest_to_target_within_bounds() -> None:
 
 
 def test_expiration_tie_breaks_to_the_earlier_expiry() -> None:
-    # 40 and 50 DTE sit 5 days either side of target 45 — earlier wins
+    # 40 and 50 DTE sit 5 days either side of target 45, earlier wins
     chain = _exp_chain([40, 50])
     picked = select_expiration(chain, AS_OF, _sel(45, 30, 60))
     assert picked == AS_OF + timedelta(days=40)
@@ -163,7 +163,7 @@ def test_expiration_tie_breaks_to_the_earlier_expiry() -> None:
 
 def test_bounds_exclude_even_the_nearest_expiry() -> None:
     # the audit's dolthub SPY 2021-06-15 shape: 13/27/66 DTE. Target 45
-    # within [30, 60] finds nothing — 27 and 66 are both out of bounds and
+    # within [30, 60] finds nothing: 27 and 66 are both out of bounds and
     # must NOT be bridged to, however near: the user's window is the law.
     chain = _exp_chain([13, 27, 66])
     assert select_expiration(chain, AS_OF, _sel(45, 30, 60)) is None
@@ -171,7 +171,7 @@ def test_bounds_exclude_even_the_nearest_expiry() -> None:
 
 def test_sparse_monthlies_bridge_inside_the_window_only() -> None:
     # the audit's QQQ 2010-06-15 shape: 4/15/32/67/95 DTE. Target 45 within
-    # [30, 60] has exactly one candidate — effective 32, a disclosed
+    # [30, 60] has exactly one candidate: effective 32, a disclosed
     # deviation bounded by the user's own min/max
     chain = _exp_chain([4, 15, 32, 67, 95])
     picked = select_expiration(chain, AS_OF, _sel(45, 30, 60))

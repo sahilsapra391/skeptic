@@ -1,15 +1,15 @@
-"""List every account and its key stats — an owner diagnostic for the launch
+"""List every account and its key stats, an owner diagnostic for the launch
 metrics ("why does total accounts say N?"). READ-ONLY: it writes nothing.
 
 Shows which DB it's reading (so you know it's the right one), then every
 account with when it was created, whether it's verified, its credit balance,
-and how many runs it owns — enough to tell your real signup from test rows.
+and how many runs it owns. Enough to tell your real signup from test rows.
 
     cd backend
     PYTHONPATH=. uv run python scripts/list_accounts.py
 
 Point it at a specific database by exporting DATABASE_URL first (e.g. your
-Neon/Railway URL) — otherwise it uses the same env the app loads.
+Neon/Railway URL). Otherwise it uses the same env the app loads.
 """
 
 from __future__ import annotations

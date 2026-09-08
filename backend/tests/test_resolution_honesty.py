@@ -1,16 +1,16 @@
-"""FX.4 — mixed-resolution gauntlet honesty, hand-computed.
+"""FX.4: mixed-resolution gauntlet honesty, hand-computed.
 
 The resolution_split stage recomputes the headline on the 5-MIN-ONLY
 sub-window from recorded returns and fills (no re-run). Owner decisions
 pinned here:
   * a SIGN FLIP (full-run edge positive, 5-min-only negative) is a
     data-VALIDITY finding → hard cap to insufficient_evidence, refused not
-    weakly blessed (contrast the OOS flip — a ROBUSTNESS signal measured
-    at equal resolution — which earns a low level);
+    weakly blessed (contrast the OOS flip, a ROBUSTNESS signal measured
+    at equal resolution, which earns a low level);
   * the cap only ARMS at real-evidence floors (both subsets ≥ 15 sessions
-    AND the 5-min subset ≥ MIN_TRADES closed trades) — below them the run
+    AND the 5-min subset ≥ MIN_TRADES closed trades). Below them the run
     carries a "too thin to cross-check" caveat, disclosed not judged;
-  * only the OPTIMISTIC direction caps — a negative full run blesses
+  * only the OPTIMISTIC direction caps, because a negative full run blesses
     nothing to protect;
   * walk-forward folds disclose their minute-session share IN the run;
   * the verdict caveats carry the grounded mix disclosure (quant+retail).
@@ -110,7 +110,7 @@ class TestSplitBuckets:
         assert split.sign_flip and split.caps_trust
 
     def test_floors_disarm_the_cap(self) -> None:
-        # same mirage but only 14 closed trades on the 5-min side — below
+        # same mirage but only 14 closed trades on the 5-min side. Below
         # MIN_TRADES the sub-window is noise: disclosed, never a cap
         split = resolution_split(
             _result(five_step=-10.0, minute_step=80.0, five_trades=14))
@@ -120,7 +120,7 @@ class TestSplitBuckets:
 
     def test_only_the_optimistic_direction_caps(self) -> None:
         # full-run edge NEGATIVE with a positive 5-min subset blesses
-        # nothing — no cap (the verdict is already negative)
+        # nothing, so no cap (the verdict is already negative)
         split = resolution_split(_result(five_step=10.0, minute_step=-80.0))
         assert split.judged
         assert (split.full_sharpe or 0) < 0
@@ -175,7 +175,7 @@ class TestTrustCap:
 class TestRefusalHeadline:
     def test_resolution_cap_names_the_artifact_not_the_sample(self) -> None:
         # review MAJOR pinned: a resolution-cap-only refusal must never
-        # print "too few trades" on a thick sample — both voices name the
+        # print "too few trades" on a thick sample. Both voices name the
         # granularity artifact
         from app.honesty.report import Trust
         from app.honesty.verdict import retail_template_verdict
@@ -291,7 +291,7 @@ class TestReceiptUpgrade:
 
     def test_production_shape_daily_parent_never_fires(self) -> None:
         # review BLOCKER pinned: a DAILY parent's stats carry no
-        # resolutionMix; the replay always carries a five_min mix — the
+        # resolutionMix; the replay always carries a five_min mix, so the
         # note must stay silent (no false "upgrade" on ordinary receipts)
         from app.api.replay import build_receipt
 

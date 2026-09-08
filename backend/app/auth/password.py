@@ -2,13 +2,13 @@
 no third party in the login path).
 
 Security posture (build plan, non-negotiable):
-- Plaintext passwords NEVER persist — not in the DB, not in logs, not in
+- Plaintext passwords NEVER persist: not in the DB, not in logs, not in
   error traces. They exist only as function arguments here, hashed with
   argon2id (per-user salt is argon2's own) before anything touches storage.
 - Session and email tokens are opaque random values; the DB stores only
   SHA-256 digests, so a leaked table replays nothing.
 - Verification is constant-time via passlib; login failures are uniform
-  ("wrong email or password") — no account-existence oracle.
+  ("wrong email or password"), so there is no account-existence oracle.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ VERIFY_TTL = timedelta(days=3)
 MIN_PASSWORD_LEN = 10
 
 # argon2id with passlib defaults (m=64MiB, t=3, p=4 as of argon2-cffi's
-# RFC-9106 low-memory profile) — tuned fine for the 8GB box given the
+# RFC-9106 low-memory profile), tuned fine for the 8GB box given the
 # per-IP+account login rate limits
 _pwd = CryptContext(schemes=["argon2"], deprecated="auto")
 
@@ -42,7 +42,7 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return bool(_pwd.verify(password, password_hash))
-    except Exception:  # malformed hash (e.g. a managed-auth-era NULL) — refuse
+    except Exception:  # malformed hash (e.g. a managed-auth-era NULL), refuse
         return False
 
 
@@ -69,7 +69,7 @@ def create_session(user_id: str) -> str:
 
 
 def resolve_session(token: str) -> db.User | None:
-    """The live user behind a session token — None for unknown, expired,
+    """The live user behind a session token. None for unknown, expired,
     or revoked sessions (fail closed, no distinction leaked)."""
     if not token:
         return None
@@ -140,8 +140,8 @@ def consume_verify_token(token: str) -> db.User | None:
 
 
 def create_account(email: str, password: str) -> db.User | None:
-    """User row + argon2id hash + the one-time signup grant, atomically —
-    the same invariants the managed-auth path had: the account cannot
+    """User row + argon2id hash + the one-time signup grant, atomically,
+    with the same invariants the managed-auth path had: the account cannot
     exist without its grant, and the ledger's partial unique index makes
     a double grant impossible. None = email already registered."""
     from sqlalchemy.exc import IntegrityError
@@ -160,7 +160,7 @@ def create_account(email: str, password: str) -> db.User | None:
             s.flush()
             s.add(db.CreditLedger(user_id=user.id, delta=grant, reason=GRANT_REASON))
             s.commit()
-            log.info("new account %s — signup grant %d", user.id, grant)
+            log.info("new account %s, signup grant %d", user.id, grant)
             return user
         except IntegrityError:
             s.rollback()

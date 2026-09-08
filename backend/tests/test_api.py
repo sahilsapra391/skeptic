@@ -23,18 +23,18 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
         monkeypatch.delenv(var, raising=False)
     # importing app.main starts a coverage-warmer thread whenever local R2
     # creds exist (backend/.env / collector/.env), and a warmed
-    # coverage._CACHE answers /api/data/coverage without touching env vars —
-    # the 503 refusal tested below would flake to 200 whenever slower
+    # coverage._CACHE answers /api/data/coverage without touching env vars,
+    # so the 503 refusal tested below would flake to 200 whenever slower
     # modules run first. Every _CACHE["snap"] write happens under
     # _build_lock (the foreground build holds it; the refresh worker
     # inherits it across its spawn), so clearing while holding the lock is
     # a complete barrier: an in-flight build lands before the clear, and
-    # one starting after dies at r2_client() — the vars are already
-    # deleted — before it can write. Bounded acquire: a wedged or leaked
+    # one starting after dies at r2_client() (the vars are already
+    # deleted) before it can write. Bounded acquire: a wedged or leaked
     # lock must fail THIS test loudly, never hang the suite. setitem
     # restores the warmed snapshot on teardown, before env is restored.
     if not coverage._build_lock.acquire(timeout=120):
-        pytest.fail("coverage._build_lock held >120s — wedged or leaked build")
+        pytest.fail("coverage._build_lock held >120s, wedged or leaked build")
     try:
         monkeypatch.setitem(coverage._CACHE, "snap", (0.0, None))
     finally:
@@ -63,7 +63,7 @@ def test_underlying_refuses_without_r2(client: TestClient) -> None:
 
 def test_unbuilt_routes_are_explicit_501(client: TestClient) -> None:
     # parser is M4; standalone sweeps await the compare UI. Grounded ask is
-    # LIVE now — an unknown run is a plain 404, never an invented answer.
+    # LIVE now. An unknown run is a plain 404, never an invented answer.
     assert client.post("/api/parse", json={"text": "sell a put"}).status_code == 501
     assert client.post("/api/runs/abc/ask", json={"question": "?"}).status_code == 404
     assert client.post("/api/sweep", json={}).status_code == 501
@@ -93,7 +93,7 @@ def test_parse_upstream_failure_is_503(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An upstream parser failure surfaces as a retryable 503 with the honest
-    detail — never as a fake clarifying question inside a 200."""
+    detail, never as a fake clarifying question inside a 200."""
     import requests
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")

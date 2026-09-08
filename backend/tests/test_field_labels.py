@@ -2,7 +2,7 @@
 
 A table like this fails in two directions and only one of them is obvious.
 
-The obvious one: a path occurs that has no label. Handled by design — the caller
+The obvious one: a path occurs that has no label. Handled by design, the caller
 renders the raw path and the gap is counted, so nothing breaks and the hole
 reports itself.
 
@@ -71,7 +71,7 @@ class TestTheTableCannotRotSilently:
     def test_every_observed_path_has_a_label(self) -> None:
         """The visible failure, kept at zero on purpose. Unmapped is SAFE (the
         raw path renders and the gap is counted), so this is a completeness bar
-        rather than a correctness one — if a new field appears and this fails,
+        rather than a correctness one. If a new field appears and this fails,
         adding the label is the fix, not relaxing the test."""
         missing = OBSERVED_PATHS - set(FIELD_LABELS)
         assert not missing, f"paths with no label: {sorted(missing)}"

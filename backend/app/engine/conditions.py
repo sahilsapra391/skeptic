@@ -18,13 +18,13 @@ from app.models.spec import Condition, Indicator, Operator, Timeframe
 
 def _trailing_rank(history: list[float], min_obs: int) -> float | None:
     """Percentile (0-100) of the latest observation within its trailing
-    252-observation window — ONE implementation for every *_rank/percentile
+    252-observation window. ONE implementation for every *_rank/percentile
     indicator (review finding F1 #3: four inline copies WILL drift). None
-    below min_obs trailing observations — unevaluable, never a thin-window
+    below min_obs trailing observations: unevaluable, never a thin-window
     guess (the D1 floor; each indicator declares its own min_obs), and None
     when any window observation is non-finite: a NaN CURRENT observation
     counts nothing ("v <= nan" is False for every v) and would read as rank
-    0.0 — every "rank < X" passes on the poisoned day, a fabricated signal —
+    0.0 (every "rank < X" passes on the poisoned day, a fabricated signal),
     while a mid-window NaN silently deflates every rank (out of the count,
     still in the denominator). Unevaluable beats a fabricated signal."""
     if len(history) < min_obs:
@@ -38,17 +38,17 @@ def _trailing_rank(history: list[float], min_obs: int) -> float | None:
 
 def _trailing_zscore(history: list[float], min_obs: int) -> float | None:
     """Standardized latest observation within its trailing 252-observation
-    window: (x − mean) / population σ — the σ-unit sibling of
+    window: (x − mean) / population σ, the σ-unit sibling of
     _trailing_rank, ONE implementation for the same reason. None below
     min_obs trailing observations (the D1 floor), None on a flat window
     (a dead feed forward-filling one value has no σ to standardize by),
-    and None when any observation is non-finite — unevaluable beats a
+    and None when any observation is non-finite: unevaluable beats a
     fabricated signal."""
     if len(history) < min_obs:
         return None
     window = history[-252:]
     if min(window) == max(window):
-        # exactly flat — checked on the values, NOT via var <= 0: float
+        # exactly flat, checked on the values, NOT via var <= 0: float
         # residue in sum(window)/n leaves var > 0 for most flat decimals
         # and the residual z comes out as exactly ±1.0 (review finding,
         # reproduced: [0.229]*144 → 1.0). NaNs make this compare False
@@ -67,7 +67,7 @@ def _finite(value: float | None) -> float | None:
     a non-finite read becomes None. NaN would fall through _compare as a
     silent False on the scalar operators, and ±inf FABRICATES a threshold
     cross ("IVX above 25" is True at +inf). A poisoned row is unevaluable,
-    never a signal — the same refusal _trailing_rank applies window-wide."""
+    never a signal, the same refusal _trailing_rank applies window-wide."""
     if value is None or not math.isfinite(value):
         return None
     return value
@@ -105,7 +105,7 @@ def _series_pair(values: list[float], op: Operator, threshold: float) -> bool:
 def _tail_values(series: pd.Series, n: int = 2) -> list[float]:
     # non-finite, not just NaN: an inf indicator value surviving into the
     # pair fabricates every GT/crosses_above signal (warmup NaNs and
-    # poisoned infs drop the same way — the pair is the last real values)
+    # poisoned infs drop the same way, and the pair is the last real values)
     vals = [float(v) for v in series.tail(n).tolist() if math.isfinite(float(v))]
     return vals
 
@@ -113,7 +113,7 @@ def _tail_values(series: pd.Series, n: int = 2) -> list[float]:
 # Fixed indicator lookback at the 5-min timeframe: the schema caps period at
 # 400 bars; 1,200 bars (~3 weeks of sessions) triple-covers it. A bounded
 # window is the standard charting convention AND keeps a full-history run
-# O(n) — recomputing Wilder smoothing over years of bars per decision was
+# O(n). Recomputing Wilder smoothing over years of bars per decision was
 # measured at 7.5× the engine's cost. Deterministic: same spec + data =
 # same values, always.
 INTRADAY_LOOKBACK_BARS = 1_200
@@ -122,23 +122,23 @@ INTRADAY_LOOKBACK_BARS = 1_200
 def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
     """5-minute timeframe (D2c): price-series indicators over the run's
     rolling 5-min lasts (bounded INTRADAY_LOOKBACK_BARS); VWAP is
-    session-anchored. Warmup or an empty bar history evaluates False —
+    session-anchored. Warmup or an empty bar history evaluates False,
     never a thin-window guess.
 
-    FX.3 (owner decision 2026-07-07, entries AND exits — one semantic):
+    FX.3 (owner decision 2026-07-07, entries AND exits, one semantic):
     the PRICE side of price-vs-indicator conditions reads the CURRENT
     bar's real underlying print, so a minute-grid bar can observe a touch
     between 5-min stamps. The indicator SERIES stays stamp-sampled (FX.1
-    parity — the live price refines WHEN a touch is observable, never the
+    parity: the live price refines WHEN a touch is observable, never the
     indicator's defined cadence, so minute jitter cannot manufacture
     RSI-type signals that don't exist at the indicator's resolution). On
-    a 5-min grid the current print IS the sampled last — bit-identical by
+    a 5-min grid the current print IS the sampled last, bit-identical by
     construction (print-less bars fall back to the sampled last)."""
     closes = view.intraday_closes_upto()[-INTRADAY_LOOKBACK_BARS:]
     if not closes:
         return False
     # the live print drives evaluation ONLY at off-stamp bars; at a stamp
-    # (or a print-less bar) the sampled last is the price — exactly the
+    # (or a print-less bar) the sampled last is the price, exactly the
     # pre-FX.3 semantics, bit-identical off minute grids
     live = view.close()
     if not view.is_indicator_stamp and live is not None:
@@ -150,7 +150,7 @@ def _intraday_condition(view: MarketViewLike, cond: Condition) -> bool:
     if cond.indicator is Indicator.PRICE_VS_VWAP_PCT:
         # _finite, not just <= 0: an inf vwap launders into a FINITE
         # pct of exactly -100.0 ("below VWAP" fabricated); an inf px
-        # makes pct +inf — the second gate refuses that side
+        # makes pct +inf, and the second gate refuses that side
         vwap = _finite(view.intraday_vwap())
         if vwap is None or vwap <= 0:
             return False
@@ -194,10 +194,10 @@ def _live_price_tail(
 ) -> list[float]:
     """The evaluation pair for price-vs-MA conditions with the FX.3 live
     price side. At a STAMP bar (or a print-less bar) the pair is exactly
-    the pre-FX.3 sampled tail — bit-identical everywhere off minute grids.
+    the pre-FX.3 sampled tail, bit-identical everywhere off minute grids.
     At an off-stamp bar with a real print the pair is (latest SAMPLED pct,
     live pct): prev stays the last fully-sampled value so crosses are
-    stamp-anchored — a genuine inter-stamp cross fires, a cross already
+    stamp-anchored: a genuine inter-stamp cross fires, a cross already
     resolved AT the stamp does not re-fire (review finding). An
     unevaluable tail (warmup NaN) keeps the old NaN-dropping behavior."""
     if not off_stamp_live:
@@ -217,7 +217,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     # The close-series family reads the store's memoized full-history
     # series when the view offers one (MarketView/BarView do; test fakes
     # and any other MarketViewLike keep the prefix path below). Same
-    # functions, same numbers — proven cell-by-cell in
+    # functions, same numbers, proven cell-by-cell in
     # tests/test_daily_series_equivalence.py and bounded at the view's own
     # as_of (app/engine/daily_series.py). Duck-typed on purpose: the
     # Protocol stays the strategy surface, not a cache contract.
@@ -225,7 +225,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         pair_of = getattr(view, "daily_series_pair", None)
         if pair_of is not None:
             pair = pair_of(cond)
-            # None = the memo is full (daily_series._MAX_SERIES) — fall
+            # None = the memo is full (daily_series._MAX_SERIES), so fall
             # through and recompute from the prefix, which is exactly the
             # pre-cache behavior. Never "no signal".
             if pair is not None:
@@ -263,7 +263,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.REALIZED_VOL_20D:
         if len(closes) < 22:
             return False
-        # an inf close doesn't just make vol inf — the NEXT return
+        # an inf close doesn't just make vol inf: the NEXT return
         # launders into a finite -1.0 and fabricates a vol spike, so the
         # contributing closes are gated, not the output alone
         if any(math.isinf(float(v)) for v in s.tail(22).tolist()):
@@ -281,7 +281,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             window = series.tail(cond.period) if cond.period else series
             hi = float(window.max())
             if not math.isfinite(hi):
-                # an inf high launders into a FINITE 100% drawdown lie —
+                # an inf high launders into a FINITE 100% drawdown lie, and
                 # unevaluable must surface as NaN, caught below
                 return math.nan
             return (1.0 - float(series.iloc[-1]) / hi) * 100.0
@@ -304,14 +304,14 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
     if ind_name is Indicator.IVX_RANK_1Y:
         # vendor IVX (30d IV Mean) percentile within the trailing 252
         # observations. Owner amendment 3: below 126 trailing observations
-        # the rank is unevaluable that day — False, never a thin-window guess.
+        # the rank is unevaluable that day: False, never a thin-window guess.
         rank = _trailing_rank(view.ivx_30d_history(), min_obs=126)
         if rank is None:
             return False
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.IVX_ZSCORE_1Y:
         # v8 (parity Tier 3): the SAME 30d IVX series as ivx_rank_1y,
-        # standardized instead of ranked — σ units, raw thresholds legal
+        # standardized instead of ranked: σ units, raw thresholds legal
         # ("IV two sigma rich" → > 2). Same 126-observation floor.
         z = _trailing_zscore(view.ivx_30d_history(), min_obs=126)
         if z is None:
@@ -338,7 +338,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(skew, cond.operator, cond.value)
     if ind_name is Indicator.GEX_LEVEL:
-        # F1: net dealer gamma, VENDOR UNITS — vocabulary is sign-only
+        # F1: net dealer gamma, VENDOR UNITS. Vocabulary is sign-only
         # ("dealers long gamma" → > 0); the compare itself is unit-free at
         # threshold 0, and the parser refuses raw-unit thresholds
         gex = _finite(view.gex_level())
@@ -347,7 +347,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
         return _compare(gex, cond.operator, cond.value)
     if ind_name is Indicator.GEX_RANK_1Y:
         # percentile within the trailing 252 observations; below 126
-        # trailing observations the rank is unevaluable that day — False,
+        # trailing observations the rank is unevaluable that day: False,
         # never a thin-window guess (owner amendment, inherits the D1
         # ivx_rank floor; unlocks as the UW window crosses it)
         rank = _trailing_rank(view.gex_history(), min_obs=126)
@@ -355,7 +355,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.DEX_LEVEL:
-        # F1: net dealer delta, vendor units — sign vocabulary only
+        # F1: net dealer delta, vendor units (sign vocabulary only)
         dex = _finite(view.dex_level())
         if dex is None:
             return False
@@ -366,8 +366,8 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.NET_PREMIUM_LEVEL:
-        # F2: session net options premium (call − put), VENDOR DOLLARS —
-        # sign vocabulary ("bullish flow" → > 0); parser refuses raw sums
+        # F2: session net options premium (call − put), VENDOR DOLLARS.
+        # Sign vocabulary ("bullish flow" → > 0); parser refuses raw sums
         v = _finite(view.net_premium_level())
         if v is None:
             return False
@@ -378,7 +378,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.MARKET_TIDE_LEVEL:
-        # F2: MARKET-WIDE cumulative tide's session total — one series for
+        # F2: MARKET-WIDE cumulative tide's session total, one series for
         # all tickers; sign vocabulary ("market risk-on" → > 0)
         v = _finite(view.market_tide_level())
         if v is None:
@@ -390,7 +390,7 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.NOPE_LEVEL:
-        # F2: vendor-computed NOPE at the last session stamp — sign/rank
+        # F2: vendor-computed NOPE at the last session stamp, sign/rank
         # only (owner decision: the vendor's IMPLEMENTATION, not the
         # published concept; sign+rank survive monotone rescaling)
         v = _finite(view.nope_level())
@@ -403,14 +403,14 @@ def evaluate_condition(view: MarketViewLike, cond: Condition) -> bool:
             return False
         return _compare(rank, cond.operator, cond.value)
     if ind_name is Indicator.PUT_CALL_FLOW_RATIO:
-        # F2: Σput/Σcall session volume — dimensionless classic, raw
+        # F2: Σput/Σcall session volume. Dimensionless classic, raw
         # thresholds legal ("ratio above 1" → value 1)
         v = _finite(view.put_call_ratio())
         if v is None:
             return False
         return _compare(v, cond.operator, cond.value)
     if ind_name is Indicator.MAX_PAIN_DISTANCE_PCT:
-        # F3: (front-expiry max pain − close)/close × 100 — unit-free %,
+        # F3: (front-expiry max pain − close)/close × 100, unit-free %,
         # raw thresholds legal; signed (positive = max pain above spot).
         # "within 1% of max pain" = two ANDed conditions (< 1 and > −1)
         v = _finite(view.max_pain_distance_pct())

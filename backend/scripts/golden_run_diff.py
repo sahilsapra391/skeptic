@@ -1,9 +1,9 @@
-"""Golden-run harness — the acceptance gate for result-identical work.
+"""Golden-run harness: the acceptance gate for result-identical work.
 
 Some changes must provably not move a single number: the gauntlet
 speed-ups (sweep dedup, the daily indicator cache) are pure reuse of
 values the engine would have recomputed. "The suite is green" does not
-prove that — the suite asserts properties, not the whole payload.
+prove that. The suite asserts properties, not the whole payload.
 
 This script runs the FULL pipeline (engine + gauntlet, fixed seed) over a
 few representative specs and dumps everything a user would ever see:
@@ -21,7 +21,7 @@ Timings are deliberately absent from the dumps (they live on the run row,
 not the report), so a faster run is byte-identical to a slower one.
 
 The R2 credentials are stripped below: `data_confidence` reads the live
-lake, and a network stage's answer is not a property of the engine — it
+lake, and a network stage's answer is not a property of the engine. It
 would make the gate flaky for reasons unrelated to the change under test.
 """
 
@@ -72,7 +72,7 @@ def _spec(name: str, position: dict, entry: dict, exit_: dict, version: int = 1)
 
 
 def _five_min_case() -> tuple[str, dict, MarketStore, int, FixtureIntraday]:
-    """A 5-MINUTE run — the clock the other cases cannot reach.
+    """A 5-MINUTE run: the clock the other cases cannot reach.
 
     It is not here for coverage tidiness: the 5-min clock is the ONLY
     path where `_sweep_base_spec` bounds the window, which is exactly
@@ -131,17 +131,17 @@ def _cases() -> list[tuple[str, dict, MarketStore, int]]:
     """(name, spec_json, store, trials). Chosen to cover the sweep families
     that the dedup and the indicator cache touch:
 
-      overfit_short_put — the permanent trap fixture: delta + dte + PT + SL
+      overfit_short_put, the permanent trap fixture: delta + dte + PT + SL
         sweeps, three concurrent positions, judged on the merits.
-      rsi_condition_short_put — entry AND exit conditions on the daily
+      rsi_condition_short_put, entry AND exit conditions on the daily
         clock: the ONLY family whose cells hit the indicator prefix path
         (the O(n²) the cache removes) and the condition threshold sweeps.
-      long_call_pt_sl — clean PT/SL decimals, so the base cells of both
+      long_call_pt_sl, clean PT/SL decimals, so the base cells of both
         sweeps serialize byte-identically to the main run: the dedup's
         reuse path is exercised here, not merely available.
 
     The 5-min clock rides separately (`_five_min_case`) because it needs
-    an intraday provider — see that function for why it is load-bearing.
+    an intraday provider. See that function for why it is load-bearing.
     """
     cases: list[tuple[str, dict, MarketStore, int]] = []
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-dolthub.py — one-shot SPY EOD backfill from the DoltHub community options
+dolthub.py: one-shot SPY EOD backfill from the DoltHub community options
 archive (post-no-preference/options), per the accepted conditions in
 docs/DOLTHUB-EVAL.md §7. Scope: SPY only, 2020-01-06 → 2026-06-30; the
 archive has no QQQ/IWM (eval §3) and the forward record is the Yahoo leg.
 
 Conditions encoded here:
-  1. XNYS-calendar filter — only true sessions are ever queried, which
+  1. XNYS-calendar filter, so only true sessions are ever queried, which
      excludes the 53 holiday "phantom" snapshots; a duplicate-guard also
      drops any session byte-identical to its predecessor.
   2. Spot joined from our own underlying dailies; a session missing spot
@@ -68,7 +68,7 @@ STALE_QUOTE_DEV = 0.0075
 
 
 class RowLimitError(Exception):
-    """API response row cap hit — deterministic; split the query, don't retry."""
+    """API response row cap hit. Deterministic; split the query, don't retry."""
 
 
 def query(sql: str) -> list[dict]:
@@ -190,8 +190,8 @@ def implied_forward_dev(frame: pd.DataFrame, close: float) -> float:
 def run_integrity(s3) -> int:
     """Sweep the ingested lake; quarantine sessions whose quotes fail the
     parity-vs-close check. Flag-and-exclude, never delete: objects stay in
-    R2 as auditable evidence, but quarantined dates leave state['done'] —
-    the lake's logical view — so no consumer ever backtests on them.
+    R2 as auditable evidence, but quarantined dates leave state['done']
+    (the lake's logical view), so no consumer ever backtests on them.
     Per-session dev is recorded for the coverage layer."""
     state = r2_get_json(s3, STATE_KEY, {})
     done = sorted(state.get("done", []))
@@ -277,7 +277,7 @@ def main() -> int:
             prev_fp = fp
             spot = closes.get(ds)
             if spot is None:
-                raise RuntimeError(f"{ds}: no spot in underlying dailies — condition 2 violation")
+                raise RuntimeError(f"{ds}: no spot in underlying dailies, condition 2 violation")
             frame = to_canonical(ds, rows, spot, cal.session_close(pd.Timestamp(d)))
             r2_put_parquet(s3, f"options/source=dolthub/ticker={TICKER}/date={ds}/chain.parquet", frame)
             done.add(ds)

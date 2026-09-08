@@ -1,6 +1,6 @@
 """Gauntlet stages 1–6 (TECH-SPEC §6). Every stage is deterministic given
 (spec, data, seed); stochastic steps take the run seed. Anything that
-cannot be computed honestly reports None or "not meaningful" — never a
+cannot be computed honestly reports None or "not meaningful", never a
 fabricated number.
 """
 
@@ -58,19 +58,19 @@ ANNUAL = math.sqrt(252)
 # The STANDARD evidence floor (owner-set 2026-07-02, was 30): below this
 # many closed trades the verdict is withheld as insufficient evidence
 # (CLAUDE.md guardrail #5). Since 2026-07-14 the bar is a per-user SETTING
-# (floor 1, never 0) — this constant is its default AND the line under
+# (floor 1, never 0). This constant is its default AND the line under
 # which a graded verdict must carry the below-standard-floor disclosure.
 MIN_TRADES = 15
 
 # Below this share of the REQUESTED window carrying a usable options chain,
-# the run is a "multi-year backtest" that actually tested a handful of days —
+# the run is a "multi-year backtest" that actually tested a handful of days,
 # the seventeen-fills self-deception. Capped at insufficient_evidence
 # (diagnostics/SEVENTEEN.md §4). Changed only in a reviewed session, never
 # at runtime (guardrail: runtime code never modifies scoring rules).
 COVERAGE_MIN_RATIO = 0.5
 
 # Liquidity REPORTING thresholds (D1b): when crossed, the run's verdict adds
-# a caveat line — these gate disclosure, never scoring. Changed only in a
+# a caveat line. These gate disclosure, never scoring. Changed only in a
 # reviewed session, like every threshold in this file.
 LIQ_PENALIZED_MATERIAL_SHARE = 0.20  # ≥ this share filled above base slip
 LIQ_SKIPPED_MATERIAL_COUNT = 5  # ≥ this many entries refused by the gates
@@ -84,7 +84,7 @@ CONC_MATERIAL_SHARE = 0.50
 CONC_GAMMA_DECILE = 0.90
 CONC_MIN_SESSIONS = 40  # fewer marked sessions → the split is noise itself
 
-# Scale-in martingale defenses (D5c). Reviewed thresholds — a ladder that
+# Scale-in martingale defenses (D5c). Reviewed thresholds. A ladder that
 # trips either HARD cap is refused (insufficient_evidence), the same posture
 # the D5a interlock held while these were pending. Changed only in a reviewed
 # session, like every threshold in this file.
@@ -93,10 +93,10 @@ RUIN_TAIL_PROB = 0.10  # P(resampled max drawdown > threshold) that HARD-caps
 RUIN_MIN_BASKETS = 5  # below this the ruin resample is not meaningful
 BASKET_CONC_SHARE = 0.50  # top basket's share of gross |basket P&L| → flag (reported)
 
-# 5-min gauntlet cost control (D2d, owner amendment 6 — decided on the D2b
+# 5-min gauntlet cost control (D2d, owner amendment 6, decided on the D2b
 # benchmark): a full-history 5-min run measured 136s (2,252 sessions, no
 # conditions) to ~200s (with conditions, after the D2c O(n²) fix); a ±20%
-# sweep is ~20 re-runs ≈ 45–70 min — untenable synchronously on the Railway
+# sweep is ~20 re-runs ≈ 45–70 min, untenable synchronously on the Railway
 # box. The sweep therefore re-runs on the TRAILING window below (≈1 year,
 # ~23s/run → ~8 min dev, disclosed in the report and the verdict). Parameter
 # fragility is a local property; the full-history verdict still comes from
@@ -112,7 +112,7 @@ SESSION_MID_END = 15 * 60  # 10:30–14:59 = mid; 15:00+ = close
 # Buying-power disclosure thresholds (owner decision 2026-07-15,
 # docs/HONESTY.md · buying power): when at least this share of
 # otherwise-eligible entries (fills + funding skips) hit the
-# insufficient_buying_power gate — and at least this many did — the
+# insufficient_buying_power gate (and at least this many did), the
 # verdict carries the funding caveat. Reviewed thresholds, like every
 # constant in this file.
 FUNDING_MATERIAL_SHARE = 0.20
@@ -200,8 +200,8 @@ def walk_forward(result: RunResult) -> WalkForward:
         end = min(start + test_len, n) - 1
         eq0, eq1 = result.equity[start], result.equity[end]
         d0, d1 = result.dates[start], result.dates[end]
-        # FX.4: a fold's minute-session share is disclosed IN the run —
-        # out-performance coinciding with a high share must be readable as
+        # FX.4: a fold's minute-session share is disclosed IN the run.
+        # Out-performance coinciding with a high share must be readable as
         # resolution-flavored, never silently as regime robustness (the
         # deeper fold redesign is a flagged future pass; docs/HONESTY.md)
         minute_share: float | None = None
@@ -233,9 +233,9 @@ def walk_forward(result: RunResult) -> WalkForward:
 # ---------------------------------------------------- stage 3: Monte Carlo
 def _absorb_at_zero(paths: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Freeze each path at its FIRST value ≤ 0 (owner 2026-07-15): a
-    reshuffled account that crosses $0 is dead — every later step holds the
+    reshuffled account that crosses $0 is dead. Every later step holds the
     value at absorption. Returns (absorbed paths, hit mask). A no-op on
-    paths that never cross (tested — non-ruined runs are bit-identical)."""
+    paths that never cross (tested: non-ruined runs are bit-identical)."""
     mask = paths <= 0.0
     hit = mask.any(axis=1)
     n_steps = paths.shape[1]
@@ -309,7 +309,7 @@ Setter = Callable[[StrategySpec, float], None]
 # index 2. The floor guards in BOTH _condition_grid and _delta_grid
 # hardcode the 0.1 per-cell spacing (their "10%·|base| vs floor"
 # engagement test), and _absolute_grid's shape assumes 5 cells around
-# index 2 — change any of these facts TOGETHER or the "probed as widely
+# index 2. Change any of these facts TOGETHER or the "probed as widely
 # as a reference-scale threshold" equivalence the floors encode silently
 # breaks.
 _SWEEP_FACTORS = [0.8, 0.9, 1.0, 1.1, 1.2]
@@ -320,11 +320,11 @@ def _absolute_grid(
 ) -> tuple[list[float], int]:
     """The floored grids' one shared core: ±2 step-sized cells around
     `base`, shifted UP by whole steps if the grid would cross `lo`
-    (None = unbounded scale) — the specced value always stays ON the
+    (None = unbounded scale). The specced value always stays ON the
     grid, at the returned base index. Callers guarantee base ≥ lo, so
     the exact-arithmetic shift is ≤ 2; the min() is structural defense
     only (measured across the reachable range, float dust never pushes
-    the ceil past the exact value — but a dust-pushed 3 would take the
+    the ceil past the exact value, but a dust-pushed 3 would take the
     specced value off the grid, the #99 review's negative-base_index
     class, so the bound is pinned in code rather than argued in a
     comment)."""
@@ -341,12 +341,12 @@ def _absolute_grid(
 # cells, and one strike at typical chain spacing is worth more delta
 # than a cell (Black-Scholes: |dΔ/dK| = φ(d1)/(K·σ√T) → at the 5Δ wing
 # of an SPY-scale chain, one $1 strike ≈ 0.4–2 delta points across
-# 45→1 DTE, one $5 strike ≈ 5× that) — adjacent cells resolve to the
+# 45→1 DTE, one $5 strike ≈ 5× that). Adjacent cells resolve to the
 # SAME contract, five near-identical Sharpes read as a FALSE PLATEAU,
 # and the sweep blesses exactly the fragile lottery-ticket archetype
 # it exists to catch. At the probe floor the collapse is literal: base
 # 0.03 clamps three cells to identical values. The floor follows
-# _COND_FAMILY_FLOORS' one grounding rule — 10% of the family's
+# _COND_FAMILY_FLOORS' one grounding rule: 10% of the family's
 # reference magnitude, delta's reference being the 25Δ wing (the same
 # convention this repo already encodes as skew_25d) → 0.025Δ per cell,
 # which independently clears "one strike per cell" at every realistic
@@ -362,16 +362,16 @@ _DELTA_SWEEP_MAX = 0.95
 def _delta_grid(base: float) -> tuple[list[float], int, bool]:
     """The 5 delta cells: (values, base index, floor-engaged flag).
     Multiplicative ±20% wherever that moves the delta at least
-    _DELTA_STEP_FLOOR per cell (clamped to the probe range — the
+    _DELTA_STEP_FLOOR per cell (clamped to the probe range: the
     pre-floor behavior, byte-identical); when the floor binds, an
     absolute grid of ±2 floor-steps via _absolute_grid (the specced
     value always stays ON the grid). A base below the probe floor
     itself is outside the scale the floor was grounded on and keeps the
-    pre-floor clamped path — disclosed by _mutations, never silent.
+    pre-floor clamped path, disclosed by _mutations, never silent.
     Both paths produce exactly 5 cells and one classifier pass, so the
     multiple-testing arithmetic never changes; the engine-RUN count can
     rise by up to 2, because the old clamped grid's duplicate cells
-    deduped into fewer runs — that dedup WAS the under-probing being
+    deduped into fewer runs. That dedup WAS the under-probing being
     fixed."""
     if base * 0.1 >= _DELTA_STEP_FLOOR or base < _DELTA_SWEEP_MIN:
         vals = [min(_DELTA_SWEEP_MAX, max(_DELTA_SWEEP_MIN, base * f))
@@ -384,8 +384,8 @@ def _delta_grid(base: float) -> tuple[list[float], int, bool]:
 def _mutations(
     spec: StrategySpec,
 ) -> tuple[list[tuple[str, list[float], int, Setter]], str | None, str | None]:
-    """((name, values in 5 steps — ±20%, or an absolute family-scale grid
-    for small condition thresholds and small deltas, base index, setter)
+    """((name, values in 5 steps (±20%, or an absolute family-scale grid
+    for small condition thresholds and small deltas), base index, setter)
     per numeric param present, conditions-disclosure note,
     delta-disclosure note). The base index marks the as-specced value
     inside `values`."""
@@ -410,20 +410,20 @@ def _mutations(
         if floor_hit:
             delta_note = (
                 f"delta {values[delta_base]:g} swept "
-                f"{values[0]:g}…{values[-1]:g} — absolute delta-point "
+                f"{values[0]:g}…{values[-1]:g}, absolute delta-point "
                 "steps (a ±20% probe of a delta this small often cannot "
                 "move one strike at the chain's spacing)"
             )
         elif base < _DELTA_SWEEP_MIN:
             # below the probe floor the clamp collapses cells onto it.
             # The degenerate grid is kept (the floor's grounding stops
-            # at the probe range) but never silently — a sweep this
+            # at the probe range) but never silently. A sweep this
             # thin blessed without a word is the guardrail-#5 failure
             delta_note = (
                 f"specced delta sits below the sweep's "
-                f"{_DELTA_SWEEP_MIN:g} probe floor — swept cells clamp "
+                f"{_DELTA_SWEEP_MIN:g} probe floor (swept cells clamp "
                 f"at {_DELTA_SWEEP_MIN:g}, so smaller strikes were not "
-                "probed"
+                "probed)"
             )
         out.append(("delta", values, delta_base, set_delta))
 
@@ -439,7 +439,7 @@ def _mutations(
     dte_base = 2
     if len(set(dte_values)) < 5:
         # multiplicative steps collapse at short tenors (±20% of 2 days is
-        # still 2 days) — sweep whole days instead, keeping the specced
+        # still 2 days). Sweep whole days instead, keeping the specced
         # value inside the window
         start = max(1, min(dte - 2, 86))
         dte_values = [float(start + i) for i in range(5)]
@@ -462,11 +462,11 @@ def _mutations(
 
         out.append(("stop_loss", [round(base_sl * f, 2) for f in factors], 2, set_sl))
 
-    # F8: sweep the ENTRY-CONDITION thresholds too — a strategy overfit to
+    # F8: sweep the ENTRY-CONDITION thresholds too. A strategy overfit to
     # "skew > 5" or "RSI < 30" must be caught, not just strike/dte/exits
     # (owner decisions 2026-07-08). Cap at the first 3 conditions (cost on
     # the serialized engine); SKIP sign-at-zero conditions (the sign IS the
-    # signal — nothing to perturb, opaque units); rank forms sweep as 0-100.
+    # signal: nothing to perturb, opaque units); rank forms sweep as 0-100.
     # Small thresholds on wide scales sweep an absolute family-scale grid
     # instead of ±20% (_COND_FAMILY_FLOORS), disclosed in the note.
     # Entry conditions only in v1 (exit/rung deferred, disclosed).
@@ -477,19 +477,19 @@ def _mutations(
 # Scale-aware sweep floors (PR #97 review follow-up, 2026-07-14). ±20% of a
 # SMALL threshold on a WIDE natural scale probes almost nothing: "skew_25d
 # > 0.3" would sweep 0.24…0.36 of a vol-point scale whose specced examples
-# run to 5+, and five near-identical cells read as a FALSE PLATEAU — the
+# run to 5+, and five near-identical cells read as a FALSE PLATEAU, the
 # honesty layer blessing exactly the fragile threshold it exists to catch.
 # Same collapse-guard idea as the dte whole-day fallback in _mutations:
 # when the multiplicative step (10% of |threshold| per cell) falls under
 # the family's floor, sweep an ABSOLUTE grid of floor-sized steps instead.
 # ONE rule grounds every floor: floor = 10% of the family's stated
 # reference magnitude, so a small threshold is probed exactly as widely as
-# a reference-scale threshold already is by ±20% — never finer. Keyed by
+# a reference-scale threshold already is by ±20%, never finer. Keyed by
 # STRING so vocabulary that lands in a different merge order (ivx_zscore_1y,
 # spec v8 on PR #97) picks its floor up the moment it exists. The second
 # tuple slot is the family's lower bound (None = signed scale).
 _COND_FAMILY_FLOORS: dict[str, tuple[float, float | None]] = {
-    # 0-100 oscillators / percentiles / ranks — reference 20, the
+    # 0-100 oscillators / percentiles / ranks: reference 20, the
     # bottom-quintile edge (the canonical oversold / low-rank threshold)
     "rsi": (2.0, 0.0),
     "iv_percentile_1y": (2.0, 0.0),
@@ -499,39 +499,39 @@ _COND_FAMILY_FLOORS: dict[str, tuple[float, float | None]] = {
     "net_premium_rank_1y": (2.0, 0.0),
     "market_tide_rank_1y": (2.0, 0.0),
     "nope_rank_1y": (2.0, 0.0),
-    # z-scores — reference 2.5σ, the outer edge of the ±3σ usable band
+    # z-scores: reference 2.5σ, the outer edge of the ±3σ usable band
     "ivx_zscore_1y": (0.25, None),
-    # vol points (IV/HV units) — reference 5, the repo's own "skew > 5"
+    # vol points (IV/HV units): reference 5, the repo's own "skew > 5"
     # F8 example (docs/HONESTY.md); signed scales, no bound
     "skew_25d": (0.5, None),
     "term_structure_slope": (0.5, None),
     "hv_iv_spread_30d": (0.5, None),
-    # percent-of-price — reference 2.5% (a large intraday/pin distance)
+    # percent-of-price: reference 2.5% (a large intraday/pin distance)
     "price_vs_sma_pct": (0.25, None),
     "price_vs_ema_pct": (0.25, None),
     "price_vs_vwap_pct": (0.25, None),
     "max_pain_distance_pct": (0.25, None),
-    # drawdown % — reference 10, a correction's textbook definition
+    # drawdown %: reference 10, a correction's textbook definition
     "drawdown_from_high_pct": (1.0, 0.0),
-    # vol levels (VIX/IVX/HV points) — reference 20, the same high-VIX
+    # vol levels (VIX/IVX/HV points): reference 20, the same high-VIX
     # regime line regime_sample already draws
     "vix_level": (2.0, 0.0),
     "ivx_level_30d": (2.0, 0.0),
     "realized_vol_20d": (2.0, 0.0),
-    # flow ratio — reference 1.0, put/call parity
+    # flow ratio: reference 1.0, put/call parity
     "put_call_flow_ratio": (0.1, 0.0),
-    # DELIBERATELY absent: sma/ema (absolute price — % of price IS the
+    # DELIBERATELY absent: sma/ema (absolute price, % of price IS the
     # scale) and the *_level vendor-unit families (nonzero thresholds are
     # parser-refused; inventing an absolute step for units we refused to
     # let users state would be the invented-convention sin ourselves).
 }
 
-# Every indicator must appear in the floors table OR here, on purpose —
-# a test enforces the partition so new vocabulary can't silently fall
+# Every indicator must appear in the floors table OR here, on purpose.
+# A test enforces the partition so new vocabulary can't silently fall
 # back to ±20% without someone deciding it should (review finding: the
 # typo guard alone only checked the table→enum direction).
 _COND_FLOOR_EXEMPT: frozenset[str] = frozenset({
-    "sma", "ema",              # absolute price — % of price IS the scale
+    "sma", "ema",              # absolute price, % of price IS the scale
     "ema_cross_state",         # categorical state, not a threshold scale
     "gex_level", "dex_level",  # vendor units, raw thresholds parser-refused
     "net_premium_level", "market_tide_level", "nope_level",
@@ -555,7 +555,7 @@ def _condition_grid(
     # is 10% of |base| (0.1 literal: deriving it from float subtraction
     # of the factors makes 5×0.1 land just under a 0.5 floor).
     # A threshold AT or BELOW a bounded family's lower edge is outside
-    # the scale the floor was grounded on (e.g. a negative RSI) — keep
+    # the scale the floor was grounded on (e.g. a negative RSI). Keep
     # the pre-floor multiplicative behavior rather than shift the grid
     # past the specced value (review finding: shift > 2 would push
     # base_index negative and mislabel the as-specced cell downstream).
@@ -580,7 +580,7 @@ def _append_condition_sweeps(
     skipped_sign: list[str] = []
     floored: list[str] = []  # swept on an absolute family-scale grid
     used_names: set[str] = set()
-    # examine EVERY condition — a sign test past the cap must still be
+    # examine EVERY condition. A sign test past the cap must still be
     # disclosed (review finding F8 #1: silently omitting an untested gate
     # is the "absence misread as a free pass" failure this exists to
     # prevent), and the cost-cap count must include everything left out
@@ -605,7 +605,7 @@ def _append_condition_sweeps(
                 f"{vals[0]:g}…{vals[-1]:g}"
             )
 
-        # unique sweep name: indicator, else +operator, else +index — two
+        # unique sweep name: indicator, else +operator, else +index. Two
         # conditions can share an indicator (the max-pain band pair) and a
         # degenerate spec can share both (review #2)
         sweep_name = f"cond_{name}"
@@ -626,7 +626,7 @@ def _append_condition_sweeps(
     parts: list[str] = []
     if floored:
         parts.append(
-            f"{', '.join(floored)} — absolute family-scale steps (a ±20% "
+            f"{', '.join(floored)}, absolute family-scale steps (a ±20% "
             "probe of a threshold this small spans too little of the "
             "indicator's range to test it)"
         )
@@ -634,7 +634,7 @@ def _append_condition_sweeps(
         uniq = sorted(set(skipped_sign))
         parts.append(
             f"{', '.join(uniq)} {'is a' if len(uniq) == 1 else 'are'} sign "
-            f"test{'' if len(uniq) == 1 else 's'} (threshold 0 — nothing to "
+            f"test{'' if len(uniq) == 1 else 's'} (threshold 0, nothing to "
             "perturb), not swept"
         )
     if capped:
@@ -661,7 +661,7 @@ def _sweep_base_spec(
     spec: StrategySpec, intraday: IntradayProvider | None
 ) -> tuple[StrategySpec, str | None]:
     """The spec every sweep cell re-runs (5-min clock: bounded trailing
-    window per SENS_5MIN_WINDOW_SESSIONS — see the constant's rationale).
+    window per SENS_5MIN_WINDOW_SESSIONS, see the constant's rationale).
     Every cell INCLUDING the base re-runs on the same window: cells stay
     comparable, and the note disclosing the window rides the report."""
     if spec.backtest.clock is not Clock.FIVE_MIN or intraday is None:
@@ -680,7 +680,7 @@ def _sweep_base_spec(
     base.backtest.start = window[0]
     note = (
         f"5-min sweep re-runs on the trailing {SENS_5MIN_WINDOW_SESSIONS} "
-        f"covered sessions ({window[0]} →) — gauntlet cost is benchmark-bound "
+        f"covered sessions ({window[0]} →), gauntlet cost is benchmark-bound "
         "(docs/HONESTY.md)"
     )
     return base, note
@@ -690,14 +690,14 @@ def _spec_key(spec: StrategySpec, shift_bars: int = 0) -> str:
     """The identity of one sweep CELL: its fully-serialized spec plus the
     entry-time shift. Pydantic v2 dumps fields in declaration order and
     every cell is a deepcopy of one base mutated in one place, so equal
-    cells produce equal strings — while cells that differ anywhere in the
+    cells produce equal strings, while cells that differ anywhere in the
     spec get different keys (the old per-sweep `seen` keyed on the raw
     value alone, which could not tell a 0.30 delta from a 0.30 profit
     target and so had to be per-parameter).
 
     One serializer caveat, named rather than assumed: `model_dump_json`
     renders inf/-inf/nan AND None all as `null`, so specs differing only
-    by that pair would share a key. Unreachable from here — every setter
+    by that pair would share a key. Unreachable from here. Every setter
     writes a finite float from `_SWEEP_FACTORS`, so no cell can carry
     inf or None where another carries the other."""
     return f"{shift_bars}|{spec.model_dump_json()}"
@@ -714,12 +714,12 @@ def sensitivity(
     re-run the engine, classify the optimum (plateau/cliff). At the 5-min
     clock the sweep also nudges the ENTRY TIME ±15/±30 minutes (D2d, per
     the brief): an edge that only exists at exactly one minute of the day
-    is noise — classified with the same plateau/cliff rules as every
+    is noise, classified with the same plateau/cliff rules as every
     parameter.
 
     `base_result` is the run's OWN backtest. Every sweep's middle cell is
     the as-specced configuration, so without it the engine re-simulates
-    the main run once per sweep — four identical full-history runs the
+    the main run once per sweep, four identical full-history runs the
     caller already has. Reuse is EQUALITY-GATED on `_spec_key`, never on
     "it's the base cell": several setters legitimately rewrite the spec at
     their own base (set_dte re-derives min/max around the target, set_delta
@@ -735,7 +735,7 @@ def sensitivity(
     results: dict[str, float | None] = {}
     if base_result is not None and window_note is None:
         # window_note is None exactly when _sweep_base_spec returned the
-        # spec UNCHANGED — i.e. the sweep base is what base_result ran.
+        # spec UNCHANGED, i.e. the sweep base is what base_result ran.
         # A bounded 5-min window is a different spec and must not seed.
         results[_spec_key(sweep_spec)] = _sharpe(_returns(base_result.equity))
 
@@ -770,8 +770,8 @@ def sensitivity(
         has_tod = spec.entry.schedule.time_of_day is not None
         for shift_min in NUDGE_SHIFTS_MIN:
             if shift_min < 0 and not has_tod:
-                # entries can't move before the signal/session start —
-                # honest None, never a fabricated cell
+                # entries can't move before the signal/session start.
+                # Honest None, never a fabricated cell
                 nudge_sharpes.append(None)
                 continue
             # the shift rides the key: a nudged cell is a different run of
@@ -808,7 +808,7 @@ def sensitivity(
 def session_split(result: RunResult) -> SessionSplit:
     """Bucket entries by their bar time (D2d): open 09:30–10:29, mid
     10:30–14:59, close 15:00+. P/L attributes to the entry's bucket via the
-    position's realized P/L. Daily runs have no bar times — not meaningful."""
+    position's realized P/L. Daily runs have no bar times, not meaningful."""
     if result.clock != "5min":
         return SessionSplit(meaningful=False, note="daily clock has no session buckets")
     pl_by_pid: dict[int, float] = {}
@@ -866,20 +866,20 @@ def rejudge_resolution(split: ResolutionSplit, min_trades: int) -> ResolutionSpl
         note = ("mixed resolution, but the sub-windows are too thin to "
                 "cross-check (5-min: "
                 f"{five.sessions} sessions / {five.trades} trades; minute: "
-                f"{minute.sessions} sessions) — disclosed, not judged")
+                f"{minute.sessions} sessions). Disclosed, not judged")
     return split.model_copy(update={
         "judged": judged, "sign_flip": sign_flip, "note": note})
 
 
 def resolution_split(result: RunResult, min_trades: int = MIN_TRADES) -> ResolutionSplit:
     """The headline recomputed on the 5-MIN-ONLY sub-window from recorded
-    per-session returns and closed trades — cheap, no re-run. Judged only
+    per-session returns and closed trades (cheap, no re-run). Judged only
     at real-evidence floors (both subsets ≥ 15 sessions AND the 5-min
-    subset ≥ `min_trades` closed trades — the SAME evidentiary bar any main
+    subset ≥ `min_trades` closed trades, the SAME evidentiary bar any main
     result must clear); a sign flip then caps trust hard: a resolution
     flip is a data-VALIDITY finding, not a robustness signal. Only the
     optimistic direction caps (full-run edge positive, 5-min-only
-    negative) — a negative full run blesses nothing to protect."""
+    negative). A negative full run blesses nothing to protect."""
     by_session = result.resolution_by_session
     if result.clock != "5min" or not by_session:
         return ResolutionSplit(
@@ -888,7 +888,7 @@ def resolution_split(result: RunResult, min_trades: int = MIN_TRADES) -> Resolut
     if not {"minute", "five_min"} <= kinds:
         return ResolutionSplit(
             meaningful=False,
-            note="single-resolution run — nothing to cross-check")
+            note="single-resolution run, nothing to cross-check")
 
     # per-session returns attributed to the session's own grid; sessions
     # outside the record (EOD-fallback gap days) are counted, not judged
@@ -906,7 +906,7 @@ def resolution_split(result: RunResult, min_trades: int = MIN_TRADES) -> Resolut
             rets[label].append(result.equity[i] / prev_eq - 1.0)
             windows[label].append(d)
     # the first equity date has no return; count its session for the window
-    # (or as a fallback day when it carries no label — review finding)
+    # (or as a fallback day when it carries no label, review finding)
     if result.dates:
         d0 = result.dates[0]
         label0 = by_session.get(d0)
@@ -918,7 +918,7 @@ def resolution_split(result: RunResult, min_trades: int = MIN_TRADES) -> Resolut
     # closed trades attributed to their REALIZATION day. NOTE: a position
     # straddling the resolution boundary accrues its P&L across BOTH
     # subsets' marks while its closed-trade count (and `pl`) lands on one
-    # day — a bucket's `pl` and its mark-based `sharpe` can diverge for
+    # day. A bucket's `pl` and its mark-based `sharpe` can diverge for
     # boundary-straddlers. The flip test is mark-to-market and internally
     # consistent; `trades` is an evidence floor, not a P&L attribution
     # (docs/HONESTY.md).
@@ -969,7 +969,7 @@ def _ladder_baskets(result: RunResult, spec: StrategySpec) -> list[dict[str, Any
     contracts, cost, the derived exit price, the deepest rung reached, and the
     fills. None when the spec is not a ladder or no basket closed. Baskets
     still open at run end carry no realized P&L and are skipped (adds are never
-    counted as trades — the sample counter uses closed baskets, D5c)."""
+    counted as trades: the sample counter uses closed baskets, D5c)."""
     si = spec.entry.scale_in
     if si is None:
         return None
@@ -1007,8 +1007,8 @@ def ladder_depth_attribution(
     result: RunResult, spec: StrategySpec
 ) -> LadderDepth | None:
     """Group realized basket P&L by the MAX rung depth each basket reached
-    (the per-tier table — iVol's P&L-by-ladder-depth), and attribute P&L to
-    the fills added AT each depth (the marginal-rung analysis — are the deep
+    (the per-tier table, iVol's P&L-by-ladder-depth), and attribute P&L to
+    the fills added AT each depth (the marginal-rung analysis: are the deep
     adds themselves net negative?). Both views sum to the same realized total
     (tested tie-out): each basket sits in exactly one tier, and a basket's
     marginals sum to its realized P&L.
@@ -1100,7 +1100,7 @@ def scale_in_honesty(
     """Defenses specific to a scale-in ladder (a martingale): a ruin-tail
     Monte Carlo on the basket P&L sequence and a deep-rung-dependency check,
     each a HARD cap, plus a reported basket-size concentration. LIFTS the D5a
-    interlock — a ladder that clears these is judged like any strategy."""
+    interlock. A ladder that clears these is judged like any strategy."""
     si = spec.entry.scale_in
     baskets = _ladder_baskets(result, spec)
     if si is None or not baskets:
@@ -1113,7 +1113,7 @@ def scale_in_honesty(
     # ---- ruin-tail Monte Carlo: resample the basket P&L sequence (seeded,
     # same block bootstrap as the main MC) and measure the account-drawdown
     # tail. The running peak includes the starting capital, so a run of losers
-    # draws down from where the account began — the honest ruin view.
+    # draws down from where the account began, the honest ruin view.
     p95 = p99 = p_ruin = None
     ruin_flagged = False
     if n >= RUIN_MIN_BASKETS:
@@ -1130,7 +1130,7 @@ def scale_in_honesty(
         max_dd = (1.0 - paths / np.maximum(peak, 1e-9)).max(axis=1)
         # you can't lose more than everything: a path that crosses $0 reads
         # 100%, never the >100% negative equity arithmetics into (review
-        # finding 2026-07-15 — same rule as the main MC's absorption).
+        # finding 2026-07-15, same rule as the main MC's absorption).
         # Flag-invariant: capped values are exactly 1.0, still > the 0.30
         # threshold, so p_ruin/ruin_flagged cannot move.
         max_dd = np.minimum(max_dd, 1.0)
@@ -1138,7 +1138,7 @@ def scale_in_honesty(
         p_ruin = float(np.mean(max_dd > RUIN_DRAW_THRESHOLD))
         ruin_flagged = p_ruin >= RUIN_TAIL_PROB
 
-    # ---- deep-rung dependency: remove the deepest rung's fills (no re-run —
+    # ---- deep-rung dependency: remove the deepest rung's fills (no re-run:
     # subtract their recorded marginals). A positive edge that flips negative
     # without the deepest, riskiest adds DEPENDS on them (the martingale trap).
     deepest = max(b["max_rung"] for b in baskets)
@@ -1247,7 +1247,7 @@ def regrade_sample(sample: RegimeSample, min_trades: int) -> RegimeSample:
     if sample.trades < min_trades:
         capped = True
         reason: str | None = (
-            f"only {sample.trades} closed trades — minimum is {min_trades}")
+            f"only {sample.trades} closed trades (minimum is {min_trades})")
     elif sample.regimes_present < 2:
         capped = True
         reason = "history spans a single volatility regime"
@@ -1300,7 +1300,7 @@ def regime_sample(
 
 # ---------------------------------------------- stage 6d: P&L concentration
 def concentration(result: RunResult) -> Concentration:
-    """Does the P&L come from a distribution of days or a handful of them —
+    """Does the P&L come from a distribution of days or a handful of them,
     and are the handful high-gamma days (a lottery-ticket shape)? Reported
     flag + verdict reason only; never a trust cap in D1.
 
@@ -1343,7 +1343,7 @@ def concentration(result: RunResult) -> Concentration:
         )
         if coincidence is not None and coincidence >= 0.5:
             note += (
-                f" — and {round(coincidence * 100)}% of those are top-decile "
+                f", and {round(coincidence * 100)}% of those are top-decile "
                 "gamma days (lottery-ticket shape)"
             )
     return Concentration(
@@ -1360,7 +1360,7 @@ def concentration(result: RunResult) -> Concentration:
 def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile:
     """How real the fills were (guardrail #1's disclosure arm). Counts come
     straight from the engine's per-leg fill bookkeeping; `material` only
-    controls whether the verdict carries a caveat line — never scoring."""
+    controls whether the verdict carries a caveat line, never scoring."""
     n = result.option_leg_fills
     spreads = sorted(result.fill_spread_pcts)
     median_spread = spreads[len(spreads) // 2] if spreads else None
@@ -1391,10 +1391,10 @@ def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile
     if skipped >= LIQ_SKIPPED_MATERIAL_COUNT:
         notes.append(
             f"{skipped} entr{'y was' if skipped == 1 else 'ies were'} refused by the "
-            "liquidity gates — the strategy wants markets this data says are thin"
+            "liquidity gates (the strategy wants markets this data says are thin)"
         )
 
-    # F5: fills vs displayed NBBO depth — disclosure only, never scoring.
+    # F5: fills vs displayed NBBO depth, disclosure only, never scoring.
     # ANY beyond-depth fill is named (no materiality floor: the count is
     # small by construction and the reader decides what it means)
     depth_known = share(result.fills_depth_known)
@@ -1403,7 +1403,7 @@ def liquidity_profile(result: RunResult, spec: StrategySpec) -> LiquidityProfile
     if result.fills_beyond_depth > 0:
         notes.append(
             f"{result.fills_beyond_depth} of {result.fills_depth_known} "
-            "depth-known fills exceeded the displayed NBBO size — the model "
+            "depth-known fills exceeded the displayed NBBO size. The model "
             "filled the whole order at the quote; real execution may have "
             "walked the book (prices unchanged, disclosed not modeled)"
         )
@@ -1434,10 +1434,10 @@ def data_confidence(
     spec: StrategySpec,
     summaries: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> DataConfidence | None:
-    """Cross-source agreement over THIS run's window, per pair — REPORTED,
+    """Cross-source agreement over THIS run's window, per pair. REPORTED,
     never scored. `summaries` maps pair → {iso-date: record}; None loads
     the nightly artifacts (honest absence on any failure). Pairs with no
-    audited session inside the window are omitted — an empty result is
+    audited session inside the window are omitted. An empty result is
     None, and the verdict simply says nothing (never a fabricated 100%)."""
     ticker = result.ticker
     if summaries is None:
@@ -1466,7 +1466,7 @@ def data_confidence(
         joined = sum(int(r.get("joined") or 0) for _, r in rows)
         checked = sum(int(r.get("checked") or 0) for _, r in rows)
         within = sum(int(r.get("within_band") or 0) for _, r in rows)
-        # parquet round-trips None as NaN — a NaN rate must not survive
+        # parquet round-trips None as NaN. A NaN rate must not survive
         # into min() or the JSON payload (review #3: allow_nan=False in
         # the response encoder would 500 the whole run page)
         session_rates = [(d, float(r["agreement_rate"])) for d, r in rows
@@ -1506,7 +1506,7 @@ def coverage(result: RunResult) -> Coverage:
 
     A ruin halt truncates the DENOMINATOR to the requested window up to the
     halt (owner 2026-07-15): the sessions past it weren't untested for lack
-    of data — the account was dead. materially_short keeps measuring DATA
+    of data. The account was dead. materially_short keeps measuring DATA
     shortfall only; the ruin itself is disclosed by the ruin surfaces."""
     if result.ruined:
         requested = max(result.requested_sessions_to_ruin, 0)
@@ -1517,13 +1517,13 @@ def coverage(result: RunResult) -> Coverage:
     short = requested > 0 and ratio < COVERAGE_MIN_RATIO
     reason = (
         f"only {chain_sessions} of {requested} requested sessions carried a usable "
-        f"options chain ({round(ratio * 100)}%) — most of the window was untested"
+        f"options chain ({round(ratio * 100)}%). Most of the window was untested"
         if short
         else None
     )
     if result.ruined and result.ruin_date is not None:
         note = (
-            f"window measured to the ruin halt ({result.ruin_date.isoformat()}) — "
+            f"window measured to the ruin halt ({result.ruin_date.isoformat()}): "
             "the sessions past it were never simulated"
         )
         reason = f"{reason}; {note}" if reason else note
@@ -1546,7 +1546,7 @@ def coverage(result: RunResult) -> Coverage:
 # ------------------------------------------------- D3a: unlock conditions
 def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockConditions | None:
     """Structured needs for a REFUSED verdict (trust label
-    insufficient_evidence) — built from the SAME stage numbers the refusal
+    insufficient_evidence), built from the SAME stage numbers the refusal
     text shows, so the nightly auto-unlock scan (D3b) compares facts, not
     prose. Returns None for graded verdicts."""
     if report.trust.label != "insufficient_evidence":
@@ -1554,16 +1554,16 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
     # a wiped-out account never unlocks with more data (review finding
     # 2026-07-15): the run halts at the same ruin date no matter how much
     # history arrives after it, so entering the auto-unlock scan would
-    # re-run and re-refuse forever — the D5a-interlock exclusion class
+    # re-run and re-refuse forever, the D5a-interlock exclusion class
     if report.ruin is not None:
         return None
     cov = report.coverage
     sample = report.regime_sample
-    # needs compare against the bar THIS run was scored at — the user
+    # needs compare against the bar THIS run was scored at. The user
     # setting rides the report, never a module constant read later
     bar = sample.min_trades
-    # A refusal that no amount of DATA can lift — e.g. the D5a scale-in
-    # interlock (defenses pending, not sample/coverage) — must not enter the
+    # A refusal that no amount of DATA can lift, e.g. the D5a scale-in
+    # interlock (defenses pending, not sample/coverage), must not enter the
     # auto-unlock scan (D3b), or it would re-run and re-refuse forever.
     if not (
         cov.materially_short
@@ -1596,7 +1596,7 @@ def unlock_conditions(report: HonestyReport, spec: StrategySpec) -> UnlockCondit
 def ruin_disclosure(result: RunResult) -> RuinDisclosure | None:
     """The engine's ruin halt, surfaced (docs/HONESTY.md · buying power).
     None on runs that never hit $0. The date is the LATEST possible ruin
-    date — the halt fires at exactly zero and maintenance margin is
+    date: the halt fires at exactly zero and maintenance margin is
     deliberately not modeled; the verdict caveat discloses that."""
     if not result.ruined or result.ruin_date is None:
         return None
@@ -1612,7 +1612,7 @@ def ruin_disclosure(result: RunResult) -> RuinDisclosure | None:
 
 def funding_profile(result: RunResult, spec: StrategySpec) -> FundingProfile:
     """Count what the buying-power gate refused: SKIP trade-log events
-    (deduped once per SESSION by the engine's skip-log dedupe — the raw
+    (deduped once per SESSION by the engine's skip-log dedupe: the raw
     skip_counts re-count an unfundable entry on every in-window bar at the
     5-min clock, which would inflate the share ~80×; review finding
     2026-07-15) plus DISTINCT unaffordable (basket, rung) pairs on ladders
@@ -1620,7 +1620,7 @@ def funding_profile(result: RunResult, spec: StrategySpec) -> FundingProfile:
     share of otherwise-eligible entries crosses the reviewed thresholds."""
     if spec.entry.scale_in is not None:
         # ladder entries ARE rung fills: their funding skips are counted
-        # below per distinct (basket, rung) — counting the log lines too
+        # below per distinct (basket, rung). Counting the log lines too
         # would double them (a basket that never opened at all stays
         # uncounted: conservative)
         entry_skips = 0
@@ -1641,7 +1641,7 @@ def funding_profile(result: RunResult, spec: StrategySpec) -> FundingProfile:
     note = (
         f"{skipped} of {attempts} otherwise-eligible entries and ladder adds "
         f"were skipped for buying power at "
-        f"${spec.backtest.initial_capital:,.0f} capital — the tested strategy "
+        f"${spec.backtest.initial_capital:,.0f} capital. The tested strategy "
         "is smaller than the described one"
         if material
         else None

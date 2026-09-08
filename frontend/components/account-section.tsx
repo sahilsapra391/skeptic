@@ -2,7 +2,7 @@
 
 /**
  * Launch L1b: the nav-rail account slot, self-rolled (no Clerk). Identity
- * is whatever /api/me says — the httpOnly session cookie rides the request
+ * is whatever /api/me says. The httpOnly session cookie rides the request
  * on its own, so there is no client-side auth state to drift from the
  * server's. Refetched on navigation: once runs debit credits (L2), the
  * balance must not go stale after a submit. Credits are data → Plex Mono
@@ -75,7 +75,7 @@ export function AccountSection({ open }: { open: boolean }) {
         .catch(() => alive && setMe(null));
     refresh();
     // a run debits (start) and may refund (completion) without a route
-    // change — refresh the balance when the run flow signals it
+    // change. Refresh the balance when the run flow signals it
     window.addEventListener(CREDITS_CHANGED, refresh);
     return () => {
       alive = false;
@@ -83,7 +83,7 @@ export function AccountSection({ open }: { open: boolean }) {
     };
   }, [pathname]);
 
-  // returning from a completed Checkout — the webhook grants credits async,
+  // returning from a completed Checkout: the webhook grants credits async,
   // so nudge the balance a few times until the purchase lands
   useEffect(() => {
     if (!/[?&]purchase=success/.test(window.location.search)) return;
@@ -129,7 +129,7 @@ export function AccountSection({ open }: { open: boolean }) {
 
   const signOut = () => {
     setSigningOut(true);
-    // even if revocation errors (backend blip), leave the app — the session
+    // even if revocation errors (backend blip), leave the app. The session
     // cookie is httpOnly and the next /api/me decides the truth
     logout()
       .catch(() => undefined)
@@ -177,7 +177,7 @@ export function AccountSection({ open }: { open: boolean }) {
         disabled={buying}
         className="flex h-[30px] w-full items-center rounded-[10px] px-2.5 text-[12.5px] font-semibold text-trust hover:bg-trust/10 disabled:opacity-60"
       >
-        {buying ? "Opening checkout…" : "Add credits — $10 / 50"}
+        {buying ? "Opening checkout…" : "Add credits ($10 / 50)"}
       </button>
       {buyMsg && (
         <p className="px-2.5 pb-0.5 font-mono text-[10.5px] leading-[1.5] text-ink-4">{buyMsg}</p>

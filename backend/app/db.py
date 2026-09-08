@@ -1,10 +1,10 @@
 """Run storage (TECH-SPEC §1: runs + run_events).
 
 DATABASE_URL (Neon Postgres) when configured; otherwise a local SQLite
-file — identical SQLAlchemy code path, so pointing at Neon is purely an
+file (identical SQLAlchemy code path), so pointing at Neon is purely an
 environment change at deploy time (M6). If the configured database is
 unreachable at startup (e.g. Neon transfer quota exhausted), the app
-FALLS BACK to local SQLite and says so in /api/health — a dead runs DB
+FALLS BACK to local SQLite and says so in /api/health. A dead runs DB
 must not take the charts and parser down with it.
 """
 
@@ -45,19 +45,19 @@ class Run(Base):
     seed: Mapped[int] = mapped_column(Integer, default=42)
     spec_json: Mapped[str] = mapped_column(Text)
     payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # tiny library-card summary — listings read THIS, never the full
+    # tiny library-card summary: listings read THIS, never the full
     # payload (full payloads over the wire is how a transfer quota dies)
     summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # computed stats bundle (engine metrics + honesty report) — the ONLY
+    # computed stats bundle (engine metrics + honesty report): the ONLY
     # material grounded Q&A may draw numbers from
     stats_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # real per-stage preview lines shown while the gauntlet runs
     previews_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # D3: structured unlock needs stored when a verdict is REFUSED — the
+    # D3: structured unlock needs stored when a verdict is REFUSED. The
     # nightly auto-unlock scan reasons from these, not from display text
     unlock_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # D3: who started the run — "user" | "auto_unlock" | "receipt"
+    # D3: who started the run ("user" | "auto_unlock" | "receipt")
     origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # D3: the refused/original run an automatic run supersedes or replays
     parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -66,29 +66,29 @@ class Run(Base):
     # a family without walking parent links one at a time.
     root_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # V-25: this run's position in its chain, assigned once at creation and
-    # STORED. Never recomputed from a live count — a deleted variant must leave
+    # STORED. Never recomputed from a live count. A deleted variant must leave
     # a gap rather than renumber its siblings (V-45).
     variant_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # D3c: 5-minute replay receipts attached to this (daily) run — merged
+    # D3c: 5-minute replay receipts attached to this (daily) run, merged
     # into the payload at READ time; the stored verdict is never rewritten
     receipts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # measured run cost {clock, sessions, engine_s, gauntlet_s, conditions}
-    # — the pre-run time estimates are medians over THESE, never guesses
+    # measured run cost {clock, sessions, engine_s, gauntlet_s, conditions}.
+    # The pre-run time estimates are medians over THESE, never guesses
     perf_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # F7: on-demand fill audit vs an independent vendor — stored like
+    # F7: on-demand fill audit vs an independent vendor, stored like
     # receipts; the run's verdict is never rewritten
     audit_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # the run's setup story — prompt, clarifying Q&A and the confirmed
+    # the run's setup story: prompt, clarifying Q&A and the confirmed
     # draft snapshotted at creation, mechanics appended at completion.
     # Display-only: never read by the engine, the verdict LLM, or grounded
-    # ask. NULL on runs predating the column — their record is DERIVED at
+    # ask. NULL on runs predating the column. Their record is DERIVED at
     # read time (app/api/provenance.py); the conversation is never invented.
     provenance_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Tier 1 (notebook): pinned deterministic re-execution outcome — stored
+    # Tier 1 (notebook): pinned deterministic re-execution outcome, stored
     # like receipts/audit; the run's verdict is never rewritten
     reproduce_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # launch L1b: the account that owns this run. NULL = pre-accounts /
-    # anonymous — claimable exactly once at signup (the conversion moment)
+    # anonymous, claimable exactly once at signup (the conversion moment)
     user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
@@ -103,14 +103,14 @@ class RunEvent(Base):
 
 
 class User(Base):
-    """Accounts (launch L1). This table IS the traction record — every
+    """Accounts (launch L1). This table IS the traction record: every
     signup lands here regardless of auth provider (PRD C)."""
 
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    # normalized to lowercase in code before insert — citext is Postgres-only
-    # and the local/test path is SQLite, so the DB type can't do it for us
+    # normalized to lowercase in code before insert (citext is Postgres-only
+    # and the local/test path is SQLite, so the DB type can't do it for us)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     # NULL under managed auth (owner decision D1 = Clerk); the column exists
     # so a later self-rolled provider slots in without a migration
@@ -126,7 +126,7 @@ class CreditLedger(Base):
 
     __tablename__ = "credit_ledger"
     __table_args__ = (
-        # exactly one signup grant per user, enforced by the DATABASE — a
+        # exactly one signup grant per user, enforced by the DATABASE. A
         # retried or racing signup cannot double-grant even through a bug
         # in the application path
         Index(
@@ -138,7 +138,7 @@ class CreditLedger(Base):
         ),
         # at most one engine_refund per run (launch L2): the credit law is
         # "you only pay for a graded verdict", so a refusal / our-fault
-        # failure refunds — but exactly ONCE, DB-enforced against retries.
+        # failure refunds, but exactly ONCE, DB-enforced against retries.
         Index(
             "uq_credit_ledger_refund",
             "run_id",
@@ -148,7 +148,7 @@ class CreditLedger(Base):
         ),
         # exactly one purchase grant per Stripe event (launch L3): Stripe
         # redelivers webhook events, so the credit grant is idempotent on the
-        # event id, DB-enforced — a redelivered checkout.session.completed can
+        # event id, DB-enforced. A redelivered checkout.session.completed can
         # never double-grant credits.
         Index(
             "uq_credit_ledger_purchase",
@@ -159,10 +159,10 @@ class CreditLedger(Base):
         ),
         # at most one chargeback per PAYMENT (launch L3 money-exposure fix):
         # a refund or a dispute claws back the credits a purchase granted, but
-        # the money only leaves our account ONCE — so the reversal is idempotent
+        # the money only leaves our account ONCE, so the reversal is idempotent
         # on the Stripe payment_intent, not the event. That backstops BOTH a
         # redelivered event AND a refund arriving alongside a dispute on the
-        # same charge (two different event ids, one payment) — neither can
+        # same charge (two different event ids, one payment). Neither can
         # double-reverse.
         Index(
             "uq_credit_ledger_chargeback",
@@ -180,7 +180,7 @@ class CreditLedger(Base):
     #   | "admin_adjust" | "chargeback"
     reason: Mapped[str] = mapped_column(String(20))
     run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    # external idempotency key — the Stripe EVENT id for a purchase row (L3);
+    # external idempotency key: the Stripe EVENT id for a purchase row (L3);
     # the partial unique index above makes the grant exactly-once per event.
     # For a chargeback row it holds the refund/dispute event id, for audit.
     ext_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -195,7 +195,7 @@ class CreditLedger(Base):
 class AuthSession(Base):
     """Self-rolled sessions (launch L1b, owner decision D1-reversed): the
     cookie carries an opaque random token; the DB stores only its SHA-256.
-    Revocation is a row update — sessions are DB truth, never stateless."""
+    Revocation is a row update. Sessions are DB truth, never stateless."""
 
     __tablename__ = "auth_sessions"
 
@@ -207,7 +207,7 @@ class AuthSession(Base):
 
 
 class EmailToken(Base):
-    """Single-use email-verification tokens — stored hashed, like sessions."""
+    """Single-use email-verification tokens, stored hashed, like sessions."""
 
     __tablename__ = "email_tokens"
 
@@ -243,13 +243,13 @@ LEDGER_REASONS = {
 
 
 def credit_balance(user_id: str) -> int:
-    """Balance = SUM over the append-only ledger — computed, never stored."""
+    """Balance = SUM over the append-only ledger (computed, never stored)."""
     with SessionLocal() as s:
         return credit_balance_tx(s, user_id)
 
 
 def credit_balance_tx(s: Session, user_id: str) -> int:
-    """Balance within an EXISTING transaction — the debit path recomputes the
+    """Balance within an EXISTING transaction: the debit path recomputes the
     balance under a user-row lock, so the read and the debit are one atomic
     decision (no overdraft from two simultaneous runs)."""
     total = (
@@ -263,7 +263,7 @@ def credit_balance_tx(s: Session, user_id: str) -> int:
 def was_refunded(run_id: str) -> bool:
     """True once a run's credit has been given back (engine_refund exists).
     The view-time re-grade uses this to SEAL a refunded run: you got the
-    credit OR a blessed verdict, never both — a refunded refusal must not be
+    credit OR a blessed verdict, never both. A refunded refusal must not be
     re-graded into a graded verdict at a lower bar (that would be a free
     graded verdict + free engine compute = a paywall bypass)."""
     with SessionLocal() as s:
@@ -280,7 +280,7 @@ def refund_run_tx(s: Session, run_id: str) -> bool:
     Idempotent + self-scoped: a no-op if the run was never charged (anon /
     service / claimed-anon) or was already refunded. Used INSIDE the same
     transaction that flips the run to done/error, so 'the run is visible'
-    implies 'the refund is visible' — a concurrent read-time re-grade can
+    implies 'the refund is visible'. A concurrent read-time re-grade can
     never catch a refunded run in an un-refunded window (the paywall SEAL)."""
     debit = (
         s.query(CreditLedger)
@@ -288,20 +288,20 @@ def refund_run_tx(s: Session, run_id: str) -> bool:
         .first()
     )
     if debit is None:
-        return False  # never charged — nothing to refund
+        return False  # never charged, nothing to refund
     already = (
         s.query(CreditLedger.id)
         .filter(CreditLedger.run_id == run_id, CreditLedger.reason == "engine_refund")
         .first()
     )
     if already is not None:
-        return False  # idempotent — already refunded
+        return False  # idempotent, already refunded
     s.add(CreditLedger(user_id=debit.user_id, delta=1, reason="engine_refund", run_id=run_id))
     return True
 
 
 def refund_run(run_id: str) -> bool:
-    """Give back the credit a run debited — the credit law (owner override):
+    """Give back the credit a run debited. The credit law (owner override):
     you only pay for a GRADED verdict, so a refusal or an our-fault failure
     refunds. Standalone (own transaction) wrapper over refund_run_tx; the
     engine_refund unique index is the DB backstop against a race."""
@@ -312,7 +312,7 @@ def refund_run(run_id: str) -> bool:
             return False
         try:
             s.commit()
-        except IntegrityError:  # a concurrent refund won the race — fine
+        except IntegrityError:  # a concurrent refund won the race, fine
             s.rollback()
             return False
     return True
@@ -321,11 +321,11 @@ def refund_run(run_id: str) -> bool:
 def grant_purchase(
     user_id: str, credits: int, stripe_event_id: str, payment_intent: str | None = None
 ) -> bool:
-    """Grant purchased credits (launch L3). Idempotent per Stripe EVENT id —
+    """Grant purchased credits (launch L3). Idempotent per Stripe EVENT id.
     Stripe redelivers webhook events, so a redelivered checkout.session.completed
     must not double-grant. Returns True if THIS call granted; False if the event
     was already processed (the uq_credit_ledger_purchase index is the backstop).
-    Only ever ADDS a row — balance stays SUM over the append-only ledger.
+    Only ever ADDS a row. Balance stays SUM over the append-only ledger.
 
     payment_intent (the Stripe charge/PI id) is stamped on the row so a later
     refund or dispute can find this grant and reverse it (reverse_purchase)."""
@@ -343,7 +343,7 @@ def grant_purchase(
         )
         try:
             s.commit()
-        except IntegrityError:  # this event already granted — idempotent
+        except IntegrityError:  # this event already granted, idempotent
             s.rollback()
             return False
     return True
@@ -353,19 +353,19 @@ def reverse_purchase(payment_intent: str, stripe_event_id: str) -> bool:
     """Claw back the credits a purchase granted (launch L3 refund/dispute).
 
     A charge.refunded or charge.dispute.created webhook means the buyer got
-    their money back — so we reverse the credits by APPENDING a negative
+    their money back, so we reverse the credits by APPENDING a negative
     'chargeback' row (the ledger is append-only; we never mutate the grant).
     The reversal is exactly-once per PAYMENT: the money left our account once,
     so a redelivered event, or a refund arriving alongside a dispute on the
-    same charge, must reverse only once — the uq_credit_ledger_chargeback index
+    same charge, must reverse only once. The uq_credit_ledger_chargeback index
     (on payment_ref) is the DB backstop.
 
     Reverses the EXACT credits that payment granted (summed from its purchase
-    rows), not a constant — a promo grant of a different size is reversed to
+    rows), not a constant. A promo grant of a different size is reversed to
     match. Returns True if THIS call reversed; False if there's no matching
     purchase (an unrelated charge → reverse nothing) or it was already reversed.
 
-    The balance may go NEGATIVE if the buyer already spent the credits — that's
+    The balance may go NEGATIVE if the buyer already spent the credits. That's
     correct: they can't run again until they re-buy."""
     from sqlalchemy.exc import IntegrityError
 
@@ -379,10 +379,10 @@ def reverse_purchase(payment_intent: str, stripe_event_id: str) -> bool:
             .all()
         )
         if not grants:
-            return False  # no purchase for this charge — unrelated, reverse nothing
+            return False  # no purchase for this charge (unrelated, reverse nothing)
         granted = sum(g.delta for g in grants)
         if granted <= 0:
-            return False  # nothing was granted for this payment — nothing to claw back
+            return False  # nothing was granted for this payment, nothing to claw back
         s.add(
             CreditLedger(
                 user_id=grants[0].user_id,
@@ -394,7 +394,7 @@ def reverse_purchase(payment_intent: str, stripe_event_id: str) -> bool:
         )
         try:
             s.commit()
-        except IntegrityError:  # already reversed for this payment — idempotent
+        except IntegrityError:  # already reversed for this payment, idempotent
             s.rollback()
             return False
     return True
@@ -403,7 +403,7 @@ def reverse_purchase(payment_intent: str, stripe_event_id: str) -> bool:
 class TrialCounter(Base):
     """Per-strategy-family test count for the deflated Sharpe correction
     (TECH-SPEC §6.5). Family = underlying + structure; every run and every
-    sweep value increments it — trying again IS the multiple-testing bias."""
+    sweep value increments it. Trying again IS the multiple-testing bias."""
 
     __tablename__ = "trial_counter"
 
@@ -425,7 +425,7 @@ def bump_trials(family: str, n: int = 1) -> int:
 
 def _engine_kwargs(url: str) -> dict[str, object]:
     """SQLite wants check_same_thread off (one file, many threads). Postgres
-    (Neon) closes idle SSL connections aggressively — without pre_ping the
+    (Neon) closes idle SSL connections aggressively. Without pre_ping the
     pool hands out a dead socket and the request dies with
     'SSL connection has been closed unexpectedly'; pre_ping validates the
     connection first and recycle retires it before Neon's ~5-min idle cut."""
@@ -448,12 +448,12 @@ def init_db() -> None:
         _ensure_columns()
     except RemoteMigrationRefused:
         # V-149: this is a REFUSAL, not an outage. Falling back to local SQLite
-        # here would be worse than the accident it prevents — the server would
+        # here would be worse than the accident it prevents. The server would
         # come up healthy on the wrong database and nobody would know.
         raise
-    except Exception as exc:  # unreachable/refusing DB — degrade, loudly
+    except Exception as exc:  # unreachable/refusing DB: degrade, loudly
         reason = str(exc).strip().split("\n")[0][:200]
-        log.error("configured database unavailable (%s) — falling back to local SQLite", reason)
+        log.error("configured database unavailable (%s), falling back to local SQLite", reason)
         FALLBACK_REASON = reason
         _engine = create_engine(_DEFAULT_SQLITE, connect_args={"check_same_thread": False})
         SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
@@ -500,14 +500,14 @@ def target_line() -> str:
     """
     url = _database_url()
     if url.startswith("sqlite"):
-        return f"LOCAL SQLite — {url.split('sqlite:///', 1)[-1]}"
+        return f"LOCAL SQLite: {url.split('sqlite:///', 1)[-1]}"
     host = url.split("@", 1)[-1].split("/", 1)[0]
-    return f"REMOTE postgres — {host}"
+    return f"REMOTE postgres: {host}"
 
 
 def status() -> str:
     if FALLBACK_REASON:
-        return f"local SQLite fallback — configured DB unavailable: {FALLBACK_REASON}"
+        return f"local SQLite fallback: configured DB unavailable: {FALLBACK_REASON}"
     return "postgres (Neon)" if not _database_url().startswith("sqlite") else "local SQLite"
 
 
@@ -582,7 +582,7 @@ def _ensure_columns() -> None:
 
     This is not about any particular migration. It is that a dev server booting
     with the wrong DATABASE_URL should not be able to reshape production on its
-    way up — a schema change should be something someone CHOSE. Today's
+    way up. A schema change should be something someone CHOSE. Today's
     additions were additive and nullable, so the accident was harmless; the
     next one might not be.
     """
@@ -609,7 +609,7 @@ def _ensure_columns() -> None:
                              ("variant_ordinal", "INTEGER")):
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE runs ADD COLUMN {column} {kind}"))
-    # launch L3: the Stripe idempotency keys on the live credit_ledger —
+    # launch L3: the Stripe idempotency keys on the live credit_ledger:
     # ext_ref (event id, the purchase grant) and payment_ref (payment_intent,
     # the refund/dispute reversal link)
     ledger_cols = {c["name"] for c in inspect(_engine).get_columns("credit_ledger")}
@@ -623,7 +623,7 @@ def _ensure_columns() -> None:
 
 def _ensure_indexes() -> None:
     """create_all adds new indexes only to tables it CREATES, never to a
-    table that already exists — so a partial unique index added after first
+    table that already exists, so a partial unique index added after first
     deploy (L2 refund-once) is patched onto the live credit_ledger here.
     Both Postgres and SQLite (>=3.8) accept this exact partial-index DDL."""
     from sqlalchemy import text
@@ -638,7 +638,7 @@ def _ensure_indexes() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_purchase "
             "ON credit_ledger (ext_ref) WHERE reason = 'purchase'"
         ))
-        # launch L3 refund/dispute: one chargeback per payment_intent — a refund
+        # launch L3 refund/dispute: one chargeback per payment_intent. A refund
         # AND a dispute on the same charge (or a redelivered event) reverse once
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_ledger_chargeback "
@@ -647,7 +647,7 @@ def _ensure_indexes() -> None:
         # V-170: two concurrent variants of one root must get distinct
         # ordinals or one must fail cleanly. Application logic computes
         # max+1 inside the insert transaction; THIS index is what makes the
-        # race lose loudly instead of storing a duplicate — the ordinal is
+        # race lose loudly instead of storing a duplicate. The ordinal is
         # stored forever (V-25), so a duplicate would be permanent.
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_variant_ordinal "

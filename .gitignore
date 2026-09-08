@@ -8,7 +8,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-# collector lockfile stays untracked (standing decision) — the VM always has
+# collector lockfile stays untracked (standing decision). The VM always has
 # one from `uv sync`, so if it were ever committed upstream, the nightly
 # ff-merge would refuse over the untracked copy; ignoring it lets git
 # overwrite it instead of bricking self-update
@@ -19,11 +19,11 @@ node_modules/
 .next/
 *.tsbuildinfo
 
-# Secrets / env — keys never go in git
+# Secrets / env: keys never go in git
 .env
 .env.*
 
-# Market data never goes in git — R2 only (standing rule).
+# Market data never goes in git, R2 only (standing rule).
 # Root-anchored: app route folders like frontend/app/data/ are code, not data.
 /data/
 *.parquet

@@ -33,7 +33,7 @@ INCIDENT_HEADLINE = "该策略经交易顺序重排后有23%的模拟路径亏�
 
 
 def _minimal_report() -> HonestyReport:
-    """Smallest valid report — enough for the verdict writer to run."""
+    """Smallest valid report, enough for the verdict writer to run."""
     return HonestyReport(
         oos=OosSplit(
             split_date="2023-01-01",
@@ -113,11 +113,12 @@ def test_guard_flags_chinese_and_passes_english() -> None:
 
 
 def test_guard_does_not_trip_on_template_typography() -> None:
-    """The deterministic template uses — · → ’ and arrows; none are letters,
+    """The deterministic template uses · → ’ − and arrows; none are letters,
     so an all-English verdict full of them must still read as English."""
     glyphy = (
-        "Survives 4 of 5 attacks — window 2020-01-06 → 2026-07-02 · "
-        "it kept 92% of its training score; don’t bet the house."
+        "Survives 4 of 5 attacks. Window 2020-01-06 → 2026-07-02 · "
+        "deepest rung net −$1,200 · it kept 92% of its training score; "
+        "don’t bet the house."
     )
     assert is_english(glyphy)
 
@@ -137,7 +138,7 @@ class _FakeResp:
 def test_grounded_chinese_verdict_is_rejected_and_falls_back(monkeypatch: Any) -> None:
     import requests
 
-    # every number here IS in the report (23% = p_loss, 1.70 = dd_p95) — so the
+    # every number here IS in the report (23% = p_loss, 1.70 = dd_p95), so the
     # numeric validator would bless it. Only the language guard can catch this.
     chinese = {
         "headline": "该策略有23%的模拟路径亏钱，最大回撤达1.70",

@@ -1,4 +1,4 @@
-"""Buying-power gate + ruin halt (owner decision 2026-07-15) — hand-computed.
+"""Buying-power gate + ruin halt (owner decision 2026-07-15), hand-computed.
 
 Engine-level to-the-cent scenarios live in tests/fixtures/engine/
 (fx_insufficient_buying_power_skip, fx_margin_reserve_short_put,
@@ -160,8 +160,9 @@ class TestAbsorbAtZero:
 def _bootstrap_sampled(pls: list[float], seed: int = 42, resamples: int = 1000,
                        block: int = 5) -> np.ndarray:
     """Replicate monte_carlo's circular block bootstrap sampling (same RNG
-    call order) — the independent reconstruction both MC tests assert
-    against, kept in ONE place so a bootstrap change can't desync them."""
+    call order). This is the independent reconstruction both MC tests
+    assert against, kept in ONE place so a bootstrap change can't desync
+    them."""
     arr = np.array(pls)
     n = len(arr)
     rng = np.random.RandomState(seed)
@@ -182,7 +183,7 @@ def _mc_result(pls: list[float], seed: int = 42) -> RunResult:
 
 class TestMonteCarloAbsorption:
     def test_non_ruined_run_is_field_identical_to_legacy(self) -> None:
-        """Absorption is a NO-OP when no resampled path crosses $0 — every
+        """Absorption is a NO-OP when no resampled path crosses $0. Every
         field must equal the pre-absorption formula recomputed here."""
         pls = [200.0, -100.0, 150.0, -80.0, 300.0, -50.0, 120.0, 90.0]
         initial = 100_000.0
@@ -266,7 +267,7 @@ class TestRuinPlumbing:
         assert "wiped out" in trust.reasons[0]
 
     def test_coverage_attributed_to_ruin_not_data(self) -> None:
-        # 9 chain sessions of the 10 the run LIVED — not materially short,
+        # 9 chain sessions of the 10 the run LIVED, not materially short,
         # even though the full requested window was 100 sessions
         r = RunResult(ticker="SPY", effective_start=date(2025, 1, 6),
                       effective_end=date(2025, 1, 17), seed=42)
@@ -438,7 +439,7 @@ def test_ruin_halts_the_five_min_clock() -> None:
         },
         "entry": {"schedule": {"frequency": "daily"}, "conditions": [],
                   "max_concurrent_positions": 1},
-        "exit": {"profit_target_pct": 500},  # unhittable — ride to settlement
+        "exit": {"profit_target_pct": 500},  # unhittable, ride to settlement
         "sizing": {"method": "fixed_contracts", "value": 1},
         "costs": {"commission_per_contract": 0.65,
                   "slippage_half_spread_fraction": 0.5,
@@ -468,7 +469,7 @@ def test_martingale_deep_add_skips_and_reads_unaffordable() -> None:
       PT 10%: blended 5.55, sell 6.25 (+12.6%) → close, P/L
         = 6.25×500 − 3.25 − 1,351.30 − 1,426.95 = +343.50
     The depth table shows rung2 as UNAFFORDABLE (fires 0), never merely
-    unprofitable — buying power is reality's cap; max_total_contracts is
+    unprofitable. Buying power is reality's cap; max_total_contracts is
     only the user's."""
     exp = "2025-01-07"
 

@@ -3,14 +3,14 @@ import clsx from "clsx";
 import { TrustBandCard } from "@/components/verdict/trust-band";
 
 /**
- * Landing §3 — the verdict showcase ("Refusal is a feature.").
+ * Landing §3: the verdict showcase ("Refusal is a feature.").
  * Design: docs/design/landing/Skeptic Landing.dc.html option 2a lines 146-188
  * (desktop) / 2b lines 452-479 (mobile). Every number below comes from a REAL
- * stored run — nothing is a fixture:
+ * stored run. Nothing is a fixture:
  *   refusal card + range row 3 → run 42ce700a376f
  *   range row 1               → run 612905835dca
  *   range row 2               → run 7bbf2837653f
- * Trust hue only on this surface — P/L tokens are forbidden here.
+ * Trust hue only on this surface: P/L tokens are forbidden here.
  */
 
 type Band = { left: string; width: string };
@@ -29,8 +29,20 @@ type RangeRow = {
 };
 
 // the instrument's full range, all real (owner 2026-07-17): a solid pass,
-// a big winner, a destructive one, a withheld verdict. Geometry/quotes
-// verbatim from each run's stored summary.
+// a big winner, a destructive one, a withheld verdict. Geometry and every
+// number come from each run's stored summary, and so does the quote
+// wording, word for word.
+//
+// PUNCTUATION IS THE ONE THING THAT MOVED, and this comment is not going to
+// claim more than that. The stored bytes carry an em-dash. House style has
+// no em-dash, so these read as a period and a capital, which is what a
+// human editor would have written. That is deliberately BETTER than the
+// mechanical normalizer's output: the normalizer has to work on legacy text
+// it cannot re-read, so it substitutes a comma and accepts the splice it
+// sometimes creates. Marketing copy on a page selling rigor does not have
+// to inherit that compromise. Click a row and the popup shows the same
+// words and the same numbers, punctuated by the machine instead of by hand.
+// Not one word and not one number may change here without changing the run.
 const RANGE_ROWS: RangeRow[] = [
   {
     runId: "612905835dca",
@@ -39,7 +51,7 @@ const RANGE_ROWS: RangeRow[] = [
     band: { left: "70%", width: "30%" },
     marker: "90%",
     quote:
-      "Your strategy’s profit depends on a handful of days — 126 days produced half of all gains.",
+      "Your strategy’s profit depends on a handful of days. 126 days produced half of all gains.",
   },
   {
     runId: "2a4f48d6178e",
@@ -58,7 +70,7 @@ const RANGE_ROWS: RangeRow[] = [
     band: { left: "0%", width: "30%" },
     marker: "10%",
     quote:
-      "This strategy loses money in every single test — it is not just bad, it is reliably destructive.",
+      "This strategy loses money in every single test. It is not just bad, it is reliably destructive.",
   },
   {
     runId: "42ce700a376f",
@@ -85,7 +97,7 @@ function RangeRowCard({ row, onOpen }: { row: RangeRow; onOpen: (runId: string) 
           {row.meta}
         </span>
       </div>
-      {/* the app's own band component — the landing must never drift from
+      {/* the app's own band component: the landing must never drift from
           the verdict surfaces it's advertising */}
       <TrustBandCard
         band={row.band ?? undefined}
@@ -125,12 +137,14 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
           Refusal is a feature.
         </h2>
         <p className="max-w-[730px] text-[13.5px] leading-[1.6] text-ink-2 md:text-[15px] md:leading-[1.65]">
-          Twelve closed trades in a year isn’t evidence — it’s anecdotes. Skeptic ships the
+          Twelve closed trades in a year isn’t evidence. It’s anecdotes. Skeptic ships the
           numbers, withholds the blessing, and shows exactly what unlocks a verdict.
         </p>
 
         <div className="mt-[22px] grid items-stretch gap-[26px] md:mt-11 md:grid-cols-[58fr_42fr]">
-          {/* refusal card — run 42ce700a376f, copy verbatim from the stored verdict.
+          {/* refusal card (run 42ce700a376f). The copy is the stored verdict's:
+              wording word for word, every number as computed. Punctuation is
+              the one thing that moved, to house style, same as the rows above.
               the column stretches to the range rail's height and the card grows
               to fill it, so the two sides match (owner 2026-07-17) */}
           <div className="flex flex-col">
@@ -140,7 +154,7 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
             >
               <div className="mb-2 flex items-center justify-between gap-3 md:mb-2.5">
                 <span className="font-mono text-[10px] font-medium tracking-[.1em] text-trust md:text-[11.5px] md:tracking-[.14em]">
-                  VERDICT — THE HONEST READ
+                  VERDICT: THE HONEST READ
                 </span>
                 <span className="shrink-0 font-mono text-[10px] font-medium text-trust md:text-[12px]">
                   VERDICT WITHHELD
@@ -152,7 +166,7 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
               </div>
               <p className="mt-3.5 max-w-[640px] text-[14px] leading-[1.65] text-ink-2 md:mt-4 md:text-[15.5px]">
                 The spec is valid. The engine ran it. But only 12 trades closed inside the 1-year
-                window — below the 15-trade evidence bar. Numbers shown, blessing withheld.
+                window, below the 15-trade evidence bar. Numbers shown, blessing withheld.
               </p>
               {/* spacer eats free height so the unlock box sits at the bottom
                   when the card is the taller-column filler, while keeping a
@@ -163,16 +177,16 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
                 <div className="mb-2 font-mono text-[10px] tracking-[.12em] text-trust md:mb-2.5 md:text-[11px]">
                   TWO HONEST WAYS TO A VERDICT
                 </div>
-                {/* trustpill-styled spans, not buttons — the landing can't
+                {/* trustpill-styled spans, not buttons: the landing can't
                     re-run anything, so no interactive affordance */}
                 <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:gap-2">
                   <span className="rounded-full border border-trust-border px-3.5 py-1.5 text-[13px] text-trust">
-                    re-run on a longer window — unlocks at ≥ 15 trades (has 12)
+                    re-run on a longer window: unlocks at ≥ 15 trades (has 12)
                   </span>
-                  {/* neutral pill per the mockup — editing the spec is the
+                  {/* neutral pill per the mockup: editing the spec is the
                       user's move, not one of the trust-hued re-run offers */}
                   <span className="rounded-full border border-line-hover px-3.5 py-1.5 font-mono text-[12px] text-ink-3">
-                    edit the spec — make the entry fire more often
+                    edit the spec: make the entry fire more often
                   </span>
                 </div>
               </div>
@@ -188,22 +202,22 @@ export function VerdictShowcase({ onOpenRun }: { onOpenRun: (runId: string) => v
             </div>
           </div>
 
-          {/* range rail — recent verdicts across the whole trust spectrum */}
+          {/* range rail: recent verdicts across the whole trust spectrum */}
           <div className="flex flex-col gap-2.5">
             <div className="mb-0.5 font-mono text-[11px] tracking-[.12em] text-ink-3">
-              THE RANGE — RECENT VERDICTS
+              THE RANGE: RECENT VERDICTS
             </div>
             {RANGE_ROWS.map((row) => (
               <RangeRowCard key={row.runId} row={row} onOpen={onOpenRun} />
             ))}
             <div className="mt-1 font-mono text-[11px] leading-[1.7] text-ink-4">
-              refused, damned, or blessed — whatever the evidence supports.
+              refused, damned, or blessed (whatever the evidence supports).
             </div>
           </div>
         </div>
 
         <div className="mx-auto mt-10 max-w-[640px] text-center font-mono text-[11px] leading-[1.8] text-ink-4">
-          <div>rendered from real stored runs — every number computed, none decorative</div>
+          <div>rendered from real stored runs (every number computed, none decorative)</div>
           <div className="text-ink-5">
             Research tool, not financial advice.
           </div>

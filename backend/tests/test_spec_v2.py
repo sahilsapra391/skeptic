@@ -2,7 +2,7 @@
 
 The version is load-bearing: v1 specs stay valid forever, v2 vocabulary on
 a v1 spec is a loud error, and theta_harvest refuses structures whose max
-profit is undefined — validation is where "never silent" lives.
+profit is undefined. Validation is where "never silent" lives.
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ def test_theta_harvest_refused_on_undefined_max_profit(structure: str) -> None:
 def test_theta_harvest_allowed_on_defined_max_profit(structure: str) -> None:
     raw = _v1_short_put(spec_version=2)
     raw["position"]["structure"] = structure
-    # legs stay the short put's — leg/structure consistency is the engine's
+    # legs stay the short put's, and leg/structure consistency is the engine's
     # concern; this test isolates the theta_harvest × structure rule
     raw["exit"]["theta_harvest"] = {"dte_from": 21, "dte_to": 7, "profit_pct": 50}
     spec = StrategySpec.model_validate(raw)

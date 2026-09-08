@@ -70,7 +70,7 @@ function legs(draft: SpecDraft): Json[] {
 }
 
 /**
- * V-77 — DIAL OWNERSHIP. The operative rule of the rebuild is "regenerate what
+ * V-77, DIAL OWNERSHIP. The operative rule of the rebuild is "regenerate what
  * the dial owns, inherit everything else". It is not self-evident from the
  * code, and rebuilding too much is how this file has gone wrong three times
  * (the D5d ladder drop, then legs/tenor, then meta.name). Read this before
@@ -95,7 +95,7 @@ function legs(draft: SpecDraft): Json[] {
  *   FILLS         costs.*                 (V-36; read-only until a variant)
  *   (no dial)     backtest.seed           (V-36; confirmed, never re-hardcoded)
  *
- * OWNED BY NO DIAL — always inherited from the parsed spec, never synthesized:
+ * OWNED BY NO DIAL, always inherited from the parsed spec, never synthesized:
  *   entry.scale_in (the ladder) · entry.conditions[1..] · schedule.time_of_day
  *   entry.max_concurrent_positions · exit.delta_stop_abs · exit.theta_harvest
  *   exit.conditions · position.max_vega_per_contract · the width_from_leg
@@ -104,7 +104,7 @@ function legs(draft: SpecDraft): Json[] {
  *
  * meta.description_raw is the user's verbatim prompt and is carried on the
  * draft, not derived. There is NO user-set run name anywhere in the product
- * (no rename in the Library, no custom name at submit) — the only names that
+ * (no rename in the Library, no custom name at submit). The only names that
  * exist are parser-derived or generated here. If renaming is ever added, a
  * user-set name must never regenerate under any dial move; only derived names
  * may (V-79).
@@ -126,7 +126,7 @@ function roundHalfEven(x: number): number {
  *
  * `legs()` can only emit `method: "delta"` at a hardcoded $5 spread width, so
  * rebuilding a spec whose strike rule it cannot express silently rewrites that
- * rule — an offset_pct strike becomes delta 0.30, a $10-wide spread becomes $5.
+ * rule: an offset_pct strike becomes delta 0.30, a $10-wide spread becomes $5.
  * When the dial is untouched there is nothing to rebuild FROM, so the base legs
  * pass through whole, exactly as the ladder and extra conditions already do.
  *
@@ -134,7 +134,7 @@ function roundHalfEven(x: number): number {
  *  - `strikeLabel` is still set (a non-delta parser strike; the STRIKE select
  *    nulls this label the instant it is touched), or
  *  - the dial's delta still equals what spec_to_draft projects from the base's
- *    lead leg — which is what catches a custom width behind a normal delta.
+ *    lead leg, which is what catches a custom width behind a normal delta.
  */
 function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
   const position = (base?.position ?? null) as Json | null;
@@ -158,7 +158,7 @@ function strikeUntouched(draft: SpecDraft, base?: Json | null): boolean {
  * V-17: the legs that actually ship.
  *
  * An untouched strike dial passes the base legs through whole. A MOVED strike
- * dial rebuilds them — but the spread width is a separate value the user did
+ * dial rebuilds them, but the spread width is a separate value the user did
  * not touch, and `legs()` only knows the hardcoded $5. So the rebuilt wings
  * keep their structural `reference_leg` and inherit the base's real width.
  *
@@ -245,15 +245,15 @@ function conditions(draft: SpecDraft, baseConds: Json[] = []): Json[] {
       cond.timeframe = first.timeframe;
     }
     // the dial edits the FIRST condition only; the rest of the entry logic
-    // survives the rebuild whole — exactly what the TRIGGER strip shows as
+    // survives the rebuild whole, exactly what the TRIGGER strip shows as
     // "& …" chips (owner call 2026-07-08; dropping them was FX.5 scope)
     return [cond, ...baseConds.slice(1)];
   }
   if (draft.fromChart) {
-    // chart drafts always carry a pin-derived trigger — one missing is
+    // chart drafts always carry a pin-derived trigger. One missing is
     // corrupted state, and failing loudly beats silently backtesting a
     // canned trigger nobody set
-    throw new Error("chart draft lost its trigger — recompile from the chart");
+    throw new Error("chart draft lost its trigger. Recompile from the chart");
   }
   return baseConds.length > 0 ? baseConds : [];
 }
@@ -261,7 +261,7 @@ function conditions(draft: SpecDraft, baseConds: Json[] = []): Json[] {
 function exitRules(draft: SpecDraft): Json {
   const out: Json = {};
   const label = draft.exit ?? "";
-  // decimals are legal everywhere the label grammar carries percents —
+  // decimals are legal everywhere the label grammar carries percents:
   // "12.5% profit" must never parse as 5%
   const profit = label.match(/(\d+(?:\.\d+)?)%\s*profit/);
   if (profit) out.profit_target_pct = Number(profit[1]);
@@ -270,13 +270,13 @@ function exitRules(draft: SpecDraft): Json {
   if (label.includes("expiry")) out.time_exit_dte = 0;
   const stop = label.match(/stop\s*(\d+(?:\.\d+)?)(×|%)/);
   if (stop) out.stop_loss_pct = stop[2] === "×" ? Number(stop[1]) * 100 : Number(stop[1]);
-  // "flat 15:45" — the session force-flat is a complete exit on its own
+  // "flat 15:45": the session force-flat is a complete exit on its own
   const flat = label.match(/flat\s*(\d{2}:\d{2})/);
   if (flat) out.close_at_time = flat[1];
   return out;
 }
 
-/** Mirror of the server's _required_spec_version — the version is a
+/** Mirror of the server's _required_spec_version. The version is a
  * contract computed from the vocabulary actually used, so a dial-rebuilt
  * spec must carry the same version the server would compute. */
 function computeSpecVersion(spec: Json): number {
@@ -293,11 +293,11 @@ function computeSpecVersion(spec: Json): number {
   const V2_INDICATORS = new Set([
     "ivx_rank_1y", "ivx_level_30d", "hv_iv_spread_30d", "price_vs_vwap_pct",
   ]);
-  // F4: vol-surface vocabulary — checked first, the version is the MAX
+  // F4: vol-surface vocabulary, checked first, the version is the MAX
   // the vocabulary needs (a skew condition on a finest-resolution spec is 5).
   // Ladder rungs and the rearm are conditions too (review finding).
   const V5_INDICATORS = new Set(["skew_25d", "term_structure_slope"]);
-  // F1: dealer-positioning vocabulary lifts to 6 — checked before v5,
+  // F1: dealer-positioning vocabulary lifts to 6, checked before v5,
   // the version is the MAX the vocabulary needs
   const V6_INDICATORS = new Set([
     "gex_level", "gex_rank_1y", "dex_level", "dex_rank_1y",
@@ -307,7 +307,7 @@ function computeSpecVersion(spec: Json): number {
     "market_tide_rank_1y", "nope_level", "nope_rank_1y",
     "put_call_flow_ratio", "max_pain_distance_pct",
   ]);
-  // Parity Tier 3: the standardized IVX form lifts to 8 — checked before
+  // Parity Tier 3: the standardized IVX form lifts to 8, checked before
   // v7, the version is the MAX the vocabulary needs
   const V8_INDICATORS = new Set(["ivx_zscore_1y"]);
   const scaleIn = (entry.scale_in ?? {}) as Json;
@@ -340,7 +340,7 @@ function computeSpecVersion(spec: Json): number {
 
 export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   if (!draft.exit) {
-    throw new Error("exit is unset — the spec screen must ask, never default");
+    throw new Error("exit is unset. The spec screen must ask, never default");
   }
   // V-93: the same check startBacktest applies, so both sites agree on whether
   // a draft without confirmed costs is legal. Enforcement stays in both places
@@ -363,7 +363,7 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   // structuredClone it carries no browser floor and cannot smuggle through a
   // Date or Map that would then fail to serialize.
   const base = baseSpec ? (JSON.parse(JSON.stringify(baseSpec)) as Json) : baseSpec;
-  // FX.5: 0DTE runs on the 5-minute intraday engine (shipped) — a 0DTE
+  // FX.5: 0DTE runs on the 5-minute intraday engine (shipped), so a 0DTE
   // dial now emits an intraday spec instead of refusing. The DTE band is
   // the intraday slice (0–2 trading DTE).
   const zeroDte = draft.dte === 0;
@@ -386,7 +386,7 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   // trigger's timeframe/period extras, label-inexpressible exit fields
   // (delta stops, theta harvest, exit conditions), max_concurrent and
   // max_vega. close_at_time lives in the exit LABEL and is removed by
-  // replacing the exit — visibly.
+  // replacing the exit, visibly.
   const scaleIn = baseEntry.scale_in ?? null;
   const baseConds = (baseEntry.conditions as Json[] | undefined) ?? [];
   const entry: Json = {
@@ -396,7 +396,7 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
         ? { time_of_day: baseSchedule.time_of_day }
         : {}),
     },
-    // a ladder IS the entry signal — its conditions stay empty; dials
+    // a ladder IS the entry signal: its conditions stay empty; dials
     // cannot edit rungs, so the base ladder passes through whole
     conditions: scaleIn != null ? [] : conditions(draft, baseConds),
     max_concurrent_positions:
@@ -404,7 +404,7 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   };
   if (scaleIn != null) entry.scale_in = scaleIn;
   // the dial's OFF state is null and must OVERRIDE the base; only a draft
-  // that never carried the key (undefined) defers to the parsed spec —
+  // that never carried the key (undefined) defers to the parsed spec.
   // ?? here would silently run every_setup while the dial showed "once /
   // session" (review blocker)
   const scan =
@@ -415,10 +415,10 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
 
   // close_at_time is owned by the exit LABEL grammar ("flat 15:45"): it
   // round-trips while present and is REMOVED when the user replaces the
-  // exit — display and run always agree (review: invisible re-attachment
+  // exit, so display and run always agree (review: invisible re-attachment
   // was silent divergence). Exit fields the label can NEVER express
   // (delta stops, theta harvest, exit conditions) pass through from the
-  // base — matching what an untouched verbatim run would do.
+  // base, matching what an untouched verbatim run would do.
   const exit: Json = exitRules(draft);
   if (baseExit.delta_stop_abs != null && exit.delta_stop_abs == null) {
     exit.delta_stop_abs = baseExit.delta_stop_abs;
@@ -431,8 +431,8 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   }
 
   const backtest: Json = {
-    // start/end are set by startBacktest from the CONFIRMED window —
-    // building a spec without one is a bug it will throw on
+    // start/end are set by startBacktest from the CONFIRMED window.
+    // Building a spec without one is a bug it will throw on
     start: null,
     end: null,
     initial_capital: draft.capital ?? 25000,
@@ -447,7 +447,7 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
   if (resolution === "finest" && intraday) backtest.resolution = "finest";
 
   // V-17: the generated name reads off ticker + strike + structure. While all
-  // three still say what the parser produced, the parser's own name stands —
+  // three still say what the parser produced, the parser's own name stands,
   // otherwise editing an unrelated dial silently renames the run in the
   // library. Once one of them moves, a stale ".30Δ" label on a .20Δ run would
   // be worse than a regenerated one.
@@ -482,7 +482,7 @@ export function draftToSpec(draft: SpecDraft, baseSpec?: Json | null): Json {
         ? ((base?.position as Json).expiration_selection as Json)
         : zeroDte
           ? // 0DTE band matches the parser's convention (max 1: same-day
-            // intent, next-day fallback only — review: band drift between
+            // intent, next-day fallback only. Review: band drift between
             // ingresses)
             { target_dte: 0, min_dte: 0, max_dte: 1 }
           : {

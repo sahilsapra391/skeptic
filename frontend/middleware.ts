@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * get the app surface painted at them for a beat before AccountGate's
  * /api/me round-trip came back 401 and hard-navigated to /signin (owner
  * 2026-08-08: clicking "day N of the record" in the landing footer flashed
- * the whole Observatory first). A client effect cannot avoid that — the HTML
+ * the whole Observatory first). A client effect cannot avoid that: the HTML
  * is already on the wire. This redirects before any of it renders.
  *
  * PRESENCE, not validity. The session cookie is httpOnly and same-origin

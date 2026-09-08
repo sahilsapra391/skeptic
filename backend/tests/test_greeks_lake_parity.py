@@ -1,8 +1,9 @@
 """Computed-vs-vendor greek parity against the LIVE lake (D1a).
 
 Samples DoltHub vendor rows from a pinned SPY session and asserts our
-Black-Scholes computation lands within tolerance of the vendor's numbers —
-median-based, because vendors compute at their own spot/iv timestamps.
+Black-Scholes computation lands within tolerance of the vendor's numbers.
+The comparison is median-based, because vendors compute at their own
+spot/iv timestamps.
 
 Deliberately NOT a committed fixture: checking real chain rows into git
 would violate the repo's data rails ("never commit data to git"). The test
@@ -32,7 +33,7 @@ SAMPLE = 20
 def test_computed_greeks_match_dolthub_vendor() -> None:
     load_local_env()
     if not r2.r2_configured():
-        pytest.skip("no R2 credentials — lake parity runs on the owner's machine")
+        pytest.skip("no R2 credentials, lake parity runs on the owner's machine")
 
     s3 = r2.r2_client()
     df = r2.get_parquet(s3, PINNED_KEY)

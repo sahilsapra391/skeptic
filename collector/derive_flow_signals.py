@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_flow_signals.py — UW families → EOD flow/pin signals (ENGINE-V4 F2/F3).
+derive_flow_signals.py: UW families → EOD flow/pin signals (ENGINE-V4 F2/F3).
 
 Reduces each banked session of uw/net_prem_ticks + uw/nope + uw/max_pain
 (per ticker) and uw/market_tide (market-wide) to one EOD row:
@@ -10,13 +10,13 @@ Reduces each banked session of uw/net_prem_ticks + uw/nope + uw/max_pain
       date · market_tide
 
 Incremental by SET DIFFERENCE (the F4 self-healing rule): each run derives
-exactly the listed sessions absent from the artifact — transient read
+exactly the listed sessions absent from the artifact. Transient read
 failures retry next night, late-landing sessions are picked up when they
 appear, no state file. A session missing one family derives None for that
 family's signals (a ROW is written, so it is not retried); only sessions
 where the DRIVING family listing exists but nothing could be read stay
 pending. The reduction MATH lives in the backend
-(app/data/flow_signals.py) — one implementation, fixture-tested.
+(app/data/flow_signals.py): one implementation, fixture-tested.
 
 Run:  cd collector && uv run python derive_flow_signals.py [--tickers SPY,QQQ,IWM]
 Env:  R2_* vars (same as collect.py).
@@ -46,7 +46,7 @@ def _load_dotenv(path: Path = Path(__file__).parent / ".env") -> None:
 
 _load_dotenv()
 
-# single-source the reduction from the backend (F0 pattern — pandas-only)
+# single-source the reduction from the backend (F0 pattern, pandas-only)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.data.flow_signals import (  # noqa: E402
     FLOW_KEY,
@@ -86,7 +86,7 @@ def _load_artifact(s3, key: str) -> tuple[pd.DataFrame | None, set[str]]:
 
 
 def _append(s3, key: str, existing: pd.DataFrame | None, rows: list[dict]) -> None:
-    # ONE read, threaded from _load_artifact — a transient failure on a
+    # ONE read, threaded from _load_artifact. A transient failure on a
     # second read would silently truncate the artifact for a day
     # (review finding F2/F3 #3)
     fresh = pd.DataFrame(rows)
@@ -113,7 +113,7 @@ def derive_ticker(s3, ticker: str) -> int:
     for d in todo:
         np_df = r2_get_parquet(s3, f"uw/net_prem_ticks/ticker={ticker}/date={d}/rows.parquet")
         if np_df is None or np_df.empty:
-            skipped.append(d)  # unreadable driving family — retry next run
+            skipped.append(d)  # unreadable driving family, retry next run
             continue
         row = derive_flow_row(
             np_df,

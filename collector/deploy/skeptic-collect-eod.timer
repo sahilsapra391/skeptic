@@ -12,7 +12,7 @@ OnCalendar=Mon-Fri *-*-* 22:30:00 UTC
 # Deliberately NOT Persistent. A replay fires at boot, which can be any hour,
 # and a mid-session run would write a partial chain as if it were the close.
 # A genuinely missed 21:30 is already covered by the 22:30 catch-up, which
-# no-ops if the day's record objects exist — the same safety net cron had.
+# no-ops if the day's record objects exist (the same safety net cron had).
 Persistent=false
 
 [Install]

@@ -5,12 +5,12 @@
  * launched on Product Hunt; the embed goes on the main site in two places).
  *
  *  - ProductHuntBadge: the embed itself. The landing footer renders it
- *    under the day counter, permanently — nothing to dismiss.
+ *    under the day counter, permanently (nothing to dismiss).
  *  - ProductHuntBubble: the same badge floating bottom-right with a cross.
  *    useProductHuntBubble owns whether it shows: dismissal is per browsing
  *    session (sessionStorage), so closing it keeps it gone for this tab and
  *    a fresh visit brings it back. The landing page holds that state (the
- *    same way it holds theme) because the footer needs it too — it reserves
+ *    same way it holds theme) because the footer needs it too. It reserves
  *    room at its bottom while the bubble is up, so the bubble never sits on
  *    the theme control when the visitor scrolls to the end.
  *
@@ -104,7 +104,7 @@ export function ProductHuntBubble({
   onDismiss,
 }: {
   // the background-run pill owns the bottom-right corner while a run is in
-  // flight — the bubble sits above it instead of underneath it
+  // flight, so the bubble sits above it instead of underneath it
   lifted?: boolean;
   onDismiss: () => void;
 }) {

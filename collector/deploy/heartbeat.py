@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""heartbeat.py — page when the intraday recorder stops banking snapshots during
+"""heartbeat.py: page when the intraday recorder stops banking snapshots during
 a session. A systemd timer runs this every few minutes on the recorder host.
 
 This is the guard that turns a SILENT stall (the 2026-07-09 failure, where the
@@ -78,7 +78,7 @@ def alert(msg: str) -> None:
     if url:
         try:
             requests.post(url, data=msg.encode(), timeout=10)
-        except Exception as exc:  # noqa: BLE001 — a failed page must not crash the check
+        except Exception as exc:  # noqa: BLE001 (a failed page must not crash the check)
             print(f"alert webhook failed: {exc}", file=sys.stderr)
 
 
@@ -99,7 +99,7 @@ def main() -> int:
     now = pd.Timestamp.now(tz="UTC")
     win = session_window(now, nyse())
     if win is None:
-        return 0  # market closed — nothing to guard
+        return 0  # market closed, nothing to guard
     open_ts, _ = win
     if now - open_ts < pd.Timedelta(minutes=args.grace_min):
         return 0  # give the recorder a moment after the open
@@ -129,7 +129,7 @@ def main() -> int:
         last_y = newest_y if newest_y is not None else open_ts
         age_y = (now - last_y).total_seconds() / 60
         if age_y > args.yahoo_stale_min:
-            alert(f"skeptic recorder: yahoo lane stale — last {args.ticker} yahoo "
+            alert(f"skeptic recorder: yahoo lane stale, last {args.ticker} yahoo "
                   f"snapshot {age_y:.0f} min ago (> {args.yahoo_stale_min}) during "
                   f"session {day}"
                   + ("" if newest_y is not None else " (none today)"))

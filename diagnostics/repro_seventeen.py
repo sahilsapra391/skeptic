@@ -101,7 +101,7 @@ def main() -> None:
     dense_fills = run_all(synthetic_store(seed=11, sessions=60), "STORE A (DENSE)")
     n = len(dense_fills["daily_short_put"])
     print(f"\n  >>> DENSE daily fills = {n}  "
-          f"({'PASS: > 17 — no hidden cap' if n > 17 else 'FAIL'})")
+          f"({'PASS: > 17, no hidden cap' if n > 17 else 'FAIL'})")
 
     sparse = sparse_store(synthetic_store(seed=11, sessions=1600), n_keep=17)
     sparse_fills = run_all(sparse, "STORE B (SPARSE: 17 chain dates)")

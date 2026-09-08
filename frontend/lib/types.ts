@@ -26,7 +26,7 @@ export const STRUCTURE_LABEL: Record<Structure, string> = {
   long_put: "long put",
 };
 
-/** Structured entry trigger for chart-taught strategies — maps 1:1 onto a
+/** Structured entry trigger for chart-taught strategies. Maps 1:1 onto a
  * spec `Condition`, so what the user edits is what the engine evaluates. */
 export interface TriggerSpec {
   indicator: string; // schema Indicator value
@@ -43,18 +43,18 @@ export interface SpecDraft {
   structure: Structure;
   strikeDelta: number; // whole-number delta, 5..95 in steps of 5 (.05Δ steps)
   strikeLabel?: string | null; // non-delta selection from the parser ("ATM", "5% below spot")
-  dte: number; // 0..50 (0 = 0DTE — runs on the 5-minute intraday engine)
+  dte: number; // 0..50 (0 = 0DTE, runs on the 5-minute intraday engine)
   cadence: string; // e.g. "weekly · mon" (display; cadenceSel is the editable truth)
   size: string; // e.g. "1 contract" (display; sizeValue is the editable truth)
   exit: string | null; // null = parser must ask, never guess
   fromChart: boolean;
-  quote: string; // the user's words, verbatim — or the chart-teach summary
+  quote: string; // the user's words, verbatim (or the chart-teach summary)
   anchor?: string; // chart mode: first pinned entry date
   trigger?: string; // chart mode: display label for the trigger
   triggerSpec?: TriggerSpec; // chart mode: the editable structured trigger
   examples?: number; // chart mode: pinned example count
   // pre-run dials (2026-07-06): the outgoing spec is rebuilt from these
-  /** REQUIRED before any run — null disables RUN until the user chooses.
+  /** REQUIRED before any run: null disables RUN until the user chooses.
    * Text-supplied dates arrive as a pre-filled custom entry, still
    * needing explicit confirmation. */
   window?: { kind: WindowKind; start?: string | null; end?: string | null } | null;
@@ -84,7 +84,7 @@ export interface SpecDraft {
    *                 stays empty and the run is locked until the user picks.
    *                 This is a routine first screen, not a degraded one (V-132). */
   /** V-154: this draft came from another run, so the composer's "Here's what
-   * I heard" framing is FALSE here — the quoted prompt is the parent's, not
+   * I heard" framing is FALSE here. The quoted prompt is the parent's, not
    * something this user said. Same rule as V-31, applied to the composer
    * screen instead of the provenance record. */
   variantOf?: { runId: string; label: string | null };
@@ -112,7 +112,7 @@ export interface SpecDraft {
     rearm: TriggerSpec;
   } | null;
   conditionList?: TriggerSpec[];
-  /** Chart mode: the raw pointer context (pinned bar times as ISO strings) —
+  /** Chart mode: the raw pointer context (pinned bar times as ISO strings),
    * recorded into the run's provenance, never read by the engine. */
   chartContext?: {
     ticker: Ticker;
@@ -120,7 +120,7 @@ export interface SpecDraft {
   } | null;
 }
 
-/** One event in a run's provenance conversation — a question the parser
+/** One event in a run's provenance conversation: a question the parser
  * asked or the answer the user gave, chronological, client-timestamped.
  * Captured on the composer and stored on the run row (Chunk A); rendered
  * by the "How this was built" view (Chunk B). */
@@ -136,10 +136,10 @@ export interface ProvenanceEvent {
 
 /** The run's setup story (Chunk A), served on RunPayload.provenance. Two
  * shapes behind one key: STORED records (fresh runs) carry confirmed.draft
- * — the SpecDraft exactly as confirmed — plus source and mechanics.build;
+ * (the SpecDraft exactly as confirmed) plus source and mechanics.build;
  * DERIVED records (runs predating the column, derived at read time) carry
  * confirmed.boxes (a spec_json projection), no source/build, and NEVER a
- * conversation — it was never stored and is never invented. */
+ * conversation: it was never stored and is never invented. */
 export interface RunProvenance {
   v: number;
   origin?: string;
@@ -165,8 +165,8 @@ export interface RunProvenance {
     omitted?: string;
   };
   truncated?: { dropped_events: number };
-  /** V-31/V-176: sections 1-2 are the PARENT's — its prompt, and its Q&A if
-   * it had any. Marked explicitly so carried history is never rendered as
+  /** V-31/V-176: sections 1-2 are the PARENT's (its prompt, and its Q&A if
+   * it had any). Marked explicitly so carried history is never rendered as
    * though the interview ran on this run. */
   carried_from?: string | null;
   /** V-13 section 5: the server-computed what-changed rows (V-162's one
@@ -188,14 +188,14 @@ export interface RunProvenance {
   };
 }
 
-/** /api/data/estimate — window options with real session counts and time
+/** /api/data/estimate: window options with real session counts and time
  * estimates measured from completed runs (null until the first run at a
  * clock calibrates; never an invented number). */
 export interface EstimatePayload {
   ticker: string;
   clock: string;
   first_session: string | null;
-  /** F1: coverage-capped signal families — a spec conditioned on one
+  /** F1: coverage-capped signal families. A spec conditioned on one
    * refuses windows starting before the signal's first session, so the
    * composer surfaces the bound pre-submit. */
   signal_windows?: Record<
@@ -220,8 +220,8 @@ export interface VerdictPayload {
   refusal: boolean;
   /** graded on a sample under the standard 15-trade floor (lowered bar) */
   belowStandard?: boolean;
-  /** the account was wiped out and the sim halted (2026-07-15) —
-   * trust is hard-capped at the floor when set */
+  /** the account was wiped out and the sim halted (2026-07-15).
+   * Trust is hard-capped at the floor when set */
   ruined?: boolean;
   headline: string;
   survived: string;
@@ -238,7 +238,7 @@ export interface VerdictPayload {
 export interface MetricTile {
   v: string;
   l: string;
-  /** true = this is a loss-side P/L number (max drawdown) — pl-neg token */
+  /** true = this is a loss-side P/L number (max drawdown), pl-neg token */
   neg?: boolean;
 }
 
@@ -250,7 +250,7 @@ export interface WalkForwardWindow {
 
 export interface SensitivityCell {
   label: string; // the swept value, e.g. ".24Δ"
-  sharpe: string; // "0.72" or "—"
+  sharpe: string; // "0.72" or the empty-cell placeholder
   o: number; // heat opacity
 }
 
@@ -317,7 +317,7 @@ export interface LiquidityProfile {
   penalized_share: number | null;
   stressed_share: number | null;
   unknown_liquidity_share: number | null;
-  /** F5: fill qty vs displayed NBBO depth — reported, never scored.
+  /** F5: fill qty vs displayed NBBO depth. Reported, never scored.
    * depth_known_share is of all option-leg fills; beyond_depth_share is
    * of the depth-known ones (null when no fill had known depth). */
   depth_known_share?: number | null;
@@ -389,7 +389,7 @@ export interface RunPayload {
   equitySeries?: SeriesPoint[];
   drawdownSeries?: SeriesPoint[];
   /** ruin halt (2026-07-15): the account hit $0 and the simulation stopped
-   * there — banner + terminal chart marker. None on non-ruined runs and on
+   * there. Banner + terminal chart marker. None on non-ruined runs and on
    * every stored pre-ruin payload. */
   ruin?: { date: string; finalEquity: number; haltedPositions: number } | null;
   /** buying-power profile (2026-07-15): what the account couldn't fund */
@@ -405,7 +405,7 @@ export interface RunPayload {
   /** D1d: per-day aggregate exposure of open positions (null = honest gap) */
   greeksSeries?: GreeksSeries;
   liquidity?: LiquidityProfile | null;
-  /** Chunk A: the setup story — stored verbatim for fresh runs, derived at
+  /** Chunk A: the setup story, stored verbatim for fresh runs, derived at
    * read time for runs predating the column. Absent only when the stored
    * record is unreadable. */
   provenance?: RunProvenance;
@@ -416,7 +416,7 @@ export interface RunPayload {
     parent: { id: string | null; label: string | null; deleted: boolean };
     root: { id: string | null };
   };
-  /** F7: on-demand fill audit vs Alpaca minute trades — merged at read
+  /** F7: on-demand fill audit vs Alpaca minute trades, merged at read
    * time like receipts; the stored verdict is never rewritten. */
   fillAudit?: {
     generated_at?: string;
@@ -439,8 +439,8 @@ export interface RunPayload {
     }[];
     error?: string;
   } | null;
-  /** F7: per-pair cross-source agreement over the run's window —
-   * reported, never scored; rates travel with their denominators. */
+  /** F7: per-pair cross-source agreement over the run's window.
+   * Reported, never scored; rates travel with their denominators. */
   dataConfidence?: {
     pairs: {
       pair: string;
@@ -469,11 +469,11 @@ export interface RunPayload {
   resolutionRuns?:
     | { first: string; last: string; sessions: number; resolution: string }[]
     | null;
-  /** FX.2: skip-reason distribution — attempt-level reasons (per
+  /** FX.2: skip-reason distribution, attempt-level reasons (per
    * attempted bar) beside episode-level ones (once per setup);
    * absent only on stored pre-FX.2 payloads */
   skipReasons?: Record<string, number> | null;
-  /** FX.4: the mixed-resolution split (full vs 5-min-only vs minute) —
+  /** FX.4: the mixed-resolution split (full vs 5-min-only vs minute),
    * null on runs without a per-session resolution record */
   resolutionSplit?: {
     meaningful: boolean;
@@ -488,7 +488,7 @@ export interface RunPayload {
   /** D3c: 5-min replay receipts (merged at read time; stored trust untouched) */
   receipts?: {
     replay_run_id: string;
-    /** FX.4: named when the runs' resolution mixes differ — differences may
+    /** FX.4: named when the runs' resolution mixes differ. Differences may
      * be a resolution upgrade, not a market change */
     resolution_upgrade?: string | null;
     created_at: string;
@@ -512,7 +512,7 @@ export interface RunPayload {
   // while running: real stats from finished stages. New runs carry both
   // voices; runs stored before the split are plain strings.
   previews?: (string | { pro: string; retail: string })[];
-  /** retail-register text — same numbers, everyday words */
+  /** retail-register text: same numbers, everyday words */
   retail?: {
     headline: string;
     survived: string;
@@ -524,16 +524,16 @@ export interface RunPayload {
     notes: [string, string, string, string];
     recommendations: string[];
   } | null;
-  /** the LLM narration is still being written off the critical path —
-   * the template verdict below is final in every NUMBER; only the
+  /** the LLM narration is still being written off the critical path.
+   * The template verdict below is final in every NUMBER; only the
    * wording may improve. Poll briefly while true. */
   narrationPending?: boolean;
   /** when the narration attempt started (bounds the pending poll server-side) */
   narrationStartedAt?: string;
   /** which writer produced the stored verdict text: "template" | "llm" */
   verdictSource?: string;
-  /** launch L4: one of the two pinned showcase runs (server-decided) —
-   * the run screen banners it so it's never mistaken for the viewer's own */
+  /** launch L4: one of the two pinned showcase runs (server-decided).
+   * The run screen banners it so it's never mistaken for the viewer's own */
   example?: boolean;
   /** the verdict was re-decided at the viewer's minimum-trades setting
    * (`bar`) instead of the bar the run was scored at (`ranAt`) */
@@ -553,16 +553,16 @@ export interface RunSummary {
   kind: VerdictKind;
   band?: { left: string; width: string };
   marker?: string;
-  status?: "running"; // gauntlet still in progress — no verdict fields yet
+  status?: "running"; // gauntlet still in progress, no verdict fields yet
   stage?: number; // 0-based current gauntlet stage while running
-  /** D3b: automatic upgrade lineage — provenance is never blurred */
+  /** D3b: automatic upgrade lineage (provenance is never blurred) */
   upgradeOf?: string | null; // the refused run this one supersedes
-  autoNote?: string | null; // "re-ran automatically — N new sessions"
+  autoNote?: string | null; // "re-ran automatically (N new sessions)"
   supersededBy?: string | null; // set on the OLD refusal once upgraded
-  /** V-12: lineage, injected at read from the run row — groups a family */
+  /** V-12: lineage, injected at read from the run row (groups a family) */
   rootRunId?: string | null;
   variantOrdinal?: number | null;
-  /** launch L4: one of the two pinned showcase runs — badged everywhere so
+  /** launch L4: one of the two pinned showcase runs, badged everywhere so
    * a stranger never mistakes it for their own result */
   example?: boolean;
 }
@@ -595,7 +595,7 @@ export interface CoveragePayload {
   blind_spots: { id: string; text: string }[];
   sources_status: Record<string, boolean | string>;
   /** D1d: per-source field completeness + monthly spread, from the engine's
-   * local chain cache — null until the first engine load builds it */
+   * local chain cache, null until the first engine load builds it */
   chain_quality?: Record<
     Ticker,
     {
@@ -612,7 +612,7 @@ export interface CoveragePayload {
     }
   >;
   /** F4 (ENGINE-V4): derived vol-surface signal artifact window (skew_25d /
-   * term_structure_slope, vol points) — null per ticker until the nightly
+   * term_structure_slope, vol points), null per ticker until the nightly
    * derivation has built it; per-signal counts because a session can carry
    * one signal and honestly lack the other. */
   ivs_signals?: Record<
@@ -626,7 +626,7 @@ export interface CoveragePayload {
     } | null
   >;
   /** F1 (ENGINE-V4): banked UW greek_exposure window (gex/dex sign+rank
-   * vocabulary) — null per ticker until the UW collector banks it. The
+   * vocabulary), null per ticker until the UW collector banks it. The
    * pre-run refusal quotes the same first session. */
   dealer_positioning?: Record<
     Ticker,
@@ -638,7 +638,7 @@ export interface CoveragePayload {
       dex_sessions: number;
     } | null
   >;
-  /** F2/F3 (ENGINE-V4): derived flow/pin artifact windows — per-signal
+  /** F2/F3 (ENGINE-V4): derived flow/pin artifact windows, per-signal
    * counts; market_tide is market-wide (one block, not per ticker). */
   flow_signals?: Record<
     Ticker,
@@ -659,7 +659,7 @@ export interface CoveragePayload {
     tide_sessions: number;
   } | null;
   /** Forward record (2026-07-08): in-house continuation artifact windows
-   * (CBOE close chain + own dailies) — null per ticker until the nightly
+   * (CBOE close chain + own dailies), null per ticker until the nightly
    * derivation has built them. GEX/DEX here are banked + cross-validated
    * only, never spliced into the UW series. */
   inhouse_signals?: Record<
@@ -676,14 +676,14 @@ export interface CoveragePayload {
       hv?: CoverageRange | null;
     } | null
   >;
-  /** Where each frozen vendor family last observed (SPY) — the seam view */
+  /** Where each frozen vendor family last observed (SPY): the seam view */
   vendor_lasts?: {
     ivs?: string | null;
     uw?: string | null;
     uw_positioning?: string | null;
   };
-  /** F7: cross-source validation pair windows + aggregate agreement —
-   * reported, never scored. Keyed pair → ticker. */
+  /** F7: cross-source validation pair windows + aggregate agreement.
+   * Reported, never scored. Keyed pair → ticker. */
   cross_validation?: Record<
     string,
     Record<
@@ -698,14 +698,14 @@ export interface CoveragePayload {
       }
     >
   >;
-  /** D3d: weekly demand ranking (build_priorities.py) — the Observatory's
+  /** D3d: weekly demand ranking (build_priorities.py), the Observatory's
    * "collection wants" line; null until the first weekly pass writes it */
   collection_priorities?: {
     generated_at: string;
     priorities: { rank: number; want: string; why: string; score: number }[];
   } | null;
   /** F0 (ENGINE-V4): per-session resolution mix from the collector-built
-   * resolution map (state/resolution_map/) — null per ticker until the
+   * resolution map (state/resolution_map/), null per ticker until the
    * nightly ledger has built it. clock = finest decision clock; quote =
    * best fill-grade source by quality (ivol_5min > cboe_2min > eod_only). */
   resolution_mix?: Record<
@@ -719,7 +719,7 @@ export interface CoveragePayload {
       timeline: TimelineRun[];
     } | null
   >;
-  /** F0: new-source coverage windows (state/source_coverage.json) — a
+  /** F0: new-source coverage windows (state/source_coverage.json), a
    * pass-through R2 artifact, so every field is optional: an older-schema
    * artifact must degrade gracefully, never crash the page */
   new_sources?: {
@@ -786,7 +786,7 @@ export interface BarsPayload {
   window: ChartWindow;
   live: boolean;
   /** honest freshness label for a live tail: "live · IEX tail" (real-time) or
-   * "delayed ~15m · CBOE recorder" — never claims real-time for delayed data */
+   * "delayed ~15m · CBOE recorder", never claims real-time for delayed data */
   live_label?: string | null;
   source: string;
   as_of: string | null;

@@ -1,18 +1,18 @@
-"""Per-session resolution map — which clock and which quote source each
+"""Per-session resolution map: which clock and which quote source each
 session honestly supports (F0, ENGINE-V4 data spine).
 
 Owner decision (masterplan §2 + clock-vs-quote split, 2026-07-07): the engine
 uses the finest HONEST resolution available PER SESSION. Two independent
 facts are recorded for every session, because they come from different data:
 
-  clock_resolution — the finest DECISION clock (when the engine may look):
+  clock_resolution, the finest DECISION clock (when the engine may look):
       minute    UW 1-min trade candles exist for the session
       five_min  iVol 5-min NBBO bars or CBOE recorder snapshots exist
       none      EOD data only (daily clock)
-    UW minute candles carry NO NBBO — they upgrade the clock and validate
+    UW minute candles carry NO NBBO. They upgrade the clock and validate
     fills, they are never a fill price (guardrail #1).
 
-  quote_resolution — the best FILL-GRADE quote source, by QUALITY precedence
+  quote_resolution, the best FILL-GRADE quote source, by QUALITY precedence
   (D2 owner amendment 1: real NBBO outranks the delayed recorder even though
   the recorder is finer-grained):
       ivol_5min  true NBBO + greeks (iVolatility 5-min)
@@ -21,11 +21,11 @@ facts are recorded for every session, because they come from different data:
       none       nothing quotable that session
 
 The map is BUILT by collector/ledger.py after every collection run (nightly +
-manual) and only READ here, through a small TTL cache — per-session selection
+manual) and only READ here, through a small TTL cache. Per-session selection
 must be an O(1) artifact lookup, never a live lake probe in a hot path
 (post-OOM rule). Self-improvement thesis: as collectors bank new sessions or
 finer data, the next ledger rebuild upgrades the map and every later run
-picks it up automatically — no code change, no redeploy. A re-run whose
+picks it up automatically (no code change, no redeploy). A re-run whose
 result changed because a session's resolution improved is explained as a
 RESOLUTION UPGRADE by the D3 receipts loop (FX.4 wires that in).
 
@@ -76,7 +76,7 @@ def derive_resolution_rows(
     uw_families_by_session: session → count of UW per-session signal families
     banked for that date (coverage context, not part of the resolution pick).
     minute_underlying_sessions (FX.1): sessions with banked 1-min underlying
-    NBBO bars (bars_1m/) — the minute bar GRID. A minute-clock session also
+    NBBO bars (bars_1m/), the minute bar GRID. A minute-clock session also
     needs this before the engine can actually step it at 1-min.
     """
     minute = {d: int(n) for d, n in minute_contracts_by_session.items() if int(n) > 0}
@@ -120,7 +120,7 @@ def derive_resolution_rows(
 
 def timeline_runs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Compress per-session rows into consecutive (clock, quote) runs for the
-    Observatory strip — payload stays small at multi-thousand sessions."""
+    Observatory strip. Payload stays small at multi-thousand sessions."""
     runs: list[dict[str, Any]] = []
     for row in rows:
         key = (row["clock_resolution"], row["quote_resolution"])
@@ -144,7 +144,7 @@ _CACHE_MAX = 8  # SPY/QQQ/IWM today; bounded regardless
 
 def _load_map(s3: Any, ticker: str) -> pd.DataFrame | None:
     """The banked per-session map for one ticker, or None until the ledger
-    has built it (honest absence — surfaces show 'map pending')."""
+    has built it (honest absence: surfaces show 'map pending')."""
     now = time.time()
     hit = _CACHE.get(ticker)
     if hit is not None and now - hit[0] < CACHE_SECONDS:
@@ -194,7 +194,7 @@ def minute_clock_sessions(s3: Any, ticker: str) -> set[str]:
     decision: UW-window sessions only): clock_resolution == minute AND the
     1-min underlying grid is banked. Returns ISO date strings; empty until
     the ledger has built the map or when the map predates the
-    has_minute_underlying column — honest degrade to 5-min, upgraded
+    has_minute_underlying column. Honest degrade to 5-min, upgraded
     automatically by the next nightly rebuild (self-improvement thesis)."""
     df = _load_map(s3, ticker)
     if df is None or "has_minute_underlying" not in df.columns:

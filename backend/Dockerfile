@@ -1,4 +1,4 @@
-# Skeptic backend — Railway deploy (BUILD-PLAN M6).
+# Skeptic backend: Railway deploy (BUILD-PLAN M6).
 # uv-based build; runs uvicorn on Railway's injected $PORT.
 
 # Both base images are pinned by DIGEST, not by tag. `python:3.13-slim` and
@@ -29,7 +29,7 @@ FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b
 # a hypothesis that Railway could not reach ghcr.io, and the actual cause was a
 # Railway platform incident. It stays because removing a build-time dependency on
 # a second registry, and pinning the tool that replaces it, are worth doing on
-# their own merits — not because the theory that produced it held up.
+# their own merits, not because the theory that produced it held up.
 RUN pip install --no-cache-dir uv==0.12.5
 
 ENV UV_COMPILE_BYTECODE=1 \

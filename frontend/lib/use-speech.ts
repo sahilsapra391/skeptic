@@ -2,12 +2,12 @@
 
 /**
  * Speech-to-text for the strategy composer, on the browser's native
- * SpeechRecognition (Chrome/Edge/Safari — streamed recognition, no API key,
+ * SpeechRecognition (Chrome/Edge/Safari: streamed recognition, no API key,
  * no audio passing through our backend).
  *
  * Built for dictating a strategy in one go: continuous mode with interim
  * results streaming into the composer, and automatic restart when the
- * engine times out on silence mid-thought — the mic stays hot until the
+ * engine times out on silence mid-thought. The mic stays hot until the
  * user explicitly stops.
  */
 
@@ -68,7 +68,7 @@ export function useSpeechToText(onSegment: (segment: string) => void): SpeechSta
   const [error, setError] = useState<string | null>(null);
 
   const recRef = useRef<SpeechRecognitionLike | null>(null);
-  const activeRef = useRef(false); // user intent — survives engine auto-stops
+  const activeRef = useRef(false); // user intent, survives engine auto-stops
   const onSegmentRef = useRef(onSegment);
   onSegmentRef.current = onSegment;
 
@@ -108,7 +108,7 @@ export function useSpeechToText(onSegment: (segment: string) => void): SpeechSta
 
     rec.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        setError("microphone permission denied — allow it in the address bar");
+        setError("microphone permission denied. Allow it in the address bar");
         activeRef.current = false;
         setListening(false);
       }

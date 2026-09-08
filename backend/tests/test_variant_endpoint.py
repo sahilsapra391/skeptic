@@ -1,4 +1,4 @@
-"""GET /api/runs/{id}/variant — the projection that reopens a stored run.
+"""GET /api/runs/{id}/variant: the projection that reopens a stored run.
 
 Covers V-03 (refused runs included), V-09 (costs nothing), V-28 (pre-provenance
 runs project from spec_json alone), V-34/V-35 (costs and seed inherit from the
@@ -27,8 +27,8 @@ EFFECTIVE = {"effective_start": "2023-04-03", "effective_end": "2026-07-17"}
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """HARNESS FACT 1: the /api gate in app/main.py opens only when
     SKEPTIC_ACCESS_TOKEN is ABSENT (auth.gate_allows returns True immediately
-    on an unset token). A stray token in the environment — from a .env, or
-    exported in the shell — turns every request in this file into a bare 401
+    on an unset token). A stray token in the environment (from a .env, or
+    exported in the shell) turns every request in this file into a bare 401
     with no hint about why. Deleting it is what test_runs_api does too.
 
     The runs stored below are unowned (user_id NULL), which
@@ -59,7 +59,7 @@ def _store(
         # HARNESS FACT 2, and the one that will cost you an hour: db.session()
         # returns a RAW SQLAlchemy Session. Its __exit__ closes and rolls back;
         # it does not commit. A fixture that forgets this stores nothing, and
-        # the endpoint then answers "run <id> not found" — a 404 that reads as
+        # the endpoint then answers "run <id> not found", a 404 that reads as
         # an endpoint bug and sends you debugging the wrong file entirely.
         s.commit()
     return run_id
@@ -127,7 +127,7 @@ def test_window_carried_when_the_spec_names_dates(client: TestClient) -> None:
 def test_window_carried_all_when_the_stored_draft_chose_all(client: TestClient) -> None:
     """V-51: an inherited "all" resolves against CURRENT coverage, so it may
     legitimately test more history than the parent. Distinguishable ONLY via the
-    stored draft — spec.backtest.start is NULL for "all" and for a
+    stored draft: spec.backtest.start is NULL for "all" and for a
     pre-directive run alike."""
     rid = _store("varsrc4", _spec_with_window(None), provenance=_prov({"kind": "all"}),
                  stats={"honesty_report": EFFECTIVE})
@@ -195,7 +195,7 @@ def test_tier_b_locks_one_dial_and_still_returns_a_draft(client: TestClient) -> 
 
 
 def test_a_refused_run_is_still_variant_able(client: TestClient) -> None:
-    """V-03: refused runs are the HIGHEST-value copy source — the usual fix is
+    """V-03: refused runs are the HIGHEST-value copy source. The usual fix is
     widening the window, which is what this button is for."""
     rid = _store("varsrc9", _spec_with_window(None),
                  stats={"honesty_report": EFFECTIVE, "verdict": {"refusal": True}})
@@ -210,7 +210,7 @@ def test_unknown_run_is_404(client: TestClient) -> None:
 
 def test_reading_the_variant_draft_creates_nothing(client: TestClient) -> None:
     """V-09: clicking costs nothing and commits to nothing. No run row, no
-    ledger entry — the credit is debited at SUBMIT."""
+    ledger entry. The credit is debited at SUBMIT."""
     rid = _store("varsrc10", _spec_with_window("2024-01-01"))
     with db.session() as s:
         before = s.query(db.Run).count()
@@ -228,8 +228,8 @@ def test_identity_fields_are_locked_on_every_variant(client: TestClient, field: 
 
 def test_parent_label_is_the_librarys_name_not_meta_name(client: TestClient) -> None:
     """V-160: the screen and the Library must never disagree about what a run
-    is called, so the label reads summary_json — the exact field the Library
-    renders — and falls back to spec.meta.name ONLY when no summary exists.
+    is called, so the label reads summary_json (the exact field the Library
+    renders) and falls back to spec.meta.name ONLY when no summary exists.
     The two differing is exactly the case that matters: meta.name is the field
     PR-0 just stopped from regenerating silently, and a variant screen naming
     the parent one thing while the Library shows another is V-80's seam."""
@@ -258,7 +258,7 @@ def test_parent_label_falls_back_to_meta_name_without_a_summary(
 def test_get_run_carries_lineage_and_survives_a_deleted_parent(
     client: TestClient,
 ) -> None:
-    """V-12: the results header reads payload["variant"] — ordinal, parent
+    """V-12: the results header reads payload["variant"]: ordinal, parent
     (named the Library's way, V-155), and root. V-45: a deleted parent keeps
     the lineage and says so; never orphaned silently, never re-rooted."""
     parent = _store("varsrc14", _spec_with_window("2024-01-01"))
@@ -276,7 +276,7 @@ def test_get_run_carries_lineage_and_survives_a_deleted_parent(
     assert v["parent"]["deleted"] is False
     assert v["root"]["id"] == parent
 
-    # V-45: delete the parent — lineage stays, the record says deleted
+    # V-45: delete the parent. Lineage stays, the record says deleted
     with db.session() as s:
         s.query(db.Run).filter(db.Run.id == parent).delete()
         s.commit()

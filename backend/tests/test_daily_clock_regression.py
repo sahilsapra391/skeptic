@@ -1,4 +1,4 @@
-"""Daily-clock bit-identical regression — owner amendment 5 (D2b).
+"""Daily-clock bit-identical regression, owner amendment 5 (D2b).
 
 Three diverse pinned runs; their sha256 digests were generated on the
 PRE-D2b engine (branch point = merged D1, engine identical to main) and may
@@ -7,12 +7,12 @@ never change while clock="daily":
   1. assignment + stock-unwind path   (50Δ short put, hold to expiry)
   2. long-option settlement path      (50Δ long call, PT + time exit)
   3. condition-exit + delta-stop path (RSI entries/exits on a persistent
-     integer strike grid — the synthetic walk regenerates spot-relative
+     integer strike grid, where the synthetic walk regenerates spot-relative
      strikes daily, so aged contracts never re-quote there and early closes
      can only fill on a grid that persists)
 
-If any digest moves, the declared-clock work changed daily results —
-that is a failing build, not a fixture to regenerate.
+If any digest moves, the declared-clock work changed daily results.
+That is a failing build, not a fixture to regenerate.
 """
 
 from __future__ import annotations

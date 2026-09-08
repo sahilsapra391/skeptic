@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-derive_cboe_eod.py — the day's LAST CBOE recorder snapshot → a canonical
+derive_cboe_eod.py: the day's LAST CBOE recorder snapshot → a canonical
 EOD chain (the forward chain record, owner decision 2026-07-08).
 
 Why: the Alpha Vantage leg is premium-gated (dormant) and the Yahoo nightly
-snapshot is capped at 60 DTE with no vendor greeks — the recorder already
+snapshot is capped at 60 DTE with no vendor greeks. The recorder already
 banks the FULL chain (all expirations, vendor greeks/IV/OI, displayed NBBO
 sizes) every minute through the close. The final snapshot of a session,
-captured ~16:14 ET, shows the ~15-min-delayed feed at ~16:00 ET — the
+captured ~16:14 ET, shows the ~15-min-delayed feed at ~16:00 ET, the
 closest thing to a true close chain the lake gets for $0. The delay is a
 property of the source, disclosed by source="cboe_eod" exactly the way
 cboe_minute disclosures work intraday; it is never shifted or hidden.
@@ -19,12 +19,12 @@ ivolatility > alphavantage > cboe_eod > yahoo > dolthub.
 
 Incremental by SET DIFFERENCE (the F4 self-healing rule): each run derives
 exactly the recorder dates absent from the cboe_eod prefix. Per-day gates
-(mirroring the iVol backfill gates — a rejected day is logged and retried
+(mirroring the iVol backfill gates, and a rejected day is logged and retried
 next run, never written):
   * the session must be OVER (now ≥ close + 30 min: options close lag +
-    feed delay) — a mid-session run must not mint a fake "EOD" chain;
-  * the last snapshot must be captured AT/AFTER the equity close — a
-    recorder that died mid-day left no honest close record for that date;
+    feed delay), because a mid-session run must not mint a fake "EOD" chain;
+  * the last snapshot must be captured AT/AFTER the equity close, because
+    a recorder that died mid-day left no honest close record for that date;
   * ≥ 50 rows, ≤ 5% crossed quotes, no expirations before the trading
     date, every |delta| ≤ 1.
 
@@ -74,17 +74,17 @@ log = logging.getLogger("cboe_eod")
 SNAP_PREFIX = "options_intraday/source=cboe_delayed"
 CHAIN_KEY = "options/source=cboe_eod/ticker={ticker}/date={d}/chain.parquet"
 # extra columns banked when the snapshot carries them (older snapshots
-# predate the recorder's size/iv30 capture — absence is honest, not padded)
+# predate the recorder's size/iv30 capture, so absence is honest, not padded)
 EXTRA_COLUMNS = ["source_ts", "bid_size", "ask_size", "iv30"]
 # session completeness: options close 15 min after the equity close, the
-# feed runs ~15 min delayed — before close+30min the "last" snapshot cannot
+# feed runs ~15 min delayed. Before close+30min the "last" snapshot cannot
 # show the close state yet
 SESSION_SETTLE_MINUTES = 30
 # The delayed feed at capture time T shows ~T−15min, so a snapshot only
 # reflects the CLOSE when captured ≥ close+15min. The recorder's 60s cycle
 # guarantees a healthy day a snapshot in [close+14:00, close+15:00) (its
 # loop runs to close+15 and key stamps truncate to the minute), so ≥ +14min
-# is the tightest gate that never rejects a healthy day — a recorder that
+# is the tightest gate that never rejects a healthy day. A recorder that
 # died at 16:02 ET, whose last snapshot shows ~15:47 state, is refused
 # rather than minted as a "close" chain (review finding).
 CLOSE_CAPTURE_MIN_LAG_MINUTES = 14
@@ -174,33 +174,33 @@ def derive_ticker(s3, ticker: str, now: pd.Timestamp) -> int:
     for d in todo:
         bounds = _session_bounds(d)
         if bounds is None:
-            log.warning("%s %s: recorder date is not an XNYS session — skipped", ticker, d)
+            log.warning("%s %s: recorder date is not an XNYS session, skipped", ticker, d)
             continue
         close, ready_at = bounds
         if now < ready_at:
-            log.info("%s %s: session not settled yet (ready %s) — skipped", ticker, d, ready_at)
+            log.info("%s %s: session not settled yet (ready %s), skipped", ticker, d, ready_at)
             continue
         last = _last_snap(s3, ticker, d)
         if last is None:
-            log.warning("%s %s: no parseable snapshots — retry next run", ticker, d)
+            log.warning("%s %s: no parseable snapshots, retry next run", ticker, d)
             continue
         key, captured = last
         if captured < close + timedelta(minutes=CLOSE_CAPTURE_MIN_LAG_MINUTES):
             # recorder died before the close was VISIBLE on the delayed
             # feed: nothing on this date can honestly claim to be the EOD
-            # chain (retried nightly — cheap, and a later manual backfill
+            # chain (retried nightly: cheap, and a later manual backfill
             # of snaps would self-heal it)
             log.warning("%s %s: last snapshot %s cannot show the %s close on a "
-                        "~15-min-delayed feed — no honest EOD chain for this "
+                        "~15-min-delayed feed, no honest EOD chain for this "
                         "session", ticker, d, captured, close)
             continue
         df = r2_get_parquet(s3, key)
         if df is None or df.empty:
-            log.warning("%s %s: last snapshot unreadable — retry next run", ticker, d)
+            log.warning("%s %s: last snapshot unreadable, retry next run", ticker, d)
             continue
         reason = _gate(df, d)
         if reason is not None:
-            log.warning("%s %s: rejected — %s", ticker, d, reason)
+            log.warning("%s %s: rejected (%s)", ticker, d, reason)
             continue
         out = _normalize(df, ticker, d)
         r2_put_parquet(s3, CHAIN_KEY.format(ticker=ticker, d=d), out)

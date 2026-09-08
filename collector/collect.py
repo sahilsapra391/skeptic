@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-collect.py — Skeptic data pipeline collector (production).
+collect.py: Skeptic data pipeline collector (production).
 
 Productionized from reference/collector_v2.py per docs/DATA-PIPELINE.md.
 
@@ -108,7 +108,7 @@ def r2_put_parquet(s3, key: str, df: pd.DataFrame) -> None:
 
 def r2_get_parquet(s3, key: str,
                    columns: list[str] | None = None) -> pd.DataFrame | None:
-    """`columns` projects at decode time — the bytes still download whole,
+    """`columns` projects at decode time. The bytes still download whole,
     so for GB-scale objects prefer r2_get_parquet_spooled."""
     try:
         obj = s3.get_object(Bucket=os.environ["R2_BUCKET"], Key=key)
@@ -120,8 +120,8 @@ def r2_get_parquet(s3, key: str,
 def r2_get_parquet_spooled(s3, key: str,
                            columns: list[str] | None = None
                            ) -> pd.DataFrame | None:
-    """Stream the object to a temp file, then column-project the read —
-    the full multi-hundred-MB byte buffer never resides in memory next to
+    """Stream the object to a temp file, then column-project the read.
+    The full multi-hundred-MB byte buffer never resides in memory next to
     the decoded frame (the OOM rule for tape-scale objects)."""
     import tempfile
 
@@ -181,7 +181,7 @@ def list_chain_dates(s3, source: str, ticker: str) -> list[str]:
 
 def list_date_prefixes(s3, prefix: str) -> list[str]:
     """Sorted ISO dates under date=YYYY-MM-DD/ sub-prefixes (cheap Delimiter
-    listing — mirrors backend app/data/r2.py; the shared home so derive
+    listing, mirrors backend app/data/r2.py; the shared home so derive
     scripts stop growing private copies)."""
     dates: list[str] = []
     paginator = s3.get_paginator("list_objects_v2")
@@ -263,7 +263,7 @@ def av_fetch_chain(ticker: str, trading_date: date) -> pd.DataFrame:
     rows = payload.get("data") or []
     if not rows:
         # Empty is legit (pre-finalization, pre-listing); a Note/Information
-        # body is how AV signals throttling — surface it.
+        # body is how AV signals throttling. Surface it.
         note = payload.get("Note") or payload.get("Information") or ""
         if note:
             raise RuntimeError(f"AV non-data response: {note[:160]}")
@@ -416,7 +416,7 @@ def fetch_underlying(symbol: str) -> pd.DataFrame:
 
 
 def fetch_fred_dgs3mo() -> pd.DataFrame:
-    """3-month T-bill yield from FRED (free CSV, no key) — the risk-free rate
+    """3-month T-bill yield from FRED (free CSV, no key), the risk-free rate
     for the backend's computed Black-Scholes greeks (DATA-PIPELINE §4)."""
     resp = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv",
                         params={"id": "DGS3MO"}, timeout=60)
@@ -488,7 +488,7 @@ def run_eod(s3, budget: AvBudget) -> bool:
                           "(docs/BUILD-LOG.md, M1 addendum).", ticker)
                 av_unavailable = True
             else:
-                log.warning("[av:%s] %s: %s — stopping AV leg", ticker, d, exc)
+                log.warning("[av:%s] %s: %s, stopping AV leg", ticker, d, exc)
             av_ok = False
             break
         if df.empty:
@@ -566,7 +566,7 @@ def run_backfill(s3, budget: AvBudget, limit: int | None = None) -> None:
                         log.error("[%s] backfill unavailable: HISTORICAL_OPTIONS "
                                   "is premium-gated on this key", ticker)
                     else:
-                        log.warning("[%s] %s: %s — stopping backfill for today",
+                        log.warning("[%s] %s: %s, stopping backfill for today",
                                     ticker, prev, exc)
                     return
                 if df.empty:

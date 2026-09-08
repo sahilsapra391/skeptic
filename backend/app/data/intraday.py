@@ -1,4 +1,4 @@
-"""Intraday (5-minute) data layer — D2a. Lake → SessionSlice for the engine.
+"""Intraday (5-minute) data layer (D2a). Lake → SessionSlice for the engine.
 
 Sources, ranked per owner amendment 1 (real NBBO outranks delayed data):
   1. ivol_5min   options_intraday/source=ivolatility/ticker=T/date=D/bars.parquet
@@ -7,20 +7,20 @@ Sources, ranked per owner amendment 1 (real NBBO outranks delayed data):
   2. cboe_minute options_intraday/source=cboe_delayed/.../snap_*.parquet
                  ~15-min DELAYED minute snapshots; forward coverage only,
                  used for sessions ivol does not carry. A session is served
-                 by ONE source — provenance is per-session, never blended.
+                 by ONE source. Provenance is per-session, never blended.
   3. alpaca_modeled options_minute/source=alpaca/... (D2d): trade-print
-                 OHLCV with NO quotes — the bid/ask is MODELED (mid = the
+                 OHLCV with NO quotes. The bid/ask is MODELED (mid = the
                  last trade print within the stale-print window, half-spread
                  = the ticker's own median EOD spread fraction). Flagged per
                  fill, ALWAYS filled at full adverse slippage, and only used
                  where no quote record exists (QQQ/IWM 2024-02→2026-06).
 No synthetic quotes from EOD chains: a bar without a quote or a recent
-trade print is a gap (owner decision — eod_interpolated is excluded).
+trade print is a gap (owner decision: eod_interpolated is excluded).
 
 Timestamps are ET wall-clock, tz-naive, exactly as the lake stores them
 (bars 09:30 → 16:15, options close-lag included).
 
-Memory model: a 5-min run touches ~2,120 session objects — far too much for
+Memory model: a 5-min run touches ~2,120 session objects, far too much for
 the all-in-RAM pattern chains.py uses. Sessions load lazily behind a bounded
 LRU, backed by an on-disk per-session cache with a versioned manifest
 (chains.py's pattern, per session): the sensitivity sweep's ~20 re-runs pay
@@ -47,7 +47,7 @@ from app.engine.market import SessionSlice
 from app.engine.types import ContractKey, Quote
 
 # The capture slice (mirrors collector/backfill_ivol_intraday.py). Until D2d
-# widens sources, this IS the intraday universe — the engine's pre-run
+# widens sources, this IS the intraday universe. The engine's pre-run
 # coverage check (D2b, owner amendment 4) refuses specs that need more.
 SLICE_MAX_TRADING_DTE = 2
 SLICE_ATM_BAND = 8.0  # dollars around spot
@@ -57,13 +57,13 @@ SLICE_ATM_BAND = 8.0  # dollars around spot
 CBOE_SLICE_MAX_CALENDAR_DTE = 4
 
 CACHE_SCHEMA_VERSION = 7  # v7: recorder volume is ROLLOVER-AWARE (the CBOE
-#     day-volume field carries the prior session's total until ~9:42 ET —
-#     pre-reset bars are unknown, never seeded; incident 2026-07-08)
+#     day-volume field carries the prior session's total until ~9:42 ET.
+#     Pre-reset bars are unknown, never seeded; incident 2026-07-08)
 # v6: CBOE per-bar underlying volume (recorder
 #     und_volume cumulative → per-bar diff; session VWAP becomes evaluable
 #     on cboe_minute sessions whose snapshots bank it)
 # v5 (F5): + displayed NBBO sizes (bid_size/ask_size)
-# v4: vendor-shape hardening — duplicate stamps keep
+# v4: vendor-shape hardening. Duplicate stamps keep
 #     the last-written row, head-truncated payloads no longer seed bar 0 with
 #     the cumulative-so-far (v3: NaN cum-volume no longer injects the session
 #     cumulative as one bar's volume; v2: per-bar volume, D2c)
@@ -76,7 +76,7 @@ CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "intraday"
 LRU_SESSIONS = 32
 CBOE_FETCH_WORKERS = 16
 # session-listing freshness: sessions() relists past this age so a warm
-# container's NEXT run sees last night's recorder sessions (listing only —
+# container's NEXT run sees last night's recorder sessions (listing only,
 # three Delimiter calls; slices stay behind their own caches)
 SESSION_LIST_TTL_SECONDS = 1800
 
@@ -85,12 +85,12 @@ IVOL_UND = "underlying_intraday/source=ivolatility"
 CBOE_OPT = "options_intraday/source=cboe_delayed"
 ALPACA_OPT = "options_minute/source=alpaca"
 ALPACA_UND = "underlying_minute"
-# FX.1: 1-min underlying NBBO bars (iVolatility, 2011+) — the MINUTE bar
+# FX.1: 1-min underlying NBBO bars (iVolatility, 2011+), the MINUTE bar
 # grid for resolution="finest" sessions. Options quotes stay the 5-min NBBO
 # stamps; minute bars between stamps carry no chain and fill nothing.
 BARS_1M = "bars_1m/source=ivolatility"
 LRU_MINUTE_SESSIONS = 16  # separate, bounded (post-OOM rule)
-# a trade print older than this is NOT a usable price for the bar — stale
+# a trade print older than this is NOT a usable price for the bar. Stale
 # prints on sparse contracts would otherwise masquerade as quotes
 ALPACA_STALE_PRINT_MIN = 5
 ALPACA_SLICE_MAX_CALENDAR_DTE = 4  # same weekend-covering approximation as CBOE
@@ -104,7 +104,7 @@ SLICE_COLUMNS = [
 
 
 def _size_i(v: Any) -> int | None:
-    """Displayed size: a negative vendor value is garbage, not depth — it
+    """Displayed size: a negative vendor value is garbage, not depth. It
     would count as depth-known with an automatic exceedance (v4's
     vendor-shape-hardening rule: clamp to unknown, never trust)."""
     n = _num_i(v)
@@ -121,7 +121,7 @@ def _num_i(v: Any) -> int | None:
 
 SESSION_OPEN = time(9, 30)  # ET wall-clock; bars are stamped at bar START
 
-# counts only, never chain-data rows (repo rule) — the point is telling
+# counts only, never chain-data rows (repo rule). The point is telling
 # "one bad row dropped" apart from "the whole session evaporated"
 log = logging.getLogger("skeptic.intraday")
 
@@ -133,7 +133,7 @@ def _ivol_und_rows(und: pd.DataFrame | None, ctx: str) -> pd.DataFrame | None:
     Defensive against vendor shape defects, each one row's problem and never
     the session's: a malformed stamp is coerced + dropped (the volume column
     already gets that tolerance), and a duplicated stamp keeps only the
-    last-written row — a duplicate's cumulative diff is 0 and its dict insert
+    last-written row. A duplicate's cumulative diff is 0 and its dict insert
     would erase the bar's real volume in _build_slice. Row losses are logged
     (counts only) so systemic evaporation is never silent."""
     if und is None or und.empty or "last" not in und.columns:
@@ -144,7 +144,7 @@ def _ivol_und_rows(und: pd.DataFrame | None, ctx: str) -> pd.DataFrame | None:
         log.warning("ivol underlying %s: %d/%d rows dropped (unparseable stamp)",
                     ctx, len(parsed) - len(und), len(parsed))
     # the cumulative diff downstream is order-sensitive and the lake
-    # preserves vendor row order unguarded — sort by stamp, never trust it
+    # preserves vendor row order unguarded. Sort by stamp, never trust it
     und = und.sort_values("bar_ts", kind="stable")
     und = und.drop_duplicates(subset=["bar_ts"], keep="last")
     return None if und.empty else und
@@ -159,7 +159,7 @@ def _ivol_frames(
     und = r2.get_parquet(s3, f"{IVOL_UND}/ticker={ticker}/date={d}/bars.parquet")
     out = pd.DataFrame({
         # coerce: one malformed stamp drops its row (_build_slice dropna),
-        # never the session — raising here killed the whole load
+        # never the session. Raising here killed the whole load
         "bar_ts": pd.to_datetime(opt["minute_ts"], errors="coerce"),
         "expiration": opt["expiration"],
         "right": opt["right"],
@@ -169,7 +169,7 @@ def _ivol_frames(
         "last": None,
         "volume": pd.to_numeric(opt["volume"], errors="coerce"),
         "open_interest": None,
-        # F5: displayed NBBO depth (contracts) — disclosure input, never
+        # F5: displayed NBBO depth (contracts), disclosure input, never
         # pricing; absent columns stay honestly None
         "bid_size": pd.to_numeric(opt["bid_size"], errors="coerce")
         if "bid_size" in opt.columns else None,
@@ -184,9 +184,9 @@ def _ivol_frames(
     })[SLICE_COLUMNS]
     n_bad = int(out["bar_ts"].isna().sum())
     if n_bad == len(out):
-        # every stamp evaporated — never serve (or cache) a hollow session;
+        # every stamp evaporated. Never serve (or cache) a hollow session;
         # left uncached, the next run rereads the possibly-repaired object
-        log.warning("ivol options %s %s: all %d stamps unparseable — skipped",
+        log.warning("ivol options %s %s: all %d stamps unparseable, skipped",
                     ticker, d, n_bad)
         return None
     if n_bad:
@@ -198,7 +198,7 @@ def _ivol_frames(
         if "volume" in und_rows.columns:
             cum_vol = pd.to_numeric(und_rows["volume"], errors="coerce")
             # the vendor volume column is CUMULATIVE within the session
-            # (probed: monotonic 0 → ~52M) — per-bar volume is the diff.
+            # (probed: monotonic 0 → ~52M). Per-bar volume is the diff.
             # An unparseable cell mid-session leaves ITS bar and the next
             # NaN (volume unknown → the bar sits out of session VWAP)
             # rather than injecting the whole session cumulative as one
@@ -207,7 +207,7 @@ def _ivol_frames(
                 cum_vol,
                 # per-bar ≡ cumulative ONLY at the session open: a
                 # head-truncated payload's first cumulative is hours of
-                # volume, not a bar's — unknown, like an unparseable cell
+                # volume, not a bar's: unknown, like an unparseable cell
                 seed_first=und_rows["bar_ts"].iloc[0].time() == SESSION_OPEN,
             )
         else:
@@ -226,13 +226,13 @@ def _minute_und_frame(s3: Any, ticker: str, d: str) -> pd.DataFrame | None:
     PRICE ONLY, deliberately: on a minute grid the 5-min underlying frame
     remains the single source of indicator samples AND session-VWAP volume
     (review finding: bars_1m is a different vendor artifact with different
-    session bounds — mixing its volumes would double-count and its values
+    session bounds. Mixing its volumes would double-count and its values
     would silently shift timeframe-"5min" signal meaning). These rows only
     refine the price between 5-min stamps.
 
     bars_1m rows carry the MOST RECENT print (lastPrice/lastDateTime), so
     the session open repeats the prior session's close until a fresh print
-    lands — those stale rows are dropped (a Friday print is not a Monday
+    lands. Those stale rows are dropped (a Friday print is not a Monday
     price; fail closed, same spirit as app/data/pit.py). Grid bounded to
     regular hours [09:30, 16:00); stamps not aligned to whole minutes are
     dropped (alignment is what the bar loop's time math assumes)."""
@@ -264,7 +264,7 @@ def _cboe_frames(
     s3: Any, ticker: str, d: str
 ) -> tuple[pd.DataFrame, pd.DataFrame | None] | None:
     """Minute snapshots → 5-min bars: each bar uses the FIRST snapshot at or
-    after the bar's start (the state at bar open — never intra-bar future
+    after the bar's start (the state at bar open, never intra-bar future
     information). Full chain filtered to the slice; the ~15-min feed delay is
     a property of the SOURCE, disclosed via fill_source, never shifted."""
     keys = sorted(r2.list_keys(s3, f"{CBOE_OPT}/ticker={ticker}/date={d}/"))
@@ -306,7 +306,7 @@ def _cboe_frames(
         spot = _num(df["spot"].dropna().iloc[0]) if df["spot"].notna().any() else None
         # the recorder banks the underlying's CUMULATIVE session share volume
         # per snapshot; per-bar volume is the diff (identical convention to
-        # the ivol reader — per_bar_volume is the ONE shared implementation).
+        # the ivol reader, and per_bar_volume is the ONE shared implementation).
         # Snapshots predating the recorder's und_volume capture leave the
         # cell NaN: that bar sits out of session VWAP, never a fabricated 0.
         cum_vol = None
@@ -350,7 +350,7 @@ def _cboe_frames(
         cum = pd.to_numeric(und["cum_volume"], errors="coerce")
         if cum.notna().any():
             # rollover-aware, NEVER seeded: the feed's open-minutes value is
-            # the PRIOR session's total (incident 2026-07-08 — seeding put
+            # the PRIOR session's total (incident 2026-07-08: seeding put
             # yesterday's 42M into the 09:30 bar's VWAP weight); plateau and
             # pre-reset bars stay NaN and sit out of session VWAP
             und["volume"] = recorder_per_bar_volume(cum)
@@ -362,10 +362,10 @@ def _merge_minute_underlying(
     und5: pd.DataFrame, und1: pd.DataFrame
 ) -> tuple[pd.DataFrame, set[datetime]]:
     """The minute grid's underlying frame: the 5-min frame's rows WIN at
-    their stamps (price + volume — the indicator/VWAP record, identical to
+    their stamps (price + volume, the indicator/VWAP record, identical to
     what the 5-min grid sees, including its 16:00+ tail), and bars_1m rows
     fill the minutes between as PRICE-ONLY (volume absent → they never move
-    session VWAP). Returns the merged frame and the 5-min stamp set — the
+    session VWAP). Returns the merged frame and the 5-min stamp set, the
     indicator sampling stamps."""
     stamps = {pd.Timestamp(r).to_pydatetime() for r in und5["bar_ts"]}
     extra = und1.loc[~pd.to_datetime(und1["bar_ts"]).isin(list(stamps))].copy()
@@ -383,7 +383,7 @@ def _build_slice(
     indicator_stamps: set[datetime] | None = None,
 ) -> SessionSlice:
     opt = opt.dropna(subset=["bar_ts", "right", "strike"])
-    # a malformed expiration is that row's defect, never the session's —
+    # a malformed expiration is that row's defect, never the session's:
     # coerce + drop (the NaN-only dropna can't catch it). This is the ONE
     # spot covering all sources AND cache-served frames: a raise here would
     # recur from the version-valid cache on every retry.
@@ -437,10 +437,10 @@ def _build_slice(
 
 
 def _spread_stats(s3: Any, ticker: str) -> float | None:
-    """The ticker's OWN median EOD spread fraction over the slice band —
+    """The ticker's OWN median EOD spread fraction over the slice band,
     the modeled half-spread's only input (brief: 'spread modeled from our
     own EOD per-contract spread stats'). Computed from the Yahoo EOD chains
-    (QQQ/IWM carry only a few sessions — thin, real, disclosed) and
+    (QQQ/IWM carry only a few sessions: thin, real, disclosed) and
     disk-cached. None when the ticker has no EOD chains yet: modeled quotes
     are then impossible and the alpaca sessions stay OUT of coverage."""
     cache = CACHE_DIR / ticker / "spread_stats.json"
@@ -509,9 +509,9 @@ def _alpaca_frames(
 ) -> tuple[pd.DataFrame, pd.DataFrame | None] | None:
     """Trade-print minute bars → MODELED 5-min quotes. Per bar b, a
     contract is quotable only if its latest print is younger than
-    ALPACA_STALE_PRINT_MIN minutes (strictly BEFORE b — no intra-bar
+    ALPACA_STALE_PRINT_MIN minutes (strictly BEFORE b, no intra-bar
     future); mid = that print's close, half-spread = mid × spread_frac / 2
-    (floor $0.01). No greeks, no IV — delta selection honestly skips."""
+    (floor $0.01). No greeks, no IV. Delta selection honestly skips."""
     opt = r2.get_parquet(s3, f"{ALPACA_OPT}/ticker={ticker}/date={d}/bars.parquet")
     if opt is None or opt.empty:
         return None
@@ -630,7 +630,7 @@ def _write_cache(ticker: str, d: str, opt: pd.DataFrame,
             und.to_parquet(und_p, index=False)
         else:
             # a prior version's und file must never survive under the new
-            # manifest — _read_cached serves whatever und parquet exists
+            # manifest: _read_cached serves whatever und parquet exists
             und_p.unlink(missing_ok=True)
         meta_p.write_text(json.dumps({"v": CACHE_SCHEMA_VERSION, "source": source}))
     except Exception:
@@ -649,8 +649,8 @@ class IntradayStore:
         self._listed_at: float = 0.0  # when the source map was last listed
         self._lru: OrderedDict[date, SessionSlice | None] = OrderedDict()
         # FX.1: minute-grid slice LRU, fully separate from the 5-min path so
-        # the default clock's cache behavior is untouched. Built slices only
-        # — a failed build is NOT cached (bars_1m may arrive later; a stale
+        # the default clock's cache behavior is untouched. Built slices only:
+        # a failed build is NOT cached (bars_1m may arrive later; a stale
         # negative would defeat the nightly upgrade).
         self._lru_1m: OrderedDict[date, SessionSlice] = OrderedDict()
 
@@ -677,12 +677,12 @@ class IntradayStore:
         return self._sessions
 
     def refresh_sessions(self) -> None:
-        """Relist the session→source map when stale — called ONCE per run,
+        """Relist the session→source map when stale, called ONCE per run,
         BEFORE the engine starts (runs.py, under ENGINE_LOCK). sessions()
         itself never refreshes: a run plus its gauntlet sub-runs call it
         several times, and a mid-gauntlet relist would compute the main
         result and the honesty folds on different session sets (review
-        finding — the determinism rule). Sessions whose source CHANGED are
+        finding: the determinism rule). Sessions whose source CHANGED are
         evicted from both slice LRUs, so a cached slice can never be served
         under a listing that now names a different source."""
         if self._sessions is None:
@@ -768,12 +768,12 @@ class IntradayStore:
 
     def minute_sessions(self) -> set[date]:
         """Sessions eligible for the 1-min grid, from the F0 resolution map
-        (an artifact lookup, never a live listing — post-OOM rule). NOT
+        (an artifact lookup, never a live listing: post-OOM rule). NOT
         memoized on the store: the map's own 300s TTL governs freshness, so
         a long-lived process picks up the nightly ledger rebuild without a
         restart (self-improvement thesis); the engine snapshots the set once
         per run for determinism. Empty when the map is pending or R2 is
-        unconfigured — honest degrade, recorded five_min."""
+        unconfigured: honest degrade, recorded five_min."""
         from app.data import resolution  # local: keeps import graph flat
 
         try:
@@ -784,8 +784,8 @@ class IntradayStore:
         return {date.fromisoformat(s) for s in iso}
 
     def _minute_und_cached(self, session: date) -> pd.DataFrame | None:
-        """The bars_1m price frame, disk-cached beside the 5-min frames —
-        a finest gauntlet re-runs the engine ~25×, and re-fetching every
+        """The bars_1m price frame, disk-cached beside the 5-min frames.
+        A finest gauntlet re-runs the engine ~25×, and re-fetching every
         minute session from R2 per sweep cell is 1,000+ round-trips."""
         d = session.isoformat()
         base = CACHE_DIR / self.ticker
@@ -798,7 +798,7 @@ class IntradayStore:
                 pass
         und1 = _minute_und_frame(r2.r2_client(), self.ticker, d)
         if und1 is None or und1.empty:
-            return None  # never disk-cache a negative — bars_1m may arrive
+            return None  # never disk-cache a negative: bars_1m may arrive
         try:
             frame_p.parent.mkdir(parents=True, exist_ok=True)
             und1.to_parquet(frame_p, index=False)
@@ -809,10 +809,10 @@ class IntradayStore:
 
     def minute_slice_for(self, session: date) -> SessionSlice | None:
         """The session at the 1-min grid. The underlying record is the
-        5-MIN frame's rows at their stamps (price + volume — indicator and
+        5-MIN frame's rows at their stamps (price + volume, indicator and
         VWAP inputs identical to the 5-min grid, 16:00+ tail included) with
         bars_1m PRICE-ONLY rows between; quotes are the same 5-min NBBO
-        stamps. None when the grid can't be built — the engine falls back
+        stamps. None when the grid can't be built. The engine falls back
         to the 5-min slice and records the session as five_min."""
         if session in self._lru_1m:
             self._lru_1m.move_to_end(session)

@@ -1,4 +1,4 @@
-"""Parser unit tests (hermetic — LLM mocked). The live 12-case eval lives
+"""Parser unit tests (hermetic, LLM mocked). The live 12-case eval lives
 in evals/run_parser_eval.py; these prove the server-side guarantees that
 hold no matter what the model says."""
 
@@ -37,7 +37,7 @@ def _fake_clock(*values: float):
 
 def _valid_spec() -> dict:
     spec = _spec(0.30, 30, 50.0, 200.0)
-    # the model "paraphrases" — the server must overwrite it verbatim
+    # the model "paraphrases", so the server must overwrite it verbatim
     spec["meta"]["description_raw"] = "a paraphrase the model made up"
     return spec
 
@@ -73,7 +73,7 @@ def test_questions_pass_through(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_invalid_spec_falls_back_to_questions(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A spec that fails schema validation twice must become questions —
+    """A spec that fails schema validation twice must become questions:
     never a half-valid spec, never an exception to the caller."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     bad = {"result": "spec", "spec": {"position": {"structure": "wheel"}}}
@@ -124,7 +124,7 @@ def test_malformed_position_falls_back_to_questions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A model reply whose "position" is null must never escape as an
-    exception — it retries and degrades to questions like any invalid spec."""
+    exception. It retries and degrades to questions like any invalid spec."""
     spec = _valid_spec()
     spec["position"] = None
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
@@ -139,9 +139,9 @@ def test_malformed_position_falls_back_to_questions(
 def test_upstream_failure_raises_not_a_fake_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An upstream LLM failure is an ERROR the route reports as a 503 — it
+    """An upstream LLM failure is an ERROR the route reports as a 503. It
     must never come back as a fake clarifying question (it rendered as
-    "QUESTION 1 OF 1 — I DON'T GUESS" and entered the provenance record)."""
+    "QUESTION 1 OF 1: I DON'T GUESS" and entered the provenance record)."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
     def _boom(*a: object, **k: object) -> None:
@@ -155,7 +155,7 @@ def test_upstream_failure_raises_not_a_fake_question(
 def test_budget_exhausted_retry_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """The attempt loop answers inside PARSE_BUDGET_SECONDS: when a contract
     violation earns a retry the budget can't fund, the parser refuses while
-    it can still say so — the proxy must never 504 a healthy engine."""
+    it can still say so. The proxy must never 504 a healthy engine."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     # deadline calc → attempt-1 remaining → attempt-2 remaining (2s left)
     monkeypatch.setattr(parser_module, "_monotonic", _fake_clock(0.0, 0.5, 88.0))
@@ -174,9 +174,9 @@ def test_budget_exhausted_retry_is_refused(monkeypatch: pytest.MonkeyPatch) -> N
 def test_attempt_timeout_shrinks_to_the_remaining_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each upstream call gets only what's left of the budget — bounded per
+    """Each upstream call gets only what's left of the budget, bounded per
     phase (connect, read) because requests applies its timeout to each phase
-    separately — so two attempts can never add up past the proxy's leash."""
+    separately, so two attempts can never add up past the proxy's leash."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     # deadline calc → attempt-1 remaining (90s) → attempt-2 remaining (40s)
     monkeypatch.setattr(parser_module, "_monotonic", _fake_clock(0.0, 0.0, 50.0))
@@ -198,7 +198,7 @@ def test_attempt_timeout_shrinks_to_the_remaining_budget(
 def test_upstream_http_blip_retries_once_then_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One non-200 from the gateway is transient — the loop retries it
+    """One non-200 from the gateway is transient. The loop retries it
     plainly within budget and a healthy second reply still compiles."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     replies = iter(
@@ -212,7 +212,7 @@ def test_upstream_http_blip_retries_once_then_succeeds(
 def test_persistent_upstream_http_error_is_503_not_a_question(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-200 on BOTH attempts is an outage, not a parsing problem — it
+    """A non-200 on BOTH attempts is an outage, not a parsing problem. It
     must raise (→ the route's 503), never fall through to the
     could-not-compile question (the review-caught half of the fake-question
     bug: HTTP errors return None from the old _call_llm, bypassing the
@@ -232,7 +232,7 @@ def test_persistent_upstream_http_error_is_503_not_a_question(
 
 # --------------------------------------------------------- D5d: scale-in
 def test_required_spec_version_detects_v3() -> None:
-    """The version is server-computed from the vocabulary used — scale_in or
+    """The version is server-computed from the vocabulary used: scale_in or
     close_at_time lifts it to 3, never trusted from the LLM."""
     rsv = parser_module._required_spec_version
     assert rsv({"entry": {"scale_in": {"mode": "signal_ladder"}}}) == 3
@@ -242,7 +242,7 @@ def test_required_spec_version_detects_v3() -> None:
 
 
 def test_required_spec_version_detects_v4() -> None:
-    """FX.5: intraday_scan or backtest.resolution lifts to 4 — including
+    """FX.5: intraday_scan or backtest.resolution lifts to 4, including
     when v3 vocabulary is ALSO present (highest wins)."""
     rsv = parser_module._required_spec_version
     assert rsv({"entry": {"intraday_scan": "every_setup"}}) == 4
@@ -253,7 +253,7 @@ def test_required_spec_version_detects_v4() -> None:
 
 
 def test_required_spec_version_detects_v5() -> None:
-    """F4: a vol-surface indicator lifts to 5 — including when v4
+    """F4: a vol-surface indicator lifts to 5, including when v4
     vocabulary is ALSO present (the version is the MAX the vocabulary
     needs, checked highest-first)."""
     rsv = parser_module._required_spec_version
@@ -263,7 +263,7 @@ def test_required_spec_version_detects_v5() -> None:
     assert rsv({"exit": {"conditions": [term]}}) == 5
     assert rsv({"entry": {"conditions": [skew]},
                 "backtest": {"resolution": "finest"}}) == 5
-    # the VRP alias maps to hv_iv_spread_30d — v2 vocabulary, NOT v5
+    # the VRP alias maps to hv_iv_spread_30d: v2 vocabulary, NOT v5
     vrp = {"indicator": "hv_iv_spread_30d", "operator": ">", "value": 4}
     assert rsv({"entry": {"conditions": [vrp]}}) == 2
     # review finding: ladder rungs and the rearm are conditions too
@@ -274,7 +274,7 @@ def test_required_spec_version_detects_v5() -> None:
 
 
 def test_required_spec_version_detects_v6() -> None:
-    """F1: dealer-positioning vocabulary lifts to 6 — the MAX wins even
+    """F1: dealer-positioning vocabulary lifts to 6. The MAX wins even
     when v5/v4 vocabulary is also present, and ladder conditions count."""
     rsv = parser_module._required_spec_version
     gex = {"indicator": "gex_level", "operator": ">", "value": 0}
@@ -289,7 +289,7 @@ def test_required_spec_version_detects_v6() -> None:
 
 
 def test_required_spec_version_detects_v7() -> None:
-    """F2/F3: flow/pin vocabulary lifts to 7 — MAX wins over v6/v5,
+    """F2/F3: flow/pin vocabulary lifts to 7. MAX wins over v6/v5,
     and ladder conditions count."""
     rsv = parser_module._required_spec_version
     flow = {"indicator": "net_premium_level", "operator": ">", "value": 0}
@@ -303,7 +303,7 @@ def test_required_spec_version_detects_v7() -> None:
 
 
 def test_required_spec_version_detects_v8() -> None:
-    """Parity Tier 3: the standardized IVX form lifts to 8 — MAX wins over
+    """Parity Tier 3: the standardized IVX form lifts to 8. MAX wins over
     v7/v6, and ladder conditions count."""
     rsv = parser_module._required_spec_version
     z = {"indicator": "ivx_zscore_1y", "operator": ">", "value": 1.5}
@@ -315,7 +315,7 @@ def test_required_spec_version_detects_v8() -> None:
 
 
 def _ladder_spec_raw() -> dict:
-    # what the LLM emits (spec_version 1, ATM on the leg) — the server
+    # what the LLM emits (spec_version 1, ATM on the leg), the server
     # normalizes and recomputes the version
     return {
         "spec_version": 1,

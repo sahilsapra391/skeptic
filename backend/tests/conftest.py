@@ -14,7 +14,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "real_anon_armor: exercise the real launch-L4 anon armor "
-        "(opt out of the default neutralizer — see tests/test_anon.py)",
+        "(opt out of the default neutralizer, see tests/test_anon.py)",
     )
 
 
@@ -25,7 +25,7 @@ def _neutralize_anon_armor(
     """The launch-L4 anon armor limits an anonymous device to ONE free
     backtest (per signed token, per IP window, under a global daily budget,
     daily clock + ≤3y only). The many tests written before it fire several
-    anonymous runs from one TestClient and are NOT about the armor — the
+    anonymous runs from one TestClient and are NOT about the armor. The
     armor would 402 their second run. Neutralize the anonymous gate for them
     so the run pipeline is exercised exactly as before.
 

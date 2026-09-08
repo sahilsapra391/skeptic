@@ -1,7 +1,7 @@
 """run_eod's OPRA handling (the 2026-08-04 QQQ/IWM freeze regression).
 
-The Alpaca OPRA-entitlement 403 fires on the JUST-CLOSED session only —
-historical days serve fine (the nightly lookback writes them right before
+The Alpaca OPRA-entitlement 403 fires on the JUST-CLOSED session only.
+Historical days serve fine (the nightly lookback writes them right before
 the 403 every night). The old handler `break`-ed out of the day loop, which
 fell through the for/else into the OUTER ticker break: SPY's current-session
 403 aborted the entire top-up, silently freezing QQQ/IWM from 2026-07-02 to
@@ -23,7 +23,7 @@ OLDER = date(2026, 8, 1)
 CURRENT = date(2026, 8, 4)
 
 OPRA_ERR = RuntimeError(
-    "Alpaca returned 403 'OPRA agreement is not signed' — an account "
+    "Alpaca returned 403 'OPRA agreement is not signed'. An account "
     "entitlement, not a code failure."
 )
 
@@ -71,7 +71,7 @@ def test_current_session_opra_skips_the_day_not_the_run(
 
     rc = alpaca.run_eod(["SPY", "QQQ", "IWM"])
 
-    # every (ticker, day) pair was attempted — the outer loop never died
+    # every (ticker, day) pair was attempted, the outer loop never died
     assert [u for u in lake["universe"]] == [
         ("SPY", OLDER), ("SPY", CURRENT),
         ("QQQ", OLDER), ("QQQ", CURRENT),
@@ -88,7 +88,7 @@ def test_opra_on_a_historical_day_fails_the_run(
 ) -> None:
     """The benign skip is scoped to the just-closed session, because that is
     the only day the entitlement model explains. A 403 on an already-published
-    day means the entitlement is gone account-wide — treating THAT as benign is
+    day means the entitlement is gone account-wide. Treating THAT as benign is
     how the lake froze unnoticed for a month, so it must go red."""
 
     def bars(symbols, start_iso, end_iso):
@@ -113,7 +113,7 @@ def test_opra_on_a_historical_day_fails_the_run(
 def test_opra_skip_does_not_erase_real_failures(
     lake: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The old handler reset failures=0 on OPRA — a real earlier failure then
+    """The old handler reset failures=0 on OPRA, a real earlier failure then
     exited green. The fix preserves the non-zero exit."""
 
     def bars(symbols, start_iso, end_iso):

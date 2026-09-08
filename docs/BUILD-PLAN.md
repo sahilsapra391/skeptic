@@ -1,11 +1,11 @@
-# Skeptic — Build Plan for Claude Code
+# Skeptic: Build Plan for Claude Code
 *Run one milestone per session, in order. Do not advance past red acceptance
 criteria. Each milestone ends with CI green and a short session note appended
 to `docs/BUILD-LOG.md`.*
 
 ---
 
-## M0 — Scaffold (small session)
+## M0: Scaffold (small session)
 
 **Goal:** monorepo skeleton, CI, tooling.
 
@@ -23,7 +23,7 @@ exactly: scaffold the monorepo, pydantic models matching the schema with
 round-trip tests, FastAPI health route, Next.js shell, and CI. Stop at the
 acceptance criteria and show me the test output."
 
-## M1 — Data pipeline live (run this the same day you create the repo)
+## M1: Data pipeline live (run this the same day you create the repo)
 
 **Goal:** history accruing nightly with zero further attention.
 
@@ -42,15 +42,15 @@ frontier; healthcheck pinged; coverage script output pasted into BUILD-LOG.
 Milestone M1. Secrets are configured in GitHub Actions. After implementing,
 walk me through triggering the workflow manually and verifying R2 contents."
 
-## M1.5 — Alpaca minute-bar options lake (data-only session)
+## M1.5: Alpaca minute-bar options lake (data-only session)
 
 **Goal:** the full 2024-02 → present 1-minute option-bar history for
-SPY/QQQ/IWM in R2, accruing nightly. Data only — no engine changes, no
+SPY/QQQ/IWM in R2, accruing nightly. Data only, no engine changes, no
 bulk quote pulls.
 
 **Tasks:**
 
-- **Step 0 — verify before pulling (needs `APCA_*` keys):** with live
+- **Step 0, verify before pulling (needs `APCA_*` keys):** with live
   calls, confirm (a) `GET /v2/options/contracts?status=inactive` reaches
   expiries back to 2024-02 (fallback universe source: ThetaData free-tier
   contract lists); (b) 1-min bars return for a long-expired contract;
@@ -58,7 +58,7 @@ bulk quote pulls.
   (entitlement/feed behavior); (d) pull one probe week per ticker and
   measure real bar density → refined volume/runtime/storage estimate.
   Record all four in BUILD-LOG. Owner then picks: full chains (enable R2
-  paid class, ~cents/mo) vs filtered lake (DTE ≤ 90, moneyness ±25%) —
+  paid class, ~cents/mo) vs filtered lake (DTE ≤ 90, moneyness ±25%),
   before any bulk request is issued.
 - `collector/alpaca.py` + `--mode alpaca-backfill`: month×ticker frontier
   in `state/alpaca_backfill.json`; per-month contract universe from the
@@ -84,7 +84,7 @@ docs/INTRADAY-OPTIONS-DATA-EVAL.md. Execute Milestone M1.5. Run step 0
 first and show me the four findings and the refined size estimate before
 any bulk pull."
 
-## M2 — Backtest engine core (the correctness milestone; go slow)
+## M2: Backtest engine core (the correctness milestone; go slow)
 
 **Goal:** trustworthy EOD options engine for the 5 v1 structures.
 
@@ -105,7 +105,7 @@ Milestone M2. Build fixtures FIRST with hand-computed expected values in
 comments, then make the engine pass them. Show me the fixture math for the
 assigned short put before implementing it."
 
-## M3 — Honesty layer + verdict (the go/no-go milestone, PoC risk R3)
+## M3: Honesty layer + verdict (the go/no-go milestone, PoC risk R3)
 
 **Goal:** the gauntlet + grounded verdicts, and proof it catches overfitting.
 
@@ -126,7 +126,7 @@ deliberately hallucinated number in a test; full gauntlet < 60 s on real data.
 deliberately-overfit fixture first and show me its in-sample vs out-of-sample
 stats before wiring the verdict writer."
 
-## M4 — NL parser + clarifying loop (PoC risk R1)
+## M4: NL parser + clarifying loop (PoC risk R1)
 
 **Goal:** English → spec-or-questions, never silent guesses.
 
@@ -158,7 +158,7 @@ fabricated parameters; spec always echoes `description_raw` verbatim.
 docs/BUILD-PLAN.md. Execute Milestone M4. Write the ground-truth specs for
 the 8 clear cases first, then build the parser to pass the harness."
 
-## M5 — Frontend
+## M5: Frontend
 
 **Goal:** the approved designs, wired end to end.
 
@@ -179,7 +179,7 @@ Milestone M5, implementing the approved mockups exactly. Start with the
 Verdict Block component at three sizes and show it to me before building
 pages around it."
 
-## M6 — Deploy + smoke
+## M6: Deploy + smoke
 
 **Goal:** live URLs, monitored, operating.
 

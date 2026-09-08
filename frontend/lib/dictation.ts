@@ -1,12 +1,12 @@
 /**
  * Dictation polish for the strategy composer.
  *
- * The browser's speech engine transcribes for prose — capitalized
+ * The browser's speech engine transcribes for prose: capitalized
  * sentence starts, numbers often spelled out, tickers heard as ordinary
  * words. Strategy dictation wants the opposite: lowercase flow, digits
  * everywhere ("thirty delta" → "30 delta", "fifty percent" → "50%"),
  * and the domain vocabulary (SPY, QQQ, IWM, DTE, RSI…) in canonical
- * shape. Every transcript chunk — interim and final — passes through
+ * shape. Every transcript chunk, interim and final, passes through
  * polishDictation before it reaches the composer.
  */
 
@@ -38,7 +38,7 @@ const PHRASE_FIXES: [RegExp, string][] = [
   [/\bstoploss\b/g, "stop loss"],
 ];
 
-// words always rendered uppercase — tickers and indicator acronyms
+// words always rendered uppercase (tickers and indicator acronyms)
 const FORCE_UPPER = new Set([
   "spy", "qqq", "iwm", "spx", "dte", "rsi", "sma", "ema", "macd",
   "vwap", "vix", "etf", "atm", "otm", "itm",
@@ -56,7 +56,7 @@ const TENS: Record<string, number> = {
   sixty: 60, seventy: 70, eighty: 80, ninety: 90,
 };
 const SCALES: Record<string, number> = { hundred: 100, thousand: 1000 };
-// single digits after "point" — "point oh five" → .05
+// single digits after "point": "point oh five" → .05
 const DECIMAL_DIGITS: Record<string, string> = {
   zero: "0", oh: "0", o: "0", one: "1", two: "2", three: "3", four: "4",
   five: "5", six: "6", seven: "7", eight: "8", nine: "9",
@@ -93,7 +93,7 @@ function parseNumberRun(tokens: string[], i: number): { text: string; next: numb
       sawInt = true;
       j++;
     } else if (w === "a" && j + 1 < tokens.length && tokens[j + 1] in SCALES) {
-      j++; // "a hundred" — the scale branch supplies the 1
+      j++; // "a hundred", the scale branch supplies the 1
     } else if (
       w === "and" &&
       sawInt &&

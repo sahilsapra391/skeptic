@@ -1,9 +1,9 @@
-"""DailySeriesCache ≡ the per-session recompute — the owner's gate.
+"""DailySeriesCache ≡ the per-session recompute, the owner's gate.
 
 The cache reads position i of a series computed over the store's FULL
 close history where the engine used to recompute the indicator from the
 prefix [0..i]. That is only sound if every cached indicator is causal;
-if it is not, a run reads a value derived from FUTURE closes — a
+if it is not, a run reads a value derived from FUTURE closes: a
 LOOKAHEAD bug (guardrail #2), not a rounding difference.
 
 So this file does not sample. For every cached indicator branch, at
@@ -11,7 +11,7 @@ EVERY session of the store, the cached pair must equal the legacy prefix
 pair with EXACT float equality (`==`, never approx: the cache's promise
 is the same number, not a near one).
 
-`test_lookahead_canary.py` carries the other half — the permanent
+`test_lookahead_canary.py` carries the other half, the permanent
 point-in-time canary run WITH the cache attached.
 """
 
@@ -58,7 +58,7 @@ class LegacyView:
 
     This is the whole point of the gate. `evaluate_condition` picks the
     cached path by duck-typing (`getattr(view, "daily_series_pair", None)`),
-    so a plain MarketView takes it — and comparing that against a
+    so a plain MarketView takes it, and comparing that against a
     transcription of the legacy math in this file would compare the cache
     to a COPY, leaving the real legacy branch unexecuted and free to drift
     (a period default changed in conditions.py would keep this file green
@@ -85,7 +85,7 @@ def store():
 
 
 def test_cases_cover_every_cached_indicator() -> None:
-    """The exhaustiveness the gate claims — if a new indicator joins
+    """The exhaustiveness the gate claims: if a new indicator joins
     CACHED_INDICATORS without a case here, this fails rather than
     silently leaving it unproven."""
     covered = {_cond(c).indicator for c in CASES}
@@ -96,7 +96,7 @@ def test_cases_cover_every_cached_indicator() -> None:
 def test_cached_verdict_equals_legacy_verdict_at_every_session(doc, store) -> None:
     """BOTH sides run the real `evaluate_condition`: one through a
     MarketView (cached branch), one through LegacyView (the prefix
-    recompute the engine used to do). Every session, no sampling — the
+    recompute the engine used to do). Every session, no sampling. The
     decision the engine acts on must be identical."""
     cond = _cond(doc)
     for day in store.sessions:
@@ -110,14 +110,14 @@ def test_cached_verdict_equals_legacy_verdict_at_every_session(doc, store) -> No
 
 @pytest.mark.parametrize("doc", CASES, ids=lambda d: f"{d['indicator']}-{d.get('period', 'def')}")
 def test_cached_pair_is_exactly_the_legacy_pair_at_every_session(doc, store, monkeypatch) -> None:
-    """The verdict above is a boolean — two different numbers could agree
+    """The verdict above is a boolean, and two different numbers could agree
     on it by luck on this data. This pins the VALUES with exact float
     equality (`==`, never approx: the cache promises the same number, not
     a near one).
 
-    The expected pair is CAPTURED from the real legacy branch — spy on
+    The expected pair is CAPTURED from the real legacy branch (spy on
     `_series_pair` and record the list `evaluate_condition` actually hands
-    it — so nothing here transcribes the production arithmetic and there
+    it), so nothing here transcribes the production arithmetic and there
     is nothing to drift out of sync with it."""
     cond = _cond(doc)
     import app.engine.conditions as conditions_mod
@@ -135,7 +135,7 @@ def test_cached_pair_is_exactly_the_legacy_pair_at_every_session(doc, store, mon
     for day in store.sessions:
         captured.clear()
         evaluate_condition(LegacyView(store, day), cond)  # the REAL legacy path
-        # an empty prefix short-circuits before _series_pair — the cache
+        # an empty prefix short-circuits before _series_pair, and the cache
         # must return the same nothing
         legacy_pair = captured[-1] if captured else []
         cached = cache.tail_pair(cond, day)
@@ -147,7 +147,7 @@ def test_cached_pair_is_exactly_the_legacy_pair_at_every_session(doc, store, mon
 
 
 def test_series_key_ignores_threshold_but_not_period(store) -> None:
-    """The F8 condition sweeps move the THRESHOLD — every cell must share
+    """The F8 condition sweeps move the THRESHOLD, so every cell must share
     one series (that is where the sweep's speed-up comes from), while a
     different period must never be served the wrong series."""
     a = _cond({"indicator": "rsi", "period": 14, "operator": "<", "value": 30})
@@ -186,7 +186,7 @@ def test_empty_prefix_evaluates_false_like_the_legacy_path(store) -> None:
 
 def test_full_memo_falls_back_to_the_legacy_path_not_to_a_crash(store, monkeypatch) -> None:
     """Past _MAX_SERIES the cache stops memoizing and returns None, and
-    `evaluate_condition` must recompute from the prefix — the pre-cache
+    `evaluate_condition` must recompute from the prefix, the pre-cache
     behavior. The alternative shipped in review: keep computing the FULL
     series per session without storing it, which is ~2× SLOWER than the
     prefix code it replaced (and `entry.conditions` has no schema cap, so

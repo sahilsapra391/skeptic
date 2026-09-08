@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-coverage.py — report the lake's coverage from R2 alone (DATA-PIPELINE §8.4).
+coverage.py: report the lake's coverage from R2 alone (DATA-PIPELINE §8.4).
 
 Temporary stand-in for /api/data/coverage until M2. Prints, per ticker and
 source: date ranges and session counts; underlying/VIX history ranges; the
@@ -34,7 +34,7 @@ def main() -> None:
 
     # dolthub coverage is the VERIFIED view (state.done), not raw R2 objects:
     # quarantined stale-dated sessions stay in R2 for audit but are not
-    # coverage (guardrail #6 — honest surfaces)
+    # coverage (guardrail #6, honest surfaces)
     dolthub_state = r2_get_json(s3, "state/dolthub_backfill.json", {})
     n_quarantined = (len(dolthub_state.get("quarantined_stale", {}))
                      + len(dolthub_state.get("quarantined_stale_shape", {})))

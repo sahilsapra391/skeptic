@@ -1,11 +1,11 @@
-"""In-house signal derivations — the forward record after the vendor feeds
+"""In-house signal derivations: the forward record after the vendor feeds
 froze (owner decision 2026-07-08: no iVolatility or Unusual Whales
 subscription; compute what the lake can honestly support, freeze what it
 can't).
 
 Inputs are OUR OWN lake objects only:
   * the cboe_eod close chain (per-contract IV/delta/gamma/OI/volume, all
-    expirations, quotes ~15-min delayed — a property of the source), and
+    expirations, quotes ~15-min delayed, a property of the source), and
   * the underlying dailies (for HV and the max-pain close).
 
 Two artifacts, derived nightly by collector/derive_inhouse_signals.py:
@@ -14,14 +14,14 @@ Two artifacts, derived nightly by collector/derive_inhouse_signals.py:
       (vol points, same column convention as the vendor ivs_signals
       artifact) · net_gex · net_dex · put_call_ratio · max_pain_dist_pct
   reference/derived/hv_inhouse/ticker={T}.parquet
-      date · hv_30d (decimal) — full history, overwritten nightly
+      date · hv_30d (decimal), full history, overwritten nightly
 
 CONVENTIONS (each is a fixed, hand-computable market standard; fixtures in
 tests/test_inhouse_signals.py pin every one):
   hv_30d            std of the trailing 30 daily log returns, ddof=1,
                     annualized √252. Pinned against the vendor series on
                     the full 5,408-session overlap (probe 2026-07-08:
-                    MAE 0.0002) — the forward continuation is measured,
+                    MAE 0.0002). The forward continuation is measured,
                     not asserted.
   atm_iv_τ          per expiration: mean of call+put IV at the strike
                     nearest spot (iv ≤ 0 is the feed's null, dropped);
@@ -38,14 +38,14 @@ tests/test_inhouse_signals.py pin every one):
   term_slope_30_90  atm_iv_90d − atm_iv_30d, vol points.
   net_gex           Σ gamma·OI·100·spot²·0.01, calls positive, puts
                     NEGATIVE (the standard dealers-long-calls/short-puts
-                    assumption — the same one the UW series embeds).
+                    assumption, the same one the UW series embeds).
                     Dollars of gamma per 1% move. A NEW CONVENTION, never
                     a continuation of UW's opaque vendor units: sign
                     vocabulary splices, rank windows never cross the
                     seam (see splice_forward / MarketView histories).
   net_dex           Σ delta·OI·100·spot (puts carry their negative delta).
   put_call_ratio    Σ put volume / Σ call volume over the chain's session
-                    volume — the classic chain PCR. UW's flow-volume PCR
+                    volume, the classic chain PCR. UW's flow-volume PCR
                     is a close cousin; the overlap agreement is reported
                     by the F7 pair, never assumed.
   max_pain_dist_pct (front max_pain − close)/close × 100, front = nearest
@@ -55,7 +55,7 @@ tests/test_inhouse_signals.py pin every one):
                     break toward the strike nearest the close, then lower.
 
 Honesty: every reduction returns None when its inputs are missing or
-unbracketed — absence, never a guess. The derivation lives HERE (not
+unbracketed (absence, never a guess). The derivation lives HERE (not
 mirrored in the collector) so the math has exactly one implementation,
 fixture-tested in the backend battery.
 """
@@ -69,7 +69,7 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 
-# shared kernels/loaders — ONE implementation per honest primitive (review
+# shared kernels/loaders: ONE implementation per honest primitive (review
 # finding: forked copies of interpolation or series-reading math make the
 # continuation diverge from the vendor-era derivation it splices onto)
 from app.data.flow_signals import _series_from
@@ -153,7 +153,7 @@ def _iv_at_delta(rows: pd.DataFrame, target_abs_delta: float) -> float | None:
 
 
 def _tenor_interp(points: list[tuple[int, float | None]], tau: int) -> float | None:
-    """IV at calendar tenor `tau` from per-expiration (dte, iv) points —
+    """IV at calendar tenor `tau` from per-expiration (dte, iv) points,
     linear in TOTAL VARIANCE (iv²·t) between the bracketing expirations.
     Exact tenor wins; dte < 1 never brackets (zero total variance would
     swallow the short leg's information). Fail closed on no bracket."""
@@ -182,7 +182,7 @@ def derive_chain_signal_row(
     chain: pd.DataFrame, session: str, close: float | None
 ) -> dict[str, float | None]:
     """One cboe_eod chain → the in-house signal values. Missing inputs
-    yield None per signal — honest absence, never a guess."""
+    yield None per signal: honest absence, never a guess."""
     out: dict[str, float | None] = {
         "skew_25d": None, "term_slope_30_90": None,
         "atm_iv_30d": None, "atm_iv_90d": None,
@@ -204,7 +204,7 @@ def derive_chain_signal_row(
             return (e - day).days
 
         # ONE walk per expiry builds every surface point (review finding:
-        # parallel comprehensions over the same dict drift apart — the next
+        # parallel comprehensions over the same dict drift apart. The next
         # wing inherits this loop, not a fourth copy)
         atm_points: list[tuple[int, float | None]] = []
         put_pts: list[tuple[int, float | None]] = []
@@ -225,7 +225,7 @@ def derive_chain_signal_row(
         if put25 is not None and call25 is not None:
             out["skew_25d"] = round((put25 - call25) * 100.0, 4)
 
-        # dealer positioning — both sides must carry gamma·OI rows, or the
+        # dealer positioning: both sides must carry gamma·OI rows, or the
         # sum is a one-legged lie
         pos = df.dropna(subset=["gamma", "open_interest"])
         calls, puts = pos[pos["right"] == "call"], pos[pos["right"] == "put"]
@@ -254,12 +254,12 @@ def derive_chain_signal_row(
 
 
 def _max_pain(df: pd.DataFrame, day: date, close: float) -> float | None:
-    """Max-pain strike of the front expiry STRICTLY AFTER `day` — the
+    """Max-pain strike of the front expiry STRICTLY AFTER `day`, the
     listed strike minimizing total intrinsic payout over that expiry's OI.
     Ties break toward the strike nearest the close, then lower."""
     # FRONT = the nearest LISTED expiry strictly after the session (the
     # F2/F3 owner convention this series splices onto). If that expiry
-    # carries no positive OI — a freshly listed weekly before OI settles —
+    # carries no positive OI (a freshly listed weekly before OI settles),
     # the signal is honestly None: shifting to a LATER expiry would bank a
     # value under the wrong pin date (review finding).
     fronts = sorted(e for e in df["_exp"].unique() if e > day)
@@ -292,8 +292,8 @@ def splice_forward(
     """The forward-continuation rule: the vendor series wins every session
     it has; in-house values extend it STRICTLY FORWARD of the vendor's
     last observation. Returns (merged, splice date = first in-house
-    session used, None when nothing spliced). History is never rewritten —
-    a re-run over a pre-splice window is bit-identical."""
+    session used, None when nothing spliced). History is never rewritten.
+    A re-run over a pre-splice window is bit-identical."""
     if not inhouse:
         return vendor, None
     if not vendor:
@@ -308,7 +308,7 @@ def splice_forward(
 # -------------------------------------------------------------------- loaders
 
 def load_chain_signals(s3: Any, ticker: str) -> dict[str, dict[date, float]]:
-    """Every chain-derived series by session from the derived artifact —
+    """Every chain-derived series by session from the derived artifact,
     empty dicts until the collector has derived (honest absence)."""
     from app.data import r2  # late import keeps module collector-importable
 

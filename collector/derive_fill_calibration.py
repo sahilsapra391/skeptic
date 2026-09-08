@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""derive_fill_calibration.py — UW option tape → fill-model calibration
+"""derive_fill_calibration.py: UW option tape → fill-model calibration
 artifact (D3d: the engine's configured slip, MEASURED from real prints).
 
 Reduces each banked tape session to per-(side, size_bucket) slip
@@ -11,7 +11,7 @@ fixture-tested):
 Incremental by SET DIFFERENCE over the tape date prefixes (the F4
 self-healing rule): unreadable sessions leave no row and retry next run.
 The tape is a frozen record (trial over, floor 2026-03-02 → 2026-07-10),
-so after one full pass this derive is a permanent no-op — it stays in the
+so after one full pass this derive is a permanent no-op. It stays in the
 nightly chain only so a future tape source lights it back up.
 
 Run:  cd collector && uv run python derive_fill_calibration.py [--tickers ...]
@@ -56,7 +56,7 @@ log = logging.getLogger("fill_calibration")
 _DATE_RE = re.compile(r"date=(\d{4}-\d{2}-\d{2})")
 
 # the five required columns only (per-print side lives in `tags`; the
-# *_vol columns are cumulative contract-day counters — never read). A
+# *_vol columns are cumulative contract-day counters, never read). A
 # leaner projection also can't hard-fail on a future source's schema.
 _TAPE_COLUMNS = ["price", "size", "nbbo_bid", "nbbo_ask", "tags"]
 
@@ -100,13 +100,13 @@ def run(s3, ticker: str) -> int:
             columns=_TAPE_COLUMNS)
         rows = calibrate_session(prints)
         if rows is None:
-            log.warning("%s %s: unreadable tape — no row, retries next run",
+            log.warning("%s %s: unreadable tape, no row, retries next run",
                         ticker, d)
             continue
         frames.append(pd.DataFrame([{"date": d, **r} for r in rows]))
         derived += 1
         if derived % 10 == 0:
-            # checkpoint: a session is ~130 MB of spooled tape download —
+            # checkpoint: a session is ~130 MB of spooled tape download, and
             # a network crash must not lose the whole ticker's pass
             r2_put_parquet(s3, key, _combined(frames))
             log.info("%s: %d/%d sessions derived (checkpointed)",

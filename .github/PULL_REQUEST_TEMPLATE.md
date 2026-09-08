@@ -50,8 +50,8 @@ Only the rows this PR could plausibly break. Delete the rest.
       `frontend/components/results/how-built.tsx`, `backend/app/api/variant.py` or
       `backend/app/api/provenance.py`): open a variant whose parent had at least
       two exchanges and whose edit changed a field one of them asked about. Every
-      carried card must render identically — no marker, no dimming, no "still
-      holds" — and the edit must appear in WHAT CHANGED under its human label.
+      carried card must render identically (no marker, no dimming, no "still
+      holds"), and the edit must appear in WHAT CHANGED under its human label.
 
       V-213 removed per-exchange markers because deciding that an edit superseded
       an answer needs a question-to-field mapping that does not exist; matching on

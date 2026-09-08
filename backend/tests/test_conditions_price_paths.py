@@ -38,7 +38,7 @@ def _cond(indicator: str, op: str, value: float, period: int | None = None) -> C
 def test_inf_close_never_fabricates_a_realized_vol_spike() -> None:
     # flat closes → vol 0. An inf at closes[-21] puts its own inf return
     # OUTSIDE the 20-return tail but the laundered -1.0 return INSIDE it:
-    # std([-1.0, 0×19], ddof=1) = √(0.95/19) ≈ 0.2236 → vol ≈ 355% —
+    # std([-1.0, 0×19], ddof=1) = √(0.95/19) ≈ 0.2236 → vol ≈ 355%,
     # a fabricated spike from one poisoned row, refused by the closes gate
     closes = [100.0] * 30
     closes[-21] = float("inf")
@@ -53,8 +53,8 @@ def test_inf_close_never_fabricates_a_realized_vol_spike() -> None:
 def test_inf_close_never_fabricates_an_ema_signal() -> None:
     # EMA is recursive, so one inf close poisons every EMA value from
     # that bar FOREVER; the pre-fix NaN-only tail filter kept it and
-    # _compare(inf, >, 100) fabricated True on every later session —
-    # non-finite tail values now drop, leaving a one-value pair →
+    # _compare(inf, >, 100) fabricated True on every later session.
+    # Non-finite tail values now drop, leaving a one-value pair →
     # unevaluable. (SMA is incidentally safe: pandas' rolling mean
     # NaN-ifies the inf window and NaN always dropped; the shared
     # _tail_values gate covers both regardless of pandas internals.)

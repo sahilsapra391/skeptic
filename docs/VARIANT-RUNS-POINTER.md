@@ -1,4 +1,4 @@
-# Variant Runs phase — where the brief lives
+# Variant Runs phase: where the brief lives
 
 The authority for this phase is **`SKEPTIC-VARIANT-RUNS-BRIEF.md`**, kept
 outside the repo at `Documents/Projects Misc/Skeptic/` per the Development
@@ -38,7 +38,7 @@ cannot be mistaken for each other; and the argue-back renders only what
 nearest-neighbour guess, because the marker died for rendering a weak mapping.
 
 **Two standing rules came out of this phase.** **V-246:** a check keyed on prose is
-fooled by prose — key on the artifact (sha anchors, stored values, parsed code), and
+fooled by prose. Key on the artifact (sha anchors, stored values, parsed code), and
 where prose must be checked, strip everything that is not the claim. Three instances:
 the hook that grepped the phrase it guarded, the table keyed on LLM-authored labels,
 the test that tripped on its own comment. Companion: an instruction's keyword is not
@@ -53,7 +53,7 @@ consecutive attempts at the same fix. Full derivation in the brief's learnings.
 unchanged. Two things A2 established are worth carrying in: the V-208 label table
 is the path-to-label authority and B's sensitivity copy should read from it rather
 than writing its own field names (V-217), and V-26's two-counter separation now
-has a third number nearby that must not be confused with either — the V-214
+has a third number nearby that must not be confused with either. The V-214
 reconcile telemetry is neither lineage nor trials, carries no statistical claim,
 and never appears in a verdict or an honesty payload.
 
@@ -91,11 +91,11 @@ flagship 0DTE path. Reproduced by execution, not by argument.
 Two earned constants, both measured read-only against production (99 runs, 34
 with provenance, 9 carrying any conversation, 23 recorded answers):
 
-  * **34.8% parse ceiling** — 8 of 23 answers equal ANY scalar in their own run's
+  * **34.8% parse ceiling**: 8 of 23 answers equal ANY scalar in their own run's
     spec. Computed by `scripts/audit_answer_canonicalization.py`, which pushes
     each recorded answer and every spec scalar through the same `canonical_token`
     and counts exact matches.
-  * **13.0% unique-anchor ceiling** — only 3 of 23 answers identify EXACTLY ONE
+  * **13.0% unique-anchor ceiling**: only 3 of 23 answers identify EXACTLY ONE
     real spec field, with bookkeeping fields (`spec_version`, `meta.*`) excluded.
     4 of 23 are ambiguous across two or three fields and would have to be
     suppressed. 13% is itself an overestimate of the marker rate, because a
@@ -138,11 +138,11 @@ the counter.
 
 **V-181, discharged:** a close commit cannot truthfully record the merge that
 follows it, so A1's own close left it reading "complete, in review" and **A2's
-first commit** — this one — marks it merged, from the branch that can actually
+first commit** (this one) marks it merged, from the branch that can actually
 see the merge. The same rule applies to A2's own close: expect one step of lag
 at the seam, and read it as the scheme working rather than as drift.
 
-## The phase is closed — all four PRs merged, plan complete (V-255)
+## The phase is closed: all four PRs merged, plan complete (V-255)
 
 **Two defects found by the closing verification are queued as their own PR (V-254),
 not folded into this close:** a failed variant boot lands on a blank composer with no
@@ -162,7 +162,7 @@ came out of it (V-253): a negative finding states its scope.
 members, not five, with a floor caveat and the V-149/V-151 pair marked as its strongest
 evidence (same fault on both sides of a gate being installed). The earned constants
 became a table with a population, derivation and DATE each, which immediately caught
-one of them drifting — "9 of 99 runs carrying a conversation" re-checked at 11 of 101
+one of them drifting: "9 of 99 runs carrying a conversation" re-checked at 11 of 101
 within hours. The two ungated family members are the next phase's first infrastructure
 item. Amendments live in the brief; this pointer names them so a repo-only reader is
 not working from the pre-amendment text.
@@ -170,12 +170,12 @@ not working from the pre-amendment text.
 **Secrets (V-250):** two were exposed in this phase's transcript, neither committed, and
 the owner decided on 2026-08-19 not to rotate yet. That is recorded as a decision with a
 trigger, not a pending task, and the trigger lives in
-[`LAUNCH-CHECKLIST.md`](LAUNCH-CHECKLIST.md) — rotate both before the database holds
+[`LAUNCH-CHECKLIST.md`](LAUNCH-CHECKLIST.md): rotate both before the database holds
 anyone but the owner.
 
 The **retrospective** is the final entry in the brief's learnings: the yield tables
 (13.0% killed the marker, 98.8% shipped the argue-back), the five-member incident
-family, the earned constants with derivations, and the one-sentence lesson —
+family, the earned constants with derivations, and the one-sentence lesson:
 everything keyed on something regenerable died, everything measured against stored
 truth survived.
 
@@ -195,7 +195,7 @@ flag.
 <!-- last-synced-sha: 3c9fffa -->
 
 > **Last synced: PR #153 (PR-B), through the close-out merge `3c9fffa`.**
-> Stamped by the first commit after #153 merged — the one-step handoff, for the
+> Stamped by the first commit after #153 merged: the one-step handoff, for the
 > third and last time this phase, and the only one of the three that was guarded
 > rather than remembered. The sha the hook reads is the `last-synced-sha` anchor
 > above, not this prose: V-221 records what happened when it grepped the prose
@@ -232,7 +232,7 @@ V-248 V-249 V-250 V-251
 Superseded: V-11 by V-25, V-15 by V-26. **V-53 by V-200** (the label table is
 not buildable; value matching replaces it). **V-30 by V-203 and V-213**, in both
 directions: NOT APPLICABLE dropped, then SUPERSEDED and STILL HOLDS dropped as
-rendered states. **V-229's payload half by V-239** (the lookup reads the raw stored sweep, not the display-only `sensitivityDetail`; identity by replaying the setter, not by a name table). **The rendering half of V-200 and V-201 by V-213** — the
+rendered states. **V-229's payload half by V-239** (the lookup reads the raw stored sweep, not the display-only `sensitivityDetail`; identity by replaying the setter, not by a name table). **The rendering half of V-200 and V-201 by V-213**: the
 matching logic survives as telemetry; nothing it produces reaches a screen. V-189 is ANSWERED by V-197 as corrected on 2026-08-19: the mechanism is
 `load_local_env()` at `backend/app/main.py`, which loads `collector/.env` and so
 grants any local boot production's database and auth gate by design. V-119 is rebalanced by V-126 (tier (b) measured at 1 in 99). V-64 is corrected twice: V-71 moves
@@ -243,44 +243,44 @@ Retired: V-01. Never issued: V-47, V-48.
 
 Recorded but deliberately out of phase, and not to be lost:
 
-- **V-57** — enumerated spec-field vocabulary on parser question ids. Still the
+- **V-57**: enumerated spec-field vocabulary on parser question ids. Still the
   correct long-term fix, and A2 measured exactly how much it would buy. Belongs
   in a parser phase with its own regression budget. Its trigger is the V-204
   tally, which will grow slowly for the reason V-211 records: the constraint is
   how little Q&A exists, not the mapping mechanism. A slow counter is the
   finding, not a broken counter.
-- **V-217 — the V-208 label table keeps its second consumer pending.** It has
+- **V-217: the V-208 label table keeps its second consumer pending.** It has
   one consumer now, the WHAT CHANGED list. It is the path-to-label authority and
   the marker's death does not narrow it, so it must not be folded into the diff
   renderer as a local map. Its second consumer arrives with V-57. The
   unmapped-at-render tally stays with it.
-- **V-210 — the source-hunt rule.** A mechanism hunt closes at the code that
+- **V-210: the source-hunt rule.** A mechanism hunt closes at the code that
   performs the load, never at the exoneration of a candidate. "Not X" is a
   narrowed search, not an answer. Two instances this phase, both of which
   recorded a true negative as done: the launch.json pin (V-188, which worked for
   a reason nobody knew) and the uv check (V-197, which proved uv does not load
   collector/.env and concluded the origin was unknown while the loader sat at
   main.py:20).
-- **V-61** — port `draftToSpec` to Python and make the server the sole
+- **V-61**: port `draftToSpec` to Python and make the server the sole
   authority on spec construction. V-17 and V-36 are the same failure twice:
   something other than the confirmed spec deciding what runs. The client
   should send dial values and nothing else. PR-0 buys time for this; it does
   not substitute for it.
-- **V-49** — side-by-side comparison of two variants. Ask before building.
-- **V-183** — the two Library observations, deferred under ONE trigger:
+- **V-49**: side-by-side comparison of two variants. Ask before building.
+- **V-183**, the two Library observations, deferred under ONE trigger:
   revisit when any root carries **five or more variants in real use**. The
   ordinal badge distinguishes same-name variants by identity but not by
   content, and nothing on the card says what a variant changed. If built, the
-  fix is **the first `what_changed` row on the card** — nothing else, no
+  fix is **the first `what_changed` row on the card**, nothing else, no
   second mechanism. A threshold observation, not a TODO: below five per root
   the badge plus one click is enough.
-- **V-182** — process rule, now part of the close checklist beside the
+- **V-182** is a process rule, now part of the close checklist beside the
   citation sweep: a PR that changes behaviour sweeps user-facing prose
   describing that behaviour, scoped to strings naming what changed. Earned by
   the Settings/costs tip, which V-36 falsified and which survived two PRs
-  because nobody looked — and whose second copy (the retail register) survived
+  because nobody looked, and whose second copy (the retail register) survived
   the first fix because that fix took the first grep hit instead of sweeping.
-- **V-184 — LANDED** in this commit as `.claude/hooks/pointer-sha-ancestor.sh`,
+- **V-184, LANDED** in this commit as `.claude/hooks/pointer-sha-ancestor.sh`,
   wired as a PreToolUse hook on `git push`. It asserts the Last-synced sha both
   resolves and is an ancestor of HEAD, escalating with the specific failure
   named (orphaned by an amend, or off on another branch). Silent when the

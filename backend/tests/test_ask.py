@@ -1,5 +1,5 @@
-"""Grounded Q&A unit tests: the numeric validator gates every answer —
-an ungrounded number means refusal, never a shipped hallucination."""
+"""Grounded Q&A unit tests: the numeric validator gates every answer.
+An ungrounded number means refusal, never a shipped hallucination."""
 
 import pytest
 import requests
@@ -48,7 +48,7 @@ def test_no_key_means_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_budget_exhausted_retry_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    """/ask runs behind the same 100s proxy leash as /parse — a grounding
+    """/ask runs behind the same 100s proxy leash as /parse. A grounding
     retry the wall-clock budget can't fund is refused, never launched (or
     the proxy would 504 a healthy engine mid-retry)."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")

@@ -1,4 +1,4 @@
-"""IVX / HV market-condition filters (D1c) — hand-computed, point-in-time.
+"""IVX / HV market-condition filters (D1c), hand-computed, point-in-time.
 
 Rank fixture: IVX series 0.100, 0.101, …, +0.001/day (strictly rising) on
 consecutive weekdays. On day N the current value is the maximum of its own
@@ -11,7 +11,7 @@ percentage points, like vix_level.
 
 Non-finite observations (poisoned vendor rows) are UNEVALUABLE, never a
 number: window-wide for ranks (an unguarded NaN current obs reads as rank
-0.0 — every "rank < X" fabricated), per-read for levels (±inf would
+0.0, so every "rank < X" is fabricated), per-read for levels (±inf would
 fabricate a threshold cross; NaN silently compares False).
 """
 
@@ -61,7 +61,7 @@ class TestIvxRank1y:
         assert not evaluate_condition(view, _cond(Indicator.IVX_RANK_1Y, Operator.LT, 90))
 
     def test_below_126_observations_is_unevaluable(self) -> None:
-        # owner amendment 3 — the boundary, both sides
+        # owner amendment 3: the boundary, both sides
         store, days = _store(125)
         view = MarketView(store, days[-1])
         # even a trivially-true comparison is refused on a thin window
@@ -74,7 +74,7 @@ class TestIvxRank1y:
     def test_rank_is_point_in_time(self) -> None:
         # a view 30 sessions before the end sees only its own history:
         # 126-obs series viewed at obs 100 → unevaluable there, evaluable
-        # at the end — the same store, bounded by as_of
+        # at the end. The same store, bounded by as_of
         store, days = _store(126)
         early = MarketView(store, days[99])
         assert not evaluate_condition(early, _cond(Indicator.IVX_RANK_1Y, Operator.GT, 0))
@@ -94,7 +94,7 @@ class TestIvxRank1y:
     def test_poisoned_current_observation_refuses(self) -> None:
         # the fabricated-signal shape the kernel guard exists for: an
         # unguarded NaN current observation counts nothing and reads as
-        # rank 0.0 — every "rank < X" passed on the poisoned day
+        # rank 0.0, so every "rank < X" passed on the poisoned day
         store, days = _store(126, ivx_override=float("nan"))
         view = MarketView(store, days[-1])
         assert not evaluate_condition(view, _cond(Indicator.IVX_RANK_1Y, Operator.LT, 5))
@@ -102,7 +102,7 @@ class TestIvxRank1y:
 
 
 class TestTrailingRankKernel:
-    """_trailing_rank shared by every *_rank/percentile indicator — the
+    """_trailing_rank shared by every *_rank/percentile indicator. The
     gex/dex/nope/net_premium/market_tide ranks and iv_percentile inherit
     each refusal proven here."""
 
@@ -124,7 +124,7 @@ class TestTrailingRankKernel:
 
     def test_mid_window_nan_is_none(self) -> None:
         # a mid-window NaN is subtler: out of the ≤-count but still in the
-        # denominator, silently deflating every rank — refuse instead
+        # denominator, silently deflating every rank. Refuse instead
         history = [0.100 + 0.001 * i for i in range(126)]
         history[50] = float("nan")
         assert _trailing_rank(history, min_obs=126) is None
@@ -184,7 +184,7 @@ class TestTrailingZscoreKernel:
 
     def test_window_caps_at_252_observations(self) -> None:
         history = [0.100 + 0.001 * i for i in range(300)]
-        # last 252 only: √(3·251/253) = 1.7251912 — NOT the 300-obs value
+        # last 252 only: √(3·251/253) = 1.7251912, NOT the 300-obs value
         # √(3·299/301) = 1.7262368
         z = _trailing_zscore(history, min_obs=126)
         assert z == pytest.approx(1.7251912, abs=1e-6)
@@ -201,10 +201,10 @@ class TestTrailingZscoreKernel:
         (1 / 3, 200),    # +1.0
     ])
     def test_flat_window_is_none(self, value: float, n: int) -> None:
-        # a flat series has no σ to standardize by — and the guard must be
+        # a flat series has no σ to standardize by, and the guard must be
         # on the VALUES, not on var <= 0: sum(window)/n leaves a residual
         # for most flat decimals and the residual z is exactly ±1.0
-        # (review finding, reproduced) — a dead forward-filling feed must
+        # (review finding, reproduced). A dead forward-filling feed must
         # never manufacture a signal
         assert _trailing_zscore([value] * n, min_obs=126) is None
 
@@ -234,7 +234,7 @@ class TestIvxZscore1y:
         assert evaluate_condition(view, _cond(Indicator.IVX_ZSCORE_1Y, Operator.LT, 1.75))
 
     def test_below_126_observations_is_unevaluable(self) -> None:
-        # the ivx_rank floor, inherited — the boundary, both sides
+        # the ivx_rank floor, inherited: the boundary, both sides
         store, days = _store(125)
         view = MarketView(store, days[-1])
         # even a trivially-true comparison is refused on a thin window
@@ -248,7 +248,7 @@ class TestIvxZscore1y:
 
     def test_zscore_is_point_in_time(self) -> None:
         # same store, bounded by as_of: unevaluable at obs 100, evaluable
-        # at the end — no future observation leaks into the window
+        # at the end. No future observation leaks into the window
         store, days = _store(126)
         early = MarketView(store, days[99])
         assert not evaluate_condition(
@@ -259,7 +259,7 @@ class TestIvxZscore1y:
 
     def test_flat_series_is_unevaluable(self) -> None:
         # 0.229 × 144 is a residual-variance shape: var <= 0 would MISS it
-        # and fabricate z = +1.0 (kernel test above) — prove the refusal
+        # and fabricate z = +1.0 (kernel test above). Prove the refusal
         # holds through the full evaluate_condition path too
         days = _weekdays(date(2024, 1, 1), 144)
         ivx = {d.isoformat(): 0.229 for d in days}
@@ -275,7 +275,7 @@ class TestIvxZscore1y:
 def test_ivx_family_registries_stay_in_sync() -> None:
     # the three IVX-family indicators ride one series, and the engine's
     # dead-feed (staleness) and splice-disclosure registries read them via
-    # .get(indicator, ()) — a missing member is a SILENT empty default, so
+    # .get(indicator, ()), and a missing member is a SILENT empty default, so
     # membership is pinned here (review finding: no enumeration test
     # guarded these registries)
     from app.engine.engine import _PROVENANCE_SERIES, _STALENESS_ONLY_SERIES
@@ -299,7 +299,7 @@ class TestSpecV8Gating:
             StrategySpec.model_validate(doc)
 
     def test_ladder_rung_cannot_smuggle_v8(self) -> None:
-        # a Rung IS a Condition — the gate must see the ladder's vocabulary
+        # a Rung IS a Condition, so the gate must see the ladder's vocabulary
         doc = copy.deepcopy(CANONICAL)
         doc["spec_version"] = 7
         doc["entry"]["scale_in"] = {
@@ -332,7 +332,7 @@ class TestSpecV8Gating:
 
 class TestNonFiniteLevelReads:
     """The _finite gate on scalar vendor reads, proven through the ivx
-    branches — every *_level/spread/ratio branch reads through the same
+    branches. Every *_level/spread/ratio branch reads through the same
     gate."""
 
     def test_nan_level_is_unevaluable_both_directions(self) -> None:
@@ -343,7 +343,7 @@ class TestNonFiniteLevelReads:
 
     def test_inf_level_must_not_fabricate_a_cross(self) -> None:
         # +inf compares greater than any threshold: unguarded, a poisoned
-        # row read "IVX above 25" as True — a fabricated level signal
+        # row read "IVX above 25" as True, a fabricated level signal
         store, days = _store(10, ivx_override=float("inf"))
         view = MarketView(store, days[-1])
         assert not evaluate_condition(view, _cond(Indicator.IVX_LEVEL_30D, Operator.GT, 25))

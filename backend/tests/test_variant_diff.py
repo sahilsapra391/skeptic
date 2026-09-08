@@ -71,7 +71,7 @@ def test_an_untouched_carried_window_produces_no_diff_row() -> None:
 def test_carried_all_resolving_wider_coverage_produces_no_diff_row() -> None:
     """V-51: the parent chose "all" (backtest.start null); the variant submits
     "all" (null again). At RUN time the variant may test more history than the
-    parent did, because coverage grew — but the SPEC did not change, coverage
+    parent did, because coverage grew, but the SPEC did not change, coverage
     did. The diff reads specs, never effective windows, so no row. This also
     covers null-vs-absent: an older parent row may lack the key entirely and
     must compare equal to an explicit null."""
@@ -86,7 +86,7 @@ def test_carried_all_resolving_wider_coverage_produces_no_diff_row() -> None:
 
 def test_an_edited_window_diffs_against_the_parents_recorded_value() -> None:
     """The old side is what the parent RECORDED (its requested window), never
-    its effective window — the diff does not even see stats. One row."""
+    its effective window. The diff does not even see stats. One row."""
     parent = _spec(backtest__start="2024-01-01")
     variant = _spec(backtest__start="2023-01-01")
     diff = diff_specs(parent, variant)
@@ -123,7 +123,7 @@ def test_the_path_vocabulary_is_pinned() -> None:
         assert _paths(diff_specs(CANONICAL, variant)) == {expected}, expected
 
     # cadence: the dial owns frequency AND day_of_week (V-77), so
-    # weekly→monthly is honestly TWO rows — the day it ran on is also gone —
+    # weekly→monthly is honestly TWO rows (the day it ran on is also gone)
     # while weekly·mon→weekly·fri is one
     variant = _spec(entry__schedule={"frequency": "monthly", "day_of_week": None})
     assert _paths(diff_specs(CANONICAL, variant)) == {
@@ -133,7 +133,7 @@ def test_the_path_vocabulary_is_pinned() -> None:
     variant = _spec(entry__schedule={"frequency": "weekly", "day_of_week": "friday"})
     assert _paths(diff_specs(CANONICAL, variant)) == {"entry.schedule.day_of_week"}
 
-    # a leg edit names the leg by index — the lock check prefix-matches
+    # a leg edit names the leg by index, and the lock check prefix-matches
     # "position.legs" against exactly this form
     variant = copy.deepcopy(CANONICAL)
     variant["position"]["legs"][0]["strike_selection"]["value"] = 0.20
@@ -141,7 +141,7 @@ def test_the_path_vocabulary_is_pinned() -> None:
         "position.legs[0].strike_selection.value"
     }
 
-    # tenor: target and band are SEPARATE rows (V-124 — a reader of the diff
+    # tenor: target and band are SEPARATE rows (V-124: a reader of the diff
     # sees the band move explicitly, without ownership rules in front of them)
     variant = _spec(
         position__expiration_selection={"target_dte": 30, "min_dte": 20, "max_dte": 45}

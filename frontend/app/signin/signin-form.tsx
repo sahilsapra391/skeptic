@@ -37,7 +37,7 @@ export function SigninForm() {
       // no setBusy(false): the busy state honestly covers the navigation
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.detail : "the server could not be reached — try again",
+        err instanceof ApiError ? err.detail : "the server could not be reached, try again",
       );
       setBusy(false);
     }

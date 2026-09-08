@@ -50,7 +50,7 @@ textarea{resize:none}
     </div>
 
     <h1 style="font-size:34px;font-weight:650;letter-spacing:-.02em;margin:0 0 10px;line-height:1.1">Describe a strategy.<br>I'll try to break it.</h1>
-    <p style="margin:0 0 26px;font-size:15px;color:#98a2ad;line-height:1.5;max-width:560px">Plain English in. I compile it, backtest it, then attack the result — out-of-sample, walk-forward, Monte Carlo, sensitivity. The verdict leads with the uncomfortable part.</p>
+    <p style="margin:0 0 26px;font-size:15px;color:#98a2ad;line-height:1.5;max-width:560px">Plain English in. I compile it, backtest it, then attack the result: out-of-sample, walk-forward, Monte Carlo, sensitivity. The verdict leads with the uncomfortable part.</p>
 
     <div style="display:inline-flex;gap:2px;border:1px solid #262c36;border-radius:11px;padding:3px;margin-bottom:14px">
       <button onClick="{{ setModeText }}" style="{{ modeTextS }}">⌨ Describe it</button>
@@ -118,7 +118,7 @@ textarea{resize:none}
     <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
       <div style="max-width:70%;background:#20242d;border:1px solid #2b303a;border-radius:12px 12px 4px 12px;padding:10px 14px;font:400 13px/1.55 'IBM Plex Mono',monospace;color:#c6cdd6">{{ specQuote }}</div>
     </div>
-    <p style="margin:0 0 12px;font-size:14.5px;color:#98a2ad">Here's what I heard — every dial is adjustable:</p>
+    <p style="margin:0 0 12px;font-size:14.5px;color:#98a2ad">Here's what I heard. Every dial is adjustable:</p>
 
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:12px;padding:10px 12px"><div style="font:500 10px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.1em;margin-bottom:5px">TICKER</div><div style="font:600 17px 'IBM Plex Mono',monospace">{{ ticker }}</div></div>
@@ -141,7 +141,7 @@ textarea{resize:none}
 
     <sc-if value="{{ exitUnset }}" hint-placeholder-val="{{ false }}">
     <div style="margin-top:12px;background:var(--acd);border:1px solid var(--acb);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <span style="font-size:13.5px;color:#e9edf1"><b style="color:var(--ac)">One question</b> — you gave no exit. Close at:</span>
+      <span style="font-size:13.5px;color:#e9edf1"><b style="color:var(--ac)">One question</b>: you gave no exit. Close at:</span>
       <button onClick="{{ setExit50 }}" style="border:1px solid var(--acb);color:var(--ac);border-radius:999px;padding:5px 13px;font-size:12.5px" style-hover="background:var(--acd)">50% profit</button>
       <button onClick="{{ setExit21 }}" style="border:1px solid var(--acb);color:var(--ac);border-radius:999px;padding:5px 13px;font-size:12.5px" style-hover="background:var(--acd)">21 DTE</button>
       <button onClick="{{ setExitHold }}" style="border:1px solid var(--acb);color:var(--ac);border-radius:999px;padding:5px 13px;font-size:12.5px" style-hover="background:var(--acd)">hold to expiry</button>
@@ -149,7 +149,7 @@ textarea{resize:none}
     </sc-if>
 
     <sc-if value="{{ specIsChart }}" hint-placeholder-val="{{ false }}">
-    <div style="margin-top:12px;background:var(--acd);border:1px solid var(--acb);border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.5;color:#e9edf1">You showed me winners — that's what eyes do. I'll test <b>all 31 look-alikes since 1993</b>, losers included. If the edge lives only in your examples, the verdict will say exactly that.</div>
+    <div style="margin-top:12px;background:var(--acd);border:1px solid var(--acb);border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.5;color:#e9edf1">You showed me winners. That's what eyes do. I'll test <b>all 31 look-alikes since 1993</b>, losers included. If the edge lives only in your examples, the verdict will say exactly that.</div>
     </sc-if>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px">
@@ -170,7 +170,7 @@ textarea{resize:none}
         <div style="{{ st.style }}"><span style="width:18px;display:inline-block">{{ st.mark }}</span><span style="flex:1">{{ st.t }}</span><span style="font-size:11px;color:#5f6873">{{ st.n }}</span></div>
       </sc-for>
     </div>
-    <p style="margin:24px 0 0;font-size:12.5px;color:#5f6873">Results stay hidden until the whole gauntlet finishes — no previews, no dopamine.</p>
+    <p style="margin:24px 0 0;font-size:12.5px;color:#5f6873">Results stay hidden until the whole gauntlet finishes. No previews, no dopamine.</p>
   </div>
   </sc-if>
 
@@ -190,7 +190,7 @@ textarea{resize:none}
 
     <div style="{{ verdictBoxS }}" data-screen-label="Verdict block">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <span style="font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ac);letter-spacing:.14em">VERDICT — THE HONEST READ</span>
+        <span style="font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ac);letter-spacing:.14em">VERDICT: THE HONEST READ</span>
         <span style="font:500 11px 'IBM Plex Mono',monospace;color:var(--ac)">{{ vSurvived }}</span>
       </div>
       <div style="font-size:25px;font-weight:650;line-height:1.2;letter-spacing:-.01em;max-width:700px">{{ vHeadline }}</div>
@@ -234,7 +234,7 @@ textarea{resize:none}
     </div>
 
     <sc-if value="{{ isRefusal }}" hint-placeholder-val="{{ false }}">
-      <div style="margin:18px 0 4px;text-align:center;font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.18em">— UNBLESSED OUTPUT · MACHINERY CHECK ONLY —</div>
+      <div style="margin:18px 0 4px;text-align:center;font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.18em">UNBLESSED OUTPUT · MACHINERY CHECK ONLY</div>
     </sc-if>
 
     <div style="{{ resDimS }}">
@@ -245,7 +245,7 @@ textarea{resize:none}
       </div>
 
       <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:14px;padding:14px 16px;margin-top:12px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em">EQUITY — OUT-OF-SAMPLE SHADED</span><span style="font:400 11px 'IBM Plex Mono',monospace;color:#5f6873">$25k start · net of costs</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em">EQUITY, OUT-OF-SAMPLE SHADED</span><span style="font:400 11px 'IBM Plex Mono',monospace;color:#5f6873">$25k start · net of costs</span></div>
         <svg width="100%" viewBox="0 0 860 200" style="display:block">
           <rect x="600" y="0" width="260" height="200" fill="rgba(255,255,255,.035)"></rect>
           <line x1="0" y1="50" x2="860" y2="50" stroke="#20242c"></line><line x1="0" y1="100" x2="860" y2="100" stroke="#20242c"></line><line x1="0" y1="150" x2="860" y2="150" stroke="#20242c"></line>
@@ -255,7 +255,7 @@ textarea{resize:none}
           <line x1="0" y1="6" x2="860" y2="6" stroke="#20242c"></line>
           <polyline points="0,6 80,6 120,20 160,6 240,6 300,32 360,6 430,6 470,16 540,6 620,6 660,40 720,6 780,13 860,6" fill="none" stroke="#e0604f" stroke-width="1.3"></polyline>
         </svg>
-        <div style="font:400 10.5px 'IBM Plex Mono',monospace;color:#5f6873;margin-top:6px">drawdown — P/L red lives only here, never in the verdict</div>
+        <div style="font:400 10.5px 'IBM Plex Mono',monospace;color:#5f6873;margin-top:6px">drawdown: P/L red lives only here, never in the verdict</div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px" data-screen-label="Honesty panels">
@@ -268,14 +268,14 @@ textarea{resize:none}
           <div style="font-size:12.5px;color:#c6cdd6;margin-top:10px">{{ hNote1 }}</div>
         </div>
         <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:14px;padding:13px 15px">
-          <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:10px">WALK-FORWARD — 12 WINDOWS</div>
+          <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:10px">WALK-FORWARD, 12 WINDOWS</div>
           <div style="display:flex;gap:5px;align-items:flex-end;height:56px">
             <div style="width:14px;height:46px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:30px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:18px;background:#e0604f;border-radius:3px 3px 0 0"></div><div style="width:14px;height:52px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:38px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:16px;background:#e0604f;border-radius:3px 3px 0 0"></div><div style="width:14px;height:44px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:34px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:50px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:22px;background:#e0604f;border-radius:3px 3px 0 0"></div><div style="width:14px;height:40px;background:#43c987;border-radius:3px 3px 0 0"></div><div style="width:14px;height:46px;background:#43c987;border-radius:3px 3px 0 0"></div>
           </div>
           <div style="font-size:12.5px;color:#c6cdd6;margin-top:10px">{{ hNote2 }}</div>
         </div>
         <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:14px;padding:13px 15px">
-          <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:10px">MONTE CARLO — 1,000 RESAMPLES</div>
+          <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:10px">MONTE CARLO, 1,000 RESAMPLES</div>
           <svg width="100%" viewBox="0 0 400 100" style="display:block">
             <polyline points="0,80 100,58 200,36 300,18 400,6" fill="none" stroke="#4a545f" stroke-width="1.2"></polyline>
             <polyline points="0,80 100,68 200,55 300,44 400,35" fill="none" stroke="#cdd6df" stroke-width="1.7"></polyline>
@@ -284,7 +284,7 @@ textarea{resize:none}
           <div style="font-size:12.5px;color:#c6cdd6;margin-top:8px">{{ hNote3 }}</div>
         </div>
         <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:14px;padding:13px 15px">
-          <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:10px">SENSITIVITY — Δ 15 → 45</div>
+          <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:10px">SENSITIVITY, Δ 15 → 45</div>
           <div style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px">
             <div style="height:20px;border-radius:4px;background:rgba(205,214,223,.10)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.16)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.28)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.44)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.86)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.30)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.14)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.10)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.07)"></div>
             <div style="height:20px;border-radius:4px;background:rgba(205,214,223,.12)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.20)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.34)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.50)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.92)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.26)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.12)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.08)"></div><div style="height:20px;border-radius:4px;background:rgba(205,214,223,.06)"></div>
@@ -295,7 +295,7 @@ textarea{resize:none}
       </div>
 
       <div style="margin-top:12px">
-        <button onClick="{{ toggleLog }}" style="width:100%;display:flex;align-items:center;gap:10px;background:#1b1f26;border:1px solid #2b303a;border-radius:12px;padding:12px 16px;font:400 12.5px 'IBM Plex Mono',monospace;color:#98a2ad;text-align:left" style-hover="border-color:#3a4150;color:#e9edf1"><span>{{ logChev }}</span><span>Trade log — 412 filled · 37 skipped, with reasons</span></button>
+        <button onClick="{{ toggleLog }}" style="width:100%;display:flex;align-items:center;gap:10px;background:#1b1f26;border:1px solid #2b303a;border-radius:12px;padding:12px 16px;font:400 12.5px 'IBM Plex Mono',monospace;color:#98a2ad;text-align:left" style-hover="border-color:#3a4150;color:#e9edf1"><span>{{ logChev }}</span><span>Trade log: 412 filled · 37 skipped, with reasons</span></button>
         <sc-if value="{{ logOpen }}" hint-placeholder-val="{{ false }}">
         <div style="background:#181b21;border:1px solid #2b303a;border-top:none;border-radius:0 0 12px 12px;padding:6px 16px 10px">
           <sc-for list="{{ trades }}" as="tr" hint-placeholder-count="6">
@@ -309,7 +309,7 @@ textarea{resize:none}
     <sc-if value="{{ asked }}" hint-placeholder-val="{{ false }}">
       <div style="margin-top:14px;background:#1b1f26;border:1px solid #2b303a;border-radius:12px;padding:12px 16px">
         <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:var(--ac);letter-spacing:.12em;margin-bottom:6px">GROUNDED ANSWER</div>
-        <div style="font-size:13.5px;color:#c6cdd6;line-height:1.6">Worst month: <span style="font-family:'IBM Plex Mono',monospace">Apr ’25, −6.8%</span> — the dip you anchored on. Remove it and CAGR drops <span style="font-family:'IBM Plex Mono',monospace">11.2% → 8.9%</span>; the verdict does not change. Computed from this run's trade log only — no new numbers were invented.</div>
+        <div style="font-size:13.5px;color:#c6cdd6;line-height:1.6">Worst month: <span style="font-family:'IBM Plex Mono',monospace">Apr ’25, −6.8%</span> (the dip you anchored on). Remove it and CAGR drops <span style="font-family:'IBM Plex Mono',monospace">11.2% → 8.9%</span>; the verdict does not change. Computed from this run's trade log only. No new numbers were invented.</div>
       </div>
     </sc-if>
 
@@ -346,7 +346,7 @@ textarea{resize:none}
       <div style="font:500 13px 'IBM Plex Mono',monospace">IWM 16Δ iron condor</div>
       <div style="font:400 11px 'IBM Plex Mono',monospace;color:#5f6873;margin:4px 0 12px">Jun 24 ’26 · condor · withheld</div>
       <div style="position:relative;height:14px;margin-bottom:10px"><div style="position:absolute;top:6px;left:0;right:0;height:2px;background:#2e3440"></div><div style="position:absolute;top:2px;left:4%;width:92%;height:10px;border:1px dashed #3a4150;border-radius:4px"></div></div>
-      <div style="font-size:12.5px;color:#c6cdd6;font-style:italic">"Verdict withheld — 42 days can't answer this honestly."</div>
+      <div style="font-size:12.5px;color:#c6cdd6;font-style:italic">"Verdict withheld. 42 days can't answer this honestly."</div>
     </div>
     <button onClick="{{ newAnalysis }}" style="border:1px dashed #3a4150;border-radius:14px;padding:15px;min-height:120px;color:#5f6873;font-size:13px" style-hover="color:var(--ac);border-color:var(--acb)">+ new analysis</button>
   </div>
@@ -382,7 +382,7 @@ textarea{resize:none}
     </div>
   </div>
   <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:14px;padding:16px;margin-top:12px">
-    <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:12px">BACKFILL RUNWAYS — WALKING BACKWARD THROUGH HISTORY</div>
+    <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:12px">BACKFILL RUNWAYS: WALKING BACKWARD THROUGH HISTORY</div>
     <div style="display:grid;grid-template-columns:44px 1fr 260px;gap:10px;align-items:center;font:400 11.5px 'IBM Plex Mono',monospace">
       <span>SPY</span><div style="height:9px;background:#232833;border-radius:3px;overflow:hidden"><div style="width:38%;height:100%;background:var(--ac);border-radius:3px"></div></div><span style="color:#98a2ad">← reached Mar ’19 · ~4 months to 2008</span>
       <span>QQQ</span><div style="height:9px;background:#232833;border-radius:3px;overflow:hidden"><div style="width:12%;height:100%;background:var(--ac);border-radius:3px"></div></div><span style="color:#5f6873">queued behind SPY</span>
@@ -410,14 +410,14 @@ textarea{resize:none}
     <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px">
       <div style="display:flex;justify-content:space-between;align-items:center"><span>Commission</span><span style="font-family:'IBM Plex Mono',monospace;color:#e9edf1">$0.65 / contract / side</span></div>
       <div style="display:flex;justify-content:space-between;align-items:center"><span>Slippage</span><span style="font-family:'IBM Plex Mono',monospace;color:#e9edf1">mid + 0.5 × half-spread</span></div>
-      <div style="font-size:12px;color:#5f6873">Mid fills are banned by design — slippage is a floor, not a knob you can zero out.</div>
+      <div style="font-size:12px;color:#5f6873">Mid fills are banned by design. Slippage is a floor, not a knob you can zero out.</div>
     </div>
   </div>
   <div style="background:#1b1f26;border:1px solid #2b303a;border-radius:14px;padding:16px;margin-bottom:12px">
     <div style="font:500 10.5px 'IBM Plex Mono',monospace;color:#5f6873;letter-spacing:.12em;margin-bottom:12px">MODEL</div>
     <div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px">
       <div style="display:flex;justify-content:space-between"><span>Parser / verdict LLM</span><span style="font-family:'IBM Plex Mono',monospace;color:#e9edf1">openrouter ✓</span></div>
-      <div style="display:flex;justify-content:space-between"><span>Numeric validation</span><span style="font-family:'IBM Plex Mono',monospace;color:#e9edf1">on — no un-computed numbers</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Numeric validation</span><span style="font-family:'IBM Plex Mono',monospace;color:#e9edf1">on (no un-computed numbers)</span></div>
       <div style="display:flex;justify-content:space-between"><span>Seeds</span><span style="font-family:'IBM Plex Mono',monospace;color:#e9edf1">fixed &amp; logged per run</span></div>
     </div>
   </div>
@@ -516,12 +516,12 @@ class Component extends DCLogic {
       survived: '4 OF 5 ATTACKS SURVIVED',
       band: { left: '52%', width: '34%' }, marker: '66%',
       chips: [{ txt: 'OOS \u2713' }, { txt: 'walk-fwd \u2713' }, { txt: 'monte carlo \u2713' }, { txt: 'sensitivity \u2713' }, { txt: 'sample \u2717' }],
-      evidence: [{ t: 'OOS Sharpe 1.18 vs 1.31 in-sample \u2014 only \u221210% decay' }, { t: 'Walk-forward: 11 of 12 windows positive' }, { t: '\u0394 sweep is a plateau \u2014 neighbors hold up' }],
-      breaks: [{ t: 'Sample spans one volatility regime (\u201924\u2013\u201926)' }, { t: 'Monte Carlo 5th percentile: \u221214% drawdown \u2014 survivable, not painless' }],
-      caveat: 'Strong within the record we have \u2014 but the record is short. This verdict re-runs automatically as data accrues.',
+      evidence: [{ t: 'OOS Sharpe 1.18 vs 1.31 in-sample, only \u221210% decay' }, { t: 'Walk-forward: 11 of 12 windows positive' }, { t: '\u0394 sweep is a plateau: neighbors hold up' }],
+      breaks: [{ t: 'Sample spans one volatility regime (\u201924\u2013\u201926)' }, { t: 'Monte Carlo 5th percentile: \u221214% drawdown (survivable, not painless)' }],
+      caveat: 'Strong within the record we have, but the record is short. This verdict re-runs automatically as data accrues.',
       mtiles: [['13.8%', 'CAGR'], ['1.18', 'SHARPE'], ['1.64', 'SORTINO'], ['\u221211.2%', 'MAX DD', 1], ['68%', 'WIN RATE'], ['1.92', 'P\u00b7FACTOR']],
       isv: '1.31', oosv: '1.18', b1: '90%', b2: '82%',
-      n1: '\u221210% decay \u2014 holds \u2713', n2: '11 / 12 windows positive \u2713', n3: '5th pctile \u221214% \u00b7 median +11% \u2713', n4: '\u0394 .25\u2013.35 all profitable \u2014 plateau \u2713'
+      n1: '\u221210% decay, holds \u2713', n2: '11 / 12 windows positive \u2713', n3: '5th pctile \u221214% \u00b7 median +11% \u2713', n4: '\u0394 .25\u2013.35 all profitable, plateau \u2713'
     };
     if (kind === 'refusal') return {
       refusal: true,
@@ -529,8 +529,8 @@ class Component extends DCLogic {
       survived: 'NOT EVALUATED',
       chips: [], evidence: [], breaks: [], caveat: '',
       mtiles: [['9.1%', 'CAGR*'], ['0.94', 'SHARPE*'], ['1.30', 'SORTINO*'], ['\u22127.2%', 'MAX DD*', 1], ['74%', 'WIN RATE*'], ['1.70', 'P\u00b7FACTOR*']],
-      isv: '\u2014', oosv: '\u2014', b1: '0%', b2: '0%',
-      n1: 'not run \u2014 sample too thin', n2: 'not run \u2014 sample too thin', n3: 'not run \u2014 sample too thin', n4: 'not run \u2014 sample too thin'
+      isv: 'n/a', oosv: 'n/a', b1: '0%', b2: '0%',
+      n1: 'not run: sample too thin', n2: 'not run: sample too thin', n3: 'not run: sample too thin', n4: 'not run: sample too thin'
     };
     return {
       refusal: false,
@@ -539,11 +539,11 @@ class Component extends DCLogic {
       band: { left: '18%', width: '42%' }, marker: '34%',
       chips: [{ txt: 'OOS \u2717' }, { txt: 'walk-fwd \u2713' }, { txt: 'monte carlo \u2713' }, { txt: 'sensitivity \u2717' }, { txt: 'sample \u2717' }],
       evidence: [{ t: 'Walk-forward: 9 of 12 windows positive' }, { t: 'Monte Carlo median path stays above breakeven' }],
-      breaks: [{ t: 'In-sample Sharpe 1.42 \u2192 0.44 out-of-sample (\u221269%)' }, { t: '11 high-VIX weeks account for 58% of all P/L \u2014 calm markets are flat-to-negative' }],
+      breaks: [{ t: 'In-sample Sharpe 1.42 \u2192 0.44 out-of-sample (\u221269%)' }, { t: '11 high-VIX weeks account for 58% of all P/L (calm markets are flat-to-negative)' }],
       caveat: '68 OOS trades \u00b7 one volatility regime \u00b7 self-collected data. Treat as suggestive, not proven.',
       mtiles: [['11.2%', 'CAGR'], ['0.87', 'SHARPE'], ['1.21', 'SORTINO'], ['\u221218.4%', 'MAX DD', 1], ['71%', 'WIN RATE'], ['1.61', 'P\u00b7FACTOR']],
       isv: '1.42', oosv: '0.44', b1: '88%', b2: '27%',
-      n1: '\u221269% decay \u2014 fails \u2717', n2: '9 / 12 windows positive \u2713', n3: '5th pctile \u221231% \u26a0 \u00b7 median +9%', n4: '\u0394 .30 optimum is a cliff \u2014 neighbors lose \u2717'
+      n1: '\u221269% decay, fails \u2717', n2: '9 / 12 windows positive \u2713', n3: '5th pctile \u221231% \u26a0 \u00b7 median +9%', n4: '\u0394 .30 optimum is a cliff: neighbors lose \u2717'
     };
   }
 
@@ -583,7 +583,7 @@ class Component extends DCLogic {
     const exitSet = !!s.exit;
     const nExamples = s.examples.length;
     const resultName = s.specFromChart
-      ? s.ticker + ' pullback short put \u2014 taught by ' + (nExamples || 1) + ' pinned example' + (nExamples === 1 ? '' : 's')
+      ? s.ticker + ' pullback short put, taught by ' + (nExamples || 1) + ' pinned example' + (nExamples === 1 ? '' : 's')
       : s.ticker + ' .' + s.strike + '\u0394 weekly short put';
 
     return {
@@ -630,10 +630,10 @@ class Component extends DCLogic {
         }
       },
       pendingNote: s.pendingPin != null
-        ? 'entry pinned at ' + this.dateFor(s.pendingPin) + ' \u2014 now click where you\u2019d exit'
+        ? 'entry pinned at ' + this.dateFor(s.pendingPin) + '. Now click where you\u2019d exit'
         : (nExamples ? nExamples + ' example' + (nExamples > 1 ? 's' : '') + ' pinned \u00b7 add up to 3, or continue \u2192' : 'Show me 1\u20133 trades you\u2019d have taken. Click where you\u2019d enter.'),
       exampleTickets: s.examples.map((ex, i) => ({
-        label: 'example ' + (i + 1) + ' \u2014 ' + this.dateFor(ex.a) + ' \u2192 ' + this.dateFor(ex.b) + ' \u00b7 sell .' + s.strike + '\u0394 put \u00b7 closed ~+50%',
+        label: 'example ' + (i + 1) + ': ' + this.dateFor(ex.a) + ' \u2192 ' + this.dateFor(ex.b) + ' \u00b7 sell .' + s.strike + '\u0394 put \u00b7 closed ~+50%',
         remove: () => this.setState({ examples: s.examples.filter((_, j) => j !== i) })
       })),
       clearPins: () => this.setState({ examples: [], pendingPin: null }),
@@ -714,11 +714,11 @@ class Component extends DCLogic {
       toggleLog: () => this.setState({ logOpen: !s.logOpen }),
       trades: [
         { d: 'Jun 26 \u201926', a: 'CLOSE', det: '\u22121P 543 \u00b7 opened Jun 5 \u00b7 cr $3.42', pl: '+$164', c: '#43c987', n: 'profit target 50%' },
-        { d: 'Jun 20 \u201926', a: 'OPEN', det: '\u22121P 545 \u00b7 45 DTE \u00b7 \u0394.30 \u00b7 cr $3.38', pl: '\u2014', c: '#98a2ad', n: 'schedule: weekly' },
-        { d: 'Jun 13 \u201926', a: 'SKIP', det: '\u2014', pl: '\u2014', c: '#5f6873', n: 'zero bid on .30\u0394 strike', skip: true },
+        { d: 'Jun 20 \u201926', a: 'OPEN', det: '\u22121P 545 \u00b7 45 DTE \u00b7 \u0394.30 \u00b7 cr $3.38', pl: 'n/a', c: '#98a2ad', n: 'schedule: weekly' },
+        { d: 'Jun 13 \u201926', a: 'SKIP', det: 'n/a', pl: 'n/a', c: '#5f6873', n: 'zero bid on .30\u0394 strike', skip: true },
         { d: 'Jun 6 \u201926', a: 'CLOSE', det: '\u22121P 538 \u00b7 opened May 16', pl: '\u2212$389', c: '#e0604f', n: 'stop: 2\u00d7 credit' },
         { d: 'May 30 \u201926', a: 'CLOSE', det: '\u22121P 531 \u00b7 opened May 9', pl: '+$171', c: '#43c987', n: 'profit target 50%' },
-        { d: 'May 23 \u201926', a: 'SKIP', det: '\u2014', pl: '\u2014', c: '#5f6873', n: 'spread 14% of mid \u2014 quote quality', skip: true },
+        { d: 'May 23 \u201926', a: 'SKIP', det: 'n/a', pl: 'n/a', c: '#5f6873', n: 'spread 14% of mid: quote quality', skip: true },
         { d: 'May 16 \u201926', a: 'CLOSE', det: '\u22121P 527 \u00b7 opened Apr 25', pl: '+$158', c: '#43c987', n: '21 DTE time exit' },
         { d: 'May 9 \u201926', a: 'CLOSE', det: '\u22121P 522 \u00b7 opened Apr 18', pl: '+$149', c: '#43c987', n: 'profit target 50%' }
       ].map(t => ({

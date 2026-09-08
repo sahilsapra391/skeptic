@@ -14,7 +14,7 @@
 
 import type { SpecDraft } from "./types";
 
-/** Just the cost dials — the caller passes `getSettings()`, which is a superset. */
+/** Just the cost dials. The caller passes `getSettings()`, which is a superset. */
 export interface CostSettings {
   commission: number;
   slippage: number;
@@ -29,8 +29,8 @@ export function confirmDefaults(
   const parsedBacktest = (parsedSpec?.backtest ?? {}) as Record<string, unknown>;
   return {
     ...draft,
-    // a draft that already carries these keeps its own — the hook a variant
-    // needs, so a copy inherits its parent's costs rather than the copier's
+    // a draft that already carries these keeps its own (the hook a variant
+    // needs), so a copy inherits its parent's costs rather than the copier's
     // current Settings
     costs: draft.costs ?? {
       commission_per_contract: settings.commission,

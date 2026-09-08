@@ -1,4 +1,4 @@
-"""Data routes — real lake coverage and underlying series."""
+"""Data routes: real lake coverage and underlying series."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from app.data.r2 import R2NotConfigured
 router = APIRouter()
 
 _R2_HINT = (
-    "R2 credentials not configured on the backend — set R2_ACCOUNT_ID, "
+    "R2 credentials not configured on the backend. Set R2_ACCOUNT_ID, "
     "R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET. Coverage is never "
     "faked; without the lake this endpoint refuses."
 )
@@ -45,7 +45,7 @@ def get_bars(
     if interval not in bars_mod.INTERVALS:
         raise HTTPException(
             status_code=422,
-            detail=f"interval must be one of {bars_mod.INTERVALS} — tick intervals "
+            detail=f"interval must be one of {bars_mod.INTERVALS}. Tick intervals "
             "don't exist: the lake has no tick data and no $0 source provides it",
         )
     if window not in bars_mod.WINDOWS:
@@ -70,7 +70,7 @@ def get_estimate(
     clock: str = Query(default="daily"),
 ) -> dict[str, Any]:
     """Pre-run window options with session counts (real coverage) and time
-    estimates (medians over MEASURED runs on this box — perf_json). When
+    estimates (medians over MEASURED runs on this box, from perf_json). When
     nothing has been measured yet at this clock, the estimate is honestly
     null and the first run calibrates; never an invented number."""
     import json as _json
@@ -93,7 +93,7 @@ def get_estimate(
 
             sessions = load_intraday_store(ticker).sessions()
         else:
-            # refresh=False: a GET must never trigger a store rebuild — that
+            # refresh=False: a GET must never trigger a store rebuild. That
             # work belongs to the engine path behind ENGINE_LOCK (the
             # 2026-07-06 OOM class); a ≤30-min-stale session list is fine
             # for a time estimate
@@ -123,8 +123,8 @@ def get_estimate(
             rates.append((float(p["engine_s"]) + float(p["gauntlet_s"])) / n)
             # the blocking verdict cost, ~constant per run. Rows from before
             # narration moved off the critical path (no narration_off_path
-            # marker) measured the LLM wait the user no longer pays —
-            # counting them would over-promise every estimate until they
+            # marker) measured the LLM wait the user no longer pays.
+            # Counting them would over-promise every estimate until they
             # age out of the window, so they contribute the new cost: ~0.
             verdict_costs.append(
                 float(p.get("verdict_s") or 0.0)
@@ -154,13 +154,13 @@ def get_estimate(
             else None
         ),
     })
-    # F1: coverage-capped signal bounds — a spec conditioned on these
+    # F1: coverage-capped signal bounds. A spec conditioned on these
     # indicators refuses windows starting before the signal's first
     # session, so the composer can bound the window choice PRE-SUBMIT
     # (owner decision 2026-07-07: surface the bound while composing)
     signal_windows: dict[str, Any] = {}
     try:
-        # the single small greek_exposure parquet, NOT the market store —
+        # the single small greek_exposure parquet, NOT the market store:
         # a cold 5-min estimate must not block on the full daily chain
         # build just to read two date lists (review finding F1 #4)
         from app.data import r2 as _r2
@@ -174,7 +174,7 @@ def get_estimate(
                 "first": str(all_dates[0]),
                 "last": str(all_dates[-1]),
                 # rank indicators stay unevaluable until 126 trailing
-                # observations — the composer names the unlock date too
+                # observations, and the composer names the unlock date too
                 "rank_first": str(base[125]) if len(base) > 125 else None,
                 "indicators": ["gex_level", "gex_rank_1y",
                                "dex_level", "dex_rank_1y"],
@@ -194,7 +194,7 @@ def get_estimate(
                 "last": str(flow_dates[-1]),
                 "rank_first": (str(flow_dates[125])
                                if len(flow_dates) > 125 else None),
-                # per-ticker artifact indicators ONLY — market tide gets
+                # per-ticker artifact indicators ONLY. Market tide gets
                 # its own exact window below (review finding F2/F3 #6)
                 "indicators": ["net_premium_level", "net_premium_rank_1y",
                                "nope_level", "nope_rank_1y",
@@ -214,7 +214,7 @@ def get_estimate(
                                if len(tide_dates) > 125 else None),
                 "indicators": ["market_tide_level", "market_tide_rank_1y"],
             }
-    except Exception:  # honest absence — the run-time refusal still guards
+    except Exception:  # honest absence, the run-time refusal still guards
         signal_windows = {}
 
     return {
@@ -228,7 +228,7 @@ def get_estimate(
             "note": (
                 f"median of the last {len(rates)} measured {clock} run(s) on this server"
                 if rates
-                else f"no measured {clock} runs yet — the first run calibrates"
+                else f"no measured {clock} runs yet (the first run calibrates)"
             ),
         },
     }
@@ -253,7 +253,7 @@ def get_underlying(
 _FILL_CAL_NOTE = (
     "Measured from the frozen UW option tape (every SPY/QQQ/IWM print with "
     "its NBBO at execution). slip is the fraction of the half-spread "
-    "conceded from mid toward the adverse quote — the same quantity the "
+    "conceded from mid toward the adverse quote, the same quantity the "
     "engine CONFIGURES for fills. Reported only: the engine's configured "
     "slip is unchanged by these numbers; quantiles are histogram-bin "
     "estimates. Multi-leg, mid/no-side and locked/crossed-quote prints are "
@@ -287,7 +287,7 @@ def get_fill_calibration() -> dict[str, Any]:
             tickers[t] = (fill_calibration.pooled_summary(df)
                           if df is not None else None)
         payload = {"note": _FILL_CAL_NOTE, "tickers": tickers}
-        # a transient R2 failure reads as None — cache that only briefly,
+        # a transient R2 failure reads as None, so cache that only briefly,
         # or a blip would serve "not measured" for the full hour
         complete = all(v is not None for v in tickers.values())
         at = time.time() if complete else time.time() - _FILL_CAL_TTL + 60.0

@@ -1,7 +1,7 @@
 [project]
 name = "skeptic-collector"
 version = "0.1.0"
-description = "Skeptic EOD options data pipeline — see docs/DATA-PIPELINE.md"
+description = "Skeptic EOD options data pipeline (see docs/DATA-PIPELINE.md)"
 requires-python = ">=3.12"
 dependencies = [
     "boto3>=1.34",

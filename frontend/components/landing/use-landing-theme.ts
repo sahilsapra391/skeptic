@@ -2,12 +2,12 @@
 
 /**
  * Landing-only theme (component-specs §8): market-hours default, persisted
- * under its OWN key — the landing's footer control must never rewrite the
+ * under its OWN key. The landing's footer control must never rewrite the
  * app's settings, and vice versa. Stamps <html data-theme> (tokens are
- * :root-scoped — a wrapper div can't re-derive --ac/--acd/--acb, see reader
+ * :root-scoped, so a wrapper div can't re-derive --ac/--acd/--acb, see reader
  * C's notes); the root head script pre-paints the same value on `/`, so
  * there is no flash. ThemeApplier stands down on the landing (pathname
- * gate) — without that it rewrites data-theme from app settings every 60s.
+ * gate). Without that it rewrites data-theme from app settings every 60s.
  */
 
 import { useEffect, useLayoutEffect, useState } from "react";
@@ -33,8 +33,8 @@ function load(): Theme {
 
 export function useLandingTheme(): LandingTheme {
   const [pref, setPref] = useState<Theme>("market"); // SSR-safe default
-  // seed from the pre-paint head script's stamp, not a hardcoded "dark" —
-  // a daytime (market-hours-light) first load otherwise renders the white
+  // seed from the pre-paint head script's stamp, not a hardcoded "dark".
+  // A daytime (market-hours-light) first load otherwise renders the white
   // brand assets on paper until the mount effects run (review finding)
   const [resolved, setResolved] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "light"
@@ -55,8 +55,8 @@ export function useLandingTheme(): LandingTheme {
       document.documentElement.dataset.theme = r;
     };
     apply();
-    // printing always gets the paper palette (matches ThemeApplier) — a
-    // dark-mode visitor printing a legal page shouldn't get an ink page
+    // printing always gets the paper palette (matches ThemeApplier).
+    // A dark-mode visitor printing a legal page shouldn't get an ink page
     const before = () => {
       printing = true;
       document.documentElement.dataset.theme = "light";
@@ -67,7 +67,7 @@ export function useLandingTheme(): LandingTheme {
     };
     window.addEventListener("beforeprint", before);
     window.addEventListener("afterprint", after);
-    // market hours flips live at 8am/6pm ET — same cadence as ThemeApplier
+    // market hours flips live at 8am/6pm ET, same cadence as ThemeApplier
     const id = pref === "market" ? window.setInterval(apply, 60_000) : undefined;
     return () => {
       window.removeEventListener("beforeprint", before);

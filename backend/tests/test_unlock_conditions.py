@@ -153,7 +153,7 @@ class TestUnlockScan:
 def test_variant_lineage_columns_exist(tmp_path, monkeypatch) -> None:
     """V-25: root_run_id and variant_ordinal are additive, nullable, and present
     on a live table. Old rows keep NULL for both, which is what makes a run
-    created before this phase indistinguishable from a root run — correct, since
+    created before this phase indistinguishable from a root run. Correct, since
     that is exactly what it is."""
     from app import db
 

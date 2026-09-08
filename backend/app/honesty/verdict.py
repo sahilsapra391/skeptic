@@ -2,7 +2,7 @@
 
 Deterministic template first: every sentence is assembled from numbers in
 the HonestyReport, so it is grounded by construction. When
-OPENROUTER_API_KEY is configured, an LLM rewrites the narration — its
+OPENROUTER_API_KEY is configured, an LLM rewrites the narration. Its
 input is ONLY the report JSON (never user text), and every numeric token
 in its output must exist in the report within rounding tolerance or the
 narration is rejected (one retry, then the template ships instead).
@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from app.honesty.report import HonestyReport
+from app.text import normalize
 
 log = logging.getLogger("verdict")
 
@@ -30,8 +31,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # This replaces the 2026-07-06 split, which put narration on flash to save
 # cost and kept the parser on pro because flash fabricated an exit on the
 # no-exit ladder case in the parser eval (guardrail #3). Narration was always
-# the safer half to economize on — numeric validator, English guard and
-# template fallback all sit downstream of it — but the owner's call is to
+# the safer half to economize on (numeric validator, English guard and
+# template fallback all sit downstream of it), but the owner's call is to
 # stop running two models and take the quality of the stronger one on every
 # call. Cost moves with it: pro lists at ~6x flash per token
 # ($0.435/$0.87 vs $0.0679/$0.168 per 1M in/out at time of change), and
@@ -89,7 +90,7 @@ def grounding_set(payload: dict[str, Any]) -> set[float]:
     out: set[float] = {0.0}
     _harvest_numbers(payload, out)
     # small counting numbers and fixed phrasing constants (percentile
-    # labels, trading-day count, the resample count) — not statistics
+    # labels, trading-day count, the resample count), not statistics
     out.update(float(x) for x in range(0, 31))
     out.update({5.0, 50.0, 95.0, 100.0, 252.0, 1000.0})
     # calendar years inside the payload's dates are identifiers ("since
@@ -101,12 +102,12 @@ def grounding_set(payload: dict[str, Any]) -> set[float]:
 def allowed_numbers(report: HonestyReport) -> set[float]:
     out = grounding_set(report.model_dump())
     out.add(float(report.monte_carlo.resamples))
-    # the walk-forward narration counts PROFITABLE folds — a derived count
+    # the walk-forward narration counts PROFITABLE folds, a derived count
     # the dump doesn't carry as a number. Latent until histories grew long
     # enough (10 years of 1DTE ≈ 58 folds) to push it past the 0–30
     # counting-number range; caught by the D2 acceptance run's validator.
     out.add(float(sum(1 for f in report.walk_forward.folds if f.ret > 0)))
-    # the funding caveat quotes "skipped of TOTAL" — the total is derived
+    # the funding caveat quotes "skipped of TOTAL". The total is derived
     # (filled + skipped), same class as the fold count above
     if report.funding is not None:
         out.add(float(report.funding.filled + report.funding.skipped_buying_power))
@@ -142,8 +143,8 @@ def validate_numbers(text: str, allowed: set[float]) -> list[str]:
 # Chinese (observed 2026-07). For a tool whose product is an honest, READABLE
 # verdict, "is this even English" is as load-bearing as "is this number real".
 # We reject on SCRIPT, not vocabulary: count the alphabetic characters that are
-# not Latin. Punctuation, digits, and the template's — · → ’ glyphs are not
-# letters, so they never count — only a real language switch trips the guard.
+# not Latin. Punctuation, digits, and the template's · → ’ − glyphs are not
+# letters, so they never count. Only a real language switch trips the guard.
 _NON_LATIN_TOLERANCE = 0.10
 
 
@@ -173,11 +174,11 @@ def is_english(text: str) -> bool:
 
 # ------------------------------------------------------------- the template
 def _pct(v: float | None, digits: int = 0) -> str:
-    return "—" if v is None else f"{v * 100:.{digits}f}%"
+    return "n/a" if v is None else f"{v * 100:.{digits}f}%"
 
 
 def _resolution_caveat(report: HonestyReport, retail: bool = False) -> str | None:
-    """The mixed-resolution disclosure (FX.4, owner decision 3) — required
+    """The mixed-resolution disclosure (FX.4, owner decision 3), required
     whenever a run mixed bar resolutions. Every number comes from
     report.resolution_split, so it is grounded by construction; it rides in
     the caveats so it surfaces even when the verdict is withheld."""
@@ -191,7 +192,7 @@ def _resolution_caveat(report: HonestyReport, retail: bool = False) -> str | Non
         line = (
             f"This test used a minute-by-minute lens on {minute.sessions} "
             f"days ({minute.first} → {minute.last}) and a 5-minute lens on "
-            f"{five.sessions} days — the finer-lens stretch is measured more "
+            f"{five.sessions} days. The finer-lens stretch is measured more "
             "closely, so treat differences there with care"
         )
     else:
@@ -208,7 +209,7 @@ def _resolution_caveat(report: HonestyReport, retail: bool = False) -> str | Non
 
 def _fold_resolution_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     """Names the minute-flavored walk-forward folds (FX.4 owner requirement:
-    the disclosure lives in the RUN) — out-performance in those folds must
+    the disclosure lives in the RUN). Out-performance in those folds must
     never read as regime robustness by default. Sub-half-percent shares
     round to "0%" and are skipped (display floor)."""
     wf = report.walk_forward
@@ -222,14 +223,14 @@ def _fold_resolution_caveat(report: HonestyReport, retail: bool = False) -> str 
         f"{f.start} → {f.end} ({round((f.minute_share or 0) * 100)}% minute)"
         for f in flavored)
     if retail:
-        return (f"Some test periods used the finer minute lens: {spans} — "
-                "better numbers there can come from the lens, not the market.")
-    return (f"Walk-forward folds on the minute grid: {spans} — fold "
+        return (f"Some test periods used the finer minute lens: {spans}. "
+                "Better numbers there can come from the lens, not the market.")
+    return (f"Walk-forward folds on the minute grid: {spans}. Fold "
             "differences there can be resolution, not regime.")
 
 
 def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
-    """One grounded sentence on depth attribution — required whenever a ladder
+    """One grounded sentence on depth attribution, required whenever a ladder
     ran (brief D5b). Every number comes from report.ladder_depth, so it is
     grounded by construction; it rides in the caveats so it surfaces even when
     the verdict is withheld (the D5a interlock withholds every ladder for now)."""
@@ -248,7 +249,7 @@ def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
         return (
             f"Depth: adding more at the deepest level ({deep.threshold:g}) {verb} "
             f"${mpl:,.0f} of the ${abs(ld.realized_total):,.0f} across {ld.baskets} "
-            f"baskets — {tail}."
+            f"baskets ({tail})."
         )
     sign = "−" if deep.net_negative else "+"
     tail = (
@@ -259,12 +260,12 @@ def _ladder_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     return (
         f"Ladder depth: fills at the deepest rung ({deep.threshold:g}) net {sign}"
         f"${mpl:,.0f} of the ${abs(ld.realized_total):,.0f} realized across "
-        f"{ld.baskets} baskets — {tail}."
+        f"{ld.baskets} baskets ({tail})."
     )
 
 
 def _ruin_caveat(report: HonestyReport, retail: bool = False) -> str | None:
-    """The ruin-halt disclosure (owner 2026-07-15) — required whenever the
+    """The ruin-halt disclosure (owner 2026-07-15), required whenever the
     account was wiped out. Every number comes from report.ruin, so it is
     grounded by construction; it rides the caveats so it surfaces even when
     the verdict is withheld. The latest-possible clause is the
@@ -275,7 +276,7 @@ def _ruin_caveat(report: HonestyReport, retail: bool = False) -> str | None:
         return None
     if retail:
         return (
-            f"The account ran out of money on {ruin.ruin_date} — it ended at "
+            f"The account ran out of money on {ruin.ruin_date}. It ended at "
             f"${ruin.final_equity:,.0f} and the test stopped right there. A real "
             "broker would likely have shut it down even earlier, so that date "
             "is the best case, not the actual one."
@@ -285,15 +286,15 @@ def _ruin_caveat(report: HonestyReport, retail: bool = False) -> str | None:
         f"Ruin halt: equity closed at ${ruin.final_equity:,.0f} on "
         f"{ruin.ruin_date} and the simulation stopped there "
         f"({ruin.positions_closed_at_halt} open position{plural} marked at the "
-        "halt). The halt fires at $0 — a real margin account is liquidated "
+        "halt). The halt fires at $0. A real margin account is liquidated "
         "before zero, so this ruin date is the latest possible, not the actual."
     )
 
 
 def _funding_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     """The buying-power disclosure (owner 2026-07-15): when a material share
-    of otherwise-eligible entries couldn't be funded, the verdict says so —
-    a strategy that only works on money the account doesn't have isn't
+    of otherwise-eligible entries couldn't be funded, the verdict says so.
+    A strategy that only works on money the account doesn't have isn't
     working for the user running it. Numbers from report.funding (the
     total is registered in allowed_numbers)."""
     funding = report.funding
@@ -304,7 +305,7 @@ def _funding_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     if retail:
         return (
             f"{skipped} of the {total} trades and add-ins this strategy wanted "
-            f"couldn't be taken — a ${funding.initial_capital:,.0f} account "
+            f"couldn't be taken. A ${funding.initial_capital:,.0f} account "
             "doesn't have the buying power for them. What got tested is a "
             "smaller version of what you described."
         )
@@ -314,7 +315,7 @@ def _funding_caveat(report: HonestyReport, retail: bool = False) -> str | None:
     return (
         f"Buying power: {skipped} of {total} otherwise-eligible entries and "
         f"ladder adds were skipped as unfundable at "
-        f"${funding.initial_capital:,.0f} capital — the tested strategy is "
+        f"${funding.initial_capital:,.0f} capital. The tested strategy is "
         "smaller than the described one."
     )
 
@@ -330,21 +331,21 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         rs = report.resolution_split
         if si is not None and si.caps_trust and si.deep_rung_sign_flip:
             headline = (
-                "Verdict withheld — the edge depends on the deepest, riskiest adds: "
+                "Verdict withheld. The edge depends on the deepest, riskiest adds: "
                 f"${si.realized_total:,.0f} flips to −${abs(si.total_without_deepest):,.0f} "
                 f"without the deepest rung ({si.deepest_threshold:g})."
             )
         elif si is not None and si.caps_trust and si.p_ruin is not None:
             headline = (
-                f"Verdict withheld — ruinous tail: {si.p_ruin * 100:.0f}% of resampled "
+                f"Verdict withheld. Ruinous tail: {si.p_ruin * 100:.0f}% of resampled "
                 f"orderings draw the account down more than {si.ruin_threshold * 100:.0f}%."
             )
         elif rs is not None and rs.caps_trust:
             # FX.4 (review finding): the refusal must NAME the resolution
-            # artifact — falling through to the sample arm would print a
+            # artifact. Falling through to the sample arm would print a
             # factually false "too few trades" on a thick sample
             headline = (
-                "Verdict withheld — the edge lives in the minute-resolution "
+                "Verdict withheld. The edge lives in the minute-resolution "
                 f"slice: it flips sign on the {rs.five_min.sessions} "
                 "5-minute-only sessions the deep history was tested at. A "
                 "granularity artifact until proven otherwise."
@@ -352,7 +353,7 @@ def template_verdict(report: HonestyReport) -> VerdictText:
         elif cov.materially_short:
             headline = (
                 f"Verdict withheld. {cov.chain_sessions} of {cov.requested_sessions} "
-                "requested sessions had usable option chains — the window is mostly untested."
+                "requested sessions had usable option chains. The window is mostly untested."
             )
         else:
             plural = "s" if sample.trades != 1 else ""
@@ -363,7 +364,7 @@ def template_verdict(report: HonestyReport) -> VerdictText:
             )
     elif report.ruin is not None:
         headline = (
-            f"The account is wiped out on {report.ruin.ruin_date} — equity ends "
+            f"The account is wiped out on {report.ruin.ruin_date}. Equity ends "
             f"at ${report.ruin.final_equity:,.0f}. Nothing past that date exists "
             "to grade."
         )
@@ -375,9 +376,9 @@ def template_verdict(report: HonestyReport) -> VerdictText:
             "Strong within the record we have."
         )
     elif "mined" in " ".join(trust.reasons):
-        headline = "The Sharpe doesn’t survive deflation — this looks mined, not earned."
+        headline = "The Sharpe doesn’t survive deflation. This looks mined, not earned."
     elif sens.verdict == "cliff":
-        headline = "The optimum sits on a cliff — neighboring parameters lose."
+        headline = "The optimum sits on a cliff. Neighboring parameters lose."
     else:
         headline = f"Survives {trust.survived_count} of 5 attacks. Treat as suggestive, not proven."
 
@@ -400,14 +401,14 @@ def template_verdict(report: HonestyReport) -> VerdictText:
             f"95th-percentile drawdown {_pct(mc.max_drawdown_p95)}"
         )
         # absorption at $0 (2026-07-15): reshuffled paths that die are named,
-        # not silently discarded — shown only when any path actually crossed
+        # not silently discarded, shown only when any path actually crossed
         if mc.p_ruin:
             mc_line += f"; {_pct(mc.p_ruin)} of paths die at $0"
         evidence.append(mc_line)
 
     breaks_where: list[str] = list(trust.reasons)
     if not breaks_where and sens.verdict == "plateau":
-        breaks_where.append("no structural break found — the sample is still the limit")
+        breaks_where.append("no structural break found (the sample is still the limit)")
 
     caveats = [
         f"{sample.trades} closed trades · "
@@ -418,7 +419,7 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     cov = report.coverage
     if cov.coverage_ratio < 1.0:
         # on a ruined run the session count is measured TO THE HALT while
-        # the requested range still names the full ask — say so, or the two
+        # the requested range still names the full ask. Say so, or the two
         # numbers visibly disagree (review finding 2026-07-15)
         ruin_note = (
             " Session counts run to the ruin halt, not the full request."
@@ -440,28 +441,28 @@ def template_verdict(report: HonestyReport) -> VerdictText:
     if modeled > 0 and total_fills > 0:
         caveats.append(
             f"{modeled} of {total_fills} option fills "
-            f"({round(modeled / total_fills * 100)}%) are MODELED quotes — trade "
+            f"({round(modeled / total_fills * 100)}%) are MODELED quotes: trade "
             "prints plus a modeled spread, filled at full adverse slippage. No "
             "real NBBO existed for them; treat those fills as estimates."
         )
     if report.sensitivity.window_note:
         caveats.append(report.sensitivity.window_note + ".")
     # F8: which entry conditions were not stress-tested and why, and which
-    # swept an absolute family-scale grid instead of ±20% — so a missing
+    # swept an absolute family-scale grid instead of ±20%, so a missing
     # or reshaped threshold sweep is never misread as a free pass
     if report.sensitivity.conditions_note:
         caveats.append(report.sensitivity.conditions_note.capitalize() + ".")
-    # a small delta swept on absolute strike-scale steps — same
+    # a small delta swept on absolute strike-scale steps, same
     # reshaped-grid disclosure duty as the condition floors
     if report.sensitivity.delta_note:
         caveats.append(report.sensitivity.delta_note.capitalize() + ".")
-    # F7: cross-source agreement over THIS run's window — reported, never
-    # scored; every number quoted exists as a numeric report field
+    # F7: cross-source agreement over THIS run's window (reported, never
+    # scored); every number quoted exists as a numeric report field
     if report.data_confidence is not None and report.data_confidence.note:
         caveats.append(f"Cross-source check: {report.data_confidence.note}.")
     ruin_line = _ruin_caveat(report)
     if ruin_line:
-        # first among the optional caveats — a dead account outranks
+        # first among the optional caveats: a dead account outranks
         # every other disclosure
         caveats.insert(1, ruin_line)
     funding_line = _funding_caveat(report)
@@ -501,51 +502,51 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         rs = report.resolution_split
         if si is not None and si.caps_trust and si.deep_rung_sign_flip:
             headline = (
-                "No verdict — this only makes money because of the deepest, riskiest "
+                "No verdict. This only makes money because of the deepest, riskiest "
                 f"add-ins: ${si.realized_total:,.0f} turns into "
                 f"−${abs(si.total_without_deepest):,.0f} without them. That's a bet on "
                 "the most dangerous part working."
             )
         elif si is not None and si.caps_trust and si.p_ruin is not None:
             headline = (
-                f"No verdict — too ruinous: in {si.p_ruin * 100:.0f}% of reshuffles the "
+                f"No verdict. Too ruinous: in {si.p_ruin * 100:.0f}% of reshuffles the "
                 f"account fell more than {si.ruin_threshold * 100:.0f}%. Adding into losers "
                 "blows up too often."
             )
         elif rs is not None and rs.caps_trust:
             headline = (
-                "No verdict — the profit only shows up in the finely-measured "
+                "No verdict. The profit only shows up in the finely-measured "
                 "recent stretch and reverses on the "
                 f"{rs.five_min.sessions} days measured the standard way. That "
                 "pattern usually means the measurement, not the market."
             )
         elif cov.materially_short:
             headline = (
-                f"No verdict yet — only {cov.chain_sessions} of {cov.requested_sessions} "
+                f"No verdict yet. Only {cov.chain_sessions} of {cov.requested_sessions} "
                 "days in your date range actually had option prices to trade on."
             )
         else:
             plural = "s" if sample.trades != 1 else ""
             headline = (
-                f"No verdict yet — only {sample.trades} finished trade{plural}. "
+                f"No verdict yet. Only {sample.trades} finished trade{plural}. "
                 "That's too few to judge fairly."
             )
     elif report.ruin is not None:
         headline = (
-            f"This blew up the account on {report.ruin.ruin_date} — the money "
+            f"This blew up the account on {report.ruin.ruin_date}. The money "
             "ran out and the test stopped right there."
         )
     elif not trust.survived["oos"]:
         headline = "Looked good in training, faded on data it had never seen. Be careful."
     elif trust.survived_count >= 4 and (trust.level or 0) >= 4:
         headline = (
-            f"Passed {trust.survived_count} of 5 stress tests — "
+            f"Passed {trust.survived_count} of 5 stress tests, "
             "as solid as our data can show."
         )
     elif "mined" in " ".join(trust.reasons):
         headline = "The good numbers look like luck from too many tries, not a real edge."
     elif sens.verdict == "cliff":
-        headline = "Tiny changes to the settings wreck it — that's a bad sign."
+        headline = "Tiny changes to the settings wreck it. That's a bad sign."
     else:
         headline = (
             f"Passed {trust.survived_count} of 5 stress tests. "
@@ -555,7 +556,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     evidence: list[str] = []
     if oos.is_sharpe is not None and oos.oos_sharpe is not None:
         kept = (
-            f" — it kept {_pct(oos.degradation)} of its training score"
+            f". It kept {_pct(oos.degradation)} of its training score"
             if oos.degradation is not None
             else ""
         )
@@ -568,7 +569,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         evidence.append(f"It made money in {positive} of {len(wf.folds)} time periods")
     if mc.p_loss is not None:
         evidence.append(
-            f"We reshuffled its trades {mc.resamples} times — {_pct(mc.p_loss)} of the "
+            f"We reshuffled its trades {mc.resamples} times. {_pct(mc.p_loss)} of the "
             f"reshuffles ended with less money than they started"
             + (f", and {_pct(mc.p_ruin)} went completely broke" if mc.p_ruin else "")
         )
@@ -579,22 +580,22 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     if oos.sign_flip:
         breaks_where.append("It made money in training but LOST money on unseen data")
     if wf.meaningful and not trust.survived["walk_forward"]:
-        breaks_where.append("It only won in some periods — the rest were flat or losing")
+        breaks_where.append("It only won in some periods (the rest were flat or losing)")
     if mc.p_loss is not None and not trust.survived["monte_carlo"]:
         breaks_where.append(
-            f"{_pct(mc.p_loss)} of the reshuffled versions lost money — "
-            "the original order got lucky"
+            f"{_pct(mc.p_loss)} of the reshuffled versions lost money. "
+            "The original order got lucky"
         )
     if sens.verdict == "cliff":
         breaks_where.append("Small changes to the settings make the results fall apart")
     if report.dsr.dsr is not None and report.dsr.dsr < 0.5 and report.dsr.trials > 1:
         breaks_where.append(
-            f"This is try number {report.dsr.trials} at this kind of strategy — "
+            f"This is try number {report.dsr.trials} at this kind of strategy, "
             "at some point the good numbers are just luck"
         )
     if not breaks_where:
         breaks_where.append(
-            "No deal-breaker found — but we can only test the history we have"
+            "No deal-breaker found, but we can only test the history we have"
         )
 
     plural = "s" if sample.regimes_present != 1 else ""
@@ -604,7 +605,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         "Backtests always look better than real trading. This is research, not advice.",
     ]
     # F8: how each entry rule was (or wasn't) stress-tested, in plain
-    # terms — the note can now mix not-swept parts (sign tests, cost cap)
+    # terms. The note can now mix not-swept parts (sign tests, cost cap)
     # with swept-on-a-wider-absolute-grid parts, so the framing must not
     # claim "couldn't test" for rules that WERE tested
     if report.sensitivity.conditions_note:
@@ -613,7 +614,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
             + report.sensitivity.conditions_note + "."
         )
     # same duty for the strike choice: a small delta WAS stress-tested,
-    # on wider absolute steps — say so in the same grounded words
+    # on wider absolute steps. Say so in the same grounded words
     if report.sensitivity.delta_note:
         caveats.append(
             "Notes from stress-testing your strike choice: "
@@ -624,7 +625,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
         caveats.insert(
             1,
             f"Only {cov.chain_sessions} of {cov.requested_sessions} days in your date range "
-            f"had option prices ({_pct(cov.coverage_ratio)}) — the rest couldn't be tested."
+            f"had option prices ({_pct(cov.coverage_ratio)}). The rest couldn't be tested."
             + (" Days are counted up to when the account ran out, not your full range."
                if cov.halted_at_ruin else ""),
         )
@@ -634,15 +635,15 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
     if modeled > 0 and total_fills > 0:
         caveats.append(
             f"{modeled} of {total_fills} fills ({round(modeled / total_fills * 100)}%) "
-            "used ESTIMATED prices (no real quotes existed) at worst-case slippage — "
-            "take those with extra salt."
+            "used ESTIMATED prices (no real quotes existed) at worst-case slippage. "
+            "Take those with extra salt."
         )
     liq = report.liquidity
     if liq is not None and liq.material:
         if liq.stressed_share is not None and liq.stressed_share > 0:
             caveats.append(
-                f"{_pct(liq.stressed_share)} of fills paid the worst quoted price — "
-                "these options trade thin."
+                f"{_pct(liq.stressed_share)} of fills paid the worst quoted price. "
+                "These options trade thin."
             )
         elif liq.skipped_illiquid >= 1 and liq.note and "refused" in liq.note:
             caveats.append(
@@ -684,7 +685,7 @@ def retail_template_verdict(report: HonestyReport) -> VerdictText:
 # ------------------------------------------------------------ the LLM layer
 def _extract_json(content: str) -> dict[str, Any] | None:
     """Models routinely wrap JSON in code fences or prose despite
-    response_format — take the outermost {...} slice and parse that."""
+    response_format. Take the outermost {...} slice and parse that."""
     start, end = content.find("{"), content.rfind("}")
     if start == -1 or end <= start:
         return None
@@ -707,7 +708,7 @@ def _llm_narrate(
     audience = (
         (
             "AUDIENCE: an everyday retail trader with no finance background. Short "
-            "sentences, everyday words, zero jargon — never say 'Sharpe' (say "
+            "sentences, everyday words, zero jargon. Never say 'Sharpe' (say "
             "'risk-adjusted score'), never 'percentile' (say 'worst/typical cases'), "
             "never 'in-sample/out-of-sample' (say 'training data' and 'data it never "
             "saw'), never 'Monte Carlo' (say 'reshuffling the trades'). Explain what "
@@ -715,7 +716,7 @@ def _llm_narrate(
         )
         if retail
         else (
-            "AUDIENCE: a quantitative practitioner — precise statistical language "
+            "AUDIENCE: a quantitative practitioner. Precise statistical language "
             "is expected. "
         )
     )
@@ -726,13 +727,15 @@ def _llm_narrate(
         "verbs, sentence case, no hype, no exclamation marks. " + audience +
         "NUMBERS: copy them "
         "verbatim from the JSON (you may round to 2 decimals or write a 0-1 fraction "
-        "as a percent). NEVER do arithmetic — no differences, ratios, averages, "
+        "as a percent). NEVER do arithmetic: no differences, ratios, averages, "
         "annualizing, or counting of your own. A number not literally in the JSON "
         "must not appear in your text. When in doubt, describe without the number. "
         "If the JSON has a ladder_depth object, you MUST state which rung depth "
         "carried the P&L and whether the deepest adds were net negative, using its "
-        "numbers — a scale-in ladder's depth attribution is the point. "
+        "numbers. A scale-in ladder's depth attribution is the point. "
         "Write every field in English, regardless of the field names in the JSON. "
+        "PUNCTUATION: never use an em-dash (the long dash). Use a comma, a period, "
+        "or parentheses instead. "
         'Respond with JSON only: {"headline": str, "evidence": [str], '
         '"breaks_where": [str], "caveats": [str]}'
     )
@@ -766,37 +769,42 @@ def _llm_narrate(
             content = resp.json()["choices"][0]["message"]["content"]
             data = _extract_json(str(content))
             if data is None:
-                log.warning("verdict LLM returned non-JSON — retrying")
+                log.warning("verdict LLM returned non-JSON, retrying")
                 violation_note = (
-                    "\n\nRespond with the JSON object ONLY — no prose, no code fences."
+                    "\n\nRespond with the JSON object ONLY. No prose, no code fences."
                 )
                 continue
             if not str(data.get("headline", "")).strip():
-                log.warning("verdict LLM JSON missing headline — retrying")
+                log.warning("verdict LLM JSON missing headline, retrying")
                 violation_note = "\n\nThe JSON must include a non-empty \"headline\"."
                 continue
+            # house punctuation applied HERE, on receipt and before the two
+            # validators below. The model is told not to emit an em-dash, but
+            # a prompt is advice; this is the enforcement, and putting it
+            # ahead of validation means the numeric validator and the English
+            # guard judge exactly the text that ships.
             candidate = VerdictText(
-                headline=str(data["headline"]),
-                evidence=[str(x) for x in data.get("evidence", [])],
-                breaks_where=[str(x) for x in data.get("breaks_where", [])],
-                caveats=[str(x) for x in data.get("caveats", [])],
+                headline=normalize(str(data["headline"])),
+                evidence=[normalize(str(x)) for x in data.get("evidence", [])],
+                breaks_where=[normalize(str(x)) for x in data.get("breaks_where", [])],
+                caveats=[normalize(str(x)) for x in data.get("caveats", [])],
                 source="llm",
             )
             parts = [candidate.headline, *candidate.evidence]
             parts += [*candidate.breaks_where, *candidate.caveats]
             joined = " ".join(parts)
             if not is_english(joined):
-                log.warning("verdict LLM returned non-English — retrying")
+                log.warning("verdict LLM returned non-English, retrying")
                 violation_note = (
                     "\n\nYour previous answer was not written in English. Write "
-                    "every field — headline, evidence, breaks_where, caveats — in "
+                    "every field (headline, evidence, breaks_where, caveats) in "
                     "English."
                 )
                 continue
             violations = validate_numbers(joined, allowed)
             if not violations:
                 return candidate
-            log.warning("verdict LLM ungrounded numbers %s — retrying", violations)
+            log.warning("verdict LLM ungrounded numbers %s, retrying", violations)
             violation_note = (
                 f"\n\nYour previous answer contained numbers not present in the data: "
                 f"{violations}. Remove or correct them. Every number must come from the JSON."
@@ -816,7 +824,7 @@ def write_verdict(report: HonestyReport) -> VerdictText:
 
 
 def write_verdicts(report: HonestyReport) -> tuple[VerdictText, VerdictText]:
-    """(institutional, retail) — same numbers, two registers, narrated in
+    """(institutional, retail): same numbers, two registers, narrated in
     PARALLEL (halves the verdict stage's wall time). Each falls back to
     its deterministic template when the LLM can't stay grounded."""
     from concurrent.futures import ThreadPoolExecutor

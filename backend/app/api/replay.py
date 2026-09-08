@@ -2,12 +2,12 @@
 own 5-minute replay.
 
 Shared by the on-demand endpoint (POST /api/runs/{id}/replay) and the
-nightly receipt drain — one eligibility rule, one spec mutation, one
+nightly receipt drain: one eligibility rule, one spec mutation, one
 receipt shape.
 
 Owner amendment 4 governs everything downstream: a worse replay displays
 PROMINENTLY and lowers the SHOWN confidence, but the stored verdict's
-trust level is NEVER silently rewritten — the original remains the record
+trust level is NEVER silently rewritten. The original remains the record
 of what the daily engine honestly concluded from its data.
 """
 
@@ -17,14 +17,14 @@ import json
 from typing import Any
 
 # A replay "disagrees" when the 5-min Sharpe lands this far below the
-# daily promise (absolute), or flips sign. Reviewed constant — reporting
+# daily promise (absolute), or flips sign. Reviewed constant: reporting
 # treatment only, never scoring (docs/HONESTY.md).
 RECEIPT_WORSE_DELTA = 0.25
 
 # The intraday record is the short-DTE slice (0–2 trading-DTE, ATM±$8);
 # a spec's WHOLE tenor band must fit inside it. Requiring only min_dte
 # would admit wide bands (min 1, target 11, max 30) whose daily run trades
-# 11–16 DTE while the replay silently trades ≤2 — an apples-to-oranges
+# 11–16 DTE while the replay silently trades ≤2, an apples-to-oranges
 # comparison dressed up as a like-for-like receipt.
 REPLAY_MAX_DTE = 2
 
@@ -65,10 +65,10 @@ def build_receipt(replay_run_id: str, daily_stats: dict[str, Any],
         )
     # FX.4 (masterplan defense 4c): when the two runs carry per-session
     # resolution records that DIFFER, the receipt names the change as a
-    # RESOLUTION UPGRADE — a re-run that improved because minute data newly
+    # RESOLUTION UPGRADE: a re-run that improved because minute data newly
     # arrived is explained, never a silent shift.
     # Annotate ONLY when BOTH runs carry a resolution mix and they differ
-    # (review finding: a daily parent has no mix — comparing {} against the
+    # (review finding: a daily parent has no mix, so comparing {} against the
     # replay's would fire a FALSE "upgrade" note on every receipt; the
     # honest condition is two resolution-carrying runs whose mixes moved).
     daily_mix = daily_stats.get("resolutionMix") or {}
@@ -79,7 +79,7 @@ def build_receipt(replay_run_id: str, daily_stats: dict[str, Any],
             f"resolution changed between runs: minute sessions "
             f"{daily_mix.get('minute', 0)} → {replay_mix.get('minute', 0)}, "
             f"5-min {daily_mix.get('five_min', 0)} → "
-            f"{replay_mix.get('five_min', 0)} — differences may be a "
+            f"{replay_mix.get('five_min', 0)}. Differences may be a "
             "resolution upgrade, not a market change"
         )
     return {

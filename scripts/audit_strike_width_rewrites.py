@@ -28,7 +28,7 @@ WHAT THIS NUMBER IS (V-76)
     and the engine then backtested the delta.
 
     PR-0 (V-17) stops this happening again. It does NOT fix the affected runs
-    and must not try. No repair, no flag, no backfill — here or in A1 — without
+    and must not try. No repair, no flag, no backfill (here or in A1) without
     an explicit decision from the owner after reading the number and the ids.
 
 DETECTION (exact, no false positives)
@@ -46,9 +46,9 @@ READ ONLY (V-62)
 V-71 / V-86: take a baseline BEFORE PR-0 merges, then run TWO follow-ups after
 it merges, because "the count stopped growing" is two questions:
 
-  (a) SANITY CHECK — bounded to the baseline's end date. Must be IDENTICAL to
+  (a) SANITY CHECK: bounded to the baseline's end date. Must be IDENTICAL to
       the baseline. A difference means detection itself changed, not the bug.
-  (b) THE ACTUAL TEST — unbounded. Any detection newer than the baseline's end
+  (b) THE ACTUAL TEST: unbounded. Any detection newer than the baseline's end
       date is a NEW instance arising after the fix, so the fix did not hold.
 
 The script prints both invocations, filled in, at the end of every run.
@@ -69,7 +69,7 @@ from sqlalchemy import create_engine, text
 
 _DEFAULT_SQLITE = f"sqlite:///{Path(__file__).resolve().parents[1] / 'backend' / 'runs.db'}"
 
-# mirrors backend/app/parser/parse.py spec_to_draft — a lead leg whose method
+# mirrors backend/app/parser/parse.py spec_to_draft: a lead leg whose method
 # is anything but "delta" is the class that cannot survive a dial rebuild
 NON_DELTA_METHODS_NOTE = "offset_pct and any other non-delta strike rule"
 
@@ -145,7 +145,7 @@ def _upper_bound(day: date) -> str:
 
     V-111: two named functions rather than one taking an `edge` string. The
     previous form treated anything that was not the literal "lower" as the
-    upper bound, so a mistyped argument silently returned the wrong end — a
+    upper bound, so a mistyped argument silently returned the wrong end, a
     silent default standing in for a case nobody enumerated, which is the
     shape of all four defects this file has had. Both call sites being correct
     was never the standard; the wrong case has to be unwritable.
@@ -174,8 +174,8 @@ def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
     Both the query and the printed banner read this result, so the window
     reported is by construction the window queried.
 
-    The bounds are half-open under the hood — `created_at >= since 00:00` and
-    `created_at < until+1day 00:00` — because `created_at <= '2026-07-17'`
+    The bounds are half-open under the hood (`created_at >= since 00:00` and
+    `created_at < until+1day 00:00`) because `created_at <= '2026-07-17'`
     compares a timestamp against a date and drops the whole day: '2026-07-17
     18:53' sorts after '2026-07-17'. That is invisible to the caller, who only
     ever says which days they mean.
@@ -188,7 +188,7 @@ def resolve_window(since: str | None, until: str | None) -> dict[str, Any]:
 
     if since_value and until_value and since_value >= until_value:
         # An inverted window silently returns nothing, which this script would
-        # then report as "0 detected" — the most dangerous false negative it
+        # then report as "0 detected", the most dangerous false negative it
         # has, given the number gates a merge. Equal bounds are NOT inverted:
         # they are one whole day, and refusing them was defect 4.
         raise WindowArgumentError(
@@ -297,7 +297,7 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
         # V-116: the AT-RISK population. Detection needs a stored strikeLabel,
         # which only exists when the parser emitted a NON-delta strike. Without
         # this, "0 of 26 eligible" reads as "the bug did not fire" when it may
-        # mean "nothing was ever exposed to it" — a different claim entirely.
+        # mean "nothing was ever exposed to it", a different claim entirely.
         exposed = draft.get("strikeLabel") is not None
         if exposed:
             at_risk += 1
@@ -330,7 +330,7 @@ def audit(url: str, since: str | None, until: str | None) -> dict[str, Any]:
 def follow_up_invocations(result: dict[str, Any]) -> dict[str, str]:
     """V-90: byte-for-byte runnable commands, every flag resolved to a concrete
     value. A printed command that differs from the one that produced it carries
-    authority it has not earned — an omitted --since is exactly how the V-71
+    authority it has not earned. An omitted --since is exactly how the V-71
     sanity check ends up comparing two different windows and calling the
     difference a change in detection."""
     w = result["window"]
@@ -373,7 +373,7 @@ def _print_text(result: dict[str, Any]) -> None:
     newest_db = result["newest_in_database"]
     print(f"  newest in window    : {result['newest_in_window'] or 'none'}")
     # V-105: the timestamp is the honest figure, and the date beside it is what
-    # --until accepts — anything printed as copyable must be valid input.
+    # --until accepts, anything printed as copyable must be valid input.
     if newest_db:
         print(f"  newest in DATABASE  : {newest_db}   "
               f"(pass --until {until_for(newest_db)} to cover it)")
@@ -418,7 +418,7 @@ def _print_text(result: dict[str, Any]) -> None:
     # V-81: an empty denominator is not a clean bill of health.
     if eligible == 0:
         print()
-        print("  VACUOUS RESULT — the eligible set is empty, so this audit cannot")
+        print("  VACUOUS RESULT: the eligible set is empty, so this audit cannot")
         print("  answer the question on stored data. '0 of 0' is not evidence the")
         print("  fix worked; the V-18 round-trip guard in CI is what proves that.")
         print("  This run's value is the baseline for the post-PR-0 comparison.")
@@ -427,14 +427,14 @@ def _print_text(result: dict[str, Any]) -> None:
     # the actual test. Print the exact follow-up invocations rather than
     # leaving them to be reconstructed.
     print()
-    print("V-71 FOLLOW-UP — run BOTH after PR-0 merges")
+    print("V-71 FOLLOW-UP: run BOTH after PR-0 merges")
     cmds = follow_up_invocations(result)
     cutoff = result["newest_in_database"]
-    print("  (a) SANITY CHECK — this exact command, unchanged:")
+    print("  (a) SANITY CHECK (this exact command, unchanged):")
     print(f"        {cmds['sanity']}")
     print("      Must be IDENTICAL to this run. A difference means detection")
     print("      itself changed, not that the bug did.")
-    print("  (b) THE ACTUAL TEST — unbounded:")
+    print("  (b) THE ACTUAL TEST (unbounded):")
     print(f"        {cmds['actual']}")
     if cutoff:
         print(f"      Any detection with created_at after {cutoff} is a NEW")
@@ -448,7 +448,7 @@ def _print_text(result: dict[str, Any]) -> None:
     if total:
         share = 100.0 * eligible / total
         print()
-        print("A1 PLANNING INPUT — provenance coverage")
+        print("A1 PLANNING INPUT: provenance coverage")
         print(f"  {eligible}/{total} runs ({share:.0f}%) carry a confirmed.draft.")
         if share < 50:
             print("  MOST runs have no stored draft, so V-28's server-side projection")

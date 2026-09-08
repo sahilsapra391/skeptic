@@ -2,7 +2,7 @@
 
 Two independent verifications, per the hand-computed-fixture convention:
   1. pinned constants from Hull's textbook example (S=42, K=40, r=10%,
-     σ=20%, T=0.5y — book prices 4.76 / 0.81) plus a dividend-yield case;
+     σ=20%, T=0.5y, book prices 4.76 / 0.81) plus a dividend-yield case;
   2. finite differences of bs_price, an implementation-independent check
      that every greek is the derivative it claims to be.
 
@@ -70,7 +70,7 @@ class TestAnalyticFixture:
 
 
 class TestFiniteDifferences:
-    """Each greek must equal the corresponding derivative of bs_price —
+    """Each greek must equal the corresponding derivative of bs_price,
     verified numerically, independent of the closed-form derivation."""
 
     S = _arr(95.0, 95.0)
@@ -130,7 +130,7 @@ class TestFillMissingGreeks:
         ])
         out = fill_missing_greeks(df, "SPY", dict(self.SPOT), None)
 
-        # vendor row untouched — vendor and computed values never mix
+        # vendor row untouched: vendor and computed values never mix
         assert out.loc[0, "delta"] == -0.30
         assert out.loc[0, "gamma"] == 0.02
         assert out.loc[0, "greeks_source"] == "vendor"
@@ -146,7 +146,7 @@ class TestFillMissingGreeks:
     def test_no_iv_no_spot_or_zero_dte_stay_none(self) -> None:
         df = _chain_frame([
             # collector pre-labels Yahoo rows "computed" before anything is
-            # computed — an unfillable row must lose the label, not keep it
+            # computed, an unfillable row must lose the label, not keep it
             {"iv": None, "spot": 100.0, "greeks_source": "computed"},
             {"trading_date": "2024-01-03"},  # date absent from the spot join map
             {"expiration": "2024-01-02", "spot": 100.0},  # 0 DTE → honest None

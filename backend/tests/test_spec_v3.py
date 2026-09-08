@@ -1,6 +1,6 @@
 """Spec v3 validation (D5a): the scale-in ladder + exit.close_at_time.
 
-Same posture as v2 — v3 vocabulary on a v1/v2 spec is a loud error, and the
+Same posture as v2: v3 vocabulary on a v1/v2 spec is a loud error, and the
 scale-in scope rules (single-leg only, fixed_contracts only, 5-min clock)
 refuse rather than silently do the wrong thing (guardrail #3).
 """
@@ -70,13 +70,13 @@ def test_scale_in_requires_v3() -> None:
     # on a v2 spec the only v3 flag is scale_in → the v3 message points at it
     raw = _ladder(spec_version=2)
     raw["exit"] = {"profit_target_pct": 40}  # drop close_at_time (also v3)
-    with pytest.raises(ValidationError, match="entry.scale_in — set spec_version 3"):
+    with pytest.raises(ValidationError, match="entry.scale_in, set spec_version 3"):
         StrategySpec.model_validate(raw)
 
 
 def test_scale_in_on_v1_is_rejected() -> None:
-    # a v1 ladder is rejected regardless — its 5-min clock trips the v2 gate
-    # first — but it never silently validates (guardrail #3)
+    # a v1 ladder is rejected regardless (its 5-min clock trips the v2 gate
+    # first), but it never silently validates (guardrail #3)
     raw = _ladder(spec_version=1)
     raw["exit"] = {"profit_target_pct": 40}
     with pytest.raises(ValidationError):
@@ -86,7 +86,7 @@ def test_scale_in_on_v1_is_rejected() -> None:
 def test_close_at_time_requires_v3() -> None:
     raw = _ladder(spec_version=2)
     del raw["entry"]["scale_in"]
-    with pytest.raises(ValidationError, match="exit.close_at_time — set spec_version 3"):
+    with pytest.raises(ValidationError, match="exit.close_at_time, set spec_version 3"):
         StrategySpec.model_validate(raw)
 
 
@@ -99,7 +99,7 @@ def test_scale_in_rejects_multi_leg() -> None:
         {"right": "put", "side": "long", "ratio": 1,
          "strike_selection": {"method": "width_from_leg", "value": 5, "reference_leg": 0}},
     ]
-    with pytest.raises(ValidationError, match="multi-leg ladders are not yet supported"):
+    with pytest.raises(ValidationError, match="Multi-leg ladders are not yet supported"):
         StrategySpec.model_validate(raw)
 
 
@@ -108,7 +108,7 @@ def test_scale_in_requires_fixed_contracts() -> None:
     raw["sizing"] = {"method": "risk_pct_of_equity", "value": 2}
     with pytest.raises(ValidationError, match="must be fixed_contracts") as exc:
         StrategySpec.model_validate(raw)
-    # the error explains WHY — the non-obvious constraint spelled out
+    # the error explains WHY: the non-obvious constraint spelled out
     assert "absolute contract counts" in str(exc.value)
 
 

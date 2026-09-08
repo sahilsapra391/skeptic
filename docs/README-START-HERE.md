@@ -1,6 +1,6 @@
-# Skeptic — Build Handoff Package
+# Skeptic: Build Handoff Package
 
-> **Status addendum (2026-07-02) — read this first.** Since this document
+> **Status addendum (2026-07-02), read this first.** Since this document
 > was written: Alpha Vantage's options endpoints went premium and were
 > dropped (the $0 data rule held); the EOD record is the nightly Yahoo
 > snapshot; SPY EOD chains 2020-01 → 2026-06 are backfilled from the DoltHub
@@ -8,7 +8,7 @@
 > SPY/QQQ/IWM since 2024-02 come from Alpaca's free API (BUILD-PLAN M1.5);
 > a local agent records full-chain quote snapshots every session minute
 > going forward (docs/INTRADAY-OPTIONS-DATA-EVAL.md). QQQ/IWM EOD history
-> begins 2026-07-01 — no free source reaches earlier. UI direction is
+> begins 2026-07-01. No free source reaches earlier. UI direction is
 > locked: chat-led and radically simple (see the DECIDED block in
 > claude-design-brief.md; Option Alpha-style complexity is the named
 > anti-example). Where this document assumes Alpha Vantage, a 25/day
@@ -30,7 +30,7 @@ always-on data pipeline. It is split for two consumers:
 
 ---
 
-## Phase 1 — Accounts and keys (~45 min, do once, do first)
+## Phase 1. Accounts and keys (~45 min, do once, do first)
 
 Everything downstream needs these secrets. Collect them all now.
 
@@ -57,7 +57,7 @@ Everything downstream needs these secrets. Collect them all now.
    Railway account now; the service itself deploys at Milestone M6. Headroom
    covers a larger instance if the Monte Carlo stage needs speed.
 
-## Phase 2 — Start the data pipeline TODAY (~30 min)
+## Phase 2. Start the data pipeline TODAY (~30 min)
 
 Do this before any app work. Every day of delay is a day of history you never
 get back, and the pipeline is independent of the app.
@@ -77,7 +77,7 @@ get back, and the pipeline is independent of the app.
    database is growing and the backfill drip is walking backward through
    history at ~22 trading days per day.** The app can now be built at leisure.
 
-## Phase 3 — Design (Claude Design, ~1–2 sessions)
+## Phase 3. Design (Claude Design, ~1–2 sessions)
 
 1. Paste the entire `claude-design-brief.md` into Claude Design.
 2. Iterate until the five core screens feel right. The brief flags three open
@@ -86,7 +86,7 @@ get back, and the pipeline is independent of the app.
 3. Export/screenshot the approved mockups into the repo under
    `docs/design/` so Claude Code builds to the approved visuals, not to taste.
 
-## Phase 4 — Build (Claude Code, milestones M0–M6)
+## Phase 4. Build (Claude Code, milestones M0–M6)
 
 Run BUILD-PLAN.md milestones **in order**, one per session. Each has explicit
 acceptance criteria; do not advance until they pass. Order and rationale:
@@ -99,7 +99,7 @@ acceptance criteria; do not advance until they pass. Order and rationale:
 - **M5** Frontend implementing the approved designs
 - **M6** Deploy (Vercel + Railway + smoke tests) and cutover
 
-## Phase 5 — Verify and operate (~1 evening)
+## Phase 5. Verify and operate (~1 evening)
 
 1. End-to-end smoke: type the canonical test strategy ("Sell a 30 delta put on
    SPY every Monday, close at 50% profit or 21 DTE") → spec card → backtest →

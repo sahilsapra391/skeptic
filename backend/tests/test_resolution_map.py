@@ -1,4 +1,4 @@
-"""F0 per-session resolution map — hand-computed derivation fixtures.
+"""F0 per-session resolution map: hand-computed derivation fixtures.
 
 The derivation (app/data/resolution.py) is the SINGLE implementation the
 collector imports; these fixtures pin every clock × quote combination the
@@ -53,8 +53,8 @@ def test_every_clock_quote_combination() -> None:
     assert by["2020-05-04"]["clock_resolution"] == resolution.CLOCK_NONE
     assert by["2020-05-04"]["quote_resolution"] == resolution.QUOTE_EOD_ONLY
 
-    # full stack: minute clock; quote precedence is QUALITY (D2 amendment 1)
-    # — ivol_5min outranks the finer-but-delayed recorder
+    # full stack: minute clock; quote precedence is QUALITY (D2 amendment 1),
+    # so ivol_5min outranks the finer-but-delayed recorder
     assert by["2026-07-02"]["clock_resolution"] == resolution.CLOCK_MINUTE
     assert by["2026-07-02"]["quote_resolution"] == resolution.QUOTE_IVOL_5MIN
     assert by["2026-07-02"]["minute_contract_count"] == 70

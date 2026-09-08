@@ -2,23 +2,23 @@
 
 Three writers, one read-time deriver:
 
-- ``creation_record`` at POST /api/backtest — the client-captured prompt,
+- ``creation_record`` at POST /api/backtest: the client-captured prompt,
   clarifying Q&A and confirmed draft (origin "user"), or a minimal origin
   record for automatic runs (auto_unlock / receipt), which have no
   conversation.
-- ``mechanics_record`` + ``attach_mechanics`` at run completion — measured
+- ``mechanics_record`` + ``attach_mechanics`` at run completion: measured
   durations, resolution mix, effective window, and the build identity
   (deploy commit + spec_version + the fill model's product label; no
-  hand-bumped ENGINE_VERSION constant — it would rot, owner 2026-07-14).
+  hand-bumped ENGINE_VERSION constant, which would rot, owner 2026-07-14).
 - ``derived_record`` at READ time for rows that predate the column:
   everything recoverable from stored fields (prompt from
   meta.description_raw, the decision grid from spec_json, mechanics from
   perf/stats), marked "derived". The clarifying conversation was never
   stored for those runs and is NEVER invented (owner amendment
-  2026-07-14) — a derived record simply has no conversation.
+  2026-07-14). A derived record simply has no conversation.
 
 Trust boundary: the creation record is client-supplied DISPLAY data. It is
-size-capped, string-clamped, stored and rendered — never fed to the
+size-capped, string-clamped, stored and rendered, never fed to the
 engine, the verdict LLM, or grounded ask (guardrail #4 untouched). An
 oversize conversation is truncated with a marker, never refused: a run is
 never blocked by its own paperwork (owner 2026-07-14).
@@ -37,7 +37,7 @@ from app.api.variant import reconcile
 from app.engine.types import RunResult
 
 # generous for real use (a long clarify session is a few KB) while keeping
-# the runs table honest — the listing endpoint never reads this column
+# the runs table honest: the listing endpoint never reads this column
 MAX_RECORD_BYTES = 64_000
 MAX_EVENTS = 200
 MAX_EVENT_CHARS = 2_000
@@ -66,7 +66,7 @@ def _clean_prompt(prompt: Any) -> dict[str, Any] | None:
     chart = prompt.get("chart")
     if isinstance(chart, dict):
         raw_pins = chart.get("pins")
-        # `or ""` everywhere a field could be an explicit JSON null — dict.get
+        # `or ""` everywhere a field could be an explicit JSON null. dict.get
         # defaults don't fire on present-but-null keys, and str(None) would
         # store the literal text "None" as a bar time
         pins = [
@@ -118,13 +118,13 @@ def creation_record(
     """The provenance JSON written when a run row is created.
 
     `what_changed` is section 5 (V-13): the server-computed field-level diff
-    of a user-origin variant against its parent — the SAME rows the lock
+    of a user-origin variant against its parent, the SAME rows the lock
     check and the zero-edit guard read (V-162), stored at creation so no
     later reader recomputes the comparison."""
     if origin in ("auto_unlock", "receipt"):
-        # automatic runs have no conversation — one origin record, note only
+        # automatic runs have no conversation: one origin record, note only
         note = (
-            "re-ran automatically — " + (auto_note or "new data")
+            "re-ran automatically, " + (auto_note or "new data")
             if origin == "auto_unlock"
             else "5-minute replay of the original run (verdict receipt)"
         )
@@ -136,7 +136,7 @@ def creation_record(
     record: dict[str, Any] = {"v": 1, "origin": "user", "recorded_at": _now()}
     if parent_run_id:
         record["parent_run_id"] = parent_run_id
-        # V-31/V-176: sections 1-2 below are the PARENT's — its prompt, and its
+        # V-31/V-176: sections 1-2 below are the PARENT's: its prompt, and its
         # clarifying Q&A if it had any. Marked explicitly rather than inferred,
         # so no reader (or renderer) can mistake carried history for something
         # that happened on this run. Explicit beats inferred, same reasoning as
@@ -154,7 +154,7 @@ def creation_record(
         # artifact, so this is where presentation belongs.
         labelled, unlabeled = label_rows(what_changed)
         record["what_changed"] = labelled
-        # the table's gaps report themselves rather than waiting to be noticed —
+        # the table's gaps report themselves rather than waiting to be noticed,
         # the V-204 posture applied to labels. Counted where the table is
         # APPLIED rather than where it renders: a browser cannot write to the
         # server's tally, and the set of gaps is identical either way.
@@ -167,7 +167,7 @@ def creation_record(
         # its coverage omitted the variant path entirely, which is the same
         # false-green shape as a green suite that never clicks a card.
     if not isinstance(client, dict):
-        # a submitter that captured nothing (curl, an old client) — the
+        # a submitter that captured nothing (curl, an old client). The
         # record still marks WHEN recording started, so a missing
         # conversation here is "none captured", never "predates the column"
         return json.dumps(record)
@@ -185,8 +185,8 @@ def creation_record(
         else:
             record["confirmed"] = {"omitted": "confirmed draft exceeded the size cap"}
 
-    # size cap in ONE pass (never re-serialize the whole record per event —
-    # that loop is quadratic in a client-supplied list): measure the envelope
+    # size cap in ONE pass (never re-serialize the whole record per event,
+    # because that loop is quadratic in a client-supplied list): measure the envelope
     # once with a worst-case truncation marker, then keep events head-first
     # within the remaining byte budget. The head (the first questions, which
     # pair with the prompt) is the story's spine. Never a refusal.
@@ -201,7 +201,7 @@ def creation_record(
         # characters packs the budget to within ~130 bytes, and the telemetry key
         # then pushed the record 102 bytes past the cap. The first attempt at this
         # fixture used 1,900-character answers, whose leftover slack was wider
-        # than the overflow and hid it — an under-powered test replacing an
+        # than the overflow and hid it: an under-powered test replacing an
         # under-powered test.
         #
         # Reserving rather than measuring, because the real counts depend on
@@ -246,7 +246,7 @@ def creation_record(
     return json.dumps(record)
 
 
-# the perf_json fields mirrored into mechanics — one tuple shared by the
+# the perf_json fields mirrored into mechanics: one tuple shared by the
 # completion writer and the read-time deriver so the two can't drift
 PERF_MECHANICS_KEYS = ("engine_s", "gauntlet_s", "verdict_s", "sessions", "clock")
 
@@ -259,7 +259,7 @@ def mechanics_record(perf: dict[str, Any], result: RunResult, spec_version: int)
         "effective_start": result.effective_start.isoformat(),
         "effective_end": result.effective_end.isoformat(),
         "build": {
-            # the deploy commit IS the engine/fill-model version identity —
+            # the deploy commit IS the engine/fill-model version identity.
             # Railway injects it; null on local dev
             "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA"),
             "spec_version": spec_version,
@@ -291,7 +291,7 @@ def attach_mechanics(
 
 
 def derived_boxes(spec_doc: dict[str, Any]) -> dict[str, Any]:
-    """The decision grid from the stored spec — the spec IS the confirmed
+    """The decision grid from the stored spec: the spec IS the confirmed
     truth for old runs, just not the draft object the user clicked through
     (hence the "derived" flag on the section)."""
     position = spec_doc.get("position") or {}
@@ -329,7 +329,7 @@ def derived_record(
     """Read-time provenance for runs stored before the column existed.
 
     Derive-don't-fabricate: only fields that exist in stored data appear.
-    No conversation key, ever — it was never stored for these runs.
+    No conversation key, ever. It was never stored for these runs.
     """
     record: dict[str, Any] = {
         "v": 1,

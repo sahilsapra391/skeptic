@@ -4,11 +4,11 @@ Source precedence per (ticker, trading_date): ivolatility > alphavantage >
 cboe_eod > yahoo > dolthub (DATA-PIPELINE §4). iVolatility outranks
 everything: it is the only source carrying vendor-computed greeks on every
 row, backfilled 20 years deep. cboe_eod is the FORWARD record (owner
-decision 2026-07-08): the recorder's last close snapshot per session —
-full chain, vendor greeks/IV/OI, quotes ~15 min delayed, a property of the
+decision 2026-07-08): the recorder's last close snapshot per session.
+Full chain, vendor greeks/IV/OI, quotes ~15 min delayed, a property of the
 source disclosed exactly like cboe_minute intraday. It outranks Yahoo
 (60-DTE cap, no vendor greeks) and loses to the vendor EOD records.
-Dolthub sessions honor the quarantine — only dates in
+Dolthub sessions honor the quarantine: only dates in
 state/dolthub_backfill.json's `done` list are loaded (the lake's logical
 view; flag-and-exclude, DOLTHUB-EVAL addendum).
 
@@ -51,8 +51,8 @@ CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache"
 FETCH_WORKERS = 24
 # Full canonical width (D1a): the engine stops discarding greeks, liquidity
 # and provenance. `source` rides along for the Observatory's per-source
-# field-completeness view (D1d). Spot stays per-day in MarketStore — the
-# lake's documented join — but the column is read here because computing
+# field-completeness view (D1d). Spot stays per-day in MarketStore (the
+# lake's documented join), but the column is read here because computing
 # missing greeks needs the row spot when a source carries one.
 COLUMNS = [
     "trading_date", "expiration", "right", "strike", "bid", "ask", "last",
@@ -65,7 +65,7 @@ NUMERIC_COLUMNS = [
 ]
 # Bump when COLUMNS or the computed-greeks pass changes shape/semantics:
 # a mismatched manifest rebuilds the on-disk cache automatically.
-# v3: cboe_eod joined the precedence chain — cached winners change.
+# v3: cboe_eod joined the precedence chain. Cached winners change.
 CACHE_SCHEMA_VERSION = 3
 
 
@@ -109,7 +109,7 @@ def _chain_keys(s3: Any, ticker: str) -> dict[str, str]:
     winners.update(yahoo)  # yahoo beats dolthub
     winners.update(cboe)  # cboe_eod beats yahoo: full chain + vendor greeks
     winners.update(av)  # av beats cboe_eod (true close marks, no feed delay)
-    winners.update(ivol)  # ivolatility beats all — vendor greeks on every row
+    winners.update(ivol)  # ivolatility beats all, vendor greeks on every row
     return winners
 
 
@@ -194,19 +194,19 @@ def _underlying_frames(
 # nightly collections must reach a long-lived container's NEXT run without
 # a redeploy). Freshness rules, all review-hardened:
 #   * refresh=True is for the ENGINE path only (serialized behind
-#     ENGINE_LOCK by its callers) — a rebuild can never overlap a run
+#     ENGINE_LOCK by its callers). A rebuild can never overlap a run
 #     holding the old store. Request-path callers (estimate, fill audit,
 #     warm_store) pass refresh=False: they serve the cached store as-is
 #     and only ever pay the ONE cold build (pre-TTL behavior, unchanged).
-#   * the check path never binds the old store to a local — on a manifest
+#   * the check path never binds the old store to a local. On a manifest
 #     mismatch the cache entry is dropped and the old store is collectable
 #     BEFORE the rebuild allocates (the 2026-07-06 OOM class).
 #   * the stored manifest is computed from the PRE-build listing: an
 #     object landing mid-build makes the next check mismatch and rebuild
-#     again — the cache converges fresh, never pins an incomplete store.
+#     again. The cache converges fresh, never pins an incomplete store.
 #   * a failed rebuild leaves the cache empty (the old store was freed by
 #     design); the failure surfaces to the caller and the next engine call
-#     rebuilds cold — loud, never a silent stale serve.
+#     rebuilds cold (loud, never a silent stale serve).
 _STORE_CACHE: dict[str, tuple[float, dict[str, Any], MarketStore]] = {}
 STORE_TTL_SECONDS = 1800
 _REBUILD_LOCK = threading.Lock()
@@ -222,7 +222,7 @@ def load_market_store(ticker: str, *, refresh: bool = True) -> MarketStore:
         try:
             winners = _chain_keys(r2.r2_client(), ticker)
         except Exception:
-            # can't check (transient R2) — keep serving, retry next TTL
+            # can't check (transient R2). Keep serving, retry next TTL
             _STORE_CACHE[ticker] = (now, entry[1], entry[2])
             return entry[2]
         if _manifest_of(winners) == entry[1]:
@@ -249,14 +249,14 @@ def warm_store(ticker: str = "SPY") -> None:
     R2 pull (minutes on a fresh deploy)."""
     try:
         load_market_store(ticker, refresh=False)
-    except Exception:  # no creds / empty lake — the run path reports it
+    except Exception:  # no creds / empty lake, the run path reports it
         pass
 
 
 def _finite_series(series: dict[date, float]) -> dict[date, float]:
     """A non-finite row is an HONEST ABSENCE: dropped here, before any
-    *_dates list is built. Every evaluability surface — the staleness and
-    signal-coverage refusals, the composer's rank unlock dates — reasons
+    *_dates list is built. Every evaluability surface (the staleness and
+    signal-coverage refusals, the composer's rank unlock dates) reasons
     from those date lists, so a date must never point at a value the
     engine refuses. The loaders drop NaN already, but pandas' NaN-only
     filters (dropna/notna/isna) all keep ±inf, and in-house derived
@@ -328,7 +328,7 @@ def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> M
                 if with_iv:
                     atm_iv[d] = float(min(with_iv)[1] or 0.0)
 
-    # vendor IVX/HV series (D1c) — honest absences when not banked
+    # vendor IVX/HV series (D1c), honest absences when not banked
     try:
         s3 = r2.r2_client()
         ivx_30d = ivol_analytics.load_ivx_30d(s3, ticker)
@@ -350,7 +350,7 @@ def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> M
             r2.r2_client(), ticker)
     except Exception:
         net_premium, pcr, nope_eod, mpd = {}, {}, {}, {}
-    # tide is an independent artifact — its failure must not zero the
+    # tide is an independent artifact. Its failure must not zero the
     # per-ticker flow series (review finding F2/F3 #9)
     try:
         tide = flow_signals.load_market_tide(r2.r2_client())
@@ -359,14 +359,14 @@ def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> M
 
     # Forward-record splices (owner decision 2026-07-08, no vendor
     # subscriptions): the frozen vendor series continue STRICTLY FORWARD
-    # via the in-house derivations — unit-compatible series only, each
+    # via the in-house derivations. Unit-compatible series only, each
     # continuation measured on the vendor overlap before it shipped:
     #   ivx_30d  ← in-house 30d ATM IV      (overlap gap 0.09 vol pts)
-    #   hv_30d   ← in-house HV              (overlap MAE 0.0002 — exact fit)
+    #   hv_30d   ← in-house HV              (overlap MAE 0.0002, exact fit)
     #   skew/term ← in-house chain fit      (overlap gaps 0.21 / 0.02)
     #   pcr/max-pain ← in-house chain calc  (overlap: <1% / identical)
     # net_gex/net_dex are NOT spliced: the in-house convention disagreed
-    # with the vendor's sign on the overlap — banked + cross-validated
+    # with the vendor's sign on the overlap. Banked + cross-validated
     # only, never a continuation. net_premium/NOPE/tide have no free
     # substitute and freeze (the tail-staleness guard names that at run
     # time). Splice dates land on the store for run-payload disclosure.
@@ -399,8 +399,8 @@ def _build_market_store(ticker: str, winners: dict[str, str] | None = None) -> M
 
     # every analytic series through the finite gate BEFORE its date list
     # exists (see _finite_series); vix_dates is rebuilt because the pair
-    # was constructed together above. underlying open/close stay raw —
-    # sessions drive bar iteration and must not silently lose days.
+    # was constructed together above. underlying open/close stay raw.
+    # Sessions drive bar iteration and must not silently lose days.
     vix_close = _finite_series(vix_close)
     vix_dates = sorted(vix_close)
     atm_iv = _finite_series(atm_iv)

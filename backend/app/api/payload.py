@@ -17,17 +17,18 @@ from app.honesty.report import HonestyReport
 from app.honesty.stages import COVERAGE_MIN_RATIO, MIN_TRADES
 from app.honesty.verdict import VerdictText
 from app.models.spec import StrategySpec
+from app.text import normalize, normalize_mapping, normalize_tree
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-# the fill model's product-visible label — shared by the run meta line and
+# the fill model's product-visible label, shared by the run meta line and
 # the provenance mechanics record so the two can never drift apart
 FILL_MODEL = "liquidity-v1"
 
 # trust band geometry: level 1..5 → marker at 10/30/50/70/90%, band ±15%
 _MARKER = {1: 10, 2: 30, 3: 50, 4: 70, 5: 90}
 
-# the equity chart's SVG track width — the OOS shade x is computed against
+# the equity chart's SVG track width. The OOS shade x is computed against
 # it in BOTH the build and the read-time re-grade path
 OOS_TRACK_W = 860
 
@@ -46,11 +47,11 @@ def _short_iso(iso: str) -> str:
 
 
 def _pct(v: float | None, digits: int = 1) -> str:
-    return "—" if v is None else f"{v * 100:.{digits}f}%"
+    return "n/a" if v is None else f"{v * 100:.{digits}f}%"
 
 
 def _num(v: float | None, digits: int = 2) -> str:
-    return "—" if v is None else f"{v:.{digits}f}"
+    return "n/a" if v is None else f"{v:.{digits}f}"
 
 
 def _dollars(v: float | None) -> str:
@@ -71,7 +72,7 @@ def _downsample(dates: list[date], values: list[float], cap: int = 400) -> list[
 def _downsample_nullable(
     dates: list[date], values: list[float | None], cap: int = 400
 ) -> list[dict[str, Any]]:
-    """Like _downsample, but a None stays a null point — greek gaps are
+    """Like _downsample, but a None stays a null point. Greek gaps are
     honest gaps, the chart shows a hole rather than a made-up line."""
     n = len(values)
     idxs: list[int]
@@ -91,15 +92,15 @@ def _drawdown_series(dates: list[date], equity: list[float]) -> list[dict[str, A
     dd: list[float] = []
     for v in equity:
         peak = max(peak, v)
-        # a ruined curve (equity ≤ 0 at the halt) reads 100%, never >100% —
-        # you can't lose more than everything (the ruin banner carries the
+        # a ruined curve (equity ≤ 0 at the halt) reads 100%, never >100%.
+        # You can't lose more than everything (the ruin banner carries the
         # negative dollar figure)
         dd.append(min((1.0 - v / peak) * 100.0, 100.0) if peak > 0 else 0.0)
     return _downsample(dates, dd)
 
 
 def _trade_rows(trades: list[TradeEvent]) -> list[dict[str, Any]]:
-    """Newest-first rows, fills before skips — the COMPLETE log, uncapped
+    """Newest-first rows, fills before skips. The COMPLETE log, uncapped
     (owner directive: every fill and every skip must be inspectable).
     Rows are ~100 bytes each and only travel when a run is opened, so even
     a daily-cadence strategy's log stays well under a megabyte."""
@@ -113,7 +114,7 @@ def _trade_rows(trades: list[TradeEvent]) -> list[dict[str, Any]]:
                 "d": _short(t.day),
                 "a": t.action,
                 "det": t.detail,
-                "pl": "—" if pl is None else f"{'+' if pl >= 0 else '−'}${abs(pl):,.2f}",
+                "pl": "n/a" if pl is None else f"{'+' if pl >= 0 else '−'}${abs(pl):,.2f}",
                 "plSign": (
                     "none" if pl is None else "pos" if pl > 0 else "neg" if pl < 0 else "none"
                 ),
@@ -151,7 +152,7 @@ def _mc_fan(report: HonestyReport) -> dict[str, str]:
 
 def _sweep_display_name(name: str) -> str:
     """Row label for a sweep param. F8 condition sweeps carry a 'cond_'
-    prefix (and maybe an operator suffix for a repeated indicator) — strip
+    prefix (and maybe an operator suffix for a repeated indicator). Strip
     it so the grid reads 'skew 25d', not 'cond skew 25d'."""
     if name.startswith("cond_"):
         return name[len("cond_"):].replace("_", " ")
@@ -165,7 +166,7 @@ def _param_label(name: str, v: float) -> str:
             return f".{int(round(pct)):02d}Δ"
         # the floored delta grid makes sub-point cells (0.075, 0.0317)
         # routine, and rounding them to two digits would label a value
-        # the sweep never ran — recommendations must name the EXACT
+        # the sweep never ran. Recommendations must name the EXACT
         # tested delta (review finding on the strike-floor pass)
         return "." + f"{v:.4f}".rstrip("0")[2:] + "Δ"
     if name == "dte":
@@ -173,7 +174,7 @@ def _param_label(name: str, v: float) -> str:
     if name == "entry_time":
         return f"{int(v):+d}m"  # the D2d entry-time nudge, minutes
     if name.startswith("cond_"):
-        return f"{v:g}"  # F8: an indicator threshold — unit-free number
+        return f"{v:g}"  # F8: an indicator threshold, unit-free number
     return f"{v:g}%"
 
 
@@ -189,7 +190,7 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
         cells = [
             {
                 "label": _param_label(sweep.name, v),
-                "sharpe": "—" if s is None else f"{s:.2f}",
+                "sharpe": "n/a" if s is None else f"{s:.2f}",
                 "o": 0.06 if s is None else round(0.10 + 0.82 * (s - bottom) / span, 2),
             }
             for v, s in zip(sweep.values, sweep.sharpes, strict=True)
@@ -206,21 +207,21 @@ def _sensitivity_detail(report: HonestyReport) -> list[dict[str, Any]]:
 
 
 def sweep_coverage_notes(sensitivity: dict[str, Any] | None) -> list[str]:
-    """The F8 sweep-coverage disclosures — what the sensitivity stage did
-    and did NOT probe — selected from a stored honesty report's sensitivity
+    """The F8 sweep-coverage disclosures (what the sensitivity stage did
+    and did NOT probe), selected from a stored honesty report's sensitivity
     dump. The one selector for these keys on the API layer: the notebook
     export reads this list today, and any future api-side surface that
     discloses sweep coverage must too, so none bakes its own key list.
     (The verdict caveats in app/honesty/verdict.py read the same fields
-    off the TYPED Sensitivity model — honesty cannot import api — so a
-    new disclosure field must be added there too, not only here.)"""
+    off the TYPED Sensitivity model, because honesty cannot import api.
+    A new disclosure field must be added there too, not only here.)"""
     sens = sensitivity or {}
     return [str(n) for n in (sens.get("conditions_note"),
                              sens.get("window_note")) if n]
 
 
 def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
-    """What would improve the strategy — computed ONLY from this run's own
+    """What would improve the strategy, computed ONLY from this run's own
     gauntlet numbers (the sensitivity sweeps re-ran the real engine), never
     from opinion. Guardrail #4 applies: every number below exists in the
     report. `retail` swaps the register, never the numbers."""
@@ -230,13 +231,13 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
         return [
             (
                 f"With only {sample.trades} finished trade{plural} there's nothing "
-                "honest to suggest yet — test a longer date range, trade more often, "
+                "honest to suggest yet. Test a longer date range, trade more often, "
                 "or wait for more data."
             )
             if retail
             else (
                 f"Nothing can honestly be recommended from {sample.trades} closed "
-                f"trade{plural} — widen the date window, trade more frequently, "
+                f"trade{plural}. Widen the date window, trade more frequently, "
                 "or wait for more coverage before tuning anything."
             ),
         ]
@@ -257,14 +258,14 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
                 recs.append(
                     f"When we tried {name} at {_param_label(sweep.name, best_v)} instead "
                     f"of your {_param_label(sweep.name, base_v)}, the score improved "
-                    f"({base_s:.2f} → {best_s:.2f}). Worth a re-run — but every retry "
+                    f"({base_s:.2f} → {best_s:.2f}). Worth a re-run, but every retry "
                     "makes good numbers a little less trustworthy."
                 )
             else:
                 recs.append(
                     f"In this run's sensitivity sweep, {name} {_param_label(sweep.name, best_v)} "
                     f"beat the specced {_param_label(sweep.name, base_v)}: backtest Sharpe "
-                    f"{base_s:.2f} → {best_s:.2f}. Re-run with it — the change re-enters "
+                    f"{base_s:.2f} → {best_s:.2f}. Re-run with it. The change re-enters "
                     "the gauntlet as a new trial."
                 )
 
@@ -274,13 +275,13 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
             (
                 f"It kept only {oos.degradation * 100:.0f}% of its training score on "
                 "data it never saw. The honest fix is simpler settings and more "
-                "history — more tweaking will make it worse."
+                "history. More tweaking will make it worse."
             )
             if retail
             else (
                 f"The edge concentrates in-sample (OOS keeps {oos.degradation * 100:.0f}% "
                 "of in-sample Sharpe). Fewer tuned parameters and a longer window are "
-                "the only honest fixes — more tuning will make this worse."
+                "the only honest fixes. More tuning will make this worse."
             )
         )
 
@@ -289,13 +290,13 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
         recs.append(
             (
                 f"{mc.p_loss * 100:.0f}% of the reshuffled versions of this strategy "
-                "lost money — the original got a lucky order of trades. A version with "
+                "lost money. The original got a lucky order of trades. A version with "
                 "capped losses (a spread) or smaller size handles bad luck better; "
                 "test that as its own run."
             )
             if retail
             else (
-                f"{mc.p_loss * 100:.0f}% of resampled paths lose money — the result "
+                f"{mc.p_loss * 100:.0f}% of resampled paths lose money. The result "
                 "leans on trade ordering. A defined-risk structure or smaller size "
                 "survives more of the bad orderings; test it as its own run."
             )
@@ -306,14 +307,14 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
         positive = sum(1 for f in wf.folds if f.ret > 0)
         recs.append(
             (
-                f"It only made money in {positive} of {len(wf.folds)} time periods — "
-                "a few good stretches carry everything. Adding a market-condition "
+                f"It only made money in {positive} of {len(wf.folds)} time periods. "
+                "A few good stretches carry everything. Adding a market-condition "
                 "filter for entries is worth testing as its own run."
             )
             if retail
             else (
                 f"Only {positive} of {len(wf.folds)} walk-forward windows were "
-                "profitable — the total return comes from a few stretches. An entry "
+                "profitable. The total return comes from a few stretches. An entry "
                 "filter (volatility or trend regime) is worth testing as a separate run."
             )
         )
@@ -327,21 +328,21 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
         # No invented penalty and no moved threshold: the deflated Sharpe already
         # accounts for every trial in that count, which is exactly why the count is
         # quotable rather than alarming. And the lineage ordinal is NOT this number
-        # and never appears here — it is navigation, it carries no statistical
+        # and never appears here. It is navigation, it carries no statistical
         # claim, and two numbers about "how many times" on one screen must be
         # unmistakable for each other.
         recs.append(
             (
                 f"This is try number {report.dsr.trials} at this kind of strategy, "
-                "counting the parameter sweeps the gauntlet ran on your behalf — "
-                "the math says the good numbers now look more like luck than skill, "
+                "counting the parameter sweeps the gauntlet ran on your behalf. "
+                "The math says the good numbers now look more like luck than skill, "
                 "and it has already priced those tries in. Best move: stop tweaking "
                 "and let new market data decide."
             )
             if retail
             else (
                 f"Deflated Sharpe {report.dsr.dsr:.2f} after {report.dsr.trials} trials "
-                "on this family to date, including parameter sweeps — the deflated "
+                "on this family to date, including parameter sweeps. The deflated "
                 "Sharpe already accounts for them. The remaining edge is likely "
                 "mined; the recommendation is restraint: stop tuning and let new data "
                 "arrive."
@@ -351,14 +352,14 @@ def _recommendations(report: HonestyReport, retail: bool = False) -> list[str]:
     if not recs:
         recs.append(
             (
-                "None of the nearby settings we tried beat yours — the setup is "
+                "None of the nearby settings we tried beat yours. The setup is "
                 "already at its local best. The most valuable improvement is simply "
                 "more market history, not more tweaking."
             )
             if retail
             else (
                 "No parameter in the sensitivity sweep beat the specced values by a meaningful "
-                "margin — the configuration already sits on its local plateau. The "
+                "margin. The configuration already sits on its local plateau. The "
                 "highest-value improvement is more history, not more tuning."
             )
         )
@@ -402,7 +403,7 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
             "t": (
                 f"{_short_iso(f.start)} → {_short_iso(f.end)} · "
                 f"{f.ret * 100:+.1f}% · {f.trades} trade{'s' if f.trades != 1 else ''}"
-                # FX.4: a minute-flavored fold says so on its tooltip — the
+                # FX.4: a minute-flavored fold says so on its tooltip. The
                 # disclosure lives in the run, not only the docs
                 + (f" · {round(f.minute_share * 100)}% minute grid"
                    if f.minute_share and round(f.minute_share * 100) >= 1
@@ -415,7 +416,7 @@ def _wf_bars(report: HonestyReport) -> list[dict[str, Any]]:
 
 def _ladder_depth_block(report: HonestyReport) -> dict[str, Any] | None:
     """Depth attribution for the results panel (D5b): the per-tier table + a
-    marginal-rung bar chart. P/L red/green is fine here — this is a DATA
+    marginal-rung bar chart. P/L red/green is fine here. This is a DATA
     panel, never a trust/verdict surface (the color rule)."""
     ld = report.ladder_depth
     if ld is None:
@@ -472,10 +473,10 @@ def _ladder_depth_block(report: HonestyReport) -> dict[str, Any] | None:
 
 def _below_standard_note(report: HonestyReport, retail: bool = False) -> str | None:
     """The honesty rider on a lowered evidence bar: a GRADED verdict on a
-    sample under the standard floor must say so, in both registers — the
+    sample under the standard floor must say so, in both registers. The
     user may lower the gate, never the disclosure (owner ask 2026-07-14).
     Worded run-anchored ('this verdict's bar'), never viewer-anchored
-    ('your setting') — a stored payload outlives the setting that made it,
+    ('your setting'). A stored payload outlives the setting that made it,
     and a different viewer may be reading it (review finding)."""
     sample = report.regime_sample
     if (
@@ -486,7 +487,7 @@ def _below_standard_note(report: HonestyReport, retail: bool = False) -> str | N
         return None
     if retail:
         return (
-            f"Heads up: only {sample.trades} finished trades — under the standard "
+            f"Heads up: only {sample.trades} finished trades, under the standard "
             f"floor of {MIN_TRADES}. This verdict was graded at a lowered bar of "
             f"{sample.min_trades}, so treat it as a sketch, not a study."
         )
@@ -539,11 +540,11 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
                 "The gauntlet ran, but blessing this sample would be a guess wearing a "
                 "lab coat. Raw output below, unblessed. " + " · ".join(verdict.caveats)
             ),
-            # a wiped-out account never unlocks with more data — promising
+            # a wiped-out account never unlocks with more data. Promising
             # "unlocks at N trades" on a dead account would be a lie
             # (review finding 2026-07-15; unlock_conditions excludes it too)
             "refusalUnlock": (
-                "does not unlock with more data — the account was wiped out; "
+                "does not unlock with more data (the account was wiped out); "
                 "change the strategy or the capital"
                 if report.ruin is not None
                 else "unlocks at " + " and ".join(needs) if needs else ""
@@ -558,7 +559,7 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
     below = _below_standard_note(report)
     if below:
         # appended HERE, not in the templates, so it rides template AND
-        # LLM narration alike — the disclosure is not the LLM's to drop
+        # LLM narration alike. The disclosure is not the LLM's to drop
         caveats.append(below)
     return {
         "kind": "graded",
@@ -566,7 +567,7 @@ def _verdict_block(report: HonestyReport, verdict: VerdictText) -> dict[str, Any
         # guardrail #5: a graded sub-15 sample is marked structurally so
         # every summary surface (library card) can carry the disclosure too
         "belowStandard": bool(below),
-        # the account was wiped out (2026-07-15) — structural for the same
+        # the account was wiped out (2026-07-15), structural for the same
         # reason; trust is hard-capped at the floor when this is set
         "ruined": report.ruin is not None,
         "headline": verdict.headline,
@@ -586,10 +587,10 @@ def _panel_notes(report: HonestyReport, retail: bool = False) -> list[str]:
     if oos.degradation is not None:
         ok = not oos.flagged
         oos_note = (
-            f"kept {_pct(oos.degradation, 0)} of its training score on unseen data — "
+            f"kept {_pct(oos.degradation, 0)} of its training score on unseen data, "
             + ("pass ✓" if ok else "fail ✗")
             if retail
-            else f"OOS keeps {_pct(oos.degradation, 0)} of in-sample sharpe — "
+            else f"OOS keeps {_pct(oos.degradation, 0)} of in-sample sharpe, "
             + ("holds ✓" if ok else "fails ✗")
         )
     else:
@@ -614,7 +615,7 @@ def _panel_notes(report: HonestyReport, retail: bool = False) -> list[str]:
 
     if mc.p_loss is not None:
         # p(ruin) shown only when some reshuffled path actually died at $0
-        # (absorption, 2026-07-15) — a computed ruin share is never silent
+        # (absorption, 2026-07-15). A computed ruin share is never silent
         ruin_bit = (
             (f" · {_pct(mc.p_ruin, 0)} went broke" if retail
              else f" · p(ruin) {_pct(mc.p_ruin, 0)}")
@@ -660,13 +661,13 @@ def _honesty_panels(report: HonestyReport) -> dict[str, Any]:
 
 
 def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[str, Any]:
-    """Everything the UI swaps when Verbiage Complexity = Retail — the same
+    """Everything the UI swaps when Verbiage Complexity = Retail. The same
     computed numbers, everyday words."""
     block = _verdict_block(report, retail_verdict)
     if not block["refusal"]:
         below = _below_standard_note(report, retail=True)
         if below:
-            # the graded arm appended the institutional wording — retail
+            # the graded arm appended the institutional wording. Retail
             # readers get the retail one, same facts
             block["caveat"] = " · ".join([*retail_verdict.caveats, below])
     else:
@@ -687,11 +688,11 @@ def _retail_block(report: HonestyReport, retail_verdict: VerdictText) -> dict[st
             )
         block["refusalBody"] = (
             "The tests ran, but calling this a verdict would be guessing. The raw "
-            "numbers are below, unblessed — look, but don't lean on them. "
+            "numbers are below, unblessed. Look, but don't lean on them. "
             + " · ".join(retail_verdict.caveats)
         )
         block["refusalUnlock"] = (
-            "more data won't unlock this — the account ran out of money; "
+            "more data won't unlock this (the account ran out of money); "
             "change the strategy or the starting capital"
             if report.ruin is not None
             else "unlocks with " + " and ".join(needs) if needs else ""
@@ -717,15 +718,20 @@ def _verdict_surfaces(
     retail_verdict: VerdictText | None,
 ) -> dict[str, Any]:
     """EVERY payload key derived from the trust label / verdict text, in one
-    place — the initial build, the async narration patch, and the read-time
+    place: the initial build, the async narration patch, and the read-time
     re-grade all consume this, so a future verdict-dependent key cannot be
-    added to one path and silently go stale on the others."""
-    return {
+    added to one path and silently go stale on the others.
+
+    House punctuation is applied to the whole block here for the same reason
+    the keys live here: the verdict block, the retail block and the
+    recommendations reach the wire through this function and nowhere else,
+    so one call covers all three on every path."""
+    return normalize_mapping({
         "verdict": _verdict_block(report, verdict),
         "verdictSource": verdict.source,
         "recommendations": _recommendations(report),
         "retail": _retail_block(report, retail_verdict) if retail_verdict else None,
-    }
+    })
 
 
 def build_run_payload(
@@ -765,7 +771,7 @@ def build_run_payload(
             {"v": _num(m.get("sharpe")), "l": f"SHARPE{star}"},
             {"v": _num(m.get("sortino")), "l": f"SORTINO{star}"},
             {
-                "v": "—" if m.get("max_drawdown") is None else f"−{_pct(m.get('max_drawdown'))}",
+                "v": "n/a" if m.get("max_drawdown") is None else f"−{_pct(m.get('max_drawdown'))}",
                 "l": f"MAX DD{star}",
                 "neg": True,
             },
@@ -774,8 +780,8 @@ def build_run_payload(
         ],
         "equityPoints": "",
         "drawdownPoints": "",
-        # ruin halt (2026-07-15): the chart's terminal marker + banner —
-        # additive key, None on every non-ruined and stored pre-ruin payload
+        # ruin halt (2026-07-15): the chart's terminal marker + banner.
+        # Additive key, None on every non-ruined and stored pre-ruin payload
         "ruin": (
             {
                 "date": report.ruin.ruin_date,
@@ -785,7 +791,7 @@ def build_run_payload(
             if report.ruin
             else None
         ),
-        # buying-power profile (2026-07-15) — additive; the funding caveat's
+        # buying-power profile (2026-07-15), additive; the funding caveat's
         # numbers, structured
         "funding": report.funding.model_dump() if report.funding else None,
         "equitySeries": _downsample(result.dates, result.equity),
@@ -798,14 +804,14 @@ def build_run_payload(
         "dataConfidence": (report.data_confidence.model_dump()
                            if report.data_confidence else None),
         # forward-record convention seams the window crossed (2026-07-08):
-        # which frozen vendor series continued in-house, and from when —
-        # additive key, None on single-convention windows and stored runs
+        # which frozen vendor series continued in-house, and from when.
+        # Additive key, None on single-convention windows and stored runs
         "dataProvenance": data_provenance or None,
         "concentration": report.concentration.model_dump() if report.concentration else None,
         # per-fill provenance (D2b): which quote record priced each leg fill
         "fillSources": result.fill_sources,
         "clock": result.clock,
-        # FX.1: per-session bar-resolution record (guardrail #6 — a surface
+        # FX.1: per-session bar-resolution record (guardrail #6: a surface
         # showing results shows what they were computed on). Additive keys;
         # None/empty on daily and pre-v4 runs.
         "resolutionMode": result.resolution_mode,
@@ -814,11 +820,11 @@ def build_run_payload(
         # FX.2: skip-reason distribution. Attempt-level reasons (e.g.
         # conditions_not_met, counted per attempted bar) sit beside
         # episode-level ones (max_concurrent, order_in_flight,
-        # no_quote_this_bar — once per setup). Populated for every NEW
+        # no_quote_this_bar, once per setup). Populated for every NEW
         # run at any clock; None only on stored pre-FX.2 payloads.
         "skipReasons": result.skip_reasons or None,
         "sessionSplit": report.session_split.model_dump() if report.session_split else None,
-        # FX.4: the mixed-resolution split (full vs 5-min-only vs minute) —
+        # FX.4: the mixed-resolution split (full vs 5-min-only vs minute),
         # additive; None on runs without a per-session resolution record
         "resolutionSplit": (report.resolution_split.model_dump()
                             if report.resolution_split
@@ -840,7 +846,7 @@ def build_run_payload(
         "sensitivityRows": sens_rows,
         "sensitivityDetail": _sensitivity_detail(report),
         "tradeHeader": (
-            f"Trade log — {result.filled} filled · {result.skipped} skipped, with reasons"
+            f"Trade log: {result.filled} filled · {result.skipped} skipped, with reasons"
         ),
         "trades": _trade_rows(result.trades),
     }
@@ -851,14 +857,17 @@ def run_summary(run_id: str, payload: dict[str, Any], created: str) -> dict[str,
     survived = verdict.get("survived", "")
     label = "withheld" if verdict.get("refusal") else survived.split(" OF")[0] + "/5 survived"
     # guardrail #5: the library card of a graded sub-15 sample carries the
-    # disclosure too — the headline alone would read rosier than the verdict
+    # disclosure too. The headline alone would read rosier than the verdict
     if verdict.get("belowStandard"):
         label += " · below-standard sample"
     # the wipeout travels to the card for the same reason (2026-07-15)
     if verdict.get("ruined"):
         label += " · wiped out"
     retail = payload.get("retail") or {}
-    return {
+    # the card quotes a headline that may have been narrated before the
+    # em-dash ban (this runs over stored payloads on the Library backfill
+    # path), so the summary gets the same treatment the payload gets
+    return normalize_mapping({
         "id": run_id,
         "demo": False,
         "name": payload.get("name", run_id),
@@ -869,7 +878,74 @@ def run_summary(run_id: str, payload: dict[str, Any], created: str) -> dict[str,
         "kind": "refusal" if verdict.get("refusal") else "graded",
         "band": verdict.get("band"),
         "marker": verdict.get("marker"),
-    }
+    })
+
+
+# ------------------------------------------- house punctuation, at read time
+# Runs saved before the em-dash ban carry the character inside stored verdict
+# text and stored provenance. db.py is explicit that a stored verdict is never
+# rewritten and that the payload is assembled at READ time, so a read-time
+# transform is the only thing that reaches those rows at all.
+#
+# It returns a normalized COPY for the wire. The stored bytes stay exactly as
+# they were written, which is the whole reason a provenance record is worth
+# anything, and it is why this is a display transform and not a migration.
+#
+# The user's own words are excluded on purpose: their prompt, their answers to
+# clarifying questions, and the confirmed draft are theirs. House style governs
+# what the product writes, not what a person typed into it.
+_USER_AUTHORED_KEYS = ("spec",)
+_PROVENANCE_USER_AUTHORED = ("prompt", "confirmed")
+
+
+def _normalize_conversation_event(event: Any) -> Any:
+    """A clarifying QUESTION is the parser LLM's prose and gets house
+    punctuation. An ANSWER is the user's own typing and passes through."""
+    if not isinstance(event, dict) or event.get("kind") != "question":
+        return event
+    out = dict(event)
+    question = out.get("question")
+    if isinstance(question, str):
+        out["question"] = normalize(question)
+    options = out.get("options")
+    if isinstance(options, list):
+        out["options"] = [normalize(o) if isinstance(o, str) else o for o in options]
+    return out
+
+
+def _normalize_provenance(record: Any) -> Any:
+    if not isinstance(record, dict):
+        return record
+    out: dict[str, Any] = {}
+    for key, value in record.items():
+        if key in _PROVENANCE_USER_AUTHORED:
+            out[key] = value
+        elif key == "conversation" and isinstance(value, list):
+            out[key] = [_normalize_conversation_event(event) for event in value]
+        else:
+            out[key] = normalize_tree(value)
+    return out
+
+
+def normalize_payload_prose(payload: dict[str, Any]) -> dict[str, Any]:
+    """The outbound copy of a run payload, in house punctuation.
+
+    Every string the product authored (verdict, retail register, panel notes,
+    recommendations, trade reasons, the provenance story) loses its em-dashes;
+    the user's own text and the stored spec do not. Nothing is mutated: the
+    caller still holds the byte-exact record it read from the database.
+
+    Idempotent, so it is safe on a freshly built payload whose narration was
+    already normalized on receipt."""
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in _USER_AUTHORED_KEYS:
+            out[key] = value
+        elif key == "provenance":
+            out[key] = _normalize_provenance(value)
+        else:
+            out[key] = normalize_tree(value)
+    return out
 
 
 def apply_verdict_text(
@@ -878,7 +954,7 @@ def apply_verdict_text(
     verdict: VerdictText,
     retail_verdict: VerdictText | None = None,
 ) -> dict[str, Any]:
-    """Swap ONLY the verdict-derived surfaces of a stored payload — the
+    """Swap ONLY the verdict-derived surfaces of a stored payload: the
     async-narration upgrade path (owner ask 2026-07-14: the verdict stage
     stalled minutes on LLM retries) and the re-grade path below. The blocks
     are rebuilt from the given report via the same _verdict_surfaces the
@@ -890,7 +966,7 @@ def apply_verdict_text(
         surfaces.pop("retail", None)
     out.update(surfaces)
     # keep the human-readable meta token in step with the structured
-    # verdictSource key (display only — consumers read verdictSource)
+    # verdictSource key (display only, consumers read verdictSource)
     out["meta"] = re.sub(
         r"verdict: [a-z]+", f"verdict: {verdict.source}",
         str(payload.get("meta", "")), count=1,
@@ -940,16 +1016,16 @@ def regrade_for_min_trades(
     payload: dict[str, Any], stats: dict[str, Any] | None, min_trades: int
 ) -> dict[str, Any]:
     """Re-decide the evidence gate at the CALLER's minimum-trades setting
-    (owner decision 2026-07-14: the bar is a user setting — a 13-trade
+    (owner decision 2026-07-14: the bar is a user setting. A 13-trade
     refusal unlocks when the bar drops to 1, and a graded run re-caps when
     the bar rises; stored runs re-grade at read time, no re-run).
 
     Returns the payload untouched when the gate outcome is unchanged (the
-    stored — possibly LLM — narration described the same grade). When the
+    stored (possibly LLM) narration described the same grade). When the
     grade moves, the verdict surfaces are rebuilt from the stored honesty
     report with deterministic template narration: the stored words argued
     a different verdict, so reusing them would be dishonest. The stored
-    row is never mutated — this is a per-request view."""
+    row is never mutated. This is a per-request view."""
     report_doc = (stats or {}).get("honesty_report")
     if not isinstance(report_doc, dict):
         return payload  # pre-Q&A run: no stats bundle, nothing to re-grade
@@ -962,7 +1038,7 @@ def regrade_for_min_trades(
     try:
         report = HonestyReport.model_validate(report_doc)
     except Exception:
-        return payload  # pre-contract dump — the stored payload stands
+        return payload  # pre-contract dump, the stored payload stands
 
     from app.honesty.verdict import retail_template_verdict, template_verdict
 
@@ -973,12 +1049,12 @@ def regrade_for_min_trades(
     verdict = template_verdict(report2)
     retail_verdict = retail_template_verdict(report2)
     verdict.caveats.append(
-        f"re-graded at your minimum-trades setting of {min_trades} — "
-        f"this run was scored at {stored_bar} when it ran"
+        f"re-graded at your minimum-trades setting of {min_trades} "
+        f"(this run was scored at {stored_bar} when it ran)"
     )
     retail_verdict.caveats.append(
-        f"re-judged at your minimum-trades setting of {min_trades} — "
-        f"the bar was {stored_bar} when this run was saved"
+        f"re-judged at your minimum-trades setting of {min_trades} "
+        f"(the bar was {stored_bar} when this run was saved)"
     )
     out = apply_verdict_text(payload, report2, verdict, retail_verdict)
     refusal = report2.trust.label == "insufficient_evidence"
@@ -1005,7 +1081,7 @@ def regrade_stats_for_min_trades(
     stats: dict[str, Any], min_trades: int
 ) -> dict[str, Any]:
     """The stats bundle grounded Q&A quotes from, re-gated at the caller's
-    bar — so answers describe the SAME verdict the screen shows and the
+    bar, so answers describe the SAME verdict the screen shows and the
     bar number itself is grounded (it lives in the re-graded sample dump).
     Returns the stats untouched when the gate outcome is unchanged."""
     report_doc = stats.get("honesty_report")

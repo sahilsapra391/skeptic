@@ -1,7 +1,7 @@
 """Account endpoints (launch L1b, self-rolled). Every route rate-limited;
 login additionally keyed per-account so a distributed guesser can't spread
 across IPs. The session rides an httpOnly cookie set HERE (the Next proxy
-forwards Set-Cookie); failures are uniform — no account-existence oracle.
+forwards Set-Cookie); failures are uniform, no account-existence oracle.
 """
 
 from __future__ import annotations
@@ -25,12 +25,12 @@ router = APIRouter()
 SESSION_COOKIE = "skeptic_session"
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# login gets its own per-ACCOUNT window on top of the per-IP dependency —
+# login gets its own per-ACCOUNT window on top of the per-IP dependency:
 # 10 attempts per account per 15 minutes, wherever they come from
 _account_limiter = SlidingWindowLimiter(limit=10, window_s=900)
 
 # GLOBAL signup backstop: the per-IP window trusts x-forwarded-for, which a
-# direct-to-backend caller controls (review finding) — this caps total
+# direct-to-backend caller controls (review finding). This caps total
 # account creation per day regardless of source. The real fix (Turnstile +
 # signed anon token) lands with the anon-armor chunk; this bounds the
 # damage until then.
@@ -47,12 +47,12 @@ _resend_rate = rate_limited("auth-resend", limit=3, window_s=3600)
 class SignupRequest(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=200)
-    # Cloudflare Turnstile token (cf-turnstile-response) — the human check
+    # Cloudflare Turnstile token (cf-turnstile-response), the human check
     # that gates account creation against scripted bot signups. Optional in
     # the model so dev/pre-launch works; verified server-side below.
     turnstile_token: str | None = Field(default=None, max_length=4000)
     # the claim flow (owner): the runs this device made before the account
-    # existed come with it — the conversion moment
+    # existed come with it, the conversion moment
     claim_run_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
@@ -69,7 +69,7 @@ def _refuse_on_fallback() -> None:
     if db.FALLBACK_REASON is not None:
         raise HTTPException(
             status_code=503,
-            detail="accounts are unavailable — the accounts database is "
+            detail="accounts are unavailable: the accounts database is "
             "unreachable right now",
         )
 
@@ -88,7 +88,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 def _claim_runs(user_id: str, run_ids: list[str]) -> int:
     """Re-parent this device's pre-account runs. Only UNOWNED, user-origin
-    runs are claimable — nobody claims someone else's work or a system run.
+    runs are claimable. Nobody claims someone else's work or a system run.
     The pinned showcase runs are never claimable (claiming one would strip
     it from every visitor's library)."""
     from app.api.runs import example_run_ids
@@ -141,13 +141,13 @@ def signup(
     if not anon.verify_turnstile(req.turnstile_token, client_ip(request)):
         raise HTTPException(
             status_code=403,
-            detail="the human check didn't pass — please try again",
+            detail="the human check didn't pass, please try again",
         )
     global_ok, _retry = _signup_global.check("signup")
     if not global_ok:
         raise HTTPException(
             status_code=429,
-            detail="sign-ups are paused for the day — try again tomorrow",
+            detail="sign-ups are paused for the day, try again tomorrow",
         )
     email = req.email.strip().lower()
     if not _EMAIL_RE.match(email):
@@ -161,7 +161,7 @@ def signup(
     if user is None:
         # same email → sign in instead. This does reveal registration on
         # SIGNUP (unavoidable for a usable form); login stays uniform.
-        raise HTTPException(status_code=409, detail="that email already has an account — sign in")
+        raise HTTPException(status_code=409, detail="that email already has an account, sign in")
     # the conversion moment: re-parent this device's pre-account runs. The
     # anon token (server-side truth) is the primary source; the client's
     # localStorage breadcrumb is a belt-and-suspenders fallback for the
@@ -190,7 +190,7 @@ def login(
     if not allowed:
         raise HTTPException(
             status_code=429,
-            detail="too many attempts for this account — try again later",
+            detail="too many attempts for this account, try again later",
             headers={"Retry-After": str(int(retry) + 1)},
         )
     user = pw.user_by_email(email)
@@ -221,8 +221,8 @@ def verify(req: VerifyRequest, _: None = Depends(_verify_rate)) -> dict[str, Any
     if user is None:
         raise HTTPException(
             status_code=400,
-            detail="this verification link is invalid, used, or expired — "
-            "request a fresh one from your account",
+            detail="this verification link is invalid, used, or expired. "
+            "Request a fresh one from your account",
         )
     return _me(user)
 
@@ -241,6 +241,6 @@ def resend(request: Request, _: None = Depends(_resend_rate)) -> dict[str, Any]:
     return {"ok": True, "verified": False, "verificationSent": delivered}
 
 
-# a real argon2id hash, burned once at import — the unknown-account login
+# a real argon2id hash, burned once at import. The unknown-account login
 # path verifies against it so its timing matches a wrong password
 _DUMMY_HASH = pw.hash_password("skeptic-dummy-timing-pad")

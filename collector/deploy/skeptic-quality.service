@@ -15,7 +15,7 @@ WorkingDirectory=/opt/skeptic/collector
 ExecStart=/usr/local/bin/uv run --env-file .env python collect.py --mode quality
 # Optional per-lane tile (see skeptic-improve.service): set
 # HEALTHCHECK_URL_QUALITY in collector/.env to page on a failed/killed scan;
-# until then this logs. Never the EOD tile — see the comment above.
+# until then this logs. Never the EOD tile (see the comment above).
 ExecStopPost=/usr/bin/bash /opt/skeptic/collector/deploy/hc-fail.sh skeptic-quality HEALTHCHECK_URL_QUALITY
 TimeoutStartSec=1200
 # Python block-buffers stdout when it is a file, and StandardOutput= below IS

@@ -2,22 +2,22 @@
 
 /**
  * The brand draw-on wordmark, inlined from public/brand/skeptic-draw-white.svg
- * (v3 kit — GENERATED transcription, geometry verbatim; regenerate if the kit
+ * (v3 kit: GENERATED transcription, geometry verbatim; regenerate if the kit
  * changes). Inlining instead of <img> lets the mark recolor live via
  * currentColor (footer theme flips) and replay on click. Draw timing is the
  * committed kit's: per-path delays 0.00–0.84s + 0.75s stroke = ~1.59s.
  *
  * v3 kit change: the K diagonals and the "/" are filled wedges revealed by a
- * clip rect sweeping along the draw direction (SMIL <animate> — the one move
+ * clip rect sweeping along the draw direction (SMIL <animate>, the one move
  * stroke-dash can't express). SMIL does not honor the prefers-reduced-motion
  * CSS query the way the stroke animation does, so the component reads the
  * query itself, once per mount, and renders the finished (un-animated) mark
- * when motion is unwelcome — the drawn state carries no <animate> in the DOM
+ * when motion is unwelcome. The drawn state carries no <animate> in the DOM
  * at all. Because that gate lives HERE, a bump of `run` from any caller
  * (first visit, click replay, the app rail's logo) is inert under reduced
  * motion; no trigger needs its own check.
  *
- * Plays once per visit (sessionStorage, own key — never the app splash's
+ * Plays once per visit (sessionStorage, own key, never the app splash's
  * "skeptic-booted"); SSR and repeat visits render the finished mark, so
  * there is no hydration mismatch and no replay on every navigation.
  */
@@ -41,7 +41,7 @@ function prefersReducedMotion(): boolean {
 
 // Once per SESSION, decided lazily and remembered at module scope. The
 // boot-splash consumes its flag at module load, which works because it
-// lives in a layout that mounts once — this hook lives in a PAGE that
+// lives in a layout that mounts once. This hook lives in a PAGE that
 // remounts on every client navigation back to `/`, so the decision must
 // be consumed exactly once ACROSS mounts (review finding: a frozen
 // module-IIFE result replayed the draw + entrance stagger on every
@@ -53,7 +53,7 @@ function firstVisitThisSession(): boolean {
     sessionStorage.setItem("sk-landing-drawn", "1");
     return true;
   } catch {
-    return false; // private mode — never replay forever
+    return false; // private mode, never replay forever
   }
 }
 
@@ -119,7 +119,7 @@ export function LandingWordmark({
   const reduce = prefersReducedMotion();
   const drawn = run === 0 || reduce;
   // clipPath ids resolve document-wide and the hero mounts two copies of
-  // the mark (desktop + mobile) — scope them per instance
+  // the mark (desktop + mobile). Scope them per instance
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const clipId = (i: number) => `sk-draw-${uid}-w${i}`;
   const wedge = (i: number) => (
@@ -136,7 +136,7 @@ export function LandingWordmark({
       onClick={onReplay}
       className={clsx(styles.mark, drawn && styles.drawn, onReplay && "cursor-pointer", className)}
     >
-      <title>{onReplay ? "SK=PT/C — replay the draw-on" : "Skeptic"}</title>
+      <title>{onReplay ? "SK=PT/C: replay the draw-on" : "Skeptic"}</title>
       {!drawn && (
         <defs>
           {WEDGES.map((w, i) => (

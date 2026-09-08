@@ -49,7 +49,7 @@ def _match_condition(expected: dict[str, Any], actual: list[dict[str, Any]],
                      used: set[int] | None = None) -> str | None:
     """Match one expected condition against the UNCONSUMED actual
     conditions. Two expected conditions may share an indicator (the F2/F3
-    "within 1% of max pain" pair) — a same-indicator candidate whose
+    "within 1% of max pain" pair), and a same-indicator candidate whose
     operator/value mismatch would previously return an error even when
     ANOTHER candidate matches (review finding F2/F3 #2); now the first
     fully-matching candidate is consumed, and the closest mismatch is
@@ -203,14 +203,14 @@ def grade_spec(expect: dict[str, Any], spec: dict[str, Any], text: str) -> list[
     elif isinstance(exp_cat, list):
         # a list = any of these times is faithful (e.g. "no holding
         # overnight" pins SOME end-of-session flat, not one exact minute);
-        # ABSENT still fails — dropping the constraint is fabrication-by-
-        # omission
+        # ABSENT still fails, because dropping the constraint is
+        # fabrication-by-omission
         if got_cat not in exp_cat:
             errs.append(f"exit.close_at_time {got_cat} not in {exp_cat}")
     elif got_cat != exp_cat:
         errs.append(f"exit.close_at_time {got_cat} != {exp_cat}")
 
-    # FX.5 (v4): continuous scanning + resolution — fabrication is as wrong
+    # FX.5 (v4): continuous scanning + resolution. Fabrication is as wrong
     # as omission (a field the user never asked for changes the strategy)
     exp_scan = expect.get("intraday_scan")
     got_scan = spec["entry"].get("intraday_scan")
@@ -249,13 +249,13 @@ def main() -> int:
             outcome = parse_strategy(case["text"])
         except ParserUnavailableError as exc:
             # a transient upstream outage must not void the whole run's
-            # accumulated grades — record the case as an outage FAIL
+            # accumulated grades, so record the case as an outage FAIL
             # (distinctly labeled, so it never reads as a parse regression)
             # and keep grading
             lines.append(f"case {case['case']:>2} [FAIL] (upstream outage) {exc}")
             continue
         if outcome is None:
-            print("OPENROUTER_API_KEY missing — the eval needs the live parser.")
+            print("OPENROUTER_API_KEY missing. The eval needs the live parser.")
             return 2
 
         n, kind = case["case"], case["kind"]

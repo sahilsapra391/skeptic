@@ -11,13 +11,13 @@ import type { LandingTheme } from "@/components/landing/use-landing-theme";
 import { ProductHuntBadge } from "@/components/landing/product-hunt-badge";
 
 /**
- * Landing footer — navbg band + theme segmented control.
+ * Landing footer: navbg band + theme segmented control.
  * Design: docs/design/landing/Skeptic Landing.dc.html option 2a lines 300-335
  * (desktop: brand / PRODUCT / LEGAL grid + © row) / 2b lines 542-556 (mobile:
  * brand + flat link row + control + © line). Theme control writes ONLY the
  * landing preference (theme.set → sk-landing-theme, component-specs §8);
  * brand-mark swap uses theme.resolved. Day counter renders ONLY when
- * coverage.record_days is real — never a fallback number (reader D).
+ * coverage.record_days is real, never a fallback number (reader D).
  * Standing disclaimer intentionally absent per owner Jul 16.
  */
 
@@ -50,7 +50,7 @@ export function LandingFooter({
         if (alive && days != null) setRecordDays(days);
       })
       .catch(() => {
-        /* counter line omitted — no invented numbers */
+        /* counter line omitted, no invented numbers */
       });
     return () => {
       alive = false;
@@ -68,7 +68,7 @@ export function LandingFooter({
       <div className="mx-auto max-w-[1440px]">
         <div className="md:grid md:grid-cols-[1.5fr_1fr_1fr] md:gap-12">
           <div>
-            {/* CSS theme swap off the painted <html data-theme> — a stale
+            {/* CSS theme swap off the painted <html data-theme>. A stale
                 theme.resolved prop rendered the white mark on the light
                 footer (near-invisible, SS1) */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -90,7 +90,7 @@ export function LandingFooter({
               The backtester that argues with you.
               <span className="hidden md:inline">
                 {" "}
-                Pitch a trade; get the honest read — refusals included.
+                Pitch a trade; get the honest read, refusals included.
               </span>
             </p>
             {recordDays !== null && (

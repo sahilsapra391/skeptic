@@ -38,7 +38,7 @@ class Quote:
     last: float | None = None
     greeks_source: str | None = None  # "vendor" | "computed" | None
     # F5: displayed NBBO depth in CONTRACTS (iVol 5-min record only; EOD
-    # rows carry None). Read for fill-vs-depth DISCLOSURE — never pricing
+    # rows carry None). Read for fill-vs-depth DISCLOSURE, never pricing
     # (owner decision 2026-07-07: disclose first, a price-impact model must
     # be EARNED by the D3d calibration loop later)
     bid_size: int | None = None
@@ -75,7 +75,7 @@ class Position:
     scale_in: bool = False
     fired_rungs: set[int] = field(default_factory=set)  # rung indices already filled
     basket_cost: float = 0.0  # total premium $ paid across adds (excl commission)
-    # FX.3: a LATCHED exit — the trigger was OBSERVED (e.g. a condition
+    # FX.3: a LATCHED exit. The trigger was OBSERVED (e.g. a condition
     # touch at a quote-less minute bar) and the close must complete at the
     # first quoted bar that can fill it, without re-evaluation: a seen
     # touch counts (worse-path rule; fade-cancel would be optimism). The
@@ -83,9 +83,9 @@ class Position:
     exit_latched: str | None = None  # the exit reason to complete
     latched_bar: str | None = None  # HH:MM of the observed trigger
     latched_day: date | None = None  # trigger session (dated disclosure
-    # when the fill lands on a LATER session — overnight/gap carry)
+    # when the fill lands on a LATER session, overnight/gap carry)
     # buying-power reserve held while open (margin.py, owner 2026-07-15):
-    # dollars set aside at fill, released on FULL close — never a fill input
+    # dollars set aside at fill, released on FULL close, never a fill input
     margin_reserved: float = 0.0
 
     @property
@@ -97,10 +97,10 @@ class Position:
 class TradeEvent:
     day: date
     # OPEN CLOSE EXPIRE SETTLE ASSIGN CALLED_AWAY STOCK_BUY STOCK_SELL SKIP
-    # ADD — a scale-in rung fill AFTER the basket-opening bar (D5a); ADDs are
+    # ADD: a scale-in rung fill AFTER the basket-opening bar (D5a); ADDs are
     # NOT counted as trades (result.filled counts OPEN only), so a ladder can
     # never inflate its way to the 15-trade bar.
-    # HALT — the ruin halt (owner 2026-07-15): equity hit ≤ $0 and the
+    # HALT: the ruin halt (owner 2026-07-15). Equity hit ≤ $0 and the
     # simulation stopped; open positions get CLOSE events (reason ruin_halt)
     # at their marks.
     action: str
@@ -113,14 +113,14 @@ class TradeEvent:
 
 @dataclass(frozen=True, slots=True)
 class RungFill:
-    """One scale-in rung fill (D5a) — the raw material D5b attributes P&L on.
+    """One scale-in rung fill (D5a), the raw material D5b attributes P&L on.
     Records which rung, at what depth (threshold), how many contracts actually
     filled (post-clamp), and the real ask-side price/provenance."""
 
     basket_pid: int
     day: date
     bar_time: str | None  # "HH:MM" ET, None on the daily clock
-    rung_index: int  # position in scale_in.rungs — the idempotency identity
+    rung_index: int  # position in scale_in.rungs, the idempotency identity
     threshold: float  # the rung condition's value (the depth tier for D5b)
     qty: int  # contracts actually added (after any cap clamp)
     fill_price: float  # per-share ask-side fill
@@ -130,7 +130,7 @@ class RungFill:
 
 # The per-session bar-resolution vocabulary (FX.1 recording, the Tier 1
 # reproduce pin, and the payload's resolutionRuns all speak it). ONE
-# spelling — the pin decision, the recording, and the divergence compare
+# spelling: the pin decision, the recording, and the divergence compare
 # must move in lockstep or a replay silently re-resolves (review finding).
 RES_MINUTE = "minute"
 RES_FIVE_MIN = "five_min"
@@ -150,15 +150,15 @@ class RunResult:
     metrics: dict[str, float | None] = field(default_factory=dict)
     sessions_with_chain: int = 0
     days_in_market: int = 0
-    # liquidity bookkeeping (D1b) — per option-LEG fill, entries and closes
+    # liquidity bookkeeping (D1b), per option-LEG fill, entries and closes
     fill_spread_pcts: list[float] = field(default_factory=list)  # fraction of mid
     option_leg_fills: int = 0
     fills_penalized: int = 0  # filled at OI-scaled slip above base
     fills_stressed: int = 0  # gated contracts filled at slip 1.0 (stress mode)
     fills_unknown_liquidity: int = 0  # open interest unknown at fill time
-    # F5: fill quantity vs displayed NBBO depth on the traded side —
-    # disclosure only, prices unchanged (beyond-L1 liquidity exists; a
-    # hard gate would be pessimistic in a way reality isn't — FX.2 doctrine)
+    # F5: fill quantity vs displayed NBBO depth on the traded side.
+    # Disclosure only, prices unchanged (beyond-L1 liquidity exists; a
+    # hard gate would be pessimistic in a way reality isn't, FX.2 doctrine)
     fills_depth_known: int = 0  # fills where the traded side's size was known
     fills_beyond_depth: int = 0  # fill qty exceeded the displayed size
     # declared clock (D2b) + per-fill provenance: how many option-leg fills
@@ -167,31 +167,31 @@ class RunResult:
     fill_sources: dict[str, int] = field(default_factory=dict)
     # FX.1: per-session bar-resolution record (owner decisions 2-4): which
     # policy ran, how many covered sessions stepped each grid, and the
-    # compressed per-session timeline (consecutive same-resolution runs) —
-    # the receipts loop and FX.4's mixed-resolution honesty read from here.
+    # compressed per-session timeline (consecutive same-resolution runs).
+    # The receipts loop and FX.4's mixed-resolution honesty read from here.
     # A re-run that changed because minute data newly arrived must be
     # explained as a RESOLUTION UPGRADE, never a silent shift.
     resolution_mode: str | None = None  # None (pre-v4) | "5min" | "finest"
     resolution_mix: dict[str, int] = field(default_factory=dict)
     resolution_runs: list[dict[str, object]] = field(default_factory=list)
     # FX.4: the full per-session record, in-process only (the payload keeps
-    # the compressed runs) — the resolution_split stage and walk-forward
+    # the compressed runs). The resolution_split stage and walk-forward
     # fold annotation read per-session labels from here.
     resolution_by_session: dict[date, str] = field(default_factory=dict)
-    # FX.2: every skipped entry attempt counted by reason — the honest
+    # FX.2: every skipped entry attempt counted by reason, the honest
     # denominator behind "maximum honest fills" (the trade log stays deduped)
     skip_reasons: dict[str, int] = field(default_factory=dict)
     # portfolio greeks per marked session (D1d), aligned with `dates`.
     # Units: delta/gamma in share-equivalents (greek × qty × 100, stock at
     # 1Δ/share), theta in $/day, vega in $/vol-point. A flat book is 0.0;
-    # a day where any open leg lacks that greek is None — an honest gap,
+    # a day where any open leg lacks that greek is None, an honest gap,
     # never an interpolation.
     portfolio_delta: list[float | None] = field(default_factory=list)
     portfolio_gamma: list[float | None] = field(default_factory=list)
     portfolio_theta: list[float | None] = field(default_factory=list)
     portfolio_vega: list[float | None] = field(default_factory=list)
     # requested window (what the user asked for) vs the effective window
-    # (what coverage allowed) — the gap is the seventeen-fills disclosure
+    # (what coverage allowed), the gap is the seventeen-fills disclosure
     requested_start: date | None = None
     requested_end: date | None = None
     requested_sessions: int = 0
@@ -199,21 +199,21 @@ class RunResult:
     # The depth-attribution stage (D5b) is built entirely from these.
     rung_fills: list[RungFill] = field(default_factory=list)
     # F7: structured per-leg fill log (pid links to the trade log's events
-    # for bar_time) — the on-demand fill audit re-runs the spec
+    # for bar_time), the on-demand fill audit re-runs the spec
     # deterministically and audits THESE against an independent vendor
     fill_log: list[dict[str, Any]] = field(default_factory=list)
     # ruin halt (owner 2026-07-15): the sim stopped the session equity hit
-    # ≤ $0 — the LATEST possible ruin date (a real margin account would be
+    # ≤ $0, the LATEST possible ruin date (a real margin account would be
     # liquidated earlier; docs/HONESTY.md · buying power). dates/equity are
     # truncated at ruin_date by construction.
     ruined: bool = False
     ruin_date: date | None = None
     ruin_equity: float | None = None
-    # sessions in the REQUESTED window up to the halt — the coverage stage's
+    # sessions in the REQUESTED window up to the halt, the coverage stage's
     # honest denominator (a ruin-shortened window is never blamed on data)
     requested_sessions_to_ruin: int = 0
     # scale-in ladders: rung_index → closed-or-open baskets where that rung
-    # was unaffordable at least once (insufficient_buying_power) — the depth
+    # was unaffordable at least once (insufficient_buying_power). The depth
     # table shows deep adds the ACCOUNT couldn't fund as unaffordable,
     # never as merely unprofitable (owner amendment 2026-07-15)
     rung_funding_skips: dict[int, int] = field(default_factory=dict)

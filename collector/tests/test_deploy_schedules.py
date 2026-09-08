@@ -116,13 +116,13 @@ def test_collect_eod_timer_does_not_replay_at_boot() -> None:
 
 def test_quality_and_improve_timers_keep_their_slots() -> None:
     assert _oncalendar("skeptic-quality.timer") == ["Sat *-*-* 13:00:00 UTC"]
-    # 07:15, not the old cron's 07:00 — see the next test.
+    # 07:15, not the old cron's 07:00 (see the next test).
     assert _oncalendar("skeptic-improve.timer") == ["Tue-Sat *-*-* 07:15:00 UTC"]
 
 
 def test_improve_timer_clears_the_autoupdate_window() -> None:
     """skeptic-autoupdate fires at 03:00 America/New_York with up to 10 min of
-    jitter — 07:00-07:10 UTC under EDT, the improve cron's original slot. It
+    jitter (07:00-07:10 UTC under EDT, the improve cron's original slot). It
     git-merges /opt/skeptic and runs `uv sync`, so an overlapping scan can read
     a half-updated tree. The scan must start after that window closes."""
     autoupdate = _read(DEPLOY / "skeptic-autoupdate.timer")
@@ -210,7 +210,7 @@ def _stage_deploy(tmp_path: Path, url: str = HC_TEST_URL) -> Path:
     Hermetic on purpose: these scripts do `cd "$(dirname "$0")/.."`, so run
     from the real deploy/ they read the developer's own .env and POST a
     fabricated failure to the LIVE Healthchecks endpoint on every local
-    pytest — a passing suite that pages the owner (measured: two real /fail
+    pytest, a passing suite that pages the owner (measured: two real /fail
     posts per run before this was staged).
 
     The whole directory rather than the one script under test, so a chain
@@ -272,8 +272,8 @@ def _run_chain(
     invoked = calls.read_text().split() if calls.exists() else []
     # Only the DATA steps carry the workflow-parity meaning asserted below.
     # The chain may also invoke infrastructure scripts that the workflow never
-    # had — a cross-host lock acquire/release around the chain is the live
-    # example — and those must not have to be bolted onto EXPECTED_CHAIN,
+    # had (a cross-host lock acquire/release around the chain is the live
+    # example), and those must not have to be bolted onto EXPECTED_CHAIN,
     # which is defined as "the exact order collect-eod.yml ran these in".
     # Ordering/skip/truncation regressions in the data steps still fail here;
     # a step added to or dropped from the chain SOURCE is caught by
@@ -287,7 +287,7 @@ def test_chain_runs_every_step_in_order_when_all_pass(tmp_path: Path) -> None:
     rc, ran, pinged = _run_chain(tmp_path)
     assert rc == 0
     assert ran == EXPECTED_CHAIN
-    # a clean chain must never touch /fail — collect.py's own success ping stands
+    # a clean chain must never touch /fail (collect.py's own success ping stands)
     assert pinged == []
 
 
@@ -322,7 +322,7 @@ def test_a_failing_minute_top_up_flips_the_chain_red(tmp_path: Path) -> None:
 
 def test_a_failed_step_flips_the_healthcheck_tile_red(tmp_path: Path) -> None:
     """collect.py pings SUCCESS as step 1 of 11, so without this the tile would
-    stay green over a chain whose derivations all failed — the silent shape the
+    stay green over a chain whose derivations all failed, the silent shape the
     move off Actions exists to eliminate. The named steps ride the ping body so
     the dashboard says which link broke."""
     rc, _, pinged = _run_chain(
@@ -431,8 +431,8 @@ def test_hc_fail_hook_is_a_noop_without_a_configured_url(tmp_path: Path) -> None
 def test_infrastructure_calls_do_not_disturb_the_chain_assertions(
     tmp_path: Path,
 ) -> None:
-    """The chain may need to invoke scripts the replaced workflow never had —
-    a cross-host lock acquire/release wrapping the run is the live example.
+    """The chain may need to invoke scripts the replaced workflow never had.
+    A cross-host lock acquire/release wrapping the run is the live example.
     Those are infrastructure, not data steps, so they must NOT be forced into
     EXPECTED_CHAIN (defined as the workflow's own order) just to keep the
     runtime tests passing. This pins that: an injected lock call around the

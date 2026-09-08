@@ -2,9 +2,9 @@
 
 /**
  * First-boot splash: the wordmark draws itself on (brand-kit animated
- * SVG — pathLength dash, no JS), then the app fades in. Shows once per
- * browser session, and ONLY when the app itself was the entry point —
- * a visitor who arrived through the landing already watched the hero
+ * SVG, pathLength dash, no JS), then the app fades in. Shows once per
+ * browser session, and ONLY when the app itself was the entry point.
+ * A visitor who arrived through the landing already watched the hero
  * draw-on, so client-navigating into the product must not replay the
  * brand moment (owner 2026-07-17).
  */
@@ -18,13 +18,13 @@ import { useResolvedTheme } from "@/lib/settings";
 const ANIMATION_MS = 1710;
 const FADE_MS = 400;
 
-// the public landing surface — sessions that BEGIN here never splash
+// the public landing surface: sessions that BEGIN here never splash
 const LANDING_ENTRY = new Set(["/", "/signin", "/signup", "/terms", "/privacy", "/refunds"]);
 
-// decided ONCE per page load, at module scope — StrictMode's double
+// decided ONCE per page load, at module scope, so StrictMode's double
 // effect can't consume the session flag and strand the overlay. This
 // module loads lazily with the (app) layout, which on a landing-first
-// session happens mid-client-navigation — so the entry route comes from
+// session happens mid-client-navigation, so the entry route comes from
 // the DOCUMENT request (navigation timing), never the current pathname.
 const shouldShow = (() => {
   if (typeof window === "undefined") return false;
@@ -39,7 +39,7 @@ const shouldShow = (() => {
     const entryPath = nav ? new URL(nav.name).pathname : window.location.pathname;
     return !LANDING_ENTRY.has(entryPath);
   } catch {
-    return false; // private mode — skip rather than replay forever
+    return false; // private mode: skip rather than replay forever
   }
 })();
 

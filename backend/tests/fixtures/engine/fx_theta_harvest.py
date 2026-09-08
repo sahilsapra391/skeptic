@@ -1,6 +1,6 @@
 """Fixture: theta-harvest fires INSIDE its DTE window and only there (D1c,
 owner-confirmed semantics: DTE-band profit harvest {dte_from, dte_to,
-profit_pct} — inside [dte_to, dte_from], close as soon as profit ≥ X%).
+profit_pct}: inside [dte_to, dte_from], close as soon as profit ≥ X%).
 
   2025-01-06 (Mon)  entry. Spot 100.00. Exp 2025-01-31 → 25 DTE.
     short put K=100: bid 2.00/ask 2.20 → SELL = 2.10 − 0.5×0.10 = 2.05
@@ -8,15 +8,15 @@ profit_pct} — inside [dte_to, dte_from], close as soon as profit ≥ X%).
     net credit = 0.975
     cash = +205.00 − 107.50 − 2×0.65 = +96.20 → 10,096.20
 
-  2025-01-07 (Tue)  24 DTE — OUTSIDE the [7, 21] window.
+  2025-01-07 (Tue)  24 DTE, OUTSIDE the [7, 21] window.
     btc 100 = (0.90+1.00)/2 + 0.5×0.05 = 0.975
     stc  95 = (0.50+0.56)/2 − 0.5×0.03 = 0.515
     cost 0.46 → profit (0.975−0.46)/0.975 = 52.8% ≥ 50%
     …but 24 DTE > dte_from 21 → HOLD. The window gates the harvest.
 
-  2025-01-14 (Tue)  17 DTE — INSIDE the window. (A Tuesday on purpose:
+  2025-01-14 (Tue)  17 DTE, INSIDE the window. (A Tuesday on purpose:
     a Monday harvest day would let the weekly schedule re-enter the same
-    session — legal engine behavior, but this fixture isolates the exit.)
+    session. That is legal engine behavior, but this fixture isolates the exit.)
     btc 100 = (0.80+0.90)/2 + 0.5×0.05 = 0.875
     stc  95 = (0.44+0.50)/2 − 0.5×0.03 = 0.455
     cost 0.42 → profit (0.975−0.42)/0.975 = 56.9% ≥ 50% → THETA HARVEST.

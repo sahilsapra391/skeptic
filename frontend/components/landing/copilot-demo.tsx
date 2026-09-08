@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * B5 — "Coming next" copilot demo: deterministic candle chart + 14s scripted
+ * B5, the "Coming next" copilot demo: deterministic candle chart + 14s scripted
  * replay (cursor, fill dots, flag pills, signal cards, reasoning rail).
  *
  * Every number in the copy is from the stored demo run's trade log
- * (copy-deck §5, verified) — never alter or invent values here.
+ * (copy-deck §5, verified). Never alter or invent values here.
  *
  * The candle field is a pure module-scope computation (GLSL-style sin-hash,
  * no Math.random, no Date) with coordinates rounded to 2dp so server and
- * client emit identical markup — hydration-safe even across engines.
+ * client emit identical markup, hydration-safe even across engines.
  *
  * Desktop overlays are authored in the design's fixed 845×324 coordinate
  * space (24px header band + 845×300 chart) and scaled as ONE unit so cursor
@@ -17,7 +17,7 @@
  * mobile (<md) drops the overlays entirely per design 2b.
  *
  * P/L colors (--pl-pos/--pl-neg) appear ONLY on candle bodies/wicks and the
- * single "+$115" — market data, the one place they're allowed on this page.
+ * single "+$115" (market data, the one place they're allowed on this page).
  * The agent voice is trust; STAND ASIDE + rail line 5 are warn.
  */
 
@@ -31,7 +31,7 @@ const STAGE_W = 845;
 
 // ---- deterministic candle field (design generator, dc.html lines 937–958) ----
 
-// price path waypoints — exact design values
+// price path waypoints, exact design values
 const PATH: ReadonlyArray<readonly [number, number]> = [
   [0, 225], [45, 205], [80, 190], [110, 150], [142.5, 172], [185, 145],
   [225, 160], [265, 128], [305, 148], [350, 118], [380, 140], [412.5, 126],
@@ -43,7 +43,7 @@ const PATH: ReadonlyArray<readonly [number, number]> = [
 // i=27 → fill dot 2, i=43 → the STAND ASIDE cursor pause
 const ANCHORS: Readonly<Record<number, number>> = { 9: 172, 27: 126, 43: 83 };
 
-// classic GLSL sin-hash — deterministic, no Math.random
+// classic GLSL sin-hash (deterministic, no Math.random)
 function fr(n: number): number {
   const s = Math.sin(n) * 43758.5453;
   return s - Math.floor(s);
@@ -124,7 +124,7 @@ export function CopilotDemo() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
 
-  // overlay coordinates only mean anything at 845px — scale the whole stage
+  // overlay coordinates only mean anything at 845px. Scale the whole stage
   // (header + chart + overlays) as one unit to the measured column width
   useEffect(() => {
     const el = stageRef.current;
@@ -145,7 +145,7 @@ export function CopilotDemo() {
         <div className="flex items-baseline justify-between">
           <span className="font-mono text-[10.5px] font-medium tracking-[0.14em] text-trust md:text-[11.5px]">
             <span className="md:hidden">COMING NEXT</span>
-            <span className="hidden md:inline">WHERE THIS GOES — COMING SOON</span>
+            <span className="hidden md:inline">WHERE THIS GOES: COMING SOON</span>
           </span>
           <span className="inline-flex items-center gap-[6px] font-mono text-[10px] text-ink-3 md:gap-[7px] md:text-[11px]">
             <span
@@ -154,7 +154,7 @@ export function CopilotDemo() {
                 styles.pulseDot,
               )}
             />
-            autonomous session<span className="hidden md:inline"> — replayed</span>
+            autonomous session<span className="hidden md:inline">, replayed</span>
           </span>
         </div>
 
@@ -163,13 +163,13 @@ export function CopilotDemo() {
           <span className="md:hidden">It</span> takes the trade itself.
         </h2>
         <p className="mb-5 max-w-[730px] text-[13.5px] leading-[1.6] text-ink-2 md:mb-9 md:text-[15px] md:leading-[1.65]">
-          Enters, manages, exits — and narrates every call
+          Enters, manages, exits, and narrates every call
           <span className="hidden md:inline"> as it makes it</span>. Still refuses what the
           evidence can't support.
         </p>
 
         <div className="grid overflow-hidden rounded-[14px] border border-line bg-panel-chart md:grid-cols-[1fr_330px]">
-          {/* desktop chart column — fixed 845×324 stage scaled as one unit */}
+          {/* desktop chart column, fixed 845×324 stage scaled as one unit */}
           <div className="relative hidden md:block">
             <div ref={stageRef} className="relative aspect-[845/324] w-full overflow-hidden">
               <div
@@ -225,13 +225,13 @@ export function CopilotDemo() {
 
                 <div className={clsx(SIG_CARD, "left-[56px] top-[62px]", styles.sig1)}>
                   <div className={clsx(SIG_KICKER, "mb-[3px] text-trust")}>
-                    ENTER — SELL THE 30Δ PUT
+                    ENTER: SELL THE 30Δ PUT
                   </div>
-                  <div className={SIG_BODY}>Premium is rich. Case built, order placed — on its own.</div>
+                  <div className={SIG_BODY}>Premium is rich. Case built, order placed (on its own).</div>
                   <div className={SIG_META}>credit $2.31 · Mar 4</div>
                 </div>
                 <div className={clsx(SIG_CARD, "left-[262px] top-[16px]", styles.sig2)}>
-                  <div className={clsx(SIG_KICKER, "mb-[3px] text-trust")}>CLOSE — TARGET HIT</div>
+                  <div className={clsx(SIG_KICKER, "mb-[3px] text-trust")}>CLOSE: TARGET HIT</div>
                   <div className={SIG_BODY}>50% profit. Bought back; the edge is spent.</div>
                   <div className={SIG_META}>
                     <span className="text-pl-pos">+$115</span> · held 14d
@@ -240,7 +240,7 @@ export function CopilotDemo() {
                 <div className={clsx(SIG_CARD, "left-[475px] top-[128px]", styles.sig3)}>
                   <div className={clsx(SIG_KICKER, "text-warn")}>STAND ASIDE</div>
                   <div className={clsx(SIG_BODY, "mt-[3px]")}>
-                    Spread is 31% of mid — a fill here would be fantasy.
+                    Spread is 31% of mid. A fill here would be fantasy.
                   </div>
                   <div className={SIG_META}>skipped · Apr 8</div>
                 </div>
@@ -248,7 +248,7 @@ export function CopilotDemo() {
             </div>
           </div>
 
-          {/* mobile chart — same candles, no overlays/gridlines, solid dots */}
+          {/* mobile chart, same candles, no overlays/gridlines, solid dots */}
           <div className="md:hidden">
             <div className="flex justify-between px-[14px] pt-[10px] font-mono text-[9.5px] tracking-[0.08em] text-ink-4">
               <span>SPY · 5m · demo feed</span>
@@ -269,10 +269,10 @@ export function CopilotDemo() {
                   styles.pulseDot,
                 )}
               />
-              REASONING — LIVE
+              REASONING: LIVE
             </div>
             <div className={clsx(RAIL_LINE, "text-ink-3", styles.l1)}>
-              Mar 4 · scanning the tape — hunting rich premium at 30Δ
+              Mar 4 · scanning the tape, hunting rich premium at 30Δ
             </div>
             <div className={clsx(RAIL_LINE, "text-ink", styles.l2)}>
               Mar 4 · SOLD 1× SPY 512P @ 2.31 (bid 2.29 / ask 2.35)
@@ -281,26 +281,26 @@ export function CopilotDemo() {
               why · target 50% · time exit 21 DTE · theta does the work
             </div>
             <div className={clsx(RAIL_LINE, "text-ink", styles.l4)}>
-              Mar 18 · BOUGHT BACK @ 1.12 — target hit ·{" "}
+              Mar 18 · BOUGHT BACK @ 1.12, target hit ·{" "}
               <span className="text-pl-pos">+$115</span> · held 14d
             </div>
             <div className={clsx(RAIL_LINE, "text-warn", styles.l5)}>
-              Apr 8 · <span className="hidden md:inline">next </span>entry looks juicy —{" "}
+              Apr 8 · <span className="hidden md:inline">next </span>entry looks juicy,{" "}
               <span className="hidden md:inline">but the </span>spread is 31% of mid. standing
               aside.
             </div>
             <div className={clsx(RAIL_LINE, "text-ink-2", styles.l6)}>
-              <span className="hidden md:inline">edge spent. </span>every call logged + replayable
-              — no human touched this trade.
+              <span className="hidden md:inline">edge spent. </span>every call logged + replayable.
+              no human touched this trade.
             </div>
           </div>
         </div>
 
         <div className="mt-[14px] hidden justify-between font-mono text-[11px] text-ink-4 md:flex">
-          <span>it entered, managed, and exited on its own — reasoning logged, replayable</span>
+          <span>it entered, managed, and exited on its own (reasoning logged, replayable)</span>
           <span>no dates, no waitlist theater</span>
         </div>
-        {/* this panel shows P&L — the legal rail says every results surface
+        {/* this panel shows P&L. The legal rail says every results surface
             carries the disclaimer, mockup or not */}
         <div className="mt-2 font-mono text-[10.5px] text-ink-5 md:mt-1.5">
           demo replay of a stored run · research tool, not financial advice

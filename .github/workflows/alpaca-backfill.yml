@@ -14,7 +14,7 @@ name: alpaca-backfill
 # the whole run, so a long backfill STARTED before 21:30 UTC still owns the
 # lane through the EOD window and the nightly chain refuses instead of
 # crawling. That is louder (red tile, named holder) but it collects nothing,
-# and the chain is the lane that matters — this one is resumable by design.
+# and the chain is the lane that matters. This one is resumable by design.
 # So: size `max_minutes` to finish before ~21:25 UTC, or dispatch after the
 # night's Healthchecks tile goes green. Starting one INSIDE the window is now
 # safe and cheap: it fails fast naming the holder instead of overlapping.
@@ -69,7 +69,7 @@ jobs:
           MAX_MINUTES: ${{ inputs.max_minutes }}
         run: |
           # Read through the environment and validate: this input is free text.
-          # The upper clamp is the job's own wall — a typo of 3300 for 330
+          # The upper clamp is the job's own wall: a typo of 3300 for 330
           # would otherwise mint a 55-hour lease and refuse every nightly
           # chain until someone ran `release --force`.
           case "$MAX_MINUTES" in ''|*[!0-9]*) MAX_MINUTES=330 ;; esac

@@ -1,4 +1,4 @@
-"""The declared 5-minute clock (D2b) — hand-computed, amendments pinned.
+"""The declared 5-minute clock (D2b): hand-computed, amendments pinned.
 
 Entry math (every intraday case): short put K=100, bar quote 2.00/2.10,
 SELL = 2.05 − 0.5×0.05 = 2.025 → cash +202.50 − 0.65 = +201.85.
@@ -9,7 +9,7 @@ exits evaluate from the NEXT bar. At 09:35 the quote is 4.20/4.30:
   → stop_loss (100%) fires at 09:35, NOT at the 09:30 entry bar.
   exit cash = −427.50 − 0.65 = −428.15 → final 10,201.85 − 428.15 = 9,773.70
   P/L = 201.85 − 428.15 = −226.30. The dollar amounts prove WHICH bar
-  filled — a same-bar exit would have closed at the 2.00/2.10 quote.
+  filled. A same-bar exit would have closed at the 2.00/2.10 quote.
 
 0DTE settlement: expiry == session; close 98 → short 100-put assigned:
   −10,000 (buy 100 sh @ 100), unwound next OPEN @ 98.50 → +9,850.
@@ -47,7 +47,7 @@ class FixtureIntraday:
         return sorted(self._slices)
 
     def refresh_sessions(self) -> None:
-        return None  # fixtures are static — nothing to relist
+        return None  # fixtures are static, nothing to relist
 
     def slice_for(self, session: date) -> SessionSlice | None:
         return self._slices.get(session)
@@ -133,19 +133,19 @@ class TestSameBarSemantics:
         )
         assert result.filled == 0
         skips = [t for t in result.trades if t.action == "SKIP"]
-        assert len(skips) == 1  # zero_bid_short, once — not four times
+        assert len(skips) == 1  # zero_bid_short, once, not four times
         assert skips[0].reason == "zero_bid_short"
 
 
 class TestDualClockExitPriority:
     """Owner amendment 3: one canonical order at every clock. A decision
     point where delta_stop AND profit_target both trigger resolves
-    delta_stop — at daily and at 5min alike."""
+    delta_stop, at daily and at 5min alike."""
 
     EXIT = {"delta_stop_abs": 0.70, "profit_target_pct": 10}
 
     def _both_trigger_quote(self) -> dict:
-        # premium collapsed (profit > 10%) AND |delta| ≥ 0.70 — deliberately
+        # premium collapsed (profit > 10%) AND |delta| ≥ 0.70, deliberately
         # contradictory so only the priority order decides the reason
         return _put(1.60, 1.70, -0.75, "2025-01-08")
 
@@ -184,7 +184,7 @@ class TestDualClockExitPriority:
 
 class TestTradingDte:
     """Owner-confirmed basis: Friday '1DTE' selects Monday's expiry
-    (3 calendar days — a calendar basis would refuse it)."""
+    (3 calendar days, and a calendar basis would refuse it)."""
 
     def test_friday_one_dte_selects_monday_expiry(self) -> None:
         slc = build_fixture_slice(
@@ -238,7 +238,7 @@ class TestGapSessionFallback:
             quotes={"09:30": [_put(2.00, 2.10, -0.50, "2025-01-08")]},
             underlying={"09:30": 100.0},
         )
-        chains = {  # EOD chain on the gap session — profit target territory
+        chains = {  # EOD chain on the gap session, profit target territory
             "2025-01-07": [_put(0.80, 0.90, -0.30, "2025-01-08")],
         }
         underlying = {"2025-01-06": (100.0, 100.0), "2025-01-07": (101.0, 101.5),

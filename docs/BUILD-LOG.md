@@ -1,21 +1,21 @@
-# Skeptic — Build Log
+# Skeptic Build Log
 
 Session notes per milestone (cross-milestone rule in docs/BUILD-PLAN.md):
 date, what shipped, deviations from spec and why.
 
-## 2026-07-02 — M2: backtest engine core (branch m2-engine)
+## 2026-07-02, M2: backtest engine core (branch m2-engine)
 
 **Shipped, fixtures first per the plan.** Six hand-computed fixtures
 (tests/fixtures/engine/, math in docstrings): short put OTM expiry, short
 put assigned, credit spread stop, iron condor profit target, covered call
-called away, skip on zero bid — the engine matches every one to the cent.
+called away, skip on zero bid. The engine matches every one to the cent.
 Then the engine that passes them:
 
-- `app/engine/market.py` — `MarketView(as_of)`: every accessor hard-bounded
+- `app/engine/market.py`, `MarketView(as_of)`: every accessor hard-bounded
   by as_of; `LookaheadError` canary tests are in the permanent required set.
   Fixture stores and the real loader produce the identical shape, so
   fixtures exercise the exact production path.
-- `app/engine/{fills,selection,conditions,engine,metrics,runner}.py` —
+- `app/engine/{fills,selection,conditions,engine,metrics,runner}.py`:
   fill model per TECH-SPEC §5 (mid + slip toward adverse; commissions per
   contract per side, option legs only), expiration/strike selection (delta
   / offset % / ATM / width-from-leg), daily loop (open-stock unwinds →
@@ -25,17 +25,17 @@ Then the engine that passes them:
   reason codes, metrics (documented conventions: 252d annualization,
   ddof=1, CAGR by calendar days; uncomputable ⇒ None, never 0).
   mypy runs STRICT on app/engine/*.
-- `app/data/chains.py` — lake loader: source precedence av>yahoo>dolthub,
+- `app/data/chains.py`, lake loader: source precedence av>yahoo>dolthub,
   dolthub quarantine honored (state `done` list), ~1,100 per-session
   objects fetched concurrently + local disk cache keyed by a listing
   manifest. **Deviation:** thread-parallel object reads instead of DuckDB
-  httpfs (TECH-SPEC §4) — the one-object-per-date layout globs poorly;
+  httpfs (TECH-SPEC §4). The one-object-per-date layout globs poorly;
   cold load 8.9 s, warm < 1 s, engine itself 0.03 s (target < 15 s ✓).
 - Runs storage (`app/db.py`, SQLAlchemy): `runs` + `run_events`;
-  DATABASE_URL → Neon when provided, local SQLite otherwise — same code
+  DATABASE_URL → Neon when provided, local SQLite otherwise. Same code
   path, so Neon is purely an env change. POST /api/backtest +
   GET /api/runs{,/{id}} are real; parse/ask/sweep stay explicit 501s.
-- **Real runs render VERDICT-WITHHELD until M3** — the refusal state from
+- **Real runs render VERDICT-WITHHELD until M3**, the refusal state from
   the approved design, templated server-side from computed numbers only
   (guardrail #4 by construction). The frontend demo fixtures now serve
   demo- ids exclusively; a real run id can never receive fixture data.
@@ -52,7 +52,7 @@ reference prints (strike at assignment, next session open at liquidation,
 close at covered-call entry) with no added spread/commission; long ITM
 legs cash-settle intrinsic at expiry; `time_exit_dte: 0` = hold to
 settlement. Exits requiring quotes wait for the next quoted session on
-checkpoint-marked history (DOLTHUB-EVAL §7 honored — no interpolation).
+checkpoint-marked history (DOLTHUB-EVAL §7 honored, no interpolation).
 Early-assignment-through-ex-div modeling is deferred with the ex-div
 calendar (noted for M6 methodology notes).
 
@@ -69,7 +69,7 @@ removed from the chart controls.
   fallback.
 - **Chart-teach now infers the structure from the pins** instead of always
   compiling a short put: each pinned move is z-scored against the series'
-  own same-span volatility (timeframe-adaptive), then classified — gentle
+  own same-span volatility (timeframe-adaptive), then classified: gentle
   drift up → short put; conviction move up → long call; gentle drift down
   → call credit spread; conviction down → long put; mixed/near-sideways →
   iron condor. Direction threshold is deliberately permissive (a pinned
@@ -77,22 +77,22 @@ removed from the chart controls.
   Pins raised 3 → 10; tickets show each example's % move.
 - **Spec screen fully editable:** ticker + structure steppers, strike in
   .05Δ steps down to .05Δ, DTE 0–50 with direct input, editable anchor, a
-  structured TRIGGER editor (indicator × operator × value × period —
+  structured TRIGGER editor (indicator × operator × value × period,
   maps 1:1 onto a spec Condition, so what's edited is what the engine
   evaluates), and re-editable exit with preset chips + custom text.
   **0DTE is refused honestly** at the run button (minute engine pending,
-  DATA-PIPELINE §7) — the dial allows it, the run explains why not yet.
+  DATA-PIPELINE §7). The dial allows it, the run explains why not yet.
 - Chart toolbar reduced to one row: presets · intervals · ƒ indicators;
   the candles/line switch moved inside the indicators menu.
 
-## 2026-07-01 — Phase 2 step 1: handoff docs landed
+## 2026-07-01, Phase 2 step 1: handoff docs landed
 
 PR #1: handoff package into the repo (CLAUDE.md at root, specs under docs/,
 reference collector under collector/reference/). One content edit vs. the
-original package: DECIDED note in docs/TECH-SPEC.md §1 — LLM access is via
+original package: DECIDED note in docs/TECH-SPEC.md §1, LLM access is via
 OpenRouter (`OPENROUTER_API_KEY`), not a direct Anthropic key.
 
-## 2026-07-01 — M1: data pipeline live
+## 2026-07-01, M1: data pipeline live
 
 **Shipped:** `collector/collect.py` (modes eod/backfill/underlying/quality/all;
 AV 25/day budget wall persisted in R2; crash-safe backfill frontier advanced
@@ -108,14 +108,14 @@ backfill-limit inputs), `.github/workflows/quality-weekly.yml`
 
 1. **One nightly workflow + one weekly quality workflow** instead of a
    separate `backfill-drip.yml` (named in TECH-SPEC §1 diagram / CLAUDE.md
-   layout). DATA-PIPELINE §2 — the authoritative pipeline doc — describes a
+   layout). DATA-PIPELINE §2, the authoritative pipeline doc, describes a
    single nightly job running eod + backfill; "both workflows" of §8 is
    satisfied by collect-eod + quality-weekly.
 2. **EOD leg fetches explicit session dates** (last 3 completed NYSE
    sessions, skipping ones already recorded) instead of AV's `date=None`
    "latest". Deterministic object keys before spending budget, true no-op
    catch-up runs, and self-healing capture when AV finalizes a session late.
-3. **A missing latest session is logged, not failed** — vendor finalization
+3. **A missing latest session is logged, not failed**: vendor finalization
    lag is normal; the catch-up cron and next runs' lookback pick it up.
    Older gaps inside the lookback window do fail the run (record at risk).
 4. **Underlying/VIX full-history overwrite runs nightly** (not
@@ -131,13 +131,13 @@ backfill-limit inputs), `.github/workflows/quality-weekly.yml`
 
 **Coverage output (first live runs):** see the addendum resolution below.
 
-## 2026-07-01 — M1 addendum: Alpha Vantage HISTORICAL_OPTIONS is premium-gated
+## 2026-07-01, M1 addendum: Alpha Vantage HISTORICAL_OPTIONS is premium-gated
 
 First live run (Actions run 28552781791) failed on the AV leg with
 "This is a premium endpoint." Verified against alphavantage.co/documentation:
 Historical Options and Realtime Options are both badged **Premium** as of
 July 2026. The handoff's free-25/day assumption (DATA-PIPELINE §1) no longer
-holds — the free EOD source of record AND the free backfill-to-2008 engine
+holds. The free EOD source of record AND the free backfill-to-2008 engine
 are gone. AV premium starts at ~$50/mo, which violates the locked ~$25/mo
 budget (README-START-HERE, Decisions #3).
 
@@ -147,17 +147,17 @@ alerting, coverage report.
 
 **Interim posture (pending owner decision on a replacement source):** a
 premium-gated AV key is treated as a known condition, not a nightly
-incident — the run is green if the Yahoo leg fully covers the day, and the
+incident. The run is green if the Yahoo leg fully covers the day, and the
 AV rejection logs at error level. Nightly Yahoo + dailies collection
 continues so forward history keeps accruing. If the key ever gains access,
 the AV leg resumes automatically (detection is response-based, no config).
 
-**Open decision (owner):** replacement data strategy — Yahoo-forward only /
+**Open decision (owner):** replacement data strategy: Yahoo-forward only /
 community historical archive (e.g. DoltHub options) for backfill / paid
 source. DATA-PIPELINE.md and M1's acceptance criteria to be amended to
 match the decision.
 
-## 2026-07-01 — M1 addendum resolution + verification (owner decision)
+## 2026-07-01, M1 addendum resolution + verification (owner decision)
 
 Owner decision: **Yahoo-forward as the EOD record + evaluate the DoltHub
 community archive for backfill** ($0/mo; AV premium rejected at ~2x the
@@ -167,12 +167,12 @@ key ever gains access. DoltHub evaluation spun off as a separate session.
 
 Verification runs, both green on workflow_dispatch:
 
-- collect-eod run 28553071331 — premium-gated AV handled as a known
+- collect-eod run 28553071331: premium-gated AV handled as a known
   condition; Yahoo snapshots 3/3 (SPY 3,543 / QQQ 3,247 / IWM 1,594 rows,
   2026-07-01); underlying + VIX full history; **healthcheck success ping
-  received** — and the earlier failing run proved the fail path pages, so
+  received**, and the earlier failing run proved the fail path pages, so
   DoD §8.3 is demonstrated in both directions.
-- quality-weekly run 28553211481 — flags computed and written to
+- quality-weekly run 28553211481: flags computed and written to
   r2://state/quality_flags.json.
 
 M1 acceptance as amended: §8.1 ✓ (two workflows, dispatch-green, scheduled);
@@ -205,12 +205,12 @@ Coverage output (verification run):
 
     Quality flags: none yet (run --mode quality)
 
-## 2026-07-01 — DoltHub backfill evaluation (spun-off session)
+## 2026-07-01, DoltHub backfill evaluation (spun-off session)
 
 Evaluated `post-no-preference/options` (DoltHub) as the historical EOD
 backfill per the DECIDED block. Full findings + conditions:
 **docs/DOLTHUB-EVAL.md**. Headline: **GO, scoped to SPY 2020-01-06 →
-2026-06-30** — §6 quality passes with headroom (0 crossed rows in 166k,
+2026-06-30**. §6 quality passes with headroom (0 crossed rows in 166k,
 2/1,169 sessions breach the dead-quote flag), IV/greeks/parity track known
 regimes; but QQQ/IWM are absent, snapshots are M/W/F-only before 2024-09,
 and each snapshot quotes only ~3 expirations (~14/~28/44–66 DTE, strikes
@@ -219,12 +219,12 @@ Read-only evaluation over the SQL API; nothing imported to R2, no data in
 git. Ingest work (collector `--mode dolthub-backfill`) awaits owner
 acceptance of the conditions in the eval doc §7.
 
-## 2026-07-01 — Intraday (1-min) QQQ/IWM options history: acquisition evaluation
+## 2026-07-01, Intraday (1-min) QQQ/IWM options history: acquisition evaluation
 
 Owner asked for 5–10y of minute-level QQQ/IWM options pricing, free API
 or scraped. Findings + provider matrix + verified probes:
 **docs/INTRADAY-OPTIONS-DATA-EVAL.md**. Headline: **free + 5–10y + minute
-does not exist** (OPRA-licensed; Yahoo 404s expired contracts — the past
+does not exist** (OPRA-licensed; Yahoo 404s expired contracts, the past
 is unscrapeable). Best free: Alpaca 1-min bars+quotes from 2024-02 (~2.4y,
 growing) + start a $0 forward minute collector on CBOE's delayed JSON
 (full chain, greeks+OI, tested: 10,606 QQQ contracts/request) + ThetaData
@@ -235,7 +235,7 @@ Ongoing subs violate the locked $25/mo budget. Recommended: adopt the $0
 stack now (Path A), hold the one-time purchase (Path B) as owner decision.
 Nothing bought, nothing scraped, nothing ingested in this session.
 
-## 2026-07-02 — Owner decision: Alpaca minute lake for SPY/QQQ/IWM (M1.5 planned)
+## 2026-07-02, Owner decision: Alpaca minute lake for SPY/QQQ/IWM (M1.5 planned)
 
 Owner adopted the Alpaca solution for all three tickers: full 1-minute
 option-bar history 2024-02 → present plus a nightly accrual leg; option
@@ -245,7 +245,7 @@ intraday-data-eval branch: DATA-PIPELINE.md (second DECIDED block; Alpaca
 in §1 sources + job 4; APCA_* secrets in §2; options_minute/ + quotes_cache/
 + underlying_minute/ + alpaca_backfill state in §3 with the minute-lake
 size call-out; new §4b minute-bar schema; §6 minute-lake quality flags;
-§7 honest-limits rewrite — intraday exists 2024-02→ only), BUILD-PLAN.md
+§7 honest-limits rewrite: intraday exists 2024-02→ only), BUILD-PLAN.md
 (new M1.5 with step-0 verification gate), INTRADAY-OPTIONS-DATA-EVAL.md
 (decision recorded). Verified against Alpaca docs: history since 2024-02,
 1Min bars, 100 symbols/request, 10k rows/page; expired-contract listing
@@ -253,15 +253,15 @@ depth is step 0's job. Blocked on owner: Alpaca account + APCA_* repo
 secrets, R2 full-vs-filtered choice, PR #2/#3 merges. Implementation is
 the next session (M1.5 prompt in BUILD-PLAN).
 
-## 2026-07-02 — M1.5 step 0 verified; minute-lake collector shipped
+## 2026-07-02, M1.5 step 0 verified; minute-lake collector shipped
 
 Step-0 probe (Actions run 28566239710, collector/alpaca_probe.py) findings:
 
 - **A ✓** `/v2/options/contracts` lists expired contracts back to
   2024-02-01 for all 3 tickers (SPY 4,816 / QQQ 5,900 / IWM 1,780 expiring
-  Feb-2024 alone) — universe source confirmed, no fallback needed.
+  Feb-2024 alone). Universe source confirmed, no fallback needed.
 - **B ✓** 1-min bars return for long-expired contracts.
-- **C ✗** Historical option QUOTES are not served on Basic — HTTP 404 on
+- **C ✗** Historical option QUOTES are not served on Basic: HTTP 404 on
   default/indicative/opra feeds (latest-only endpoint exists). The
   "lazy quote cache" design is dead; §3/§4b amended: minute fills will use
   a disclosed EOD-spread-derived model and/or forward/paid quote snapshots,
@@ -282,14 +282,14 @@ coverage.py, collector/alpaca_probe.py + alpaca-probe.yml (kept as a
 diagnostic).
 
 Deviations from spec, and why: (1) minute-leg failures surface as red
-workflow runs, not healthcheck pages — the healthcheck stays scoped to the
+workflow runs, not healthcheck pages. The healthcheck stays scoped to the
 EOD record; the 5-session lookback self-heals missed nights. (2) Bars for
 expirations >400 days out are not pulled (MAX_EXP_DAYS): those batches are
 ~all-empty and only burn rate limit; documented in §4b. (3)
 underlying_minute/ is keyed month=YYYY-MM (idempotent monthly unit), not
 year=.
 
-## 2026-07-02 — Intraday quote recorder (DATA-PIPELINE job 5) + backfill fix
+## 2026-07-02, Intraday quote recorder (DATA-PIPELINE job 5) + backfill fix
 
 Owner asked for minute-by-minute forward recording of options quotes.
 Shipped `collector/intraday.py`: every session minute (XNYS-aware incl.
@@ -297,7 +297,7 @@ early closes, open → close+15 min) it captures the CBOE delayed-quote
 full chain per ticker (bid/ask/IV/greeks/OI, one request per underlying,
 ~3 req/min, quotes ~15-min delayed; snapshot_ts = capture, source_ts =
 feed stamp) + a Yahoo chain snapshot every 15 min as cross-source
-redundancy — Yahoo at 1-min cadence (~120 req/min) would risk throttling
+redundancy. Yahoo at 1-min cadence (~120 req/min) would risk throttling
 the source the nightly EOD record depends on, so CBOE is the minute leg
 by design (owner asked "Yahoo minute-by-minute"; Yahoo rides at 15-min).
 Writes to options_intraday/source={cboe_delayed,yahoo}/… per §3. Runs as
@@ -306,7 +306,7 @@ eval); best-effort uptime, gaps honest in coverage.
 
 Smoke test (dry-run, live feeds): CBOE SPY 13,706 / QQQ 10,606 /
 IWM 4,890 rows per snapshot; Yahoo 3,755/3,292/1,471 (≤60 DTE). Measured
-36.2 B/row parquet → **~430 MB/session-day ≈ 109 GB/yr** — the recorder
+36.2 B/row parquet → **~430 MB/session-day ≈ 109 GB/yr**. The recorder
 ships with a self-cap (--max-lake-gb, default 6) so it pauses rather
 than fill the shared free-tier bucket and break the EOD record. **Owner
 decision open: enable R2 paid (~$1–2/mo at yr-1 scale) and raise the
@@ -314,28 +314,28 @@ cap, or direct a thinner lake.** Free-tier headroom at full cadence ≈ 17
 trading days.
 
 Also this session: first alpaca-backfill dispatch crashed on an
-adjusted-series symbol (1SPY…, penny strike) the data API rejects —
-universe now filters to standard roots and a bisect guard skips any
+adjusted-series symbol (1SPY…, penny strike) the data API rejects.
+Universe now filters to standard roots and a bisect guard skips any
 remaining rejects (run 28566653508 failed clean, nothing written;
 re-dispatched as 28567008737).
 
-## 2026-07-02 — DoltHub SPY ingest executed; cross-source validation built
+## 2026-07-02, DoltHub SPY ingest executed; cross-source validation built
 
 `collector/dolthub.py` ran locally (owner's Mac, R2 creds in .env):
 **1,115 sessions ingested, 2020-01-06 → 2026-06-30, 158,156 rows**, 514
 archive gaps recorded (M/W/F-era weekdays + known outages), 0 duplicates,
-dead-quote flags on 2021-03-03 / 2025-03-26 — all matching DOLTHUB-EVAL's
+dead-quote flags on 2021-03-03 / 2025-03-26, all matching DOLTHUB-EVAL's
 predictions exactly (1,116 valid sessions minus the out-of-window 2019
 stray). Archive commit pinned in state/dolthub_backfill.json. Coverage now
 shows `dolthub SPY: 1115 sessions`. Lesson: the SQL API has a response
-row cap surfaced as status "RowLimit" — deterministic, not retryable; the
+row cap surfaced as status "RowLimit", deterministic, not retryable; the
 ingest bisects date batches down to per-date call/put halves. §4
 precedence extended: alphavantage > yahoo > dolthub.
 
 `collector/validate_minute_vs_eod.py` (one-off, owner-requested):
 cross-validates DoltHub EOD quotes vs Alpaca minute bars over the overlap.
 Findings so far (2024-02→08 partial, 81 sessions): joins on exact
-(expiration, right, strike) work at the expected rate — the two
+(expiration, right, strike) work at the expected rate: the two
 independently written pipelines agree on structure (parsing, strike
 scaling, date attribution). Raw price comparison flagged 15% → diagnosed
 as stale prints (deep-ITM strikes last traded hours before the close,
@@ -345,24 +345,24 @@ Final full-window run pends the Alpaca backfill (underlying minute bars
 land last). Alpaca backfill hardening: network-level exceptions
 (connection reset after ~2 h) now retried in _get.
 
-## 2026-07-02 — Alpaca minute lake frozen (owner decision); forward = Yahoo + live recorder
+## 2026-07-02, Alpaca minute lake frozen (owner decision); forward = Yahoo + live recorder
 
 Bulk minute-bar backfill COMPLETED inside Alpaca's new-account grace
 window: **29 months × 3 tickers (2024-02 → 2026-06), 159.4M bars**
-(SPY 81.3M / QQQ 58.6M / IWM 19.6M) — then the account hit 403 "OPRA
+(SPY 81.3M / QQQ 58.6M / IWM 19.6M). Then the account hit 403 "OPRA
 agreement is not signed" and the dashboard errors when the owner tries to
 sign it. Owner decision: **keep the lake frozen as a static research
 asset; do not chase the entitlement.** Going forward the record is the
 nightly Yahoo EOD snapshot + the live intraday recorder (CBOE full-chain
-minute quotes — bid/ask/IV/greeks/OI — with Yahoo 15-min redundancy).
+minute quotes, bid/ask/IV/greeks/OI, with Yahoo 15-min redundancy).
 Collector treats the missing OPRA entitlement as a known condition (green
-nightly, error-level log, automatic resume if it ever appears — the AV
+nightly, error-level log, automatic resume if it ever appears; the AV
 pattern). Underlying minute bars are stock data, not OPRA-gated: backfill
 re-dispatched for those 30 months, which also unblocks the full
 cross-source validation. July options gap: 2026-07-01 has EOD coverage
 only; the recorder covers 2026-07-02 onward.
 
-## 2026-07-02 — Design handoff implemented: M0 scaffold + app frontend + real coverage API
+## 2026-07-02, Design handoff implemented: M0 scaffold + app frontend + real coverage API
 
 Owner delivered the approved Claude Design export ("Skeptic Options Research
 Tool-handoff.zip") and asked for it to be implemented. Imported to
@@ -374,7 +374,7 @@ file is exploration iterations).
 - **M0 scaffold:** `backend/` (uv + FastAPI, `/api/health`, bearer
   middleware, CORS) with pydantic-v2 models matching
   strategy-spec.schema.json (20 tests: canonical-spec round-trip +
-  guardrail rejections — slippage 0 = mid fills, empty exit, bad ticker,
+  guardrail rejections: slippage 0 = mid fills, empty exit, bad ticker,
   extra keys); `frontend/` (Next.js 14 app router, TS, Tailwind, tokens
   extracted from the design: Archivo + IBM Plex Mono, #14161a ground,
   trust hue #3fc1cf family vs P/L #43c987/#e0604f as separate Tailwind
@@ -388,8 +388,8 @@ file is exploration iterations).
   against the live lake: SPY chains 2020-01-06 → 2026-07-01 (1,071
   sessions), QQQ/IWM 1 session, minute lake 604 frozen sessions,
   recorder heartbeat minutes-fresh. Backend loads R2 creds from
-  collector/.env locally (recorder's pattern); refuses with 503 — never
-  fakes — when unconfigured.
+  collector/.env locally (recorder's pattern); refuses with 503 (never
+  fakes) when unconfigured.
 - **All design screens:** New Analysis (text + chart-teach modes; live
   per-ticker-asymmetric coverage chips), Spec confirmation (editable dial
   tiles, missing-exit question flow), gauntlet progress, Results
@@ -404,7 +404,7 @@ file is exploration iterations).
   /api/backtest already (invalid IR = 422 today, same as post-M2). The
   Next proxy (bearer token server-side) falls back to demo fixtures for
   those routes only; every demo payload carries `demo: true` and the UI
-  badges it "demo data — engine lands at M2". Data routes never fall back.
+  badges it "demo data, engine lands at M2". Data routes never fall back.
 - End-to-end verified in a real browser: canonical strategy → spec →
   gauntlet → verdict; QQQ run → refusal state; Observatory live.
 
@@ -414,13 +414,13 @@ file is exploration iterations).
    owner asked for the design implementation now. Engine, honesty layer,
    and parser remain the next sessions, in BUILD-PLAN order; the demo
    fixtures (frontend/lib/demo.ts) are deleted the day they land.
-2. **Demo numbers are the design's illustrative content, labeled** — with
+2. **Demo numbers are the design's illustrative content, labeled**, with
    two honesty edits: refusal copy states the true coverage fact ("QQQ
    record began 2026-07-01") instead of the mock "42 days", and demo runs
    on QQQ/IWM always land in the refusal state because a full verdict on
    days of data would be dishonest even as a placeholder.
 3. **Charts are bespoke SVG components** matching the mockups exactly, not
-   Recharts (TECH-SPEC §8) — reconsider when real payload shapes land.
+   Recharts (TECH-SPEC §8). Reconsider when real payload shapes land.
 4. **Observatory content follows the design brief** (per-source lanes,
    named blind spots) where the dc.html carried placeholder content from
    a dead assumption (AV backfill runways).
@@ -433,7 +433,7 @@ file is exploration iterations).
    maps pins → signal_only entry + drawdown_from_high_pct condition. The
    real parse of pinned examples is M4 scope.
 
-## 2026-07-02 — Full market charts (owner-directed scope addition)
+## 2026-07-02, Full market charts (owner-directed scope addition)
 
 Owner asked for brokerage-grade charts (reference: Robinhood Legend
 screenshots): any timeframe, live, candles/line, indicators, all three
@@ -444,12 +444,12 @@ tickers. Shipped on `design-implementation`:
   (2024-02 →, 9:30-ET-anchored resampling, extended hours included),
   1D/1W from dailies (1993 →, W-FRI weekly); windows 1D→All, capped at
   2,000 bars; **live tail from Alpaca's IEX feed at request time when
-  APCA_* keys are configured** (stock data — not OPRA-gated; without keys
+  APCA_* keys are configured** (stock data, not OPRA-gated; without keys
   the payload states its exact freshness). Verified against the live
   lake: 5m/1h/1D/1W for SPY/QQQ/IWM all correct.
 - **Indicators server-side** (app/data/indicators.py, per the "backend
   owns all math" rule): SMA, EMA, Wilder RSI, session-anchored VWAP,
-  Bollinger, MACD — each with a hand-computed fixture test (11 new tests;
+  Bollinger, MACD. Each with a hand-computed fixture test (11 new tests;
   31 total). Warmup values are NaN/absent, never extrapolated.
 - **frontend MarketChart** (components/charts/market-chart.tsx): candles
   (path-batched for 2k bars) or line, crosshair with OHLCV readout +
@@ -465,18 +465,18 @@ tickers. Shipped on `design-implementation`:
   spec with anchor/trigger intact.
 
 **Limits stated in-product, per the data evals:** tick intervals are
-refused with the honest reason (no tick data exists at $0 —
+refused with the honest reason (no tick data exists at $0;
 INTRADAY-OPTIONS-DATA-EVAL); without APCA keys charts say "through <last
 close> · nightly lake". Note: the first *scheduled* nightly containing
-the minute top-up runs tonight (2026-07-02 21:30 UTC) — July's minute
+the minute top-up runs tonight (2026-07-02 21:30 UTC). July's minute
 file lands then; the two Jul-01 runs in Actions were the pre-Alpaca M1
 verification dispatches. Deviation: the design's chart area gains a
 control bar not in the dc.html mockup (owner-directed); simplicity held
 by one indicators menu and chip rows, no config trees. The old sample
--series fallback was removed — an unreachable lake now shows an honest
+-series fallback was removed. An unreachable lake now shows an honest
 error, never a synthetic market.
 
-## 2026-07-02 — Fluid chart navigation (owner screen recording replicated)
+## 2026-07-02, Fluid chart navigation (owner screen recording replicated)
 
 Owner supplied an 88 s Robinhood Legend recording as the interaction spec
 (frames extracted via AVFoundation and studied): grab-drag panning that
@@ -500,32 +500,32 @@ whitespace right of the latest candle. Shipped on `design-implementation`:
   shimmer while panning).
 
 Three real bugs found by driving it in the preview browser and fixed:
-(1) absolute-position view writes raced page-prepend index shifts —
+(1) absolute-position view writes raced page-prepend index shifts:
 all hot-path writes are now delta-based; (2) `getBoundingClientRect()
 .width` transiently reads 0 in some environments, poisoning px→bars
-conversion — replaced with clientWidth + last-known-good caching + a
+conversion: replaced with clientWidth + last-known-good caching + a
 one-screenful cap per event; (3) React's queued functional updaters get
-REPLAYED on rebase under continuous paging, livelocking the render loop —
+REPLAYED on rebase under continuous paging, livelocking the render loop:
 the viewport now lives in a ref mutated imperatively, with rAF-throttled
 plain-state snapshots (setTimeout fallback: backgrounded tabs starve rAF).
 
 Verified end-state in-browser: pan travels exactly the dragged distance
 plus glide (Jun 30 → Jun 22, span preserved), zoom out pages bounded then
 zooms back in cleanly, pin-click still compiles a chart-taught spec.
-Tick-level data remains impossible ($0 sources don't exist — intraday
+Tick-level data remains impossible ($0 sources don't exist; intraday
 eval); 1-minute stays the honest floor.
 
-## 2026-07-02 — Cross-source validation closeout: 45 archive sessions quarantined
+## 2026-07-02, Cross-source validation closeout: 45 archive sessions quarantined
 
 The owner-requested DoltHub-vs-Alpaca validation completed its arc:
-(1) structural agreement proven — 24,597 exact (expiration, right,
+(1) structural agreement proven: 24,597 exact (expiration, right,
 strike) joins across 506 overlap sessions, zero evidence of parsing/
 scaling/date bugs in our pipelines; (2) stale-print semantics fixed
 (near-close trades only, delta-adjusted, per-session capture-offset
 self-calibration); (3) **real vendor defect found**: archive sessions
 with quotes from the wrong date or intraday-stale in shape. Remediated
 with two permanent gates (parity ≤0.75% of close; cross-source
-violation ≤50%) — **17 + 28 = 45 sessions quarantined (flag-and-exclude,
+violation ≤50%): **17 + 28 = 45 sessions quarantined (flag-and-exclude,
 objects retained), lake = 1,070 verified sessions**, per-session scores
 in state/dolthub_backfill.json. Verified-overlap residual: 4.5% of
 joined contracts outside the widened spread, attributable to EOD wing
@@ -534,14 +534,14 @@ story in DOLTHUB-EVAL.md addendum. Also today: intraday recorder's
 first live session confirmed writing (SPY 14,124 / QQQ 11,350 /
 IWM 5,168 rows per minute snapshot).
 
-## 2026-07-02 — M3: the honesty layer — every backtest now runs the gauntlet
+## 2026-07-02, M3: the honesty layer, every backtest now runs the gauntlet
 
 The product's reason to exist. `app/honesty/` lands with five attack
 stages (TECH-SPEC §6): OOS 70/30 chronological split, walk-forward on
 42-session folds, Monte Carlo circular block bootstrap (block 5, 1,000
 seeded resamples), ±20% sensitivity sweep that re-runs the real engine
 per neighbor, and deflated Sharpe with a per-family trial counter
-persisted in Postgres. Trust is computed by deterministic rules — level
+persisted in Postgres. Trust is computed by deterministic rules: level
 = 1 + core attacks survived, DSR < 0.5 or OOS sign-flip caps at 2, and
 thin samples (< 30 trades or single VIX regime) are never blessed
 regardless of the numbers. Verdicts are template-first and grounded by
@@ -551,7 +551,7 @@ OPENROUTER_API_KEY, same validator, template fallback). The permanent
 go/no-go test now exists: an in-repo 108-combo optimizer tunes a short
 put on synthetic zero-edge GBM data (BS-priced chains), finds in-sample
 Sharpe 0.68, and `test_overfit_fixture.py` asserts the gauntlet flags
-it forever — a green run on that fixture is a failing build. Pipeline:
+it forever. A green run on that fixture is a failing build. Pipeline:
 `POST /api/backtest` → engine → gauntlet (staged run_events drive the
 live progress UI) → verdict → payload with real trust band, attack
 chips, IS/OOS bars, walk-forward bars, MC fan, and labelled ±20%
@@ -560,24 +560,24 @@ sensitivity grid. Canonical SPY short put: full gauntlet in 2.3s
 headline, strike/DTE dropdowns (.05Δ–.95Δ, 0–50), per-structure exit
 preset sets. Backend 66 tests green, ruff + mypy strict clean.
 
-## 2026-07-02 — LLM narration live, grounded Q&A, verdict unlock at 15 trades, UI polish round
+## 2026-07-02, LLM narration live, grounded Q&A, verdict unlock at 15 trades, UI polish round
 
 OPENROUTER_API_KEY landed in collector/.env, so two surfaces went live at
 once. (1) **Verdict narration**: write_verdict now actually reaches the
-LLM — fixed fence-wrapped JSON (extract the outermost {...}), retry on
+LLM: fixed fence-wrapped JSON (extract the outermost {...}), retry on
 non-JSON, and hardened the numeric validator's grounding set (list
 lengths are legitimate counts, calendar years in report dates are
 identifiers, integer-rounded percentages of harvested stats allowed).
 The validator earned its keep immediately: it rejected derived numbers
 ("2.39×" was fine, invented "-55" was not) across three live attempts
-before a fully grounded narration shipped — template remains the
+before a fully grounded narration shipped. Template remains the
 fallback, always. (2) **Grounded Q&A**: /api/runs/{id}/ask answers from
 a stored stats bundle (engine metrics + honesty report, persisted as
 stats_json with an additive micro-migration), same validator, honest
 refusal when a number can't be grounded, 501 when no key / no stats;
 the Next proxy no longer swallows real runs' ask errors into demo
 answers. Owner-set policy change: **minimum trades for a graded verdict
-is now 15** (was 30) — MIN_TRADES constant, CLAUDE.md + TECH-SPEC
+is now 15** (was 30): MIN_TRADES constant, CLAUDE.md + TECH-SPEC
 updated. UI round: ? tooltips explaining every metric tile, honesty
 panel, and spec dial in plain English; trade log shows fills only with
 skips behind a nested toggle; ticker/structure became dropdowns;
@@ -588,7 +588,7 @@ ordered by the user's own run history. Backend 71 tests green, ruff +
 mypy strict clean; verified E2E in browser including a grounded answer
 to "is this just the 2020 crash?".
 
-## 2026-07-03 — M4: the NL parser — English → spec-or-questions, never guesses
+## 2026-07-03, M4: the NL parser, English → spec-or-questions, never guesses
 
 `app/parser/parse.py` + real `POST /api/parse`: OpenRouter structured
 output emits either a schema-validated StrategySpec or clarifying
@@ -596,28 +596,28 @@ questions (id + question + concrete options); `answers` converge over
 multiple turns; description_raw is overwritten server-side with the
 user's verbatim text so the model cannot paraphrase the record; failed
 validation retries once with the exact pydantic errors, then falls back
-to questions — a half-valid spec never escapes. One documented
+to questions. A half-valid spec never escapes. One documented
 convention only: unstated tenor with a "close at 21 DTE"-style time
 stop uses the 45-DTE cycle (surfaced on the spec screen, where nothing
 runs unconfirmed). **Eval harness** (`evals/run_parser_eval.py` + the
 12-case set with hand-written ground truths in `evals/parser_cases.json`):
-first live run scored 3/8 clear — the model fabricated `time_exit_dte=0`
+first live run scored 3/8 clear: the model fabricated `time_exit_dte=0`
 and over-asked when one exit rule sufficed; after tightening the
 contract ("the exit object contains ONLY rules the user stated; one
 rule is a complete exit") the harness scores **8/8 clear, 4/4
-ambiguous — ACCEPTED** (bar was ≥7/8). Hermetic unit tests cover the
+ambiguous, ACCEPTED** (bar was ≥7/8). Hermetic unit tests cover the
 server-side guarantees with the LLM mocked. Frontend: one-at-a-time
-clarifying questions ("QUESTION 1 OF 4 — I DON'T GUESS") with option
+clarifying questions ("QUESTION 1 OF 4, I DON'T GUESS") with option
 chips + free text; an unedited parser spec runs verbatim, dial edits
 rebuild from the dials; parsed entry conditions render in the trigger
 editor; non-delta strikes ("5% below spot", ATM) keep their honest
 label in the strike dropdown.
 
-## 2026-07-03 — M5 closeout + grounded recommendations + interactive results
+## 2026-07-03, M5 closeout + grounded recommendations + interactive results
 
 The remaining M5 pieces plus an owner-requested UI round. **Grounded
 recommendations**: every results page now carries "WHAT WOULD IMPROVE
-IT — COMPUTED FROM THIS RUN" — suggestions derived exclusively from the
+IT, COMPUTED FROM THIS RUN": suggestions derived exclusively from the
 run's own gauntlet numbers (the ±20% sweeps genuinely re-ran the
 engine: "delta .36Δ beat the specced .30Δ: Sharpe 1.01 → 1.12"), plus
 OOS/MC/walk-forward observations when flagged, refusal-aware, capped at
@@ -638,26 +638,26 @@ frontend tsc + lint all green; verified E2E in browser: ambiguous
 strategy → 4 questions → spec with trigger → gauntlet → LLM verdict
 leading with the walk-forward weakness.
 
-## 2026-07-03 — Live previews, editable costs, and the Verbiage Complexity setting
+## 2026-07-03, Live previews, editable costs, and the Verbiage Complexity setting
 
 Owner round three. **Gauntlet previews**: "no previews, no dopamine" is
-retired — as each stage finishes, its REAL headline stat streams into a
+retired: as each stage finishes, its REAL headline stat streams into a
 "LIVE FROM THE GAUNTLET" feed (fills + net equity, unseen-data Sharpe
 holding/fading, windows profitable, reshuffle loss rate, plateau/cliff),
 stored progressively in a new previews_json column and served on the
 running payload; a rotating platform-tips panel fills the quiet moments.
 **Editable costs**: commission and slippage live in Settings
-(localStorage, clamped — slippage floors at 0.05 because mid fills stay
+(localStorage, clamped: slippage floors at 0.05 because mid fills stay
 banned) and are stamped onto EVERY submitted spec client-side, parsed or
 dial-built; the spec screen's FILLS tile shows the live values. Verified
 E2E: slippage 0.5 → 0.75 changed the same strategy from 232 to 211
 fills. **Verbiage Complexity (Institutional | Retail)**: every run now
-ships both registers — the LLM narrates twice (retail prompt bans
+ships both registers: the LLM narrates twice (retail prompt bans
 jargon: "risk-adjusted score" not Sharpe, "reshuffling the trades" not
 Monte Carlo) behind the same numeric validator, with a deterministic
 retail template fallback; payload carries a retail block (headline,
 evidence, breaks, caveat, panel notes, recommendations) and the UI
-switches instantly — panel titles ("LUCK TEST — 1,000 RESHUFFLES",
+switches instantly: panel titles ("LUCK TEST, 1,000 RESHUFFLES",
 "TRAINING DATA VS UNSEEN DATA"), metric tile names ("WORST DIP",
 "RISK SCORE"), gauntlet stage names, and grounded Q&A all follow the
 setting. Old stored runs fall back to institutional. Settings page
@@ -668,32 +668,32 @@ buttons up across compose, spec, gauntlet, results, settings. Backend
 76 tests + ruff + mypy strict green; frontend tsc + lint green;
 verified in-browser across both registers on a single run.
 
-## 2026-07-03 — Width pass + sidebar defaults + hero cleanup
+## 2026-07-03, Width pass + sidebar defaults + hero cleanup
 
 Owner adjustments: content shell 1380px; composer and preset rows
 widened; results and chart mode fill the page; library becomes two wide
 columns with larger cards. Sidebar now defaults to OPEN (choice still
 persists), labels title-cased (New Analysis, Data Observatory). The
 coverage chips row and "day 2 of collection" link are gone from the
-hero — coverage lives in the Data Observatory, where it belongs.
+hero. Coverage lives in the Data Observatory, where it belongs.
 
-## 2026-07-03 — Fluid width: 1800px shell
+## 2026-07-03, Fluid width: 1800px shell
 
 Owner: wider still. The shell cap moves to 1800px, making every page
-effectively fluid on real monitors — the market chart in Show-on-Chart
+effectively fluid on real monitors: the market chart in Show-on-Chart
 mode spans ~1430px on a 1728-wide window, library cards ~725px each,
 results panels track the full width. Composer 1320px, preset rows
 1440px. Operational lesson recorded: tailwind.config.ts edits do NOT
-hot-reload — restart the dev server or the old token values keep
+hot-reload: restart the dev server or the old token values keep
 being served (the 940→1380px bumps only took effect after this
 restart).
 
-## 2026-07-03 — Two bug fixes, −10% width, library verbiage, instant chart
+## 2026-07-03, Two bug fixes, −10% width, library verbiage, instant chart
 
-**Bug 1 — trust band overflow:** at level 5 the ±15% band spilled past
+**Bug 1, trust band overflow:** at level 5 the ±15% band spilled past
 the track (75% + 30% = 105%). Clamped in the payload (left ≤ 70%) AND
 client-side with CSS min() so already-stored runs render correctly too.
-**Bug 2 — degenerate DTE sweep:** ±20% of a 1–2 day tenor rounds back
+**Bug 2, degenerate DTE sweep:** ±20% of a 1–2 day tenor rounds back
 to the same day, producing five identical "1d" cells and a trivially
 "plateau" classification. Short tenors now sweep whole days (1–5 for a
 2-DTE spec) with a per-sweep base index so the ringed as-specced column
@@ -703,24 +703,24 @@ stays honest; verified across dte 1/2/45/90. **Width:** shell trimmed
 (quoteRetail in run summaries) and switch with the setting like the
 rest of the app. **Chart speed:** the hero prefetches the exact bars
 request the chart issues on first mount (60s in-flight cache, failures
-never cached) — a warm mode-switch measured 24ms vs ~1s cold.
+never cached). A warm mode-switch measured 24ms vs ~1s cold.
 
-## 2026-07-03 — Chart expand toggle + uniform chart chrome + sidebar always open
+## 2026-07-03, Chart expand toggle + uniform chart chrome + sidebar always open
 
 The hero chart now defaults to the Describe It box width (1190px) with
 an expand toggle at its top-right: enlarge to full page for serious
 charting, shrink back with the same button. All the chrome around the
-chart was undersized relative to the canvas — ticker tabs, OHLC
+chart was undersized relative to the canvas: ticker tabs, OHLC
 readout, freshness note, window/interval chips, time axis, indicator
 menu, price ticks, pin notes and the footer all bumped to a uniform,
 readable scale. Sidebar now opens on every load (collapse lasts for
-the session only — no persisted state).
+the session only, no persisted state).
 
-## 2026-07-03 — Verbiage-aware tooltips, run back-button, Library nav highlight
+## 2026-07-03, Verbiage-aware tooltips, run back-button, Library nav highlight
 
 Every ? tooltip (metric tiles, equity, honesty panels, trade log,
 recommendations, all ten spec dials) now carries both registers and
-follows the Verbiage setting — and static UI text switches on the
+follows the Verbiage setting, and static UI text switches on the
 setting alone, so runs stored before the retail feature still get
 retail tooltips/tile names while their verdict text honestly falls
 back to institutional. Saved-run pages get a "‹ Library" back button
@@ -728,14 +728,14 @@ and keep Library highlighted in the sidebar (/runs/* is a library
 entry, not a new analysis). Describe box and hero chart trimmed ~5%
 to 1130px, still width-matched.
 
-## 2026-07-03 — Design language: calm/editorial pass (owner-directed)
+## 2026-07-03, Design language: calm/editorial pass (owner-directed)
 
 Owner supplied a reference (Harvey-style legal-AI app: serif display
 type, generous whitespace, floating pill composer, quiet inline
 actions) and asked for that calm in dark mode. OWNER SIGN-OFF noted:
 this consciously evolves beyond the original docs/design mockups.
 Shipped: Newsreader serif for display headings (hero, Library,
-Settings, Data, gauntlet); hero reworked — S-mark over a serif
+Settings, Data, gauntlet); hero reworked: S-mark over a serif
 rotating headline, composer as a floating 26px-radius card with soft
 shadow, mode chips (Describe It / Show on Chart) INSIDE the card
 bottom-left, mic + round arrow-submit bottom-right, quiet disclaimer
@@ -744,9 +744,9 @@ section (last 6 runs, live, highlights the open one) mirroring the
 reference's history list. Verified E2E: compile via the round submit
 still lands on the spec screen.
 
-## 2026-07-03 — Newsreader everywhere (standing owner directive)
+## 2026-07-03, Newsreader everywhere (standing owner directive)
 
-Newsreader is now THE app typeface — every word on every page, strictly:
+Newsreader is now THE app typeface, every word on every page, strictly:
 all three Tailwind font tokens (sans/mono/serif) resolve to it, Archivo
 and IBM Plex Mono are removed, and SVG chart text (price ticks, hover
 chips, panel labels, MC band labels, equity axis) uses the same
@@ -755,94 +755,94 @@ lines, chips, and chart <text> nodes. The directive is codified in
 CLAUDE.md (Engineering conventions → Typography) and in session memory:
 no other font family may ever be introduced.
 
-## 2026-07-03 — Typography settled: serif for headings only (revised directive)
+## 2026-07-03, Typography settled: serif for headings only (revised directive)
 
 Owner revised the same-day serif-everywhere directive after seeing it:
 Newsreader is RESERVED for headings and important moments (page h1s,
 hero headline, gauntlet heading, and now the verdict headline); body
 returns to Archivo, data returns to IBM Plex Mono (including SVG chart
 text). CLAUDE.md typography rule and session memory rewritten to the
-three-voice system — no other families, serif never in body copy.
+three-voice system, no other families, serif never in body copy.
 
-## 2026-07-03 — Sidebar drag-resize
+## 2026-07-03, Sidebar drag-resize
 
 The sidebar edge is now a drag handle: resize freely up to 380px, drop
 below 120px and it snaps into the existing 56px icon rail, release
-between 120–172px and it settles at the open floor — the same collapse/
+between 120–172px and it settles at the open floor, the same collapse/
 open mechanism the toggle uses, and the toggle restores the last
 dragged-open width. Implementation is fully imperative (listeners
 attached in the pointerdown, settle computed from the release event's
 own coordinates) after an effect-based version proved race-prone.
 Verification note for the log: the preview harness freezes the CSS
-animation clock, so width transitions never advance there — assert on
+animation clock, so width transitions never advance there: assert on
 style.width or disable transitions when testing; real browsers animate
 the 150ms ease normally.
 
-## 2026-07-03 — Brand kit integration
+## 2026-07-03, Brand kit integration
 
 Owner delivered the Skeptic brand kit (SKEPT/C wordmark; the S is two
-identical hooks under 180° rotation — the same question asked from both
+identical hooks under 180° rotation, the same question asked from both
 sides). Wired in per the kit's usage rules for our dark surfaces:
 white wordmark in the open sidebar, standalone white S-mark when
 collapsed and above the hero headline; kit favicon.ico + gray-tile 512
 + apple-touch-icon in metadata; og-image for link previews. First boot
 per browser session plays the draw-on animation (the kit's pathLength-
-dash SVG, no JS) as a full-screen splash that fades into the app —
+dash SVG, no JS) as a full-screen splash that fades into the app,
 gated at module scope after React StrictMode's double-effect consumed
 the session flag and stranded the overlay on first attempt. SVG
 masters + animation live in frontend/public/brand/.
 
-## 2026-07-03 — Favicon centering audit
+## 2026-07-03, Favicon centering audit
 
 Owner spotted the favicon S riding high. Audited every S asset in the
 kit programmatically (glyph bbox center vs canvas center): the dark
 tile (512/180/32), light tile, and transparent-grayS all carry the S
 ~10% above center; the gray tile, white circle, s-mark renders,
 apple-touch-icon and maskable are true. Rebuilt our dark tiles from
-scratch — sampled bg #101014 and the 113px corner radius from the
+scratch: sampled bg #101014 and the 113px corner radius from the
 original, took the glyph from the verified-centered s-mark render,
 composited at identical size, dead center (residual ≤0.5px from odd/
 even rounding at small sizes). favicon.ico regenerated from the fixed
-512. Kit source files in Downloads left untouched — worth regenerating
+512. Kit source files in Downloads left untouched, worth regenerating
 upstream in kit.py someday.
 
-## 2026-07-03 — Neon transfer quota exhausted: graceful fallback + the fix for the cause
+## 2026-07-03, Neon transfer quota exhausted: graceful fallback + the fix for the cause
 
 Owner hit "backend unreachable" and asked if Neon's monthly transfer
 limit was the cause. Confirmed directly: Neon now refuses connections
-with "Your project has exceeded the data transfer quota" — and the
+with "Your project has exceeded the data transfer quota", and the
 backend used to DIE at startup because init_db connects at boot.
 Two fixes. (1) **Graceful degradation:** if the configured DATABASE_URL
 is unreachable at startup, the backend logs it, falls back to the local
-SQLite file, and /api/health + Settings report "local SQLite fallback —
+SQLite file, and /api/health + Settings report "local SQLite fallback:
 …quota…" honestly; charts, parser and new runs all keep working (runs
 stored during the outage live locally, not in Neon). (2) **The actual
 transfer hog:** /api/runs pulled full payload_json (equity series and
-all, ~100KB+ each) for up to 50 runs on EVERY listing — and the new
+all, ~100KB+ each) for up to 50 runs on EVERY listing, and the new
 sidebar requests the listing on every navigation. New summary_json
 column (~500B) written at run completion and backfilled lazily for old
 rows; listings now read only that. Client side, listRuns gets a 30s
 TTL cache. Estimated egress per listing drops ~99%.
 
-## 2026-07-03 — Appearance settings: light/dark mode + four accent colors
+## 2026-07-03, Appearance settings: light/dark mode + four accent colors
 
 Settings gains an APPEARANCE panel: Mode (Dark default / Light) and
-Accent (Cyan default, Sage, Lavender, Rose — four max per owner). Under
+Accent (Cyan default, Sage, Lavender, Rose; four max per owner). Under
 the hood the whole palette moved to CSS variables: every Tailwind color
 token now reads a var, hardcoded chart/SVG colors (grids, candles,
 crosshair, MC bands, heat cells, OOS shade, overlay bars, shadows,
 gradients) were converted, and <html data-theme/data-accent> switches
-everything at runtime — an inline pre-hydration script applies the
+everything at runtime. An inline pre-hydration script applies the
 stored choice before first paint, so no flash. Light mode is the brand
 kit's paper palette (#F4F4F5 ground, ink text); each accent carries a
 deepened light-mode value so accent text keeps contrast on paper. The
 brand marks and boot splash follow the theme (black wordmark/S/draw-on
-in light — derived from the white masters since the kit uses one-color
+in light, derived from the white masters since the kit uses one-color
 strokes). Color contract intact in every combination: trust hue never
 colors P/L and vice versa. Persisted in the same local settings store
 as costs/verbiage.
 
-## 2026-07-03 — M6 artifacts: Dockerfile, smoke script, RUNBOOK
+## 2026-07-03, M6 artifacts: Dockerfile, smoke script, RUNBOOK
 
 Deploy prep (owner merged the design PR and called for M6):
 backend/Dockerfile (uv-based, python 3.13-slim, runs uvicorn on
@@ -854,93 +854,93 @@ docs/RUNBOOK.md covers topology, every env var for both platforms,
 token rotation, deploys and cold-start behavior, collector operations,
 the Neon fallback/quota story, and cost dashboards.
 
-## 2026-07-03 — Prod polish: trade-log bug, speed, gauntlet theater, DeepSeek default
+## 2026-07-03, Prod polish: trade-log bug, speed, gauntlet theater, DeepSeek default
 
 Post-deploy round. **Bug:** the trade log capped the last 250 EVENTS
 before splitting fills from skips, so a signal strategy with 1,614
-skips showed 4 of its 17 fills — fills and skips now cap separately
+skips showed 4 of its 17 fills. Fills and skips now cap separately
 (all fills up to 400, last 250 skips). **Speed:** the two verdict
 narrations (institutional + retail) now run in PARALLEL; market stores
 get an in-process cache (the parquet parse happens once per container,
 not once per run); and the backend prewarms the SPY lake in a
 background thread at boot, so the first user run on a fresh Railway
 container no longer pays the cold R2 pull. Neon-paid explicitly NOT
-the fix — the DB never was the bottleneck. **Gauntlet theater:** the
+the fix: the DB never was the bottleneck. **Gauntlet theater:** the
 heading now fades through 20 sibling phrases ("Interrogating the
 edge", "Hunting for luck in the results"…) every 3s with an animated
 ellipsis, and the tips pool grew 8 → 50, played in shuffled order so a
 session rarely repeats one. **Model:** default LLM switched
 anthropic/claude-sonnet-4.5 → deepseek/deepseek-v4-pro (owner). The
-parser eval initially REJECTED DeepSeek (5/8 — over-asked day-of-week,
+parser eval initially REJECTED DeepSeek (5/8: over-asked day-of-week,
 dropped indicator periods); two new prompt conventions ("weekly with
 no day named → monday", "the number attached to an indicator IS its
-period") brought it to 8/8+4/4 and 7/8+4/4 across two runs — ACCEPTED.
+period") brought it to 8/8+4/4 and 7/8+4/4 across two runs, ACCEPTED.
 OPENROUTER_MODEL still overrides per-deployment.
 
-## 2026-07-04 — Dictation overhaul, auto-growing chatbox, retail gauntlet previews
+## 2026-07-04, Dictation overhaul, auto-growing chatbox, retail gauntlet previews
 
 **Dictation** (the big one): new `frontend/lib/dictation.ts` rewrites
-every transcript chunk — interim and final — from prose into
+every transcript chunk (interim and final) from prose into
 strategy-speak. Spoken numbers become digits with full compound support
 ("twenty one" → 21, "two hundred" → 200, "point oh five" → 0.05),
 "percent" fuses onto its number (50%), "five dollars" → $5, tickers and
 indicator acronyms are canonicalized whether spoken or spelled out
 ("the Q's" → QQQ, "I W M" → IWM, "R S I" → RSI), domain mishears are
 repaired ("iron condo" → iron condor, "putt" → put, "seller" → sell a),
-and everything else is lowercased — no more mid-sentence capitalization.
+and everything else is lowercased, no more mid-sentence capitalization.
 E2E-verified by driving a fake SpeechRecognition through the real
 pipeline: six spoken utterances landed verbatim-correct in the composer.
 **Chatbox** now grows a line at a time with its content (27 → 54 → 82px,
-capped at 200px then scrolls) — the second line is never hidden again.
+capped at 200px then scrolls). The second line is never hidden again.
 **Retail previews**: gauntlet stage previews now ship BOTH voices
 ({pro, retail} per line, old string-only runs still render); the live
 feed header, preview lines and the 50-tip pool all follow the Verbiage
-setting — a fresh retail run showed zero jargon ("on data it never saw:
-risk-adjusted score 1.76 vs 0.67 — holding ✓"). Backend battery green
+setting. A fresh retail run showed zero jargon ("on data it never saw:
+risk-adjusted score 1.76 vs 0.67, holding ✓"). Backend battery green
 (76 tests, mypy strict), tsc/lint green.
 
-## 2026-07-04 (later) — Full trade log, wf-bar fix, in-progress runs in the library
+## 2026-07-04 (later), Full trade log, wf-bar fix, in-progress runs in the library
 
 Trade log is now COMPLETE: every fill event and every skip ships in the
 payload, uncapped (the old 400/250 caps hid fills on active strategies;
 rows are ~100 B and only travel when a run is opened). The walk-forward
-"time periods" panel had flat indistinguishable bars — heights were
+"time periods" panel had flat indistinguishable bars: heights were
 normalized against ALL folds while only the last 16 display, so one wild
 2020 window flattened everything visible; normalization now uses the
 displayed window (verified: heights 17.6–52 vs all ~15 before). And
 in-progress runs no longer vanish when you navigate away: the library
-lists queued/running runs with a pulsing dot + "gauntlet in progress —
+lists queued/running runs with a pulsing dot + "gauntlet in progress,
 stage N of 6" card (polling every 4 s until done), the sidebar's recent
 list gets the same dot, and /runs/{id} shows the LIVE gauntlet screen
 with previews, polling until the verdict lands and flipping to results
 in place. E2E-verified: launched a run, left for the library mid-flight,
 watched the card, opened it live, saw it complete. Note: runs stored
-before this deploy keep their old capped logs and flat bars — payloads
+before this deploy keep their old capped logs and flat bars: payloads
 are frozen at write time.
 
-## 2026-07-04 (bug sweep) — ATM zero-fills, wing selection, parser over-asks, chart/chat parity
+## 2026-07-04 (bug sweep), ATM zero-fills, wing selection, parser over-asks, chart/chat parity
 
 Owner-directed bug hunt: automated battery (12 utterances → real parse →
 engine) plus browser E2E on both compose modes. Found and fixed:
-**ATM (the reported bug).** "at the money" parsed to method "atm" —
+**ATM (the reported bug).** "at the money" parsed to method "atm",
 shown as an "ATM" value the strike dropdown doesn't hold, and when a
 spread's second leg also came back "atm" both legs resolved to the same
 strike, so EVERY entry died as duplicate_leg_strikes → zero fills. ATM
 now normalizes to .50Δ at the parser (prompt convention + deterministic
 post-pass; legacy atm specs draft as an editable .50Δ). Verified E2E:
 the dictated ATM strategy now runs 211 fills.
-**Wing selection.** width_from_leg picked nearest-by-absolute-distance —
+**Wing selection.** width_from_leg picked nearest-by-absolute-distance:
 on coarse strike grids the wing could land ON the reference (dead skip;
 53 of them in one ATM spread run) or the WRONG SIDE (an inverted
 spread). Wings now select only from strikes strictly beyond the
 reference; no candidates → honest "no_wing_strike" skip. 3 new tests.
 **Parser over-asking.** Two flakes seen in the battery: "what does 21
 days refer to" (now a stated convention: exit-clause days ARE
-time_exit_dte) and percent-indicator units (0.03 vs 3 — now stated:
+time_exit_dte) and percent-indicator units (0.03 vs 3, now stated:
 delta is the only decimal field). Eval ground truths updated for the
 ATM change; harness re-ACCEPTED twice (7/8+4/4, 8/8+4/4).
 **Chart/chat parity.** Chart compile invented an exit ("50% profit ·
-21 DTE"), delta and a canned 2% trigger — the exact silent-guess the
+21 DTE"), delta and a canned 2% trigger, the exact silent-guess the
 chat path refuses. Now: exit ships UNSET so the spec screen asks its
 one question exactly like the chat path, and the trigger threshold is
 honestly derived from the pins (average pullback-from-high at the
@@ -948,28 +948,28 @@ pinned entries, ½%-rounded, clamped 1–10%). Verified E2E: pin → spec
 screen question → run (214 fills). Uncapped trade log stress-checked:
 1,873 rows render in 79 ms.
 
-## 2026-07-04 (review fixes) — all 15 ultrareview findings closed on PR 16
+## 2026-07-04 (review fixes), all 15 ultrareview findings closed on PR 16
 
 The xhigh code review of this branch surfaced 15 verified findings; all
 fixed, several at a deeper layer than the original patch:
 **ATM moved into the IR.** The parse-time post-pass (which could crash on
-a malformed model reply) is gone — StrikeSelection itself normalizes
+a malformed model reply) is gone. StrikeSelection itself normalizes
 method "atm" → delta 0.5 during validation, so EVERY ingress (parser,
 POST /api/backtest, stored specs re-validated for a run) gets it, the
 sensitivity sweep's delta axis always applies, and spec_to_draft's
 legacy branch is deleted. "atm" also left the prompt's schema line.
 **Wings got a tolerance and a bound.** Filled width may deviate from the
-requested width by at most the width itself — a $5 wing on a $25 grid
+requested width by at most the width itself: a $5 wing on a $25 grid
 skips as wing_width_unavailable instead of silently trading 5× the max
 loss; width ≤ 0 is now a 422 at validation, never reinterpreted
 per-entry. Call-side and iron-condor wiring gained the tests they lacked.
 **ATM stays greeks-free.** The 50Δ selection falls back to
 nearest-to-spot when a session's source carries no deltas (yahoo rows
-store none) — definitionally the same strike, so ATM strategies keep
+store none), definitionally the same strike, so ATM strategies keep
 filling on those sessions.
 **The chart trigger now measures what the engine tests.** Threshold
 derives from DAILY closes vs the rolling 20-session high at the pinned
-entries (fetched at compile), and drawdown_from_high_pct honors period —
+entries (fetched at compile), and drawdown_from_high_pct honors period:
 "2% below its 20-day high" is no longer silently evaluated against the
 all-time high (this also fixes the chat path's period-carrying specs).
 Monotone clamp (no more 0.2%-pins → 2% while 0.4%-pins → 1%), negatives
@@ -979,15 +979,15 @@ exit, but exits counted FROM ENTRY ("sell after 10 days") now explicitly
 demand a clarifying question; the decimal-fields line no longer
 contradicts offset_pct. Eval re-ACCEPTED twice at 8/8 + 4/4.
 **Frontend honesty.** exitRules accepts decimals ("12.5% profit" ran as
-5% before — verified 12.5 lands in the spec now), the dead canned-2%
+5% before, verified 12.5 lands in the spec now), the dead canned-2%
 fromChart fallback fails loudly instead, and a chart compile clears any
 stale parsed-spec refs. 89 backend tests green (8 new), tsc/lint green,
 chart E2E re-verified (151 fills, period-20 condition in the stored spec).
 
-## 2026-07-04 — iVolatility backfill pipeline, built BEFORE the trial clock starts
+## 2026-07-04, iVolatility backfill pipeline, built BEFORE the trial clock starts
 
 Decision: iVolatility Lab trial for the 20-year EOD backfill (research
-compared Massive/Polygon, Databento, iVolatility — see PR/session notes;
+compared Massive/Polygon, Databento, iVolatility; see PR/session notes;
 iVol is the only one shipping vendor greeks in exactly our chain shape).
 Everything is pre-built so trial day one is pure downloading:
 `collector/backfill_ivol.py` (probe mode, resumable state, per-day
@@ -996,21 +996,21 @@ vendor's published OpenAPI schema on GitHub), chains loader precedence
 ivolatility > av > yahoo > dolthub (unit-tested), coverage page reports
 the new source. DATA-PIPELINE §8 documents the trial-day runbook.
 
-## 2026-07-06 — D5a: the scale-in ladder primitive (branch claude/d5a-scale-in-primitive)
+## 2026-07-06, D5a: the scale-in ladder primitive (branch claude/d5a-scale-in-primitive)
 
 **The engine primitive, gated so nothing merged moves.** Spec v3 adds
-`entry.scale_in` (a `signal_ladder` of rungs — each an existing condition plus
-`add_contracts` — a `rearm`, and a required `max_total_contracts`) and a general
+`entry.scale_in` (a `signal_ladder` of rungs (each an existing condition plus
+`add_contracts`), a `rearm`, and a required `max_total_contracts`) and a general
 `exit.close_at_time` session force-flat ("no overnight", 5-min clock only,
 symmetric with entry `time_of_day`). A basket is ONE accumulating position: its
 single leg's qty grows per rung and `premium` stays the BLENDED per-share cost,
 so the exit math `(premium + liq)/|premium|` reduces to value/cost − 1 on the
 whole basket and the existing exit machinery is untouched. Every basket path is
-behind `spec.entry.scale_in is not None` — the three pinned daily digests stay
+behind `spec.entry.scale_in is not None`: the three pinned daily digests stay
 bit-identical, both lookahead canaries green, overfit fixture still ≤ 2.
 **Adds are not trades, for free.** The basket emits one terminal `CLOSE` with a
 P&L; rung fires are `ADD` events (never in `filled`), so the sample counter
-already counts baskets — a ladder can't inflate to 15 "trades". Per-rung fills
+already counts baskets: a ladder can't inflate to 15 "trades". Per-rung fills
 (`RunResult.rung_fills`) are recorded for D5b attribution.
 **Five hand-computed fixtures.** PT happy path (+$172.00), martingale-ruin
 cascade force-flatted at −$496.00 (loss booked in full, not smoothed), re-arm
@@ -1018,78 +1018,78 @@ cascade force-flatted at −$496.00 (loss booked in full, not smoothed), re-arm
 trimmed to +5 at the cap), and the interlock. The minute canary is extended: a
 rung add fills at the bar it is reached, never the next.
 **The interlock (D5a → D5c).** A scale-in run is hard-capped at
-`insufficient_evidence` — "scale-in safety checks pending (D5c)", the FIRST cap
-reason — no matter the gauntlet or the basket count. Proven as one story: a
+`insufficient_evidence` ("scale-in safety checks pending (D5c)", the FIRST cap
+reason), no matter the gauntlet or the basket count. Proven as one story: a
 ladder that blows up is refused with the interlock LEADING over the thin-sample
 cap, and a ladder with ≥15 baskets across two vol regimes (NOT sample-capped) is
 still refused, while the identical stage numbers with the flag off grade to a
 real level. Documented in HONESTY.md; `unlock_conditions` returns None for the
 code-pending refusal so the auto-unlock scan never chases it. Single-leg
-(long_call/long_put) and fixed_contracts only this phase — validation refuses
+(long_call/long_put) and fixed_contracts only this phase: validation refuses
 the rest with a reason; the `reversal_signal` stop-mode is wired in the schema
 and deferred. Backend suite green: 251 passed, 1 skipped (19 new), ruff +
 mypy(strict) clean.
 
-## 2026-07-06 — D5b: depth attribution, the crown jewel (branch claude/d5b-depth-attribution)
+## 2026-07-06, D5b: depth attribution, the crown jewel (branch claude/d5b-depth-attribution)
 
 **Two tied-out views of a ladder's realized P&L.** New honesty stage
 `ladder_depth_attribution` (present on every scale-in run): a per-tier table
-(baskets grouped by the MAX rung depth they reached — iVol's P&L-by-depth: count,
+(baskets grouped by the MAX rung depth they reached, iVol's P&L-by-depth: count,
 win rate, total/avg P&L, share of gross profit vs loss) AND a marginal-rung
-analysis (P&L attributable to the contracts added AT each depth — are the deep
+analysis (P&L attributable to the contracts added AT each depth: are the deep
 adds themselves net negative?). Because the whole basket exits at ONE price, a
 fill's marginal = `(exit − fill)·qty·100 − 2·commission·qty`, derived from the
 basket's realized P&L, so the per-tier totals AND the per-rung marginals each tie
-out to the same realized total — tested to the cent (fixture-1 basket: rungs
+out to the same realized total, tested to the cent (fixture-1 basket: rungs
 −12.60 / +41.10 / +143.50 = +172.00) and on a 20-basket run (shallow tier +$2,306
 carries all profit, deep tier −$1,880 is 100% of the loss, deep adds net −$1,043).
 **Grounded verdict + prominent panel.** The verdict now MUST reference depth when
-a ladder ran ("the deepest adds are net −$X — the edge is not in the deep rungs"),
+a ladder ran ("the deepest adds are net −$X, the edge is not in the deep rungs"),
 numerically grounded from the stage and riding in the caveats so it surfaces even
 while the interlock withholds the verdict; the LLM path gets the same instruction.
 New results panel (marginal-rung bars + the tier table) placed right under the
-equity chart — P/L red/green lives on this DATA panel, never the verdict (color
+equity chart. P/L red/green lives on this DATA panel, never the verdict (color
 rule honored; verified in the browser preview). No approved depth mockup existed,
 so the panel follows the existing results-panel conventions (PANEL tokens, Plex
-Mono data) — flagged for owner DesignSync. Backend green: 260 passed, 1 skipped
+Mono data), flagged for owner DesignSync. Backend green: 260 passed, 1 skipped
 (9 new), ruff + mypy(strict) clean; frontend tsc + lint clean.
 
-## 2026-07-06 — D5c: scale-in martingale defenses, the interlock lifted (branch claude/d5c-scale-in-defenses)
+## 2026-07-06, D5c: scale-in martingale defenses, the interlock lifted (branch claude/d5c-scale-in-defenses)
 
 **Two real defenses replace the blanket interlock.** New honesty stage
-`scale_in_honesty` computes, per ladder run: (1) a ruin-tail Monte Carlo —
+`scale_in_honesty` computes, per ladder run: (1) a ruin-tail Monte Carlo:
 resamples the basket P&L sequence (seeded block bootstrap, starting capital as
 the first peak) and HARD-caps when P(resampled max drawdown > 30%) ≥ 10%
-(RUIN_DRAW_THRESHOLD / RUIN_TAIL_PROB); (2) deep-rung dependency — subtracts the
+(RUIN_DRAW_THRESHOLD / RUIN_TAIL_PROB); (2) deep-rung dependency: subtracts the
 deepest rung's recorded marginals (no re-run) and HARD-caps on a sign flip (a
 positive edge that goes negative without the deepest, riskiest adds DEPENDS on
-them); (3) basket-size concentration — REPORTED (top basket's share of gross
+them); (3) basket-size concentration: REPORTED (top basket's share of gross
 |basket P&L|), never a cap on its own. `compute_trust` drops the D5a
 `scale_in_pending` interlock and takes the `ScaleInHonesty` object instead: trips
 either hard cap → insufficient_evidence (reason leads); clears both → judged like
-any strategy (**the interlock is LIFTED — a clean ladder can now be blessed**).
+any strategy (**the interlock is LIFTED: a clean ladder can now be blessed**).
 **Adds are still not trades.** Sample counting uses closed baskets, not per-rung
 fills (a lone ladder built from 4 rung fills is still 1 trade, still
-sample-capped) — documented + tested. `unlock_conditions` returns None for a
+sample-capped), documented + tested. `unlock_conditions` returns None for a
 martingale refusal (strategy property, not thin data → auto-unlock never chases
 it). Verdict headline (both registers) names the defense that fired, grounded.
 **Acceptance met, one story:** a martingale-overfit fixture (17 ruin @ −251.10 + 3
 lucky-deep @ +1855.90, 20 baskets / 2 vol regimes, NOT sample-capped) is refused
-with BOTH defenses firing — realized +$1,299 flips to −$486 without rung1
+with BOTH defenses firing: realized +$1,299 flips to −$486 without rung1
 (hand-computed), 25% of resampled orderings draw down > 30%; the clean 20-basket
 fixture clears both and grades to level 3. D5c is honesty-only (stages / trust /
 verdict / HONESTY.md); no engine or payload change. Backend green: 263 passed, 1
 skipped (6 new, interlock test renamed → defenses), ruff + mypy(strict) clean.
 
-## 2026-07-06 — D5d: parser offers the ladder, stops simplifying (branch claude/d5d-parser-ladder · OWNER RE-ACCEPT GATE)
+## 2026-07-06, D5d: parser offers the ladder, stops simplifying (branch claude/d5d-parser-ladder · OWNER RE-ACCEPT GATE)
 
 **The parser now runs the ladder AS WRITTEN.** parse.py's system prompt gained
 entry.scale_in + exit.close_at_time with explicit conventions: a scale-in ladder
-("add 2 at RSI 30, 3 at 25, ...") is SUPPORTED — emit it, never flatten to a
+("add 2 at RSI 30, 3 at 25, ...") is SUPPORTED: emit it, never flatten to a
 single entry, never say it isn't supported; rungs live in scale_in.rungs and
 entry.conditions stays EMPTY (the rungs ARE the signal); rearm = the indicator
 leaving the zone; a 5-min ladder indicator ⇒ clock 5min; max_total_contracts is
-REQUIRED (the ruin cap) — if unstated the parser ASKS, never defaults it (guardrail
+REQUIRED (the ruin cap). If unstated the parser ASKS, never defaults it (guardrail
 #3); "stop adding when it reverses" → stop_adding_on next_rung_not_reached (the only
 implemented mode); "flatten by 3:45 / no overnight" → close_at_time 15:45. sizing
 stays fixed_contracts. _required_spec_version recomputes to 3 on scale_in/close_at_time
@@ -1100,7 +1100,7 @@ and close_at_time, so a ladder case can't pass flattened.
 4-rung intraday RSI family → full spec), generality ladder (case 20 = 0DTE QQQ), and
 two ASK cases (21 = no cap → asks the ruin cap; 22 = no exits → asks). LIVE EVAL
 RESULT: **13/14 clear + 8/8 ambiguous → ACCEPTED**; ALL FOUR ladder cases pass. The
-one clear miss is case 3 (pre-existing iron-condor, asked about the "$3 wider" wing —
+one clear miss is case 3 (pre-existing iron-condor, asked about the "$3 wider" wing;
 unrelated to the ladder changes, within the 1-miss tolerance, deepseek nondeterminism).
 Hermetic unit tests added (no LLM): the ladder flows through parse_strategy and
 recomputes to v3; version detection unit-covered. 265 passed, 1 skipped; ruff + mypy
@@ -1111,14 +1111,14 @@ the full parsed spec); editing a dial rebuilds from draftToSpec, which does not 
 carry scale_in → the ladder would be dropped. draftToSpec + spec_to_draft need
 scale_in awareness for the edit path.
 **GATED: owner re-ACCEPT required before merge** (same gate as D1c/D2c). PR opened,
-NOT merged — awaiting owner acceptance of the eval.
+NOT merged, awaiting owner acceptance of the eval.
 
-## 2026-07-06 — Unusual Whales collector prebuilt (before subscription)
+## 2026-07-06, Unusual Whales collector prebuilt (before subscription)
 
 Owner directive: prebuild a comprehensive UW collector so trial day one is pure
-downloading — bank everything available for SPY/QQQ/IWM, figure out engine use
+downloading: bank everything available for SPY/QQQ/IWM, figure out engine use
 later. Shipped `collector/backfill_unusual_whales.py` + `collector/uw_manifest.py`:
-manifest-driven (59 in-scope endpoints distilled from their 190-path OpenAPI spec —
+manifest-driven (59 in-scope endpoints distilled from their 190-path OpenAPI spec:
 flow, GEX/DEX dealer positioning, market tide, OI structure, IV rank/skew/term
 structure, ETF holdings/flows, shorts, OHLC, per-contract history), Bearer auth,
 self-throttling off UW's live rate headers with a resumable daily-budget stop,
@@ -1126,11 +1126,11 @@ faithful json_normalize banking to new R2 prefixes (chain lake untouched). A
 `probe` mode auto-detects each `date?` endpoint's history behavior (one-call series
 vs per-date) since that's the budget-defining unknown untestable without a token.
 Helpers (rows_of/_distinct_dates/to_frame/sessions_desc) unit-tested; ruff clean.
-DATA-PIPELINE §9 has the trial-day runbook. NOT wired into coverage/engine yet —
+DATA-PIPELINE §9 has the trial-day runbook. NOT wired into coverage/engine yet:
 that's the deliberate "collect now, use later" phase. UW options depth ≈2022+, so
 this complements (never replaces) the iVol 20-yr analytics + the pre-2022 chain gap.
 
-## 2026-07-07 — ENGINE-V4 F0: data spine (PIT readers + resolution ledger)
+## 2026-07-07, ENGINE-V4 F0: data spine (PIT readers + resolution ledger)
 
 V4 program approved (masterplan MD: F0 → FX 0DTE intraday engine → F4/F1/F5/
 F2-F3/F7/F8). F0 ships the safety plumbing with ZERO engine-behavior change:
@@ -1146,10 +1146,10 @@ F2-F3/F7/F8). F0 ships the safety plumbing with ZERO engine-behavior change:
   decision CLOCK and validates fills; fill quotes stay on the NBBO hierarchy.
 - Per-session resolution map: `app/data/resolution.py` derives
   clock_resolution (minute>five_min>none) + quote_resolution by QUALITY
-  (ivol_5min>cboe_2min>eod_only>none, D2 amendment 1) — single
+  (ivol_5min>cboe_2min>eod_only>none, D2 amendment 1), single
   implementation, imported by `collector/ledger.py`, which rebuilds
   `state/resolution_map/ticker={T}.parquet` + `state/source_coverage.json`
-  every run (nightly workflow already calls ledger.py — self-improvement:
+  every run (nightly workflow already calls ledger.py; self-improvement:
   new data upgrades eligibility with no redeploy). Live maps banked: SPY
   4,907 sessions (minute 91 · five_min 2,888), QQQ minute already 10 and
   growing, IWM five_min 2,508.
@@ -1166,7 +1166,7 @@ contracts); daily budget hit 29,975/30,000 → budget-aware retry loop armed.
 QQQ iVol 5-min backfill completes ~2026-07-08 and flows in via the nightly
 ledger rebuild automatically.
 REVIEW (independent agent, same session): 2 MAJOR + 6 lesser findings, ALL
-FIXED — (1) same-day EOD observations (UW series / Massive daily aggs / IVS
+FIXED: (1) same-day EOD observations (UW series / Massive daily aggs / IVS
 fits) were visible at intra-session moments → datetime as_of now EXCLUDES
 the as_of session in those readers; (2) tz-naive stamps were localized as
 UTC (fail-open) → new app/data/pit.py detects offsets at the VALUE level
@@ -1179,15 +1179,15 @@ family validation in daily_sessions; (8) ledger gathers UW listings once
 per run instead of 3×. 310 tests green after fixes; 7 new fixtures pin the
 corrected contracts (incl. the reviewer's exotic-offset probe).
 
-## 2026-07-07 — ENGINE-V4 FX.1: intraday PIT loop + per-session resolution
+## 2026-07-07, ENGINE-V4 FX.1: intraday PIT loop + per-session resolution
 
 Survey correction first: 0DTE was ALREADY legal at the 5-min clock (D2:
-trading-DTE, same-session settle, SliceCoverage refusal) — FX.1 proves it
+trading-DTE, same-session settle, SliceCoverage refusal). FX.1 proves it
 end-to-end instead of rebuilding it. Shipped (spec v4, additive):
 - `backtest.resolution: "5min"|"finest"` (v4 vocabulary, loud on older
   specs; requires the intraday clock; absent ≡ "5min" bit-identically).
 - Per-session selection: engine asks the provider once per run; the
-  provider reads the F0 resolution map (clock=minute AND bars_1m grid —
+  provider reads the F0 resolution map (clock=minute AND bars_1m grid,
   new additive `has_minute_underlying` column, ledger rebuilt). Minute
   sessions step a 1-min bar grid built from bars_1m underlying NBBO
   (stale prior-session prints dropped, regular hours only) with option
@@ -1195,7 +1195,7 @@ end-to-end instead of rebuilding it. Shipped (spec v4, additive):
   disk cache untouched.
 - Loop is resolution-parametric: nudge scales to the grid; timeframe-5min
   indicator series + session VWAP read ONLY the 5-min underlying frame's
-  stamps on minute grids (same artifact/values/bounds as the 5-min grid —
+  stamps on minute grids (same artifact/values/bounds as the 5-min grid,
   review finding 1 hardened; bars_1m rows are price-only refinement). RunResult records
   resolution_mode/mix/compressed runs; payload additive
   (resolutionMode/Mix/Runs).
@@ -1205,7 +1205,7 @@ end-to-end instead of rebuilding it. Shipped (spec v4, additive):
   indicator-pollution red test, honest degrade (map empty / grid
   unbuildable), absent≡"5min" bit-identity, 0DTE sell-the-winner
   (PT/force-flat, never settles, to the cent), minute-grid canary.
-- Real-lake smoke: SPY finest 2026-05-01→07-02 — 43/43 covered sessions
+- Real-lake smoke: SPY finest 2026-05-01→07-02, 43/43 covered sessions
   at the minute grid, 43 fills all ivol_5min NBBO, exits 38 profit_target
   + 5 session_flat, ZERO settlements ("sell winners, don't settle"),
   23.5s, RSS Δ+22MB flat across re-runs, deterministic re-run identical.
@@ -1213,7 +1213,7 @@ Deliberately NOT here (owner-confirmed split): armed entries (FX.2),
 latched stops / worse-path (FX.3), verdict disclosure + mixed-resolution
 gauntlet (FX.4), parser vocabulary (FX.5 re-ACCEPT).
 REVIEW (independent agent, same session): 1 BLOCKER + 2 MAJOR + 5 lesser,
-ALL FIXED — (1) BLOCKER: the minute grid sampled indicators from bars_1m
+ALL FIXED: (1) BLOCKER: the minute grid sampled indicators from bars_1m
 at %5 minutes, a DIFFERENT artifact with different session bounds than the
 5-min underlying record (82 rows to 16:15) → minute slices now merge the
 5-MIN frame (wins at stamps, carries ALL indicator samples + VWAP volume,
@@ -1223,14 +1223,14 @@ by stamp membership; REAL-LAKE PARITY PROVEN: finest ≡ fixed-5min exactly
 gained v4 + backtest.resolution (+ parity test); (3) minute und frames now
 disk-cached beside the 5-min caches (finest gauntlet was ~1,000 R2 round
 trips); (4) bars_1m volume dropped entirely (its diff-after-filter hazard
-gone — 5-min frame is the only VWAP source); (5) minute eligibility no
+gone; 5-min frame is the only VWAP source); (5) minute eligibility no
 longer frozen per-process (map TTL governs; engine snapshots per run);
 (6) negatives never cached + compression-extension and store-glue tests
 added; (7) results surface now shows the per-session resolution line when
 a run carries a mix (guardrail #6; hidden on all existing runs, verified);
 (8) seconds-alignment guard. 336 tests green after fixes.
 
-## 2026-07-07 — ENGINE-V4 FX.2: continuous opportunity scanning
+## 2026-07-07, ENGINE-V4 FX.2: continuous opportunity scanning
 
 spec v4 `entry.intraday_scan every_setup` (absent ≡ once_per_session,
 bit-identical; refuses daily clock + scale_in). Owner decisions baked:
@@ -1243,7 +1243,7 @@ die at close_at_time/session end). Every skip counted →
 RunResult.skip_reasons + payload skipReasons (log stays deduped);
 no_quote_this_bar distinct from no_chain_data. Loop refactor keeps the
 once_per_session path byte-identical; closed-this-bar detection is
-event-based (never O(positions) per bar — OOM guard). Honest disclosure:
+event-based (never O(positions) per bar, OOM guard). Honest disclosure:
 scanning edges live at 5-min stamp granularity today (FX.1 indicator
 parity); minute-level triggers arrive with FX.3. 347 tests (+11
 hand-computed: persistent=1 entry, refire=2, cap consumed, PT re-entry
@@ -1251,13 +1251,13 @@ hand-computed: persistent=1 entry, refire=2, cap consumed, PT re-entry
 flat, unconditional cycle 2.025→PT→1.425, bit-identity, validators,
 schema parity).
 REVIEW (independent agent, same session): 1 MAJOR + 4 MINOR + 3 NIT, ALL
-FIXED — (1) MAJOR: scanning made position count scale with BARS while three
+FIXED: (1) MAJOR: scanning made position count scale with BARS while three
 per-bar paths iterated ALL positions ever (incl. pre-existing _check_exits)
 → quadratic on cyclers; introduced the LIVE book (state.live, swept O(open)
 per bar; _check_exits/_force_flat/_settle/_unwind/equity/marks all moved) +
 MAX_RUN_FILLS=20,000 loud refusal (RunFillCapError, tested via pathological
 per-bar cycler); (2) second edge while armed now counted order_in_flight
-(one-working-order model disclosed); (3) waiting bars are NOT skips —
+(one-working-order model disclosed); (3) waiting bars are NOT skips:
 no_quote_this_bar counts once per episode only at unfilled death (session
 end/flatten); filled armed orders contribute no count; (4) ANY intraday_scan
 + scale_in refused (schema said mutually exclusive); (5) payload/types
@@ -1266,38 +1266,38 @@ no-hunting bound pinned (refusing quote bar consumes the episode, later good
 quotes untouched); (7) closed_this_bar gated to its consumer + covered-call
 slot note; (8) schema title v3→v4; (9) lifecycle re-arm comment. 351 tests.
 
-## 2026-07-07 — ENGINE-V4 FX.3: latched exits + the intrabar-unknown rule
+## 2026-07-07, ENGINE-V4 FX.3: latched exits + the intrabar-unknown rule
 
 Survey: most named FX.3 deliverables already existed (PT/stops/theta/
 close_at_time/settlement; stop-first priority IS the worse-path tie rule).
 What was missing: nothing could TRIGGER at a minute bar (conditions read
 the stamp-sampled series). Shipped (all finest-gated; fixed-5min
-bit-identical by construction — the live print at a stamp equals the
+bit-identical by construction: the live print at a stamp equals the
 sampled value, print-less bars fall back):
-- Live-price condition side (owner: entries AND exits, one semantic —
+- Live-price condition side (owner: entries AND exits, one semantic;
   asymmetric visibility would be "lookahead-flavored"): price-vs-SMA/EMA/
   VWAP compare the current bar's real print against the stamp-sampled
   indicator (_live_price_tail; series cadence untouched).
-- Latched exits (owner: directional honesty — "a forgotten exit is
+- Latched exits (owner: directional honesty, "a forgotten exit is
   optimism"; entries/exits have opposite risk polarity so the right
   consistency is same honesty-direction, OPPOSITE validity mechanics): a
   condition-exit trigger observed at an unfillable bar latches on the
   Position (exit_latched/latched_bar), completes at the first fillable
   quote, no re-evaluation, no expiry, "triggered HH:MM" disclosed.
 - 0DTE default unchanged (owner: force-flat stays opt-in vocabulary;
-  parser SUGGESTS at FX.5 — ask, never default, guardrail #3).
+  parser SUGGESTS at FX.5: ask, never default, guardrail #3).
 - Fixtures (hand-computed): touch at 09:41 latches → fills 09:45 at the
   real quote (−106.30 pinned, fade-proof); latch survives an unfillable
   stamp (no expiry); the SAME touch invisible at 5-min (blind spot
   pinned); FX.2+FX.3 end-to-end (minute dip arms entry, fills at next
   quote, "armed 09:41"); live-price VWAP/SMA units. 360 tests.
 REVIEW (independent agent, same session): 1 MAJOR + 2 MINOR + 2 NIT, ALL
-FIXED — (1) MAJOR: crosses operators at off-stamp bars paired (pct@S-1,
+FIXED: (1) MAJOR: crosses operators at off-stamp bars paired (pct@S-1,
 live), dropping the latest stamp → genuine inter-stamp crosses MISSED (the
 exact forgotten-exit class) + resolved crosses re-fired on minute jitter;
 fixed via is_indicator_stamp plumbed through BarView/protocol and
 _live_price_tail building (latest sampled, live) pairs only at off-stamp
-printed bars — bit-identity now trivial (stamp bars take the untouched
+printed bars: bit-identity now trivial (stamp bars take the untouched
 pre-FX.3 path); crosses pinned both directions; (2) latch completion at
 gap-session EOD documented + trigger note DATED on later-session fills
 (latched_day); (3) a latch first fillable at the flatten bar closes under
@@ -1307,14 +1307,14 @@ gained stamp-awareness + crosses coverage. 363 tests green; reviewer
 verified bit-identity off finest incl. 20k randomized IEEE trials of the
 scalar recompute, guardrails #1/#2, latch lifecycle, FX.2 interplay.
 
-## 2026-07-07 — ENGINE-V4 FX.4: mixed-resolution gauntlet honesty
+## 2026-07-07, ENGINE-V4 FX.4: mixed-resolution gauntlet honesty
 
 The gauntlet now understands what FX.1–FX.3 built. Shipped (inert on every
-run without a per-session resolution record — 368 pre-existing tests
+run without a per-session resolution record, 368 pre-existing tests
 untouched): `resolution_split` stage (full vs 5-MIN-ONLY vs minute stats
 from recorded returns/fills, no re-run; RunResult carries the in-process
 per-session map); HARD CAP on the optimistic sign-flip at real-evidence
-floors (≥15 sessions both subsets + ≥MIN_TRADES in the 5-min sub-window —
+floors (≥15 sessions both subsets + ≥MIN_TRADES in the 5-min sub-window;
 owner: "cap hard WHEN it fires, only fire when the evidence is thick
 enough"; resolution flip = data-VALIDITY finding vs OOS flip = robustness
 signal); walk-forward folds carry minute_share (disclosure in the RUN:
@@ -1327,14 +1327,14 @@ payload additive resolutionSplit; ReceiptBanner upgrade line. 381 tests
 optimistic-direction-only, inert paths, fold shares, caveat grounding,
 receipt annotation).
 REVIEW (independent agent, same session): 1 BLOCKER + 1 MAJOR + 4 MINOR +
-3 NIT, ALL FIXED — (1) BLOCKER: the receipt "resolution upgrade" note
+3 NIT, ALL FIXED: (1) BLOCKER: the receipt "resolution upgrade" note
 would have fired FALSELY on every production receipt (daily parents carry
 no mix; replays always carry five_min → {} != mix always true) while the
 genuine case was unreachable; now requires BOTH runs to carry mixes
 (silent on ordinary receipts, pinned with production-shape test) +
 resolutionMix rides the stats bundle so future finest-parent comparisons
 can fire; (2) MAJOR: a resolution-cap-only refusal fell to the sample
-headline ("too few trades" on a 900-trade run — a false statement from
+headline ("too few trades" on a 900-trade run, a false statement from
 the honesty floor); both template voices gained a headline arm naming the
 granularity artifact (pinned); (3) None-sharpe format guard in the cap
 reason; (4) first-session gap day counted in eod_fallback; (5) trade-
@@ -1345,14 +1345,14 @@ precedence fixed; (8) sub-half-percent fold shares no longer render "0%
 minute"; (9) retail voice gained the fold caveat. Stats-bundle contract
 test updated (+resolutionMix, quotable by grounded Q&A). 383 tests.
 
-## 2026-07-07 — ENGINE-V4 FX.5: the parser unlock (owner re-ACCEPT gate)
+## 2026-07-07, ENGINE-V4 FX.5: the parser unlock (owner re-ACCEPT gate)
 
 spec v4 vocabulary is now parseable end-to-end. Shipped:
 - parse.py: intraday_scan mapping (explicit continuous-scanning phrasing
-  only; condition-less cycling is COMPLETE as written — the lifecycle is
+  only; condition-less cycling is COMPLETE as written: the lifecycle is
   the setup, never ask what defines one; cadence is never a required
   question); resolution "finest" from EXPLICIT phrasing only (owner: a
-  data policy is never inferred from strategy shape — reproducibility
+  data policy is never inferred from strategy shape, reproducibility
   over helpfulness); the exit-less 0DTE seller asks OFFERING force-flat/
   PT/settlement (suggest never default); entry time never required;
   _required_spec_version → 4.
@@ -1366,11 +1366,11 @@ spec v4 vocabulary is now parseable end-to-end. Shipped:
   "dips below" as crosses_below accepted as correct semantics (case 23
   expectation broadened).
 - FRONTEND 0DTE UNLOCK: the dial path's throw + run-block + warn banner
-  ("refused until the minute engine milestone" — SHIPPED in FX.1-4) are
+  ("refused until the minute engine milestone", SHIPPED in FX.1-4) are
   lifted: DTE 0 emits an intraday spec (clock 5min, DTE band 0-2);
   informative note replaces the refusal. Spec screen gains SCANNING and
   RESOLUTION dials (intraday only).
-- ROUND-TRIP FIX (closes the D5d follow-up — "negligence-by-adjacency"
+- ROUND-TRIP FIX (closes the D5d follow-up, "negligence-by-adjacency"
   to leave it): draftToSpec(draft, base) preserves parser-only vocabulary
   through dial edits (scale_in + conditions[], intraday_scan, resolution,
   close_at_time, time_of_day, clock); exit label grammar learned
@@ -1380,47 +1380,47 @@ spec v4 vocabulary is now parseable end-to-end. Shipped:
 GATE: PR held OPEN for owner re-ACCEPT; owner swaps in verbatim personal
 0DTE prompts as golden cases at the gate.
 REVIEW (independent agent, same session): 1 BLOCKER + 3 MAJOR + 4 MINOR +
-NITs, ALL FIXED — (1) BLOCKER: the new dials' OFF state (null) couldn't
-override the parsed base through ?? — flipping SCANNING to "once/session"
+NITs, ALL FIXED: (1) BLOCKER: the new dials' OFF state (null) couldn't
+override the parsed base through ??, flipping SCANNING to "once/session"
 would have silently RUN every_setup while the confirmed screen showed the
 opposite (the PR's own corruption class); fixed with undefined-vs-null
 semantics; (2) prompt self-contradiction on the cadence ask (explained
-the case-25 nondeterministic miss) — scoped: intraday reads a session
+the case-25 nondeterministic miss), scoped: intraday reads a session
 cycle without asking, daily still asks (pinned, new case 29); (3) exit
-edits no longer silently re-attach close_at_time — it is LABEL-OWNED
+edits no longer silently re-attach close_at_time: it is LABEL-OWNED
 ("flat 15:45" round-trips; replacement removes it visibly); label-
 inexpressible exit fields (delta stops/theta/exit conditions) pass
 through from base, matching verbatim runs; (4) preservation coverage
 honestly widened: ALL entry conditions survive an unedited trigger
-(multi-condition + timeframes — the case-16 RSI+VWAP flagship no longer
+(multi-condition + timeframes, the case-16 RSI+VWAP flagship no longer
 loses its VWAP filter to a window pick), edited triggers keep timeframe,
 max_concurrent/max_vega pass through, comment/HONESTY claims corrected;
 (5) long-tenor "every time" hijack closed (pinned, new case 30);
 (6) stale 0DTE-refusal copy scrubbed; (7) 0DTE window estimates price the
 5-min clock; (8) 0DTE band aligned {0,0,1} both ingresses. FINAL LIVE
-EVAL (30 cases): 20/20 clear + 10/10 ambiguous — ACCEPTED, perfect score
+EVAL (30 cases): 20/20 clear + 10/10 ambiguous, ACCEPTED, perfect score
 (the scoping resolved the case-25 nondeterminism). PR held for the owner
 re-ACCEPT + verbatim golden swap.
 
-## F4 (ENGINE-V4) — vol-surface signals: 25Δ skew + 30v90 term slope (2026-07-07)
+## F4 (ENGINE-V4), vol-surface signals: 25Δ skew + 30v90 term slope (2026-07-07)
 
-WHAT: spec v5 — two IVS-derived indicators usable as entry/exit condition
+WHAT: spec v5, two IVS-derived indicators usable as entry/exit condition
 filters at any clock: skew_25d (IV 25Δput − 25Δcall @30d tenor, VOL
 POINTS, linear delta interpolation between bracketing grid rows) and
 term_structure_slope (ATM IV 90d − 30d from exact OTM%=0 rows). Owner
-decisions: FIXED market-standard tenors (no parameterization on spec —
+decisions: FIXED market-standard tenors (no parameterization on spec;
 exotic tenors later as explicit named vocabulary if a real strategy needs
 them); iv_surface_point DEFERRED to its own design pass (disclosed, not
 dropped); "variance risk premium" phrasing is a parser ALIAS onto
-hv_iv_spread_30d — one implementation per formula, duplicates drift.
+hv_iv_spread_30d. One implementation per formula, duplicates drift.
 HOW: derive-once artifact reference/derived/ivs_signals/ticker={T}.parquet
 built nightly by collector/derive_ivs_signals.py (incremental watermark
 state/ivs_signals_derive.json; the MATH is imported from
-app/data/ivs_signals.py — single source, fixture-tested; new surface
+app/data/ivs_signals.py, single source, fixture-tested; new surface
 sessions flow in with no redeploy). Engine: MarketStore/MarketView
 bisect accessors (PIT ≤ as_of), BarView reads the PREVIOUS session at
 intraday bars (EOD-fit rule), conditions compare vol points DIRECTLY
-(never re-×100 — pinned against the ivx_level ×100 convention).
+(never re-×100, pinned against the ivx_level ×100 convention).
 Fail-closed derivation: missing tenor/bracket → None per signal, never
 extrapolated or cross-tenor. spec_version 5 gating both ways (v5 vocab
 on v4 spec is loud; probe bumped to 6), JSON schema updated, TS
@@ -1429,90 +1429,90 @@ computeSpecVersion mirror. Parser: explicit skew/term phrasing, vague
 VRP alias pinned NOT to lift the version. Coverage + Observatory: per-
 ticker derived window with per-signal session counts (a session can
 carry skew and honestly lack term). Eval: cases 31-35.
-TESTS: 31 new (415 total green) — hand-computed interpolation (6.0 vol
+TESTS: 31 new (415 total green), hand-computed interpolation (6.0 vol
 points exact; 1/3-weight rounding 5.3333), exact-node, both unbracketed
 directions, cross-tenor refusal, ATM non-pollution, per-signal absence,
 loader NaN handling, PIT boundedness both accessors, BarView prev-day,
 ×100-bug canary, unavailable-is-False, v5 gating + schema parity,
 version detection incl. alias, condition-gated e2e (entry fires only on
 the qualifying session).
-LIVE EVAL (35 cases): 23/23 clear + 12/12 ambiguous — ACCEPTED, perfect
+LIVE EVAL (35 cases): 23/23 clear + 12/12 ambiguous, ACCEPTED, perfect
 score. Case 34 asks the exact threshold question ("What threshold defines
 'really steep' for the 25-delta skew?"); case 35 refuses the 10Δ/60d remap
 and offers the supported signals; case 33 pins the VRP alias at v2.
 REVIEW (independent agent, clean worktree of the commit): 0 BLOCKER +
-3 MAJOR + 3 MINOR + 3 NIT, must-fixes ALL FIXED — (1) MAJOR: the
+3 MAJOR + 3 MINOR + 3 NIT, must-fixes ALL FIXED: (1) MAJOR: the
 collector watermark advanced past never-derived sessions (transient R2
 read failure = permanent hole; drip-backfilled OLD sessions below the
 watermark never derived) → REDESIGNED to set-difference incrementality:
 each run derives exactly the listed sessions absent from the artifact,
 no state file at all; unreadable sessions write no row and retry next
-night, loudly logged (holes heal by construction — self-improvement
-thesis); (2) MAJOR: the v5 gate scanned only entry/exit conditions — a
+night, loudly logged (holes heal by construction, self-improvement
+thesis); (2) MAJOR: the v5 gate scanned only entry/exit conditions: a
 v3 LADDER smuggled skew_25d rungs/rearm past all three mirrors
 (spec.py validator, parser _required_spec_version, spec.ts) → all three
 fold in scale_in.rungs + rearm, pinned both ways (loud at v3, valid at
 v5, parser returns 5); (3) MAJOR: derive_signal_row trusted vendor
-dtypes — a string-typed surface would derive an all-None row silently →
+dtypes: a string-typed surface would derive an all-None row silently →
 pd.to_numeric coercion (same rule as load_ivs_surface) + unrecognized-
 shape early return, pinned (string-typed fixture derives identically);
 (4) chains.py loads the F4 series in its OWN try/except (a corrupt skew
 artifact can no longer zero IVX/HV for a v2 strategy); (5) Observatory
 panel gates on any-ticker, not SPY-only (guardrail #6 mid-backfill);
 (6) gated-e2e docstring states the real carry-forward semantics;
-(7) schema title bumped v5; (8) jsonschema added to dev deps — the four
+(7) schema title bumped v5; (8) jsonschema added to dev deps: the four
 schema-parity tests (incl. v5) now RUN in CI instead of skipping;
 (9) stable interpolation sort comment. Real-lake acceptance: SPY derived
 4,905/4,905 sessions with skew present on every one.
 OWNER GATE FULFILLED (2026-07-07, same session): golden cases 27/28/36
-are now the owner's VERBATIM prompts (typos preserved — the set protects
+are now the owner's VERBATIM prompts (typos preserved, the set protects
 real phrasing, not tidy archetypes). 27 = the 0DTE put seller (cycling +
 finest + flat 15:45 + stop 100% of credit) → parses to spec exactly.
 28 = the 1DTE QQQ cycler; "No holding overnight" has no stated time, so
 the case is kind spec_or_questions (owner-blessed dual outcome): a spec
 with any end-of-session close_at_time passes, and so does asking the
-exact-time question — dropping the constraint silently fails. Grader
+exact-time question. Dropping the constraint silently fails. Grader
 gained the dual kind + close_at_time list matching. 36 = the personal
 RSI scale-in ladder as typed ("by 10 more") → must ask (unstated ruin
 cap). First run on the swapped set exposed a REAL pre-existing flake:
 case 29 (daily, no tenor, no cadence) fabricated frequency "daily" +
-the 45-DTE convention ~1-in-5 runs — the ONE ALLOWED CONVENTION was
+the 45-DTE convention ~1-in-5 runs: the ONE ALLOWED CONVENTION was
 over-applying to bare profit targets. Prompt tightened: the convention
 applies ONLY when a DTE number appears in the exit itself; cadence rule
 gained the case-29 worked negative example. FINAL EVAL (36 cases):
 23/23 clear + 13/13 ambiguous ACCEPTED; case-29 probe 5/5 asks (was
 4/5). All three verbatim goldens pass.
 
-## F1 (ENGINE-V4) — dealer positioning: GEX/DEX sign + rank (2026-07-07)
+## F1 (ENGINE-V4), dealer positioning: GEX/DEX sign + rank (2026-07-07)
 
-WHAT: spec v6 — four UW dealer-positioning indicators as condition
+WHAT: spec v6, four UW dealer-positioning indicators as condition
 filters: gex_level / dex_level (net gamma / net delta, vendor sign
-convention; the sign IS the regime — dealer_gamma_regime is parser sugar
+convention; the sign IS the regime; dealer_gamma_regime is parser sugar
 for gex_level > 0, never a duplicate indicator) and gex_rank_1y /
 dex_rank_1y (trailing-252 percentile with the D1 ivx_rank ≥126-obs
-floor, owner amendment — rank unlocks as UW data accrues). OWNER
+floor, owner amendment; rank unlocks as UW data accrues). OWNER
 DECISIONS: (1) pre-run REFUSAL when a conditioned run's window starts
-before the signal's first covered session (prevention beats correction —
+before the signal's first covered session (prevention beats correction:
 no corrupted long-window artifact is ever produced; covered window
 offered back; bound surfaced on the composer's window tile);
-(2) daily-first semantics — intraday spot_exposures GEX is its own later
+(2) daily-first semantics: intraday spot_exposures GEX is its own later
 chunk (stale-but-true beats fresh-but-leaky); (3) sign + rank vocabulary
-only — raw vendor-unit thresholds refused by the parser (opaque units, a
+only: raw vendor-unit thresholds refused by the parser (opaque units, a
 silent upstream rescale would corrupt every threshold spec).
 gex_flip_distance DEFERRED after live probing: the 50-strike EOD
 snapshot derives no transition on ~35% of sessions and wing-noise
-transitions produce absurd values (SPY −69%) — disclosed, not dropped
+transitions produce absurd values (SPY −69%), disclosed, not dropped
 (F4 iv_surface_point precedent).
 HOW: app/data/gex_signals.py loader (coercion, dedupe keep=last,
 per-signal NaN skip) reads the nightly-banked reference/uw/
-greek_exposure series — NO new collector job (the series is already one
+greek_exposure series, NO new collector job (the series is already one
 row per session; self-improvement wiring is the existing UW collector).
 MarketStore/MarketView/BarView + protocol; conditions dispatch;
 check_signal_coverage in run_engine at BOTH clocks (SliceCoverageError,
 plain reason); spec v6 gating incl. ladder rungs/rearm; schema + TS
 mirror (v6 before v5, max wins); estimate signal_windows block +
 window-tile bound note; coverage + Observatory dealer-positioning lane.
-TESTS: 28 new (452 total green) — loader coercion/dedupe/missing-columns,
+TESTS: 28 new (452 total green), loader coercion/dedupe/missing-columns,
 PIT boundedness + history bounding, BarView prev-day, sign semantics
 both directions (real SPY +283K / QQQ −124K magnitudes as fixtures),
 rank floor boundary 125/126 + rising-series rank-100 hand fixture,
@@ -1521,90 +1521,90 @@ schema parity, refusal suite (window-before-signal refused with the
 covered window; default-full-window refused; covered window runs AND
 gates on the qualifying session only; unconditioned spec untouched;
 no-data-at-all refused plainly).
-LIVE EVAL (40 cases): 26/26 clear + 14/14 ambiguous — ACCEPTED, perfect
+LIVE EVAL (40 cases): 26/26 clear + 14/14 ambiguous, ACCEPTED, perfect
 score; case 39's raw-unit refusal asks "How would you like to define the
 GEX condition?" offering sign/rank.
 REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
-5 MINOR + 4 NIT — (1) MAJOR FIXED: a window lying ENTIRELY before the
+5 MINOR + 4 NIT: (1) MAJOR FIXED: a window lying ENTIRELY before the
 signal offered an inverted, impossible window ("Run 2025-07-08 →
-2024-01-08") — now offers the real covered window with an
+2024-01-08"), now offers the real covered window with an
 "entirely before coverage begins" reason, pinned; (2) FIXED: rank-
 condition refusals + the composer note now name the RANK-UNLOCK date
-(first + 126 observations) — the offered window must not hide six
+(first + 126 observations): the offered window must not hide six
 structurally unevaluable months, pinned; (3) FIXED: the trailing-
 percentile formula existed in FOUR inline copies (iv_percentile, ivx,
-gex, dex) — extracted to _trailing_rank(history, min_obs), byte-
+gex, dex), extracted to _trailing_rank(history, min_obs), byte-
 identical (floors 20/126 as args), battery green; (4) FIXED: a cold
-5-min /estimate no longer blocks on the full daily store build — reads
+5-min /estimate no longer blocks on the full daily store build: reads
 the single small greek_exposure parquet directly; (5) schema title
-bumped v6; (6) FIXED: the 5-min-clock refusal was untested — pinned
+bumped v6; (6) FIXED: the 5-min-clock refusal was untested, pinned
 with an intraday fixture; (7) window-tile note documented as
 DELIBERATELY partial (trigger-dial only; run-time refusal always
 guards) + shows the rank-unlock date; (8,9,10) NITs: Observatory
 session counts mirror the ivs pattern (noted), BarView test pins
 delegation (named), refusal params renamed win_start/win_end.
 
-## F5 (ENGINE-V4) — fill realism: displayed-depth disclosure (2026-07-07)
+## F5 (ENGINE-V4), fill realism: displayed-depth disclosure (2026-07-07)
 
 WHAT: every option-leg fill now compares its quantity against the
 traded side's displayed NBBO size from the iVol 5-min record
 (bid_size/ask_size, in the lake since 2013, unused until now). OWNER
-DECISIONS: disclose first, model later (prices untouched — a price-
+DECISIONS: disclose first, model later (prices untouched: a price-
 impact model must be EARNED via D3d calibration; a hard gate fails the
 FX.2 pessimism test); intraday slip unchanged (no volume-proxy scaling
 without calibration evidence); Massive cross-check DEFERRED to F7
-(CORRECTED same day: the first survey probed the wrong prefix — the
+(CORRECTED same day: the first survey probed the wrong prefix, the
 free-tier collector HAS banked QQQ/IWM contract universes + ~5.7K QQQ
 aggs under reference/massive/, stalled at ~3.6% by the 5 req/min rate:
 ~34 days for the full 244K-contract universe; ramp is an ops decision).
-HOW: Quote gains bid_size/ask_size (None on EOD rows — +2 slots/quote,
+HOW: Quote gains bid_size/ask_size (None on EOD rows, +2 slots/quote,
 ~+70MB on a full store, within the 8GB budget); intraday slice
 plumbing + CACHE_SCHEMA_VERSION 4→5 (spread stats
-untouched — the #62 lesson; lazy per-session rebuild; NOTE the version
+untouched, the #62 lesson; lazy per-session rebuild; NOTE the version
 is shared with the FX.1 1-minute underlying frame cache, so those
-frames also rebuild once — wasteful but safe, disclosed); _record_leg_fill
+frames also rebuild once, wasteful but safe, disclosed); _record_leg_fill
 gains (action, qty) → counts fills_depth_known/fills_beyond_depth and
 returns the trade-log note; all three fill sites (entry legs by side,
 ladder adds, quote-priced closes by close-side) thread notes into
 OPEN/ADD/CLOSE details; settlements honestly carry nothing;
 LiquidityProfile + payload gain depth_known_share/beyond_depth_share
 with a caveat note on ANY exceedance; results-view liquidity line shows
-the beyond-depth share. NO parser change — no eval gate this chunk.
-TESTS: 10 new (465 total green) — within/exact-boundary/beyond
+the beyond-depth share. NO parser change, no eval gate this chunk.
+TESTS: 10 new (465 total green), within/exact-boundary/beyond
 counting, traded-side correctness (thin ask doesn't flag a short
 entry; the PT buyback against ask_size 3 does), missing sizes stay
 unknown, prices identical thin-vs-deep (the disclosure-only pin),
 daily clock carries zero depth (digest guarantee), profile shares +
 note, unknown→None not zero.
 REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
-2 MINOR + 4 NIT — (1) MAJOR FIXED: the disclosure note's raw counts
-("15 of 228") existed only inside a STRING — the grounding harvester
+2 MINOR + 4 NIT: (1) MAJOR FIXED: the disclosure note's raw counts
+("15 of 228") existed only inside a STRING: the grounding harvester
 would falsely reject any verdict/Q&A echoing the disclosure's own
 numbers past the counting allowance (the WF-fold latent class) →
 fills_depth_known/fills_beyond_depth are now numeric LiquidityProfile
 fields, pinned (harvest-set test); (2) FIXED: opening-bar rung fills
 fold into the basket OPEN event, so their depth notes now travel back
-from _fire_rungs — a beyond-depth FIRST rung is named, not just
+from _fire_rungs, a beyond-depth FIRST rung is named, not just
 counted; (3) FIXED: disclosed that CACHE_SCHEMA_VERSION is shared with
-the FX.1 1-minute und-frame cache (those rebuild once too — wasteful
+the FX.1 1-minute und-frame cache (those rebuild once too, wasteful
 but safe); (4) frontend never renders a confusing "0%" (shows "<1%"),
 names the denominator, tooltip explains the semantics; (5) action/qty
 are now REQUIRED params (no silent depth-unknown default) and the
 entry site reuses fills.open_action; (6) negative vendor sizes clamp
 to None (garbage would count as depth-known with an automatic
 exceedance); (7) denominator named on the surface. Real-lake
-acceptance: June→July 0DTE cycling seller, 10 contracts — 249 leg
+acceptance: June→July 0DTE cycling seller, 10 contracts, 249 leg
 fills, 228 depth-known (92%), 15 beyond displayed depth (6.6%), trade
 log naming e.g. "qty 10 > ask size 1" on a buyback vs displayed 1.
 MASSIVE CORRECTION + DECISION (same session): the survey's "zero data"
-was a wrong-prefix probe — reference/massive/ holds QQQ/IWM contract
+was a wrong-prefix probe: reference/massive/ holds QQQ/IWM contract
 universes (157,310/86,696) + 5,702 QQQ aggs, stalled at 3.6% by the
 free tier's 5 req/min (~33 days for the census). Owner chose the FREE
 pruned crawl ($0): prioritize ATM-at-expiry contracts overlapping the
 iVol short-DTE slice, resumable, census continues behind it. (Paid
 alternative was one Options Starter month, verified $29/mo unlimited
-calls — declined.)
-DELTA REVIEW (independent agent, clean worktree of the PR head — the
+calls, declined.)
+DELTA REVIEW (independent agent, clean worktree of the PR head, the
 two commits added AFTER the first review: 59ea097 review-fixes +
 1a0d0e1 pruned crawl; run because the every-PR-reviewed rule covers
 commits pushed post-review): MERGE-READY, 0 BLOCKER + 0 MAJOR +
@@ -1612,22 +1612,22 @@ commits pushed post-review): MERGE-READY, 0 BLOCKER + 0 MAJOR +
 _fire_rungs' new return breaks no caller, the crawl permutation drops
 NOTHING (exact partition), resumability + periodic flush intact, zero
 new API calls, deterministic ordering, ±$8 band == the iVol slice
-constant, docs math checks. Fixed on the spot: (1) MINOR — one
+constant, docs math checks. Fixed on the spot: (1) MINOR: one
 malformed date row in the underlying parquet crashed the prioritizer
 (NaT is not None) instead of falling back to census order →
-pd.notna(day); (2) MINOR — "aggregates complete" logged after every
+pd.notna(day); (2) MINOR: "aggregates complete" logged after every
 phase SEGMENT (a 4%-done band read as done on a ~34-day crawl) → the
-segment log now states banked/total; (3) NIT — the band ETA quoted the
+segment log now states banked/total; (3) NIT: the band ETA quoted the
 default rate even when --rate overrode it; (4,5) race-artifact dedup:
 the duplicated grounding test and the duplicated review paragraph
 removed. Deferred with a note: exhausted-retry contracts are appended
 to aggs_done and never retried (pre-existing; costlier now that the
-ATM band goes first — F7 follow-up).
+ATM band goes first, F7 follow-up).
 
-## F2/F3 (ENGINE-V4) — flow, sentiment & pin structure (2026-07-08)
+## F2/F3 (ENGINE-V4), flow, sentiment & pin structure (2026-07-08)
 
-WHAT: spec v7 — five UW flow/pin indicators (net_premium_level+rank,
-market_tide_level+rank [MARKET-WIDE — the first market-scope series],
+WHAT: spec v7, five UW flow/pin indicators (net_premium_level+rank,
+market_tide_level+rank [MARKET-WIDE, the first market-scope series],
 nope_level+rank, put_call_flow_ratio, max_pain_distance_pct); THREE
 masterplan indicators REFUSED on input quality (owner decision:
 oi_change_signal = top-50 vendor curation; oi_concentration/pin_risk =
@@ -1636,7 +1636,7 @@ NOPE = sign/rank only (vendor implementation ≠ published concept;
 monotone-rescale invariance). Max pain = FRONT expiry fixed ("the
 convention is the concept"). Reduction semantics PROBED and pinned:
 net_prem_ticks rows are per-minute BUCKETS (sum), market_tide is
-CUMULATIVE (last row — median row-diff 6.9M << median |row| 361M).
+CUMULATIVE (last row, median row-diff 6.9M << median |row| 361M).
 HOW: derive-once nightly artifacts (F4 set-difference pattern):
 reference/derived/flow_signals/ticker={T}.parquet + market-wide
 market_tide_signals.parquet; math single-sourced in
@@ -1647,7 +1647,7 @@ rank-unlock naming reused, spec v7 gating incl. ladders, schema + TS
 mirror (v7 before v6), estimate options_flow bound + window-tile note,
 coverage + Observatory lane (per-signal counts + market-wide tide).
 TESTS: 26 new (497 total in the clean worktree; local counts include
-another session's files) — hand-computed reductions (80.0 / 0.6 /
+another session's files), hand-computed reductions (80.0 / 0.6 /
 last-stamp NOPE / −0.2390% FORWARD front max pain; expired AND
 same-day rows excluded),
 cumulative-last-row-wins, per-signal absence, zero-volume never
@@ -1655,18 +1655,18 @@ divides, sign+raw semantics, rank floor 125/126, BarView prev-day,
 unavailable×8, v7 gating + schema parity, refusal + covered-window
 gating e2e (entries on exactly the tide-positive sessions).
 REVIEW (independent agent, clean worktree): 0 BLOCKER + 2 MAJOR +
-5 MINOR + 4 NIT — (1) MAJOR FIXED: all-NaN premium/volume columns
-fabricated 0.0 through pandas' default sum (min_count=0) — "put/call
+5 MINOR + 4 NIT: (1) MAJOR FIXED: all-NaN premium/volume columns
+fabricated 0.0 through pandas' default sum (min_count=0): "put/call
 ratio below 0.8" would evaluate TRUE on missing data and the zeros
 would enter rank histories permanently → .sum(min_count=1) ×4, pinned;
 (2) MAJOR FIXED: the eval grader could not match TWO expected
 conditions on the same indicator (first-indicator-match returned a
-false operator error) — case 43's "within 1% of max pain" pair was
+false operator error): case 43's "within 1% of max pain" pair was
 unpassable by a PERFECT parse → _match_condition now consumes matched
 candidates, verified in both emission orders; (3) FIXED: collector
 TOCTOU double-read could truncate the artifact for a day → single
 read threaded through; (5→OWNER DECISION 2026-07-08): front expiry is
-now STRICTLY AFTER the session — with daily expirations "≥" referenced
+now STRICTLY AFTER the session: with daily expirations "≥" referenced
 the expiry settling that day (retrospective at the stamp, a ghost at
 consumption; forward-by-CALENDAR is PIT-clean, forward-into-DATA stays
 forbidden); artifacts re-derived, fixture updated; (8) duplicate-stamp
@@ -1677,7 +1677,7 @@ in HONESTY.md; (11) test counts corrected. Real-lake acceptance:
 91/91 sessions all five signals (bullish-flow 40/91, risk-on tide
 51/91); 2024-window refusal fires naming market-wide tide; tide-gated
 short put makes 18 gated fills over the covered window.
-LIVE EVAL (45 cases, post-grader-fix): 29/29 clear + 16/16 ambiguous —
+LIVE EVAL (45 cases, post-grader-fix): 29/29 clear + 16/16 ambiguous,
 ACCEPTED, perfect score. Run 1 confirmed the review's grader prediction
 exactly (case 43 failed on the pair-matching bug while the PARSE was
 correct); run 2 passed 43 but hit an upstream OpenRouter network flake
@@ -1686,14 +1686,14 @@ clean. Cases 44/45 refuse raw NOPE and dollar thresholds offering
 sign/rank; case 42 pairs the market-wide tide with a raw put/call
 ratio; case 43's "within 1% of max pain" compiles to the ANDed pair.
 
-## F7 (ENGINE-V4) — cross-source validation & data confidence (2026-07-08)
+## F7 (ENGINE-V4), cross-source validation & data confidence (2026-07-08)
 
-WHAT: the honesty layer's sharpest expression — independent vendors
+WHAT: the honesty layer's sharpest expression: independent vendors
 compared nightly wherever they overlap, per-run data confidence, and an
 on-demand fill audit. SURVEY REALITY: no two EOD chain sources share a
-single session (iVol/AV chains never banked — tariff/undecided; Yahoo
+single session (iVol/AV chains never banked, tariff/undecided; Yahoo
 5 sessions; DoltHub 1,115 with none of the others), and DoltHub's
-≥11-DTE floor is contract-disjoint from the iVol short-DTE slice — so
+≥11-DTE floor is contract-disjoint from the iVol short-DTE slice, so
 F7 v1 was built on the pairs that EXIST: dolthub_vs_alpaca (527
 sessions, productionizing the proven one-off methodology),
 dolthub_vs_uw (85), yahoo_vs_ivol5m (5, grows nightly),
@@ -1701,45 +1701,45 @@ massive_vs_ivol5m (activates as the ATM-band crawl lands). OWNER
 DECISIONS: per-pair rates + audited-share denominators, NO blended
 score ("a confidence score whose own confidence is unfounded");
 REPORTED-only v1 (thresholds EARNED from the accumulated distribution,
-D3d staging — the FX.4 cap had a binary trigger + borrowable floor,
+D3d staging; the FX.4 cap had a binary trigger + borrowable floor,
 nothing comparable exists here); fill audit ON-DEMAND (two-tier:
-ambient checks cheap and automatic, deep audit human-triggered —
+ambient checks cheap and automatic, deep audit human-triggered,
 "detection automatic, spend on demand").
 HOW: app/data/cross_validation.py comparators (single-sourced,
 fixture-tested) + collector/derive_cross_validation.py (set-difference;
 Massive pair works per SYMBOL with counts accumulating) + nightly step/
 CI/Make; stages.data_confidence aggregates the run's own window
-(numeric fields — grounding-safe; no-overlap → None, never a fabricated
+(numeric fields, grounding-safe; no-overlap → None, never a fabricated
 100%); verdict caveat; payload dataConfidence; results-view line;
 Observatory pair lanes; RunResult.fill_log (structured per-leg fills at
 all three sites, pid-joined to trade-log bar times);
 app/data/fill_audit.py pure core + POST /runs/{id}/audit (re-runs the
 spec deterministically under the engine lock, audits vs Alpaca minute
-trades, stores audit_json like receipts — verdict never rewritten) +
-frontend audit button/line. NO parser change — no eval gate.
-TESTS: 17 new (514 total) — comparator hand-fixtures (stale-print
+trades, stores audit_json like receipts; verdict never rewritten) +
+frontend audit button/line. NO parser change, no eval gate.
+TESTS: 17 new (514 total), comparator hand-fixtures (stale-print
 excluded-not-flagged; band edges both sides; expiry-total bands 5%/10%;
 day-range checks), confidence window-scoping + honest-absence, fill_log
 recording (sell entry + PT buyback), audit within/outside/no_trades/
 no_coverage/session-range degradation.
 REVIEW (independent agent, clean worktree): 2 BLOCKER + 4 MAJOR +
-6 MINOR + 3 NIT — ALL must-fixes FIXED: (1) BLOCKER: the audit re-run
-with end=None extended to TODAY'S lake — a June run audited in July
+6 MINOR + 3 NIT, ALL must-fixes FIXED: (1) BLOCKER: the audit re-run
+with end=None extended to TODAY'S lake: a June run audited in July
 would attribute independent verification to fills it never made → the
 re-run pins to the stored honesty report's effective window AND refuses
 on fill-count mismatch ("the lake has changed since this run");
 (2) BLOCKER: alpaca_modeled fills were audited against the prints they
-were PRICED from — self-confirmation counted as independent
+were PRICED from: self-confirmation counted as independent
 verification → excluded, disclosed self_source bucket, pinned;
 (3) MAJOR: NaN agreement_rate from checked=0 sessions would 500 the
 entire run page (allow_nan=False) → NaN-guarded; (4) MAJOR: CLOSE/ADD
-fills were audited in a window around the OPEN's bar — fabricated
+fills were audited in a window around the OPEN's bar: fabricated
 disagreement on the flagship 0DTE path → the engine stamps each
 fill_log row with ITS OWN bar time (pinned: a 14:10 close audits near
-14:10); (5) MAJOR: compare_dolthub_alpaca had no column guards — one
+14:10); (5) MAJOR: compare_dolthub_alpaca had no column guards: one
 malformed session would brick the nightly derive forever, and NaN
 deltas fabricated violations → guarded + excluded; (6) MAJOR: the
-audit loaded stores OUTSIDE the engine lock with no memory release —
+audit loaded stores OUTSIDE the engine lock with no memory release:
 the exact OOM concurrency class the incident fix serialized → loads
 inside the lock + finally _release_memory. Also: in-flight guard
 (repeated POSTs 409 while running, 30-min stale takeover); audit
@@ -1749,22 +1749,22 @@ count per the module contract; artifact-load failures logged;
 session-range kind pinned observable; massive double-count crash
 window documented.
 
-## F8 (ENGINE-V4) — the surfacing weave: signal thresholds enter the sweep (2026-07-08)
+## F8 (ENGINE-V4), the surfacing weave: signal thresholds enter the sweep (2026-07-08)
 
 WHAT: the LAST masterplan phase. Survey found the Observatory already
 carries a panel per signal family (vol-surface, dealer positioning,
-flow/pin, in-house continuations, cross-source, resolution mix — the
+flow/pin, in-house continuations, cross-source, resolution mix; the
 incremental per-phase surfacing + forward-record's live panels), so the
 real gap was the ANTI-OVERFITTING core: the sensitivity sweep perturbed
-strike/dte/pt/sl but NEVER the entry-condition thresholds — a strategy
+strike/dte/pt/sl but NEVER the entry-condition thresholds: a strategy
 overfit to "skew > 5" or "RSI < 30" was never stress-tested. F8 sweeps
 entry-condition thresholds, which auto-weaves the three target surfaces
 (recommendations, sensitivity grid, verdict caveats all consume
 sensitivity.params generically). OWNER DECISIONS 2026-07-08: skip
-sign-at-zero conditions disclosed (sign IS the signal; opaque units —
+sign-at-zero conditions disclosed (sign IS the signal; opaque units,
 the invented-convention sin if perturbed); cap first 3 entry conditions
 (cost on the serialized engine; secondary filters are where curve-
-fitting hides); entry conditions only in v1 (exit/rung deferred — rung
+fitting hides); entry conditions only in v1 (exit/rung deferred, rung
 perturbation entangles the D5 basket cap).
 HOW: _mutations returns (mutations, conditions_note) + _append_condition_sweeps
 (±20% multiplicative, base_index 2; rank forms clamped 0-100; repeated
@@ -1772,22 +1772,22 @@ indicators disambiguated by operator; setter mutates conditions[i]);
 Sensitivity.conditions_note surfaces the skip/cap disclosure in BOTH
 verdict voices (quant + retail); _param_label unit-free for cond_ sweeps
 (never "rsi 24%"); _sweep_display_name strips the cond_ prefix for the
-grid + recommendations. NO parser change, NO engine-run change — daily
+grid + recommendations. NO parser change, NO engine-run change: daily
 digests bit-identical (the sweep is a gauntlet stage).
-REAL-LAKE ACCEPTANCE: SPY short put w/ ivx_rank_1y>50, 2021→now — the
+REAL-LAKE ACCEPTANCE: SPY short put w/ ivx_rank_1y>50, 2021→now, the
 threshold now sweeps [40,45,50,55,60], engine re-ran each (Sharpe
 0.35-0.43), classified PLATEAU (the filter isn't fragile, just weakly
-additive — matches the D1 finding that ivx_rank>50 underperforms
+additive, matches the D1 finding that ivx_rank>50 underperforms
 unfiltered). First time a signal condition has ever been stress-tested.
-TESTS: 10 new (565 total) — ±20% RSI sweep + setter-by-index, sign-test
+TESTS: 10 new (565 total), ±20% RSI sweep + setter-by-index, sign-test
 skip+disclose, rank clamp to 100, 3-condition cap disclosure, repeated-
 indicator disambiguation, mixed sign+real, unit-free labels, display-
 name strip, grid-store integration (real swept row, classified),
 recommendation never mislabels a threshold as a percent.
 REVIEW (independent agent, clean worktree): 0 BLOCKER + 1 MAJOR +
-2 MINOR + 1 NIT — MAJOR FIXED: a sign-test condition positioned AFTER
+2 MINOR + 1 NIT, MAJOR FIXED: a sign-test condition positioned AFTER
 the 3-cap was silently undisclosed (the loop broke before examining it,
-and the cap count excluded sign tests) — the exact "absence misread as
+and the cap count excluded sign tests), the exact "absence misread as
 a free pass" failure this feature exists to prevent, on realistic 0DTE
 specs (RSI+VIX+rvol+gex_level>0) → the loop now examines EVERY condition
 (sign tests always disclosed regardless of cap; capped-count tracks
@@ -1796,11 +1796,11 @@ MINOR fixed: 3+ same-indicator+operator conditions could collide into
 duplicate sweep names → unique-name fallback (indicator → +operator →
 +index), pinned; a trivially-true integration assertion replaced with a
 real cond_-leak check. NIT (rank-clamp duplicate cell at base 95)
-accepted — no correctness impact, base_index stays correct. 568 tests.
+accepted: no correctness impact, base_index stays correct. 568 tests.
 Bit-identity confirmed by the reviewer: no engine/model files touched,
 setters mutate only deepcopies, daily-clock digests pass.
 
-## UX Chunk A — run provenance: the setup story persisted per run (2026-07-14)
+## UX Chunk A, run provenance: the setup story persisted per run (2026-07-14)
 
 WHAT: every run row gains `provenance_json` (additive `_ensure_columns`
 migration): (1) the initial prompt verbatim + chart-pointer context (raw
@@ -1808,14 +1808,14 @@ pinned bar times), (2) the full clarifying Q&A in order with client
 timestamps, (3) the confirmed draft ("the boxes") + applied costs +
 untouched flag, (4) measured mechanics appended at completion (engine/
 gauntlet/verdict seconds, sessions, resolution mix, effective window,
-build identity = deploy commit + spec_version + fill-model label — no
+build identity = deploy commit + spec_version + fill-model label, no
 hand-bumped ENGINE_VERSION constant; it would rot, owner 2026-07-14).
-KEY FINDING: the plan doc's "parser_events from D3a" never existed —
+KEY FINDING: the plan doc's "parser_events from D3a" never existed.
 /api/parse is stateless and the conversation lived only in composer React
 state, so capture is client-side (transcript ref accumulated across
 clarify rounds, reset on fresh compile/chart supersede) and rides the
 POST /api/backtest body, replacing the never-read top-level `draft` key.
-OLD RUNS (owner amendment): derive-don't-fabricate at READ time — NULL
+OLD RUNS (owner amendment): derive-don't-fabricate at READ time. NULL
 column rows get a record derived in the GET merge (prompt from
 meta.description_raw, decision grid from spec_json marked "derived",
 mechanics from perf/stats), chosen over a backfill script because it
@@ -1826,9 +1826,9 @@ not captured (predates provenance recording)". Automatic runs
 (auto_unlock/receipt) store an origin record; a client blob on them is
 ignored. Oversize conversations truncate tail-first with a dropped-count
 marker, never a 422 (a run is never blocked by its own paperwork).
-TRUST BOUNDARY: provenance is display-only — size-capped, string-clamped,
+TRUST BOUNDARY: provenance is display-only, size-capped, string-clamped,
 never fed to the engine, the verdict LLM, or grounded ask.
-TESTS: 11 new (614 total) — all four sections stored+served end-to-end
+TESTS: 11 new (614 total), all four sections stored+served end-to-end
 over the fixture store, capture-less user run still marks recording,
 auto-run origin record ignores smuggled blobs, receipt record, tail-first
 truncation caps, null-valued optional fields never become the string
@@ -1836,12 +1836,12 @@ truncation caps, null-valued optional fields never become the string
 derivation (flags, boxes, mechanics, no conversation),
 nothing-fabricated-when-sources-missing, origin/parent survival. The
 pre-column SQLite migration verified by hand (column added, old rows
-NULL, untouched). nightly-improve submits byte-identical bodies —
+NULL, untouched). nightly-improve submits byte-identical bodies;
 regression digests unchanged.
-REVIEW (independent 8-angle pass): 5 CONFIRMED fixed — the demo-fallback
+REVIEW (independent 8-angle pass): 5 CONFIRMED fixed: the demo-fallback
 proxy still read the removed top-level `draft` body key (422 on every
 demo backtest); the mechanics attach ran inside the run's try/except (a
-paperwork failure could error a computed verdict — now isolated, the
+paperwork failure could error a computed verdict; now isolated, the
 verdict outranks the diary); the truncation loop was O(n²) in a
 client-supplied list (now a single-pass byte budget); _clip turned
 explicit JSON nulls into the literal "None" (or-"" guards + regression
@@ -1850,12 +1850,12 @@ test); double-submit duplicated answer events (last-event guard). Plus
 2 PLAUSIBLE documented, not changed: transcript resets are convention
 not structure (no live leak; binding would touch untouched-detection);
 stored confirmed.draft vs derived confirmed.boxes is deliberate (owner:
-the derived grid IS the spec, marked derived — spec_to_draft would
+the derived grid IS the spec, marked derived; spec_to_draft would
 fabricate via delta rounding and window loss). Verdict-grounding
 guardrail traced clean: provenance never reaches the verdict LLM or
 grounded ask.
 
-## UX Chunk B — "How this was built": the setup story on the run screen (2026-07-14)
+## UX Chunk B, "How this was built": the setup story on the run screen (2026-07-14)
 
 WHAT: run detail gains a provenance view rendering Chunk A's record as a
 readable story, top to bottom: origin/lineage note (auto runs link their
@@ -1868,25 +1868,25 @@ count, resolution mix, effective window, spec version + fill model +
 deploy build). Read-only v1; Results stay the default; the story is one
 click away. The saved-run screen's redundant New analysis button (the
 left nav already has one) is REPLACED by the toggle; the post-run flow
-KEEPS its button — the nav's same-route Link cannot reset in-page state,
+KEEPS its button: the nav's same-route Link cannot reset in-page state,
 so that copy was never redundant. Naming: "How this was built" (alts
-"Setup story", "The interview") — owner picks at PR review.
+"Setup story", "The interview"), owner picks at PR review.
 BOTH RECORD SHAPES RENDER: stored records (confirmed.draft + build) and
 derived records (confirmed.boxes marked "derived from the stored spec",
 no build, and the owner-worded line standing where the conversation
 would be: "conversation not captured (predates provenance recording)").
-Automatic runs say "no conversation — this run was started
+Automatic runs say "no conversation, this run was started
 automatically" (a different truth than predating the column). Neutral
-palette only — neither P/L nor verdict colors; serif reserved for the
+palette only, neither P/L nor verdict colors; serif reserved for the
 view heading.
 VERIFIED IN BROWSER against a seeded scratch lake (fixture store, real
 engine+gauntlet runs, token-less local uvicorn + Next on offset ports):
-all four scenarios — text run with two-round Q&A, chart-pointer run,
+all four scenarios: text run with two-round Q&A, chart-pointer run,
 derived pre-column run, auto re-run with parent link. Browser pass
 caught 2 real bugs pre-review: date-only chart pins slid back a day
-(UTC-midnight parse formatted in ET — now plain-date formatting) and the
+(UTC-midnight parse formatted in ET, now plain-date formatting) and the
 auto-run wording; plus sub-second runs now say "<1s" not "0s".
-REVIEW (independent 8-angle pass): 6 CONFIRMED fixed — Q→A pairing
+REVIEW (independent 8-angle pass): 6 CONFIRMED fixed: Q→A pairing
 reversed on empty/duplicate event ids (latest-first match → earliest
 unanswered, correct in both real shapes); sticky story tab + stale
 grounded answer across sidebar run-to-run navigation (key={run.id}
@@ -1899,7 +1899,7 @@ with no renderable field drew an empty titled panel (honest fallback
 line); an all-zero duration record dropped the "ran in" headline while
 showing component times (any recorded duration → "<1s"). Plus reuse
 dedups: shortDate/pinLabel now live in lib/format (shared with
-chart-teach — fixing ITS day-early date-only pin labels too), PANEL
+chart-teach, fixing ITS day-early date-only pin labels too), PANEL
 chrome shared via components/results/panel.ts, Intl formatters hoisted,
 results-branch JSX re-indented. 2 typography calls surfaced to owner at
 PR review (serif h2; mono on prose mirroring the composer bubble idiom),
@@ -1908,7 +1908,7 @@ canonical spec_to_draft projection); guardrail #6 (the meta line's
 effective window persists above both tabs); wire-contract audit clean
 end to end. All four scenarios re-verified in the browser post-fix.
 
-## 2026-07-14 — verdict latency, the evidence-bar setting, and the thinking state
+## 2026-07-14, verdict latency, the evidence-bar setting, and the thinking state
 
 THREE owner asks, one session. (1) LATENCY: the "honest verdict" stage
 stalled 2–5 min because run completion blocked on the LLM narration
@@ -1918,7 +1918,7 @@ gauntlet ends; `_narrate_and_patch` upgrades the WORDING off the critical
 path (after the engine lock releases), patching only the narration
 surfaces + library quotes via `payload.apply_verdict_text`. UI polls
 `narrationPending` at 3 s and shimmer-discloses "still writing the
-narration — every number here is already final". `perf.verdict_s` = the
+narration, every number here is already final". `perf.verdict_s` = the
 blocking cost (keeps pre-run estimates honest); `perf.narration_s`
 recorded when the upgrade lands. (2) EVIDENCE BAR: minimum trades for a
 verdict is now a USER SETTING (Settings → Evidence bar, between Verbiage
@@ -1939,7 +1939,7 @@ working "‹ edit input" cancel (generation counter drops stale
 responses). Statuses are time-advanced, never fabricated progress.
 
 REVIEW ROUND (independent 8-angle agent review, same session): 6 fixed
-correctness findings — (1) a worker killed mid-narration stranded
+correctness findings: (1) a worker killed mid-narration stranded
 narrationPending forever (UI polls indefinitely) → narrationStartedAt
 stamp + read-time stale release at 10 min, template stands; (2) the
 re-graded verdict could contradict the stored FX.4 resolution panel →
@@ -1961,16 +1961,16 @@ raw-dict bar peek before report validation on the hot read path, and a
 CLAUDE.md determinism note (engine deterministic; the verdict gate is a
 view-time policy). 618 tests.
 
-## F8 follow-up — scale-aware condition-sweep floors (2026-07-14)
+## F8 follow-up, scale-aware condition-sweep floors (2026-07-14)
 
 WHAT: the F8 threshold sweep perturbed every entry-condition threshold
-±20% multiplicatively — for a SMALL threshold on a WIDE natural scale
+±20% multiplicatively: for a SMALL threshold on a WIDE natural scale
 that probes almost nothing ("ivx_zscore_1y > 0.3" sweeps a 0.12σ band
 of a ±3σ scale; same for small skew_25d or max_pain_distance_pct), and
-five near-identical Sharpes read as a FALSE PLATEAU — the classifier
+five near-identical Sharpes read as a FALSE PLATEAU, the classifier
 blessing exactly the fragile threshold it exists to catch. Raised in
 the PR #97 review (ivx_zscore_1y); pre-existing class, fixed here.
-HOW: _COND_FAMILY_FLOORS (stages.py) + _condition_grid — when
+HOW: _COND_FAMILY_FLOORS (stages.py) + _condition_grid. When
 10%·|threshold| per cell falls under the family floor, the sweep
 switches to an absolute grid of ±2 floor-steps around the specced
 value, shifted up whole steps at a bounded family's lower edge (the
@@ -1987,9 +1987,9 @@ the only numerals (verdict grounding, guardrail #4, always finds them
 in the report's sweep values). TAX UNCHANGED: same 5 cells, same
 plateau/cliff classifier, identical engine-run count, never re-centers
 on a better neighbor (a better neighbor stays a NEW-trial
-recommendation). No engine/model files touched — daily digests
+recommendation). No engine/model files touched: daily digests
 bit-identical (the sweep is a gauntlet stage).
-TESTS: 11 new hand-computed (test_condition_sensitivity.py) — floored
+TESTS: 11 new hand-computed (test_condition_sensitivity.py), floored
 grids for small skew (−0.5…1.5) / max-pain (0.5…1.5) / negative base
 (−1.5…−0.5), boundary threshold (10%·5 = the 0.5 floor exactly) stays
 multiplicative, bounded shift for rank 2 → [0,2,4,6,8] base_index 1
@@ -1998,24 +1998,24 @@ typo guard (every key a real Indicator, ivx_zscore_1y excepted until
 v8 lands, opaque levels absent), note-numeral grounding against the
 verdict validator's own regex, three-part note composition. All 13
 pre-existing sweep tests pass byte-identical (rsi 30 → [24,27,30,33,36],
-rank 90 clamp) — floors bind only where ±20% was degenerate.
+rank 90 clamp); floors bind only where ±20% was degenerate.
 REVIEW (independent 8-angle pass, this PR): 1 BLOCKER + 3 MAJOR fixed,
 2 altitude findings deferred-with-disclosure. BLOCKER (two angles
 executed it live): a negative threshold on a bounded family (schema
-allows it — Condition.value is unconstrained) drove the lower-edge
+allows it: Condition.value is unconstrained) drove the lower-edge
 shift past the specced value → negative base_index → payload's
 negative indexing reported a FABRICATED as-specced value, no ring on
 the grid, IndexError/500 at large negatives → thresholds at/below the
 family's lower edge now keep the pre-floor multiplicative path,
 regression-tested. MAJORS: retail verdict caveat framed the whole
-note as "We couldn't stress-test every entry rule:" — false for
+note as "We couldn't stress-test every entry rule:", false for
 floored parts (rules that WERE swept, wider) → reworded "Notes from
 stress-testing your entry rules:"; "±20%" methodology claims went
 stale on every describing surface (recommendations, empty-recs line,
 gauntlet previews, runs.py pending-sweep copy, frontend hint/titles/
 axis captions) → neutral accurate wording ("sensitivity sweep",
 "nudged around your values", axis "lower/higher"); floored
-disclosures were keyed by bare indicator name — unattributable for
+disclosures were keyed by bare indicator name, unattributable for
 the max-pain band pair → operator + specced value in each entry
 (numerals still grounded: specced value ∈ values). CLEANUPS: dead
 floor<=0 disjunct dropped; _SWEEP_FACTORS hoisted module-level (the
@@ -2024,20 +2024,20 @@ named); duplicate clamped cells (rank base ≥ ~91 pins two cells at
 100) now reuse the deterministic result instead of re-running the
 serialized engine; grounding test now calls the SHIPPING
 validate_numbers/grounding_set instead of a hand-rolled set; floor
-table completeness enforced — every Indicator must hold a floor or an
+table completeness enforced: every Indicator must hold a floor or an
 explicit _COND_FLOOR_EXEMPT listing (typo guard alone was
 one-directional). DEFERRED, disclosed: the delta sweep retains the
 same small-base under-probing class (0.05Δ sweeps ±0.01 with
-clamp-collapse at 0.03) — own pass, needs strike-granularity design;
+clamp-collapse at 0.03), own pass, needs strike-granularity design;
 _classify blesses an all-identical-Sharpe sweep as plateau ('or
-valid' fallback → median == peak) — pre-existing classifier hole the
+valid' fallback → median == peak), pre-existing classifier hole the
 floors narrow but can't close, owner call on "sweep uninformative"
 disclosure semantics. 628 tests green; canary flagged; frontend
 lint+typecheck clean.
-## UX Chunk C — Data Observatory regroup: keep everything, declutter (2026-07-14)
+## UX Chunk C, Data Observatory regroup: keep everything, declutter (2026-07-14)
 
 WHAT: the Observatory's ~14-panel wall regrouped into five collapsible
-groups, NO data removed — every fact reachable within one expand:
+groups, NO data removed, every fact reachable within one expand:
 (1) COVERAGE AT A GLANCE (open by default): days-on-record, heartbeat,
 source chips + the per-ticker resolution-mix visual; (2) EOD CHAINS &
 HISTORY: dolthub/yahoo/close-chain lanes, underlying + per-ticker chain
@@ -2060,18 +2060,18 @@ recorder, open flag): first paint = five headers + coverage visual;
 every original fact confirmed present via full-page text audit; badges
 visible while collapsed; expand state survives reload.
 REVIEW (independent 5-angle pass, fact-preservation at full depth): 7
-CONFIRMED fixed — the UW 1-min line vanished when new_sources existed
+CONFIRMED fixed: the UW 1-min line vanished when new_sources existed
 without uw_minute (the one fact-loss the audit found; old per-ticker
 "pending" announcement restored); the EOD badge scanned all tickers but
 the CHAIN QUALITY section gated on SPY only (now any-ticker, spread
 chart SPY-optional-safe); the intraday "recorder stalled" badge pointed
 at a group without the staleness detail (quote-recorder lane now names
 it); localStorage hydration accepted arrays/non-boolean values
-(first-click swallow — sanitized to boolean-valued plain objects);
+(first-click swallow, sanitized to boolean-valued plain objects);
 weakChainFields deref could crash the page on a malformed source entry
 (null-safe); the chain-quality warn rule (field list + <0.5) was copied
 between badge and rows (one shared constant pair now); group ids were
-stringly typed (GroupId union — a typo'd id fails the compile). Plus
+stringly typed (GroupId union, a typo'd id fails the compile). Plus
 DRY: TICKERS + LANE_GRID constants, aria-controls/aria-hidden on the
 disclosure buttons. Refuted: PANEL unification (page-local values are
 deliberate, settings page precedent), table-driven signal sections
@@ -2079,7 +2079,7 @@ deliberate, settings page precedent), table-driven signal sections
 poll). Post-fix stub re-verify: pending line renders, staleness inside
 the badged group, persistence intact.
 
-## F8 follow-up — strike-granularity floor for the delta sweep (2026-07-14)
+## F8 follow-up, strike-granularity floor for the delta sweep (2026-07-14)
 
 WHAT: the delta sweep retained the small-base under-probing class the
 condition floors fixed (deferred-with-disclosure in the entry above,
@@ -2087,24 +2087,24 @@ CONFIRMED in that PR's independent review): ±20% of a small
 strike-selection delta steps 0.005Δ per cell at base 0.05, while one
 strike at typical chain spacing is worth more delta than that
 (|dΔ/dK| = φ(d1)/(K·σ√T) → ≈0.4–2 delta points per $1 strike at the
-5Δ wing across 45→1 DTE, 5× on a $5 grid) — adjacent cells resolve to
+5Δ wing across 45→1 DTE, 5× on a $5 grid): adjacent cells resolve to
 the SAME contract, five near-identical Sharpes read as a FALSE
 PLATEAU, and the gauntlet blesses exactly the fragile 5Δ-tail-selling
 archetype it exists to catch; at the sweep's own 0.03 clamp floor
 three cells were literally identical.
-HOW: _DELTA_STEP_FLOOR (stages.py) + _delta_grid — below 0.25Δ the
+HOW: _DELTA_STEP_FLOOR (stages.py) + _delta_grid. Below 0.25Δ the
 sweep steps an absolute 0.025Δ grid (±2 steps, shifted up whole steps
 off the 0.03 edge, specced value always ON the grid at a recorded
 base_index; the shift ceil is dust-clamped to 2 so the #99 review's
 negative-base_index class is structurally impossible). ONE grounding
 rule, shared with _COND_FAMILY_FLOORS: floor = 10% of the family's
 reference magnitude, delta's reference = the 25Δ wing (the skew_25d
-convention) — and the strike-granularity arithmetic independently
+convention), and the strike-granularity arithmetic independently
 lands on the same 0.025 (docs/HONESTY.md carries it). ≥0.25Δ keeps
 byte-identical ±20% (clamps included); base < 0.03 keeps the
 pre-floor clamped path (outside the grounded scale, _condition_grid's
 lower-edge posture). TAX UNCHANGED: same 5 cells, same classifier, no
-re-centering — engine-RUN count can rise by up to 2 on small deltas
+re-centering; engine-RUN count can rise by up to 2 on small deltas
 (the old clamped grid's duplicate cells deduped into fewer runs; that
 dedup WAS the under-probing being fixed). Disclosed on a NEW
 Sensitivity.delta_note (additive field, None on runs saved before the
@@ -2114,7 +2114,7 @@ specced value + grid endpoints only (guardrail #4, validated with the
 shipping validator in tests). Frontend: sweep hint copy extended
 ("small thresholds and small deltas"); no other surface claimed ±20%
 for delta post-#99. _mutations now returns (muts, conditions_note,
-delta_note) — delta discloses on its OWN channel, never inside the
+delta_note): delta discloses on its OWN channel, never inside the
 entry-rules framing.
 TESTS: 20 new hand-computed (test_delta_sensitivity.py): the 0.05
 lottery grid [0.05, 0.075, 0.1, 0.125, 0.15] base_index 0; the 0.03
@@ -2127,17 +2127,17 @@ note grounding via the shipping validate_numbers; integration on a
 fine-delta fixture store (0.025Δ cells pick different strikes and
 different Sharpes where the old 0.005Δ cells landed on one contract;
 the note rides both verdict registers via run_gauntlet). Suite 669 →
-689 green (before/after verified on this branch — authored stacked on
+689 green (before/after verified on this branch, authored stacked on
 the condition-floors branch, which merged to main mid-flight; union
 after the main merge: 703, and 706 with the review-pass tests below);
 canary flagged; ruff + strict mypy clean.
 REVIEW (independent 8-angle pass + 1-vote verify, this PR): 3
-CONFIRMED classes fixed — (1) _param_label rounded the floored grid's
+CONFIRMED classes fixed: (1) _param_label rounded the floored grid's
 now-routine sub-point cells to deltas the sweep never ran (.08Δ for
 0.075; three angles hit it) → exact sub-point labels (".075Δ",
 ".0317Δ"), whole-point labels byte-identical, pinned by tests; (2) a
 base BELOW the 0.03 probe floor kept the fully degenerate [0.03]×5
-grid with NO disclosure — one engine run blessed as a plateau one
+grid with NO disclosure: one engine run blessed as a plateau one
 epsilon below where disclosure kicked in (three angles) → below-floor
 delta_note ("swept cells clamp at 0.03, so smaller strikes were not
 probed"), grid itself unchanged, grounded + tested; (3) the floored
@@ -2147,43 +2147,43 @@ clamp existed only in one) → extracted _absolute_grid, one accurate
 comment (measured: the ceil never exceeds exact math; the min() is
 structural defense, byte-identical both callers). Docs corrected:
 "identical engine-run count" was false at the clamp edge (up to +2
-runs vs the old accidentally-deduped degenerate grid) — HONESTY.md,
+runs vs the old accidentally-deduped degenerate grid), HONESTY.md,
 this entry, and the _delta_grid docstring now say so; _SWEEP_FACTORS'
 coupling comment names both floor guards. REFUTED with cited
 precedent (verifier agreed on all five): note-composed-pre-run
-("swept" describes the probe grid; per-cell None/"—" cells disclose
-failures — the #99 posture), value==1 percent-form boundary (the
+("swept" describes the probe grid; per-cell None/placeholder cells disclose
+failures, the #99 posture), value==1 percent-form boundary (the
 sweep mirrors selection.py's own convention; diverging would be the
 bug), retail verbatim-note jargon (#99's owner-approved prefix
 pattern), verdict-hook loop (file idiom is explicit if-appends),
 rollback extra="forbid" one-way property (universal to every additive
 report field; systemic versioning question, not a per-field duty).
 DEFERRED, disclosed: profit_target/stop_loss are the last swept
-params with neither a floor nor a documented decision — plausibly the
+params with neither a floor nor a documented decision, plausibly the
 same class with TIME as the discretizer (daily marks quantize exit
 triggers); needs its own reference-magnitude design (candidate: the
 canonical 50% take-profit → 5pp), spun off as a follow-up chip.
 Suite 706 green post-fixes; canary flagged; frontend lint+typecheck
 clean.
 
-## 2026-07-16 — Brand kit v2: heavier cut, stem-E, tighter K
+## 2026-07-16, Brand kit v2: heavier cut, stem-E, tighter K
 
 Owner delivered an updated brand kit (~/Downloads/skeptic-brand-kit,
 parametric rebuild). Same four color tokens and file layout; the marks
 changed: the E gains its vertical stem (was three bare bars), the K
 arms pull in tighter, and the draw-on animation re-times to fit the
-new stroke. The S itself is unchanged — s-mark SVGs are byte-identical
+new stroke. The S itself is unchanged: s-mark SVGs are byte-identical
 to what shipped, so the standalone mark and collapsed-rail icon were
 already current. Swapped in place, same filenames: wordmark
 black/gray/white/white-slash-gray + both skeptic-draw SVGs in
 frontend/public/brand/, og-image, favicon tiles, favicon.ico.
 
 Two kit defects caught before they shipped (agent review confirmed
-both; the import is now scripted — see below):
+both; the import is now scripted, see below):
 
 1. Draw-order inversion. The kit inserted the E stem at 0.26s and
 pushed the E bars to 0.32/0.38/0.44s but never re-cascaded the letters
-after E, so the P stem (0.39s) started before the E's bottom bar — the
+after E, so the P stem (0.39s) started before the E's bottom bar, the
 old asset's strictly left-to-right stagger, broken between E and P.
 Fixed in both draw SVGs by shifting P/T/slash/C +0.06s (P 0.45/0.51,
 T 0.58/0.64, slash 0.71, C 0.84), which restores the kit's own rhythm:
@@ -2192,7 +2192,7 @@ now starts last at 0.84s + 0.75s draw, so BootSplash's ANIMATION_MS
 moves 1650 → 1710, keeping the same 120ms cushion.
 
 2. Tile mis-centering, again. Every raster tile in the v2 kit has the
-S riding ~10% above vertical center — the exact regression the
+S riding ~10% above vertical center, the exact regression the
 2026-07-03 favicon audit fixed (measured glyph bbox center y=0.39
 across 32/180/512; the app's fixed tiles sit at 0.50). Root cause, for
 whoever rebuilds the kit: kit.py favicon_svg() hardcodes the glyph
@@ -2202,10 +2202,10 @@ oy = (128 − 100·0.76)/2 = 26, mirroring how the x-offset is already
 computed. Re-applied the app-side fix: white glyph re-centered by
 integer pixel shift on the kit's native renders. 512 lands exactly
 0.500; 180 and 32 have odd-height glyphs so the center falls on a
-half pixel — measured 0.497–0.500 (180, threshold-dependent by one
+half pixel, measured 0.497–0.500 (180, threshold-dependent by one
 antialiased edge row) and 0.484 (32). Half-pixel ties round the glyph
-UP, never down: the first cut had the 32 — the frame browser tabs
-actually show — half a pixel LOW (0.516) and the owner read it as
+UP, never down: the first cut had the 32 (the frame browser tabs
+actually show) half a pixel LOW (0.516) and the owner read it as
 off-center (call 2026-07-16, "a lil up"); 0.484 also matches where
 the pre-v2 fixed tile sat. favicon.ico rebuilt from the fixed tiles
 (16/48/64 Lanczos from the 512, native 32 frame), all frames verified
@@ -2221,11 +2221,11 @@ and verifies every output by measurement. Running it against the v2
 kit reproduces this commit's assets byte-identically. Favicon stays
 the owner-picked ink-black tile (layout.tsx comment still true); the
 v2 kit README declares the gray tile primary for the brand at
-large — flagged to owner, not silently flipped.
+large, flagged to owner, not silently flipped.
 
 Review sweep caught one more: same-filename swaps don't propagate to
 favicon caches (browsers refresh those lazily, not per-navigation) or
-OG scrapers (per-URL server-side cache, indefinite) — the old mark
+OG scrapers (per-URL server-side cache, indefinite): the old mark
 would have stayed live on exactly the surfaces the rebrand targets.
 layout.tsx metadata URLs now carry ?v=2; bump the version on every
 future kit import. Previously scraped shares still need a manual

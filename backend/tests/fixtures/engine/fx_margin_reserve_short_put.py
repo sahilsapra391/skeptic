@@ -1,4 +1,4 @@
-"""Fixture: the short-put margin reserve to the cent — a second concurrent
+"""Fixture: the short-put margin reserve to the cent. A second concurrent
 entry is unfundable while the reserve is held, and fundable again the
 session the first position closes and releases it (owner 2026-07-15).
 

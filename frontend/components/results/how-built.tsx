@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "How this was built" (UX Chunk B) — the run's provenance record (Chunk A)
+ * "How this was built" (UX Chunk B), the run's provenance record (Chunk A)
  * rendered as the setup story, top to bottom: the initial prompt (styled as
  * the user's message) → each clarifying question with the chosen answer
  * highlighted → the confirmed spec as a decision grid → the run-mechanics
@@ -11,10 +11,10 @@
  * records carry confirmed.draft (the SpecDraft exactly as confirmed) plus
  * source and mechanics.build; DERIVED records (runs predating the column)
  * carry confirmed.boxes (a spec_json projection, marked derived), no
- * source/build, and NO conversation — it was never stored and is never
+ * source/build, and NO conversation. It was never stored and is never
  * invented, so a disclosed line stands where the conversation would be.
  *
- * Palette: neutral inks + the trust accent only — never P/L or verdict
+ * Palette: neutral inks + the trust accent only, never P/L or verdict
  * colors (CLAUDE.md rail).
  */
 
@@ -26,7 +26,7 @@ import { STRUCTURE_LABEL, type Structure } from "@/lib/types";
 
 import { PANEL } from "@/components/results/panel";
 
-// grid cell labels — smaller than the shared PANEL_TITLE by design
+// grid cell labels, smaller than the shared PANEL_TITLE by design
 const LABEL = "font-mono text-[10.5px] font-medium tracking-[.12em] text-ink-4";
 
 // module-level: formatter construction is expensive and this renders once
@@ -55,13 +55,13 @@ interface Exchange {
 }
 
 /** Pair answers to questions by event id, preserving chronology. A round's
- * questions arrive together (one asked_at) and the answers follow — each
+ * questions arrive together (one asked_at) and the answers follow. Each
  * answer attaches to the EARLIEST unanswered question sharing its id, which
  * is right in both real shapes: within one round answers arrive in question
  * order (a latest-first match would reverse them when ids collide or are
  * empty), and a re-asked id in a later round finds its own round's question
  * because the earlier one is already answered. An answer with no matching
- * question still renders — the record is the truth. */
+ * question still renders. The record is the truth. */
 function pairConversation(events: ProvenanceEvent[]): Exchange[] {
   const out: Exchange[] = [];
   for (const ev of events) {
@@ -77,12 +77,12 @@ function pairConversation(events: ProvenanceEvent[]): Exchange[] {
 }
 
 const showValue = (v: unknown) =>
-  v === null || v === undefined ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  v === null || v === undefined ? "n/a" : typeof v === "object" ? JSON.stringify(v) : String(v);
 
 /** V-208: the field's name, with its path as a secondary.
  *
- *  ONE component for both surfaces that name a field — the SUPERSEDED marker and
- *  WHAT CHANGED — so the reader connects them instead of translating between a
+ *  ONE component for both surfaces that name a field (the SUPERSEDED marker and
+ *  WHAT CHANGED), so the reader connects them instead of translating between a
  *  prose label in one place and a path in the other. The label comes from the
  *  single server-side table; when a path has no entry the path itself is the
  *  label, which is correct rather than degraded, and the gap was already counted
@@ -128,7 +128,7 @@ function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }
   const q = x.question;
   const answer = x.answer?.answer;
   if (!q) {
-    // an answer the record holds without its question — show it honestly
+    // an answer the record holds without its question, show it honestly
     return (
       <div className="flex items-center gap-2.5">
         <span className={LABEL}>ANSWERED</span>
@@ -143,15 +143,15 @@ function ExchangeCard({ x, carried = false }: { x: Exchange; carried?: boolean }
     <div className="rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
       <div className="mb-1 flex items-baseline justify-between gap-3">
         <span className="font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
-          {/* V-177/V-178: "IT ASKED — I DON'T GUESS" is present-tense fresh-run
+          {/* V-177/V-178: "IT ASKED: I DON'T GUESS" is present-tense fresh-run
               voice. Inside a carried block it reads as though the interview
-              ran here, contradicting the header directly above it — and the
+              ran here, contradicting the header directly above it, and the
               cards are the visually dominant element, so a skimmer believes
               the cards. The eyebrow carries its share of the misattribution
               work rather than leaving it all to the header; A2's per-exchange
               marker is about which answers still apply, which is a different
               question from where they were asked. */}
-          {carried ? "IT ASKED ON THE ORIGINAL RUN" : "IT ASKED — I DON’T GUESS"}
+          {carried ? "IT ASKED ON THE ORIGINAL RUN" : "IT ASKED: I DON’T GUESS"}
         </span>
         {time && <span className="font-mono text-[10.5px] text-ink-4">{time}</span>}
       </div>
@@ -193,7 +193,7 @@ function windowLabel(start?: string | null, end?: string | null): string {
   return `${start ? shortDate(start) : "…"} → ${end ? shortDate(end) : "latest"}`;
 }
 
-/** Boxes from the STORED confirmed draft — the dials as the user saw them. */
+/** Boxes from the STORED confirmed draft, the dials as the user saw them. */
 function boxesFromDraft(draft: SpecDraft, costs?: Record<string, number>): Box[] {
   const out: (Box | null)[] = [
     { label: "TICKER", value: draft.ticker },
@@ -239,7 +239,7 @@ function boxesFromDraft(draft: SpecDraft, costs?: Record<string, number>): Box[]
     costs
       ? {
           label: "COSTS",
-          value: `$${costs.commission_per_contract ?? "—"}/ct · slip ${costs.slippage_half_spread_fraction ?? "—"}/${costs.slippage_half_spread_fraction_sell ?? "—"}`,
+          value: `$${costs.commission_per_contract ?? "n/a"}/ct · slip ${costs.slippage_half_spread_fraction ?? "n/a"}/${costs.slippage_half_spread_fraction_sell ?? "n/a"}`,
         }
       : null,
   ];
@@ -344,13 +344,13 @@ function boxesFromSpec(boxes: Record<string, unknown>): Box[] {
     b.scale_in?.rungs?.length
       ? {
           label: "LADDER",
-          value: `${b.scale_in.rungs.length} rungs · cap ${b.scale_in.max_total_contracts ?? "—"}`,
+          value: `${b.scale_in.rungs.length} rungs · cap ${b.scale_in.max_total_contracts ?? "n/a"}`,
         }
       : null,
     b.costs
       ? {
           label: "COSTS",
-          value: `$${b.costs.commission_per_contract ?? "—"}/ct · slip ${b.costs.slippage_half_spread_fraction ?? "—"}/${b.costs.slippage_half_spread_fraction_sell ?? "—"}`,
+          value: `$${b.costs.commission_per_contract ?? "n/a"}/ct · slip ${b.costs.slippage_half_spread_fraction ?? "n/a"}/${b.costs.slippage_half_spread_fraction_sell ?? "n/a"}`,
         }
       : null,
   ];
@@ -366,7 +366,7 @@ function WhatChanged({ prov }: { prov: RunProvenance }) {
   if (!rows || rows.length === 0) return null;
   return (
     <div className={`${PANEL} px-5 py-4`}>
-      <div className={`${LABEL} mb-3`}>WHAT CHANGED — VS THE PARENT RUN</div>
+      <div className={`${LABEL} mb-3`}>WHAT CHANGED VS THE PARENT RUN</div>
       <div className="flex flex-col gap-2">
         {/* V-208: same FieldName and ValueChange the SUPERSEDED marker uses, so a
             field reads identically in both places on this page */}
@@ -406,7 +406,7 @@ function DecisionGrid({ prov }: { prov: RunProvenance }) {
         </div>
         {confirmed.derived && (
           <span className="font-mono text-[10.5px] text-ink-4">
-            derived from the stored spec — the confirmed draft predates recording
+            derived from the stored spec (the confirmed draft predates recording)
           </span>
         )}
         {confirmed.untouched === true && (
@@ -440,14 +440,14 @@ function MechanicsLine({ prov }: { prov: RunProvenance }) {
       <div className={`${PANEL} px-5 py-4`}>
         <div className={`${LABEL} mb-1.5`}>RUN MECHANICS</div>
         <div className="font-mono text-[12px] text-ink-4">
-          mechanics not recorded — the run predates measurement or did not complete
+          mechanics not recorded (the run predates measurement or did not complete)
         </div>
       </div>
     );
   }
   const total = (m.engine_s ?? 0) + (m.gauntlet_s ?? 0) + (m.verdict_s ?? 0);
   const parts: string[] = [];
-  // any recorded duration gets the headline — a measured 0s is "<1s", not
+  // any recorded duration gets the headline: a measured 0s is "<1s", not
   // "no total" (the falsy-zero trap)
   if (m.engine_s != null || m.gauntlet_s != null || m.verdict_s != null) {
     parts.push(`ran in ${duration(total)}`);
@@ -487,7 +487,7 @@ function MechanicsLine({ prov }: { prov: RunProvenance }) {
         // a mechanics object whose fields are all unrenderable (partial old
         // perf rows) still gets the honest line, never an empty panel
         <div className="font-mono text-[12px] text-ink-4">
-          mechanics not recorded — the run predates measurement or did not complete
+          mechanics not recorded (the run predates measurement or did not complete)
         </div>
       )}
     </div>
@@ -505,7 +505,7 @@ export function HowBuilt({ run }: { run: RunPayload }) {
     ? null
     : (run.variant?.parent.label ?? null);
   if (!prov) {
-    // real runs always carry a record (stored or derived) — this is the
+    // real runs always carry a record (stored or derived). This is the
     // safety net for demo runs and unreadable rows, so it claims nothing
     return (
       <div className={`${PANEL} mt-2 px-5 py-8 text-center`}>
@@ -526,7 +526,7 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         How this was built
       </h2>
 
-      {/* origin note — STORED records only. A derived record's note repeats
+      {/* origin note, STORED records only. A derived record's note repeats
           the disclosure the conversation slot below already owns (the exact
           double-print a review caught), so derived rows render only their
           lineage link, wording-free. */}
@@ -634,11 +634,11 @@ export function HowBuilt({ run }: { run: RunPayload }) {
                 conversation BECAUSE it was automatic, not because of when
                 it ran */}
             {prov.origin && prov.origin !== "user"
-              ? "no conversation — this run was started automatically"
+              ? "no conversation: this run was started automatically"
               : carried
                 ? // V-176: no compile happened here, so it cannot be
                   // "not captured" for THIS run either
-                  "no conversation carried — the original run recorded none"
+                  "no conversation carried: the original run recorded none"
                 : prov.derived
                   ? "conversation not captured (predates provenance recording)"
                   : "no conversation was captured for this run"}
@@ -648,11 +648,11 @@ export function HowBuilt({ run }: { run: RunPayload }) {
         <div className="rounded-[14px] border border-dashed border-line px-5 py-4 text-center">
           <span className="font-mono text-[12px] text-ink-4">
             {/* V-176: "the strategy compiled directly" describes an event that
-                did not happen on a variant — no compile ran here at all. The
+                did not happen on a variant. No compile ran here at all. The
                 truth, in the carried register. */}
             {carried
-              ? "the original run needed no clarifying questions, and this run asked none — it is a variant"
-              : "no clarifying questions were needed — the strategy compiled directly"}
+              ? "the original run needed no clarifying questions, and this run asked none (it is a variant)"
+              : "no clarifying questions were needed: the strategy compiled directly"}
           </span>
         </div>
       ) : (
