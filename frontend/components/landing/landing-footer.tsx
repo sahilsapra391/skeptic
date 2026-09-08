@@ -8,6 +8,7 @@ import { getCoverage } from "@/lib/api";
 import { daysOnRecord } from "@/lib/coverage-facts";
 import type { Theme } from "@/lib/settings";
 import type { LandingTheme } from "@/components/landing/use-landing-theme";
+import { ProductHuntBadge } from "@/components/landing/product-hunt-badge";
 
 /**
  * Landing footer — navbg band + theme segmented control.
@@ -29,7 +30,15 @@ const THEME_MODES: { id: Theme; label: string }[] = [
 /* DS base.css: a { color: var(--ink-3) } → hover var(--ink) */
 const LINK = "text-ink-3 transition-colors hover:text-ink";
 
-export function LandingFooter({ theme }: { theme: LandingTheme }) {
+export function LandingFooter({
+  theme,
+  bubbleShown = false,
+}: {
+  theme: LandingTheme;
+  // the floating Product Hunt bubble is up: pad the bottom so it floats in
+  // its own band instead of covering the theme control at page end
+  bubbleShown?: boolean;
+}) {
   const [recordDays, setRecordDays] = useState<number | null>(null);
 
   useEffect(() => {
@@ -49,7 +58,13 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
   }, []);
 
   return (
-    <footer className="border-t border-line bg-navbg px-6 pb-[26px] pt-8 md:px-14 md:pb-[30px] md:pt-10 xl:px-[120px]">
+    <footer
+      className={clsx(
+        "border-t border-line bg-navbg px-6 pt-8 md:px-14 md:pt-10 xl:px-[120px]",
+        // bubble band = its offset (12 / 24) + 64px tall + a 12px gap
+        bubbleShown ? "pb-[88px] md:pb-[100px]" : "pb-[26px] md:pb-[30px]",
+      )}
+    >
       <div className="mx-auto max-w-[1440px]">
         <div className="md:grid md:grid-cols-[1.5fr_1fr_1fr] md:gap-12">
           <div>
@@ -86,6 +101,10 @@ export function LandingFooter({ theme }: { theme: LandingTheme }) {
                 day {recordDays.toLocaleString("en-US")} of the record →
               </Link>
             )}
+            {/* Product Hunt launch badge (owner 2026-09-07): permanent, in
+                the gap under the day counter; on mobile (no counter) it
+                sits under the tagline */}
+            <ProductHuntBadge className="mt-4 md:mt-[18px]" />
           </div>
 
           <div className="hidden md:block">
