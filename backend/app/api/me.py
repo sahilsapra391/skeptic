@@ -1,6 +1,6 @@
 """Account surface (launch L1): who am I, and what's my balance.
 
-The balance is computed from the append-only ledger on every read — there
+The balance is computed from the append-only ledger on every read. There
 is no stored balance to drift (PRD E).
 """
 
@@ -26,7 +26,8 @@ _rate = rate_limited(
 
 @router.get("/me")
 def me(
-    user: db.User = Depends(require_user),  # noqa: B008 — FastAPI dependency
+    # FastAPI dependency
+    user: db.User = Depends(require_user),  # noqa: B008
     _: None = Depends(_rate),
 ) -> dict[str, Any]:
     return {

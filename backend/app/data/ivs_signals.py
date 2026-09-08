@@ -1,15 +1,15 @@
-"""IVS-derived vol-surface signals (F4) — skew and term structure.
+"""IVS-derived vol-surface signals (F4): skew and term structure.
 
 The fitted surface (reference/ivol/ivs/, 2007+, 13 tenors × OTM%-stepped
 strikes with real deltas) is DERIVED ONCE per session into a compact
-artifact — reference/derived/ivs_signals/ticker={T}.parquet — by
+artifact (reference/derived/ivs_signals/ticker={T}.parquet) by
 collector/derive_ivs_signals.py (nightly, incremental). Backtests read
 the artifact O(1); computing skew per session at run time would mean
 ~4,900 surface reads per run (post-OOM rule: no live derivations in the
 run path). Self-improvement: new IVS sessions flow in on the next
 collector pass, no redeploy.
 
-Conventions (owner decision 2026-07-07 — fixed market standards, never
+Conventions (owner decision 2026-07-07, fixed market standards, never
 parameterized on spec):
   skew_25d          IV(25Δ put) − IV(25Δ call) at the 30d tenor, VOL
                     POINTS (×100). 25Δ is linearly interpolated in delta
@@ -20,7 +20,7 @@ parameterized on spec):
                     Negative = inverted term structure = stress.
 
 Honesty: a session whose surface lacks the needed tenor or bracketing
-deltas derives NOTHING for that signal (None — unavailable, never
+deltas derives NOTHING for that signal (None: unavailable, never
 interpolated across tenors or extrapolated beyond the grid). The
 derivation lives HERE (not mirrored in the collector) so the math has
 exactly one implementation, fixture-tested in the backend battery.
@@ -44,7 +44,7 @@ def _interp_iv_at_delta(rows: pd.DataFrame, target_abs_delta: float,
                         iv_col: str = "IV") -> float | None:
     """IV at |delta| == target, linearly interpolated between the two
     bracketing grid rows. None when the grid doesn't bracket the target
-    (fail closed — never extrapolate beyond the fitted grid). ONE kernel
+    (fail closed, never extrapolate beyond the fitted grid). ONE kernel
     for the vendor-surface derivation and the in-house chain continuation
     (review finding: a numerical fix must never fork the seam); `iv_col`
     names the caller's IV column."""
@@ -82,7 +82,7 @@ def _atm_iv(surface: pd.DataFrame, tenor: int) -> float | None:
 
 def derive_signal_row(surface: pd.DataFrame) -> dict[str, float | None]:
     """One session's surface → the derived signal values (vol points).
-    Missing tenors/brackets yield None per signal — honest absence."""
+    Missing tenors/brackets yield None per signal, honest absence."""
     out: dict[str, float | None] = {
         "skew_25d": None,
         "term_slope_30_90": None,
@@ -94,10 +94,10 @@ def derive_signal_row(surface: pd.DataFrame) -> dict[str, float | None]:
     if not {"period", "Call/Put", "delta", "IV", "out-of-the-money %"}.issubset(
         surface.columns
     ):
-        return out  # unrecognized surface shape — honest absence, never a guess
+        return out  # unrecognized surface shape: honest absence, never a guess
     # vendor JSON dtypes are untrusted (same rule as load_ivs_surface's
     # coercion): a string-typed period would make every == comparison
-    # silently False and derive an all-None row — coerce first
+    # silently False and derive an all-None row. Coerce first
     surface = surface.copy()
     for col in ("period", "delta", "IV", "out-of-the-money %"):
         surface[col] = pd.to_numeric(surface[col], errors="coerce")
@@ -117,7 +117,7 @@ def derive_signal_row(surface: pd.DataFrame) -> dict[str, float | None]:
 
 def load_ivs_signals(s3: Any, ticker: str) -> tuple[dict[date, float], dict[date, float]]:
     """(skew_25d by session, term_slope by session) from the derived
-    artifact — vol points. Empty dicts until the collector has derived
+    artifact (vol points). Empty dicts until the collector has derived
     (honest absence: the indicators evaluate False, never a guess)."""
     from app.data import r2  # late import keeps this module collector-importable
 

@@ -70,7 +70,7 @@ def check_svg_tokens(name: str, text: str) -> None:
 
 
 def splash_budget_s() -> float:
-    """ANIMATION_MS from boot-splash.tsx — the timing contract the draw must fit."""
+    """ANIMATION_MS from boot-splash.tsx: the timing contract the draw must fit."""
     m = re.search(r"const ANIMATION_MS = (\d+);", SPLASH.read_text())
     if not m:
         fail(f"could not find ANIMATION_MS in {SPLASH}")
@@ -82,7 +82,7 @@ def cascade(text: str, name: str) -> str:
 
     Walks paths in document order carrying a cumulative shift: any stroke
     starting earlier than (previous start + MIN_GAP_S) is pushed to exactly
-    that, and everything after it shifts by the same amount — which is how
+    that, and everything after it shifts by the same amount, which is how
     the kit's own boundary rhythm reads. Applied to the v2 kit this yields
     P/T/slash/C at 0.45/0.51/0.58/0.64/0.71/0.84, the committed fix.
     """
@@ -152,7 +152,7 @@ def verify_tile(label: str, im: Image.Image, size: int) -> None:
     r, g, b, a = im.getpixel((size // 2, 1 if size <= 16 else 2))
     if not (a == 255 and max(r, g, b) < 40):
         fail(f"{label} background {(r, g, b, a)} is not the ink tile")
-    print(f"  {label}: center ({cx:.3f},{cy:.3f}) on ink — ok")
+    print(f"  {label}: center ({cx:.3f},{cy:.3f}) on ink, ok")
 
 
 def main() -> None:
@@ -178,10 +178,10 @@ def main() -> None:
         if last + STROKE_S > budget:
             fail(
                 f"{name} last stroke ends at {last + STROKE_S:.2f}s, over the "
-                f"{budget:.2f}s ANIMATION_MS budget — raise it in {SPLASH.name} first"
+                f"{budget:.2f}s ANIMATION_MS budget. Raise it in {SPLASH.name} first"
             )
         (BRAND / name).write_text(text)
-        print(f"  {name}: last stroke {last:.2f}s + {STROKE_S}s ≤ {budget:.2f}s — ok")
+        print(f"  {name}: last stroke {last:.2f}s + {STROKE_S}s ≤ {budget:.2f}s, ok")
 
     print("Favicon tiles (owner-picked ink-black; kit renders ride high, re-centered):")
     tiles = {}
@@ -209,7 +209,7 @@ def main() -> None:
     if og.size != (1200, 630):
         fail(f"og-image is {og.size}, expected 1200x630")
     shutil.copyfile(kit / "social" / "og-image-1200x630.png", PUBLIC / "og-image-1200x630.png")
-    print("og-image-1200x630.png: copied (1200x630 — ok)")
+    print("og-image-1200x630.png: copied (1200x630, ok)")
 
 
 if __name__ == "__main__":

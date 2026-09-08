@@ -27,7 +27,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     import app.data.chains as chains_module
 
     # two VIX regimes so the single-trade fixture is capped ONLY by the
-    # trades bar — the regime guard is not the setting under test
+    # trades bar. The regime guard is not the setting under test
     days = sorted(fx.UNDERLYING)
     vix = {d: (12.0 if i < len(days) // 2 else 25.0) for i, d in enumerate(days)}
     monkeypatch.setattr(
@@ -65,7 +65,7 @@ def test_old_regime_sample_dumps_default_to_the_standard_bar() -> None:
     stored = {
         "trades": 13, "days_low_vix": 10, "days_mid_vix": 10,
         "days_high_vix": 10, "regimes_present": 3,
-        "capped": True, "cap_reason": "only 13 closed trades — minimum is 15",
+        "capped": True, "cap_reason": "only 13 closed trades (minimum is 15)",
     }
     assert RegimeSample.model_validate(stored).min_trades == 15
 
@@ -102,7 +102,7 @@ def test_bar_of_one_grades_a_single_trade(client: TestClient) -> None:
     assert payload["status"] == "done"
     assert payload["verdict"]["refusal"] is False
     # a graded sub-15 sample ALWAYS discloses the lowered bar, both voices,
-    # worded run-anchored (a different viewer may be reading it) — and the
+    # worded run-anchored (a different viewer may be reading it), and the
     # structural marker reaches the library card's meta line
     assert "Below-standard sample" in payload["verdict"]["caveat"]
     assert "lowered bar" in payload["retail"]["caveat"]
@@ -193,7 +193,7 @@ def test_narration_lands_after_done_and_swaps_only_words(
     run_id = client.post(
         "/api/backtest", json={"spec": fx.SPEC, "min_trades": 1}
     ).json()["run_id"]
-    # TestClient runs background tasks synchronously — by now the narration
+    # TestClient runs background tasks synchronously: by now the narration
     # patch has already landed on the stored payload
     payload = client.get(f"/api/runs/{run_id}").json()
     assert payload["status"] == "done"
@@ -338,7 +338,7 @@ def _stats_report(trades: int, split: dict | None) -> dict:
         regime_sample=RegimeSample(
             trades=trades, days_low_vix=50, days_mid_vix=50, days_high_vix=50,
             regimes_present=3, capped=True,
-            cap_reason=f"only {trades} closed trades — minimum is 15",
+            cap_reason=f"only {trades} closed trades (minimum is 15)",
             min_trades=15),
         coverage=Coverage(requested_start="2025-01-01",
                           requested_end="2025-03-01",
@@ -353,7 +353,7 @@ def _stats_report(trades: int, split: dict | None) -> dict:
                               "monte_carlo": True, "sensitivity": True,
                               "sample": False},
                     survived_count=3,
-                    reasons=[f"only {trades} closed trades — minimum is 15"]),
+                    reasons=[f"only {trades} closed trades (minimum is 15)"]),
         metrics={},
         effective_start="2025-01-02", effective_end="2025-03-01", seed=42,
     )

@@ -72,7 +72,7 @@ def test_coverage_serves_stale_while_revalidating(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(cov, "build_coverage", fake_build)
     monkeypatch.setitem(cov._CACHE, "snap", (time.time() - cov.CACHE_SECONDS - 1, stale))
-    # served instantly from the (real, age-disclosed) cache — never blocks
+    # served instantly from the (real, age-disclosed) cache, never blocks
     assert cov.coverage_cached() is stale
     assert built.wait(5), "background rebuild never ran"
     deadline = time.time() + 5
@@ -87,5 +87,5 @@ def test_coverage_too_stale_blocks_and_rebuilds(monkeypatch: pytest.MonkeyPatch)
     too_old = time.time() - cov.CACHE_SECONDS - cov.STALE_SERVE_SECONDS - 1
     monkeypatch.setitem(cov._CACHE, "snap", (too_old, {"generated_at": "ancient"}))
     # past the serve-stale ceiling the old heartbeat is NOT presented as
-    # current — the caller waits for a real rebuild
+    # current, so the caller waits for a real rebuild
     assert cov.coverage_cached() is fresh

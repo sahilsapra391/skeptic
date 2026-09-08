@@ -37,12 +37,12 @@ export default function RefundsPage() {
         <p>A credit is automatically returned to your balance when:</p>
         <Bullets
           items={[
-            "A run fails because of a problem on our end — for example an engine error, a crash, or a data-layer fault; or",
+            "A run fails because of a problem on our end, for example an engine error, a crash, or a data-layer fault; or",
             "A run returns a “not enough evidence” verdict. You only spend a credit on a graded verdict; a refusal for insufficient evidence is returned to you.",
           ]}
         />
         <p>
-          A completed, graded backtest — whether the verdict is favorable or unfavorable —
+          A completed, graded backtest (whether the verdict is favorable or unfavorable)
           is the product you paid for, and the credit for it is used. The engine ran and
           delivered its honest read; that is not grounds for a refund.
         </p>

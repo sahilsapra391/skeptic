@@ -30,7 +30,7 @@ def _dd_cond(value: float, period: int | None = None) -> Condition:
 
 def test_inf_high_is_unevaluable_not_a_100pct_drawdown() -> None:
     # a poisoned inf close would launder into a FINITE drawdown of
-    # exactly 100% and fire every threshold, forever — refuse instead
+    # exactly 100% and fire every threshold, forever. Refuse instead
     closes = [100.0, float("inf")] + [100.0] * 10 + [98.0]
     view = MarketView(_store(closes), _store(closes).sessions[-1])
     assert not all_conditions_pass(view, [_dd_cond(20.0)])

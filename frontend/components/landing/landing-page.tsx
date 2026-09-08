@@ -3,12 +3,12 @@
 /**
  * The landing assembly (launch L4, design 2a/2b). One client boundary for
  * the whole page: theme + wordmark-draw state live HERE, once, and flow
- * down as props — sections never call the hooks themselves (double mounts
+ * down as props. Sections never call the hooks themselves (double mounts
  * would double the intervals and fight over <html data-theme>).
  *
  * Topbar and the morphing wordmark are top-level siblings of the sections:
  * position:sticky sticks within the nearest scrollport but is CONTAINED by
- * the parent box — caged inside the hero section they'd scroll away with it.
+ * the parent box: caged inside the hero section they'd scroll away with it.
  */
 
 import { useCallback, useRef, useState } from "react";
@@ -45,7 +45,7 @@ export function LandingPage() {
   // the footer reserves room for it while it is up.
   const phBubble = useProductHuntBubble();
 
-  // the product opens in popups ON the landing (owner 2026-07-17) — a
+  // the product opens in popups ON the landing (owner 2026-07-17). A
   // visitor is never redirected into the app shell.
   // runFlow = the active run flow's input (kept MOUNTED from prompt
   // submission until the visitor dismisses it, so the run keeps its live
@@ -58,11 +58,11 @@ export function LandingPage() {
   // run is spent" from "the global daily budget is booked up"
   const [gateReason, setGateReason] = useState<string | undefined>(undefined);
   // the background run this browser is tracking (survives popup close +
-  // reloads) — the banner watches it to "ready" and back to viewing
+  // reloads). The banner watches it to "ready" and back to viewing
   const [activeRunId, setActiveRunId] = useState<string | null>(() => getActiveRun());
   // the run the MOUNTED flow itself started (null for an idle flow). The
   // banner needs the distinction: reopening the popup is only right when
-  // the popup actually contains the tracked run — an ungated chart flow can
+  // the popup actually contains the tracked run, and an ungated chart flow can
   // now be mounted while an unrelated finished run is being tracked.
   const [flowRunId, setFlowRunId] = useState<string | null>(null);
   // bumped whenever a NEW flow request mounts, keying RunFlow so a replaced
@@ -72,7 +72,7 @@ export function LandingPage() {
 
   // the run flow reports its id the instant the backtest is created; a real
   // run becomes the tracked background run (demo-fallback runs don't persist
-  // and are skipped — they'd 404 and wrongly burn the free run)
+  // and are skipped, because they'd 404 and wrongly burn the free run)
   const onRunStarted = useCallback((runId: string, demo: boolean) => {
     if (demo) return;
     setActiveRun(runId);
@@ -80,7 +80,7 @@ export function LandingPage() {
     setFlowRunId(runId);
   }, []);
 
-  // clear the run flow entirely — dismissed, or a phantom that self-healed
+  // clear the run flow entirely: dismissed, or a phantom that self-healed
   const clearRun = useCallback(() => {
     setRunFlow(null);
     setRunOpen(false);
@@ -90,13 +90,13 @@ export function LandingPage() {
   }, []);
 
   // the server armor refused this device's free run (a cleared-cookie repeat,
-  // or the global daily budget) — the client gate can't see that, so the run
+  // or the global daily budget). The client gate can't see that, so the run
   // popup hands off to the create-an-account gate. No run started, so there's
   // nothing to track.
   const onTrialExhausted = useCallback((reason?: string) => {
     setRunFlow(null);
     setRunOpen(false);
-    // the flow is gone — drop its run id too, or the next mounted flow
+    // the flow is gone, so drop its run id too, or the next mounted flow
     // inherits it (a stale flowRunId makes an idle chart look like it holds
     // the tracked run: hasFlow/idleChartFlow misfire)
     setFlowRunId(null);
@@ -105,30 +105,30 @@ export function LandingPage() {
   }, []);
 
   // one free run per DEVICE for anonymous visitors. Once a run is in flight
-  // this session (runFlow mounted) a second attempt does NOT start another —
-  // it brings the visitor back to the running popup (owner 2026-07-17). With
+  // this session (runFlow mounted) a second attempt does NOT start another.
+  // It brings the visitor back to the running popup (owner 2026-07-17). With
   // no active flow, the device gate applies (a signed-in account holder is
-  // never gated — they have credits and the popup is their run surface).
+  // never gated, because they have credits and the popup is their run surface).
   const tryRun = (req: { pitch?: string; mode?: "chart" }) => {
     // an idle chart flow that never started a run is browsing, not a run in
-    // flight — a typed pitch supersedes it (its pins have produced nothing
+    // flight, so a typed pitch supersedes it (its pins have produced nothing
     // yet) instead of being swallowed by the reopen shortcut below
     const idleChartFlow = runFlow?.mode === "chart" && flowRunId === null;
     if (runFlow && !(idleChartFlow && req.pitch)) {
-      setRunOpen(true); // a run is already going — take them to it
+      setRunOpen(true); // a run is already going, so take them to it
       return;
     }
     const mount = () => {
       flowGen.current += 1;
       setRunFlow(req);
       setRunOpen(true);
-      // a freshly mounted flow has started no run yet — null the id so it
+      // a freshly mounted flow has started no run yet, so null the id so it
       // can't inherit a prior flow's run (the flowRunId===null invariant an
       // idle flow relies on)
       setFlowRunId(null);
     };
     if (req.mode === "chart") {
-      // chart-teach opens ungated — pinning examples is browsing, not
+      // chart-teach opens ungated: pinning examples is browsing, not
       // spending (owner 2026-07-17). The device gate applies inside the
       // flow when "That's the idea" compiles the pins.
       mount();
@@ -140,10 +140,10 @@ export function LandingPage() {
     }
     fetchMe()
       .then(() => {
-        mount(); // signed in — run it
+        mount(); // signed in, so run it
       })
       .catch(() => {
-        // anonymous repeat — the CLIENT device gate, always the "used this
+        // anonymous repeat: the CLIENT device gate, always the "used this
         // device's run" message. Clear any stale reason from a prior
         // budget-402 so this gate never inherits the "busy" copy.
         setGateReason(undefined);
@@ -158,7 +158,7 @@ export function LandingPage() {
     (runFlow || activeRunId) &&
       !runOpen &&
       !(activeRunId && viewRunId === activeRunId) &&
-      // an idle chart flow with no tracked run has nothing in progress — a
+      // an idle chart flow with no tracked run has nothing in progress, so a
       // "being set up…" pill for it would be a false claim
       !(runFlow?.mode === "chart" && flowRunId === null && !activeRunId),
   );
@@ -191,7 +191,7 @@ export function LandingPage() {
         <ActiveRunBanner
           runId={activeRunId}
           // reopening the popup is only right when the popup contains the
-          // tracked run (or a text flow still working toward one) — an
+          // tracked run (or a text flow still working toward one). An
           // unrelated idle chart flow must not intercept "view results"
           hasFlow={!!runFlow && flowRunId === activeRunId}
           onReopen={() => setRunOpen(true)}
@@ -203,7 +203,7 @@ export function LandingPage() {
 
       {/* the run flow stays MOUNTED while runFlow is set; the popup X only
           minimizes it (runOpen=false) so the run keeps going and the banner
-          takes over — the banner's dismiss fully clears it */}
+          takes over, and the banner's dismiss fully clears it */}
       {runFlow && (
         <RunFlowModal
           key={flowGen.current}

@@ -1,8 +1,8 @@
-"""Skeptic backend — FastAPI app (TECH-SPEC §3).
+"""Skeptic backend: FastAPI app (TECH-SPEC §3).
 
 Live now: /api/health, /api/data/coverage, /api/data/underlying/{ticker}
 (real, computed from the R2 lake). The run pipeline (/api/parse,
-/api/backtest, /api/runs…) returns 501 until milestones M2–M4 land — the
+/api/backtest, /api/runs…) returns 501 until milestones M2–M4 land. The
 frontend labels anything it shows in their place as demo data, never as
 results.
 """
@@ -79,7 +79,7 @@ from app.db import target_line as db_target_line  # noqa: E402
 
 
 def _sweep_orphaned_runs() -> None:
-    """Runs execute as in-process background tasks — a run still marked
+    """Runs execute as in-process background tasks. A run still marked
     queued/running at BOOT died with the previous process (OOM, deploy,
     crash) and can never finish. Mark it honestly instead of letting the
     UI spin forever (incident 2026-07-06: a 40-minute phantom 'running')."""
@@ -95,13 +95,13 @@ def _sweep_orphaned_runs() -> None:
             for run in stuck:
                 run.status = "error"
                 run.error = (
-                    "interrupted — the service restarted mid-run (out of memory "
+                    "interrupted: the service restarted mid-run (out of memory "
                     "or a deploy); no results were computed. Re-run when ready."
                 )
                 s.add(db.RunEvent(run_id=run.id, stage=run.stage or 0,
                                   label="interrupted by service restart"))
-                # L2 credit law: an interrupted run is an our-fault failure —
-                # refund the credit it debited, ATOMIC with status='error'
+                # L2 credit law: an interrupted run is an our-fault failure.
+                # Refund the credit it debited, ATOMIC with status='error'
                 # (idempotent + self-scoped: a no-op for anon / service runs).
                 # Without this, a redeploy or OOM mid-run would permanently
                 # charge a signed-in user for nothing.
@@ -143,7 +143,7 @@ async def bearer_auth(
     SKEPTIC_ACCESS_TOKEN set, the exact bearer passes everything; a
     verified user session additionally passes the small user surface.
     If the token is unset (local dev), requests pass; health stays open
-    for probes. Identity is resolved lazily inside gate_allows — only
+    for probes. Identity is resolved lazily inside gate_allows: only
     user-surface paths pay the JWT verify + DB lookup, so this can touch
     the DB and (once, at account creation) the Clerk API and therefore
     runs off the event loop."""
@@ -159,7 +159,7 @@ async def bearer_auth(
     except auth.AccountsUnavailableError:
         return Response(
             status_code=503,
-            content='{"detail":"accounts are unavailable — the accounts database is '
+            content='{"detail":"accounts are unavailable: the accounts database is '
             'unreachable right now; charts and existing runs stay up"}',
             media_type="application/json",
         )
@@ -183,15 +183,15 @@ def health() -> dict[str, object]:
         "status": "ok",
         "r2_configured": r2_configured(),
         "db": db.status(),
-        "accounts": "live — email + password, self-rolled (argon2id + DB sessions)"
+        "accounts": "live: email + password, self-rolled (argon2id + DB sessions)"
         + (" · verification required" if os.environ.get("SKEPTIC_REQUIRE_VERIFIED") == "1"
            else " · verification optional until a mail sender is configured"),
-        "engine": "live — EOD engine + full honesty gauntlet",
-        "parser": "live — English → spec, questions when ambiguous" if llm
+        "engine": "live: EOD engine + full honesty gauntlet",
+        "parser": "live: English → spec, questions when ambiguous" if llm
         else "needs OPENROUTER_API_KEY",
-        "verdict_llm": "live — validated narration, template fallback" if llm
+        "verdict_llm": "live: validated narration, template fallback" if llm
         else "template only (no key)",
-        "ask": "live — grounded Q&A on finished runs" if llm else "needs OPENROUTER_API_KEY",
+        "ask": "live: grounded Q&A on finished runs" if llm else "needs OPENROUTER_API_KEY",
         "model": os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),  # narration
         "parser_model": os.environ.get("OPENROUTER_PARSER_MODEL", PARSER_MODEL),
         "min_trades": MIN_TRADES,
@@ -211,7 +211,7 @@ app.include_router(admin_api.router, prefix="/api", tags=["admin"])
 async def http_exception_handler(request: Request, exc: HTTPException) -> Response:
     """Every refusal must reach the user as JSON. A raw json.dumps chokes on
     non-serializable detail (pydantic ctx once carried live ValueError objects)
-    and the handler's own crash turned honest 422s into bare plaintext 500s —
+    and the handler's own crash turned honest 422s into bare plaintext 500s:
     the UI showed `500: {}` instead of the explanation (2026-07-07)."""
     import json
 

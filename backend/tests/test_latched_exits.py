@@ -1,12 +1,12 @@
-"""FX.3 — latched exits + the live-price condition side (finest mode).
+"""FX.3: latched exits + the live-price condition side (finest mode).
 
 The intrabar-unknown rule, applied where minute data shrinks the blind
 spot: a minute-grid bar can OBSERVE the underlying touch an exit level
 between 5-min NBBO stamps. Once seen, the touch COUNTS (worse-path /
-directional honesty — a forgotten exit is optimism): the close completes
+directional honesty, a forgotten exit is optimism): the close completes
 at the first quoted bar that can fill it, without re-evaluation, no
 expiry, trigger + fill bars disclosed. The same touch is honestly
-INVISIBLE at the 5-min grid — finer data shrinks the blind spot, never
+INVISIBLE at the 5-min grid. Finer data shrinks the blind spot, never
 removes it (both pinned here).
 
 Entry math convention: short put K=100 quoted 2.00/2.10 → credit 2.025 →
@@ -75,7 +75,7 @@ def _spec(*, exit_conditions: list | None = None,
 
 
 # minute grid: stamps at 09:30/09:35/09:40/09:45 (indicator + quote bars),
-# a crash print at 09:41 that RECOVERS by 09:42 — minute-grid-only
+# a crash print at 09:41 that RECOVERS by 09:42 (minute-grid-only)
 MINUTE_UND = {"09:30": 100.0, "09:35": 100.1, "09:40": 100.2, "09:41": 88.0,
               "09:42": 99.5, "09:43": 100.0, "09:44": 100.1, "09:45": 100.3}
 STAMP_UND = {"09:30": 100.0, "09:35": 100.1, "09:40": 100.2, "09:45": 100.3}
@@ -116,15 +116,15 @@ class TestLatchedExit:
         assert closes[0].reason == "condition_exit"
         assert closes[0].bar_time == "09:45"  # first quoted bar after 09:41
         assert "triggered 09:41" in closes[0].detail
-        # the fill is the 09:45 REAL quote (worse than the touch — visible):
+        # the fill is the 09:45 REAL quote (worse than the touch, visible):
         # pl = 201.85 − 308.15 = −106.30
         assert closes[0].pl == pytest.approx(-106.30, abs=0.005)
-        # fade-proof: at 09:45 the condition is FALSE (100.3 vs sma) — the
+        # fade-proof: at 09:45 the condition is FALSE (100.3 vs sma). The
         # close happened anyway because the latch never re-evaluates
 
     def test_latch_persists_across_unfillable_bars_no_expiry(self) -> None:
         # the 09:45 stamp carries NO quote for the contract; the next quoted
-        # bar is 09:50 — the latched exit completes there (never forgotten)
+        # bar is 09:50. The latched exit completes there (never forgotten)
         und = dict(MINUTE_UND)
         und["09:50"] = 100.4
         quotes = {"09:30": [_put(2.00, 2.10)],
@@ -141,7 +141,7 @@ class TestLatchedExit:
 
     def test_same_touch_is_invisible_at_five_min(self) -> None:
         # the honest blind spot, pinned: the 5-min grid never sees the 09:41
-        # print — no exit fires, the position survives the session
+        # print: no exit fires, the position survives the session
         spec = _spec(exit_conditions=CRASH_COND)
         result = _run(spec, None, _five_slice(QUOTES_ALL_STAMPS))
         closes = [t for t in result.trades if t.action == "CLOSE"]
@@ -167,7 +167,7 @@ class TestLatchDisclosure:
 
     def test_settlement_supersession_is_disclosed(self) -> None:
         # review finding: a pending latch swallowed by same-session expiry
-        # leaves a trace — the settlement event names the trigger
+        # leaves a trace: the settlement event names the trigger
         und = dict(MINUTE_UND)
         quotes = {"09:30": [dict(_put(2.00, 2.10), expiration=SESSION)],
                   "09:35": [dict(_put(2.00, 2.10), expiration=SESSION)],
@@ -177,7 +177,7 @@ class TestLatchDisclosure:
         spec = _spec(exit_conditions=CRASH_COND)
         result = _run(spec, slc, _five_slice(QUOTES_ALL_STAMPS))
         closes = [t for t in result.trades if t.action == "CLOSE"]
-        assert closes == []  # no quoted bar after the trigger — settle wins
+        assert closes == []  # no quoted bar after the trigger, so settle wins
         settles = [t for t in result.trades
                    if t.action in ("EXPIRE", "SETTLE", "ASSIGN")]
         assert settles, "same-session expiry must settle"
@@ -189,7 +189,7 @@ class TestLivePriceEntryIntegration:
     def test_minute_dip_arms_entry_fills_at_next_quote(self) -> None:
         # FX.2 + FX.3 end-to-end: the dip at 09:41 (quote-less) trips the
         # ENTRY condition via the live price side, arms the order, and it
-        # fills at 09:45's real NBBO even though the dip recovered — the
+        # fills at 09:45's real NBBO even though the dip recovered, the
         # symmetric counterpart of the latched exit, per the one-semantic
         # owner decision. armed bar disclosed.
         spec = _spec(entry_conditions=CRASH_COND, scan="every_setup")
@@ -212,7 +212,7 @@ class TestLivePriceUnits:
                          operator=Operator.LT, value=-1,
                          timeframe=Timeframe.FIVE_MIN)
         # sampled last 98 vs vwap 99 = −1.01% fires; at an OFF-STAMP bar a
-        # live print of 99.5 (recovered) does NOT — the live side drives it
+        # live print of 99.5 (recovered) does NOT: the live side drives it
         assert evaluate_condition(_FakeBar([100.0, 99.0, 98.0], 99.0), cond)
         assert not evaluate_condition(
             _FakeBar([100.0, 99.0, 98.0], 99.0, live=99.5,
@@ -245,13 +245,13 @@ class TestLivePriceUnits:
                              period=2, timeframe=Timeframe.FIVE_MIN)
         # GENUINE inter-stamp cross: latest sampled pct −5.263, live 96 →
         # (96/95 − 1) = +1.05: pair (−5.263, +1.05) crosses −5 → True
-        # (the pre-fix pair (0.00, +1.05) missed it — a forgotten exit)
+        # (the pre-fix pair (0.00, +1.05) missed it, a forgotten exit)
         assert evaluate_condition(
             _FakeBar([100.0, 100.0, 90.0], None, live=96.0,
                      is_indicator_stamp=False), cross_up)
         # NO spurious re-fire: stamps 100/90/100 → the cross resolved AT
         # the last stamp (pair [−5.263, +5.263]); at following minute bars
-        # the pair is (+5.263, live) — prev is above the threshold → False
+        # the pair is (+5.263, live): prev is above the threshold → False
         assert not evaluate_condition(
             _FakeBar([100.0, 90.0, 100.0], None, live=100.0,
                      is_indicator_stamp=False), cross_up)

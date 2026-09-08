@@ -2,7 +2,7 @@
 
 Owner tool for the L2 to L3 window: before Stripe top-ups exist, this is how
 you give credits to yourself (account #1) or an early tester. Every change is
-an audit row (reason=admin_adjust) — the balance stays SUM(delta), never a
+an audit row (reason=admin_adjust). The balance stays SUM(delta), never a
 mutable column, so this can never silently corrupt a balance.
 
     cd backend

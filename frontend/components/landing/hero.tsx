@@ -1,17 +1,17 @@
 "use client";
 
 /**
- * B1 — landing topbar + hero (design 2a desktop / 2b mobile).
+ * B1: landing topbar + hero (design 2a desktop / 2b mobile).
  *
  * LandingTopbar and LandingHero are TOP-LEVEL siblings on the page: the
  * sticky nav and the sticky morphing-wordmark band stick against the
  * window, so they must never be caged inside the hero section's box. The
  * assembly calls useWordmarkDraw() ONCE and passes `draw` to both (the
- * draw-once sessionStorage flag is consumed at module scope — a second
+ * draw-once sessionStorage flag is consumed at module scope. A second
  * hook call would still share it, but a single owner keeps replay in sync).
  *
- * The composer is a visual clone of the app's (app/(app)/new/page.tsx) —
- * same classes, same speech wiring, same auto-grow — but it never parses:
+ * The composer is a visual clone of the app's (app/(app)/new/page.tsx):
+ * same classes, same speech wiring, same auto-grow. It never parses, though:
  * submit raises onPitch, and landing-page.tsx opens the run flow in a modal
  * so the clarify/spec machinery, provenance transcript and cancel path all
  * live in one place (guardrail: no silent parser guesses duplicated here).
@@ -36,7 +36,7 @@ import styles from "./hero.module.css";
 export type WordmarkDraw = ReturnType<typeof useWordmarkDraw>;
 
 // the app's PRESETS entries for the three landing chips (labels/structure
-// sublabels/phrases verbatim — click fills the composer, app parity)
+// sublabels/phrases verbatim): click fills the composer, app parity
 const PRESETS = [
   {
     label: "Weekly income put",
@@ -56,8 +56,8 @@ const PRESETS = [
 ];
 
 // copy-deck Hero: rotate 3.6s, pause on focus/typing. Derived from the
-// chips so a preset reword can never leave a stale placeholder behind —
-// only the covered-call line has no chip to derive from
+// chips so a preset reword can never leave a stale placeholder behind.
+// Only the covered-call line has no chip to derive from
 const PLACEHOLDERS = [
   ...PRESETS.map((p) => `${p.phrase}…`),
   "covered call on SPY, sell the 30-delta monthly, roll at 21 DTE…",
@@ -65,7 +65,7 @@ const PLACEHOLDERS = [
 
 // scroll-morph constants (component-specs §2): scrub window 0→260px,
 // translate(tx·q, -28px·q) scale(1 − MORPH_SCALE·q), q = smoothstep.
-// End scale lands the mark at ~28px tall — the SAME size as the app
+// End scale lands the mark at ~28px tall, the SAME size as the app
 // rail's nav wordmark (owner 2026-07-17: the two must match), not the
 // design note's ~92px-wide guess: 460px × 152/704 ≈ 99px tall × 0.282.
 const MORPH_SCROLL_PX = 260;
@@ -84,7 +84,7 @@ export function LandingTopbar({ draw }: { theme: LandingTheme; draw: WordmarkDra
     let raf = 0;
     // tx is responsive: measure hero-logo center → nav-left slot center at
     // mount + resize. Both are horizontal-only and scroll-independent, but
-    // getBoundingClientRect includes transforms — strip the scrub transform
+    // getBoundingClientRect includes transforms. Strip the scrub transform
     // for the measurement (style writes settle before the next paint).
     const measure = () => {
       const slot = slotRef.current;
@@ -104,7 +104,7 @@ export function LandingTopbar({ draw }: { theme: LandingTheme; draw: WordmarkDra
       raf = 0;
       const p = Math.min(Math.max(window.scrollY / MORPH_SCROLL_PX, 0), 1);
       const q = p * p * (3 - 2 * p);
-      // transform-only, on the WRAPPER — the svg itself owns the draw CSS
+      // transform-only, on the WRAPPER: the svg itself owns the draw CSS
       if (logoRef.current) {
         logoRef.current.style.transform =
           q === 0
@@ -119,7 +119,7 @@ export function LandingTopbar({ draw }: { theme: LandingTheme; draw: WordmarkDra
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(apply);
     };
-    // coalesced through the same rAF as the scrub — measure() forces a
+    // coalesced through the same rAF as the scrub: measure() forces a
     // synchronous reflow (transform strip + two rects), so once per frame,
     // not once per resize event
     let resizeRaf = 0;
@@ -147,7 +147,7 @@ export function LandingTopbar({ draw }: { theme: LandingTheme; draw: WordmarkDra
     <>
       {/* mobile topbar (2b): static s-mark + Sign in, no morph below md */}
       <nav className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line-softer bg-ground px-[18px] md:hidden">
-        {/* CSS theme swap off the painted data-theme — a theme.resolved prop
+        {/* CSS theme swap off the painted data-theme: a theme.resolved prop
             here mismatched the SSR src and forced a hydration patch */}
         {/* eslint-disable-next-line @next/next/no-img-element -- tiny static brand asset, app idiom (boot-splash) */}
         <img
@@ -172,8 +172,8 @@ export function LandingTopbar({ draw }: { theme: LandingTheme; draw: WordmarkDra
         ref={navRef}
         className="sticky top-0 z-30 hidden h-16 items-center justify-end gap-[18px] px-11 transition-colors duration-200 md:flex"
       >
-        {/* empty left slot the wordmark morphs into — measured, never styled */}
-        {/* the slot the wordmark lands in — sized to the app rail's mark
+        {/* empty left slot the wordmark morphs into (measured, never styled) */}
+        {/* the slot the wordmark lands in, sized to the app rail's mark
             (h-28px ⇒ ~130px wide at the brand aspect) */}
         <div ref={slotRef} aria-hidden className="mr-auto h-9 w-[130px]" />
         <Link href="/signin" className="py-[2px] text-[12.5px] text-ink-4 hover:text-ink-3">
@@ -211,7 +211,7 @@ export function LandingHero({
   theme: LandingTheme;
   draw: WordmarkDraw;
   /* launch L4 (owner 2026-07-17): the run happens in a popup ON the
-     landing — never a redirect into the app shell */
+     landing, never a redirect into the app shell */
   onPitch: (pitch: string) => void;
   onChartTeach: () => void;
 }) {
@@ -232,7 +232,7 @@ export function LandingHero({
   const prefetchedRef = useRef(false);
 
   const speech = useSpeechToText((segment) => {
-    // segments arrive already polished — join verbatim, no sentence-casing
+    // segments arrive already polished: join verbatim, no sentence-casing
     setText((t) => {
       const sep = t && !/\s$/.test(t) ? " " : "";
       return t + sep + segment;
@@ -272,7 +272,7 @@ export function LandingHero({
     return () => window.clearInterval(id);
   }, [rotationPaused]);
 
-  // "the app hydrates on first interaction" — warm the flow chunk on first
+  // "the app hydrates on first interaction": warm the flow chunk on first
   // focus/keystroke so the popup opens without a cold dynamic-import wait
   const warm = () => {
     if (prefetchedRef.current) return;
@@ -281,7 +281,7 @@ export function LandingHero({
   };
 
   // no anon-trial row yet (Turnstile/queue is a later backend chunk):
-  // submit opens the run popup — the device gate upstream decides whether
+  // submit opens the run popup: the device gate upstream decides whether
   // it runs or asks for an account
   const submit = () => {
     const pitch = text.trim();
@@ -306,7 +306,7 @@ export function LandingHero({
   return (
     <section className="px-6 md:px-14 xl:px-[120px]">
       <div className="relative mx-auto flex min-h-[calc(100svh-56px)] w-full max-w-[1440px] flex-col items-center justify-center pb-14 md:min-h-[calc(92vh-287px)] md:justify-start md:pb-16 md:pt-[6px]">
-        {/* mobile hero mark — static (no morph); desktop mark lives in the topbar band */}
+        {/* mobile hero mark, static (no morph); desktop mark lives in the topbar band */}
         <LandingWordmark run={draw.run} onReplay={draw.replay} className="block h-auto w-[280px] md:hidden" />
 
         <h1
@@ -412,7 +412,7 @@ export function LandingHero({
             </div>
             {(speech.listening || speech.error) && (
               <div className={clsx("pb-1 pt-0.5 text-[12.5px]", speech.error ? "text-warn" : "text-ink-4")}>
-                {speech.error ?? "Listening — tap the mic again to stop."}
+                {speech.error ?? "Listening. Tap the mic again to stop."}
               </div>
             )}
           </div>
@@ -421,7 +421,7 @@ export function LandingHero({
         {/* fixed 52px box on desktop: layout parity with the future submitted-anon row */}
         <div style={delayRest} className={clsx("md:flex md:h-[52px] md:items-center", stagger)}>
           <div className="mt-3 font-mono text-[11px] text-ink-4 md:mt-0 md:text-[11.5px]">
-            your first backtest is free — no account, no card
+            your first backtest is free (no account, no card)
           </div>
         </div>
 

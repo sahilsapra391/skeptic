@@ -18,7 +18,7 @@ GRANT_REASON = "signup_grant"
 
 
 class AccountsUnavailableError(Exception):
-    """The accounts database is unreachable — refuse rather than write
+    """The accounts database is unreachable. Refuse rather than write
     grants/debits/sessions to the throwaway SQLite fallback."""
 
 
@@ -27,5 +27,5 @@ def signup_grant_credits() -> int:
     try:
         return max(0, int(raw))
     except ValueError:
-        log.error("SIGNUP_GRANT_CREDITS=%r is not an integer — using 5", raw)
+        log.error("SIGNUP_GRANT_CREDITS=%r is not an integer, using 5", raw)
         return 5

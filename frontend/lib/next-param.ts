@@ -8,7 +8,7 @@ export function nextTarget(): string {
   if (typeof window === "undefined") return "/new";
   const next = new URLSearchParams(window.location.search).get("next");
   // a site-absolute path only: "/" alone, or "/" + a non-slash-non-
-  // backslash char. Rejecting "//host" AND "/\host" matters — browsers
+  // backslash char. Rejecting "//host" AND "/\host" matters, because browsers
   // normalize the backslash to a protocol-relative URL, so a bare
   // !startsWith("//") guard is an open redirect (review finding).
   if (next && (next === "/" || /^\/[^/\\]/.test(next))) return next;

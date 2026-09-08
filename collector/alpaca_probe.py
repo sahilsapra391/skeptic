@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-alpaca_probe.py — M1.5 step-0 verification (BUILD-PLAN M1.5).
+alpaca_probe.py: M1.5 step-0 verification (BUILD-PLAN M1.5).
 
 Read-only probes against Alpaca, run BEFORE any bulk pull:
   A. Does /v2/options/contracts (status=inactive) reach expiries back to 2024-02?

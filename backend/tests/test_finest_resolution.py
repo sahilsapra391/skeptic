@@ -1,4 +1,4 @@
-"""FX.1 — per-session resolution (spec v4 backtest.resolution="finest").
+"""FX.1: per-session resolution (spec v4 backtest.resolution="finest").
 
 Hand-computed fixtures. Entry math convention (as test_five_min_clock):
 short put K=100 quoted 2.00/2.10 → SELL = 2.05 − 0.5×0.05 = 2.025 →
@@ -7,11 +7,11 @@ cash +202.50 − 0.65 = +201.85.
 What FX.1 must prove:
   * a run spanning a minute-available and a 5-min-only session resolves
     each correctly and RECORDS the mix (masterplan FX.1 fixture);
-  * minute bars between 5-min NBBO stamps can fill NOTHING — every fill
+  * minute bars between 5-min NBBO stamps can fill NOTHING, every fill
     stays on a real quote bar (guardrail #1; clock-vs-quote split);
   * timeframe-"5min" indicators mean ONE thing at every session: the
     rolling series samples only 5-min boundaries on a minute grid (owner
-    decision 4 — resolution never silently changes signal meaning);
+    decision 4, resolution never silently changes signal meaning);
   * exits on a minute grid resolve at the next QUOTED bar with the same
     dollars as the 5-min grid (grid-invariant when triggers live on
     quote stamps);
@@ -35,7 +35,7 @@ from app.models.spec import StrategySpec
 
 class FinestFixtureIntraday:
     """IntradayProvider with a minute lane: `minute` maps session → 1-min
-    slice (None simulates an unbuildable grid — bars_1m missing)."""
+    slice (None simulates an unbuildable grid, bars_1m missing)."""
 
     def __init__(
         self,
@@ -159,7 +159,7 @@ class TestResolutionRecording:
 
     def test_resolution_runs_compression_extends_runs(self) -> None:
         # review finding: the run-EXTENSION path (sessions += 1, last moves)
-        # must be exercised — two consecutive minute sessions compress into
+        # must be exercised: two consecutive minute sessions compress into
         # one run whose `last` is the second session
         underlying = dict(UNDERLYING_2D)
         underlying["2025-01-09"] = (100.0, 100.5)
@@ -254,7 +254,7 @@ class TestMinuteGridHonesty:
 
 class TestIndicatorIntegrity:
     """Owner decision 4: timeframe-"5min" indicators sample ONLY 5-min
-    boundaries on a minute grid — intermediate minutes never pollute the
+    boundaries on a minute grid, and intermediate minutes never pollute the
     rolling series. The polluted series would push price_vs_sma_pct deeply
     negative and block the entry; this test goes red if anyone appends
     minute bars to the series."""
@@ -266,7 +266,7 @@ class TestIndicatorIntegrity:
             quotes={"09:30": [_put(2.00, 2.10, -0.50, exp)],
                     "09:35": [_put(2.00, 2.10, -0.50, exp)],
                     "09:40": [_put(2.00, 2.10, -0.50, exp)]},
-            # minute bars spike to 200 between the 5-min points — if they
+            # minute bars spike to 200 between the 5-min points, and if they
             # entered the series, SMA(2) at 09:40 would be far from price
             underlying={"09:30": 100.0, "09:31": 200.0, "09:32": 200.0,
                         "09:33": 200.0, "09:34": 200.0, "09:35": 100.5,
@@ -303,7 +303,7 @@ class TestHonestDegrade:
         assert result.resolution_mix == {"five_min": 1}
 
     def test_unbuildable_minute_grid_falls_back_and_records_five_min(self) -> None:
-        # map says minute-eligible, but the grid can't be built (None) —
+        # map says minute-eligible, but the grid can't be built (None), so
         # the session falls back to the 5-min slice, recorded five_min
         store = build_fixture_store("SPY", {}, UNDERLYING_2D)
         provider = FinestFixtureIntraday(
@@ -317,7 +317,7 @@ class TestHonestDegrade:
 
 
 class TestBitIdentity:
-    """Absent resolution ≡ explicit "5min" — byte-equal runs."""
+    """Absent resolution ≡ explicit "5min", with byte-equal runs."""
 
     def test_absent_equals_explicit_5min(self) -> None:
         store = build_fixture_store("SPY", {}, UNDERLYING_2D)
@@ -396,7 +396,7 @@ class TestSpecV4Validation:
 
     def test_spec_v4_matches_json_schema(self) -> None:
         # the pydantic models and docs/strategy-spec.schema.json must agree
-        # a full v4 finest spec is valid (the IR contract — CLAUDE.md)
+        # a full v4 finest spec is valid (the IR contract, CLAUDE.md)
         import json
         from pathlib import Path
 

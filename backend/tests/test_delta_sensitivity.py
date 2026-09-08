@@ -1,14 +1,14 @@
-"""Strike-granularity floor for the delta sweep — hand-computed.
+"""Strike-granularity floor for the delta sweep, hand-computed.
 
 The PR #99 review's deferred finding: ±20% of a small strike-selection
-delta probes almost nothing on a DISCRETE strike grid — 0.05Δ sweeps
+delta probes almost nothing on a DISCRETE strike grid: 0.05Δ sweeps
 0.04…0.06 in 0.005Δ cells while one strike at typical chain spacing is
 worth more delta than a cell, so adjacent cells resolve to the same
 contract and five near-identical Sharpes bless the fragile
 lottery-ticket archetype as a false plateau. At the probe floor the
 collapse was literal: base 0.03 clamped three cells to identical
 values. Below 0.25Δ the sweep now steps an absolute 0.025Δ grid
-(_DELTA_STEP_FLOOR — 10% of the 25Δ-wing reference, the same grounding
+(_DELTA_STEP_FLOOR, 10% of the 25Δ-wing reference, the same grounding
 rule as _COND_FAMILY_FLOORS), shifted up whole steps off the 0.03
 edge, disclosed in Sensitivity.delta_note. Same 5 cells, same
 classifier, no re-centering: the multiple-testing arithmetic is
@@ -55,16 +55,16 @@ class TestDeltaGrid:
         # ceil((0.03-0)/0.025)=2 steps (+0.05) → [0.05, 0.075, 0.1,
         # 0.125, 0.15], specced value ON the grid at index 0
         values, base_index, floored = _delta_grid(0.05)
-        # exactly these 5 cells — never more: the tax is unchanged
+        # exactly these 5 cells, never more: the tax is unchanged
         assert values == [0.05, 0.075, 0.1, 0.125, 0.15]
         assert base_index == 0 and values[base_index] == 0.05
         assert floored
 
     def test_probe_floor_base_no_longer_collapses(self) -> None:
         # the literal clamp collapse the old code produced at base 0.03:
-        # [0.03, 0.03, 0.03, 0.033, 0.036] — three identical cells.
+        # [0.03, 0.03, 0.03, 0.033, 0.036], three identical cells.
         # Floored: 0.03 + [-2..2]·0.025 → min -0.02 → shift 2 (+0.05) →
-        # [0.03, 0.055, 0.08, 0.105, 0.13] — five DISTINCT cells
+        # [0.03, 0.055, 0.08, 0.105, 0.13], five DISTINCT cells
         values, base_index, floored = _delta_grid(0.03)
         # five DISTINCT cells (the exact-list assertion pins that too)
         assert values == [0.03, 0.055, 0.08, 0.105, 0.13]
@@ -87,7 +87,7 @@ class TestDeltaGrid:
         assert floored
 
     def test_overfit_fixture_delta_grid(self) -> None:
-        # the canary's 0.15Δ short put — pinned so a change to ITS sweep
+        # the canary's 0.15Δ short put, pinned so a change to ITS sweep
         # is a conscious decision, never a drive-by
         values, base_index, floored = _delta_grid(0.15)
         assert values == [0.1, 0.125, 0.15, 0.175, 0.2]
@@ -105,14 +105,14 @@ class TestDeltaGrid:
 
     def test_reference_scale_delta_unchanged(self) -> None:
         # base 0.30 (the CANONICAL spec): byte-identical to the pre-floor
-        # sweep — floors bind only where ±20% was degenerate
+        # sweep. Floors bind only where ±20% was degenerate
         values, base_index, floored = _delta_grid(0.30)
         assert values == [0.24, 0.27, 0.3, 0.33, 0.36]
         assert base_index == 2
         assert not floored
 
     def test_deep_itm_top_clamp_unchanged(self) -> None:
-        # base 0.90: multiplicative with the pre-existing 0.95 cap —
+        # base 0.90: multiplicative with the pre-existing 0.95 cap.
         # [0.72, 0.81, 0.9, 0.95, 0.95] (duplicate top cells are reused
         # by the sweep's seen-cache, never re-run)
         values, base_index, floored = _delta_grid(0.90)
@@ -121,7 +121,7 @@ class TestDeltaGrid:
         assert not floored
 
     def test_below_probe_floor_keeps_prefloor_path(self) -> None:
-        # base 0.02 sits below the sweep's own probe floor — outside the
+        # base 0.02 sits below the sweep's own probe floor, outside the
         # scale the floor was grounded on (_condition_grid's lower-edge
         # posture): the pre-floor clamped path, degenerate as before
         values, base_index, floored = _delta_grid(0.02)
@@ -139,7 +139,7 @@ class TestDeltaGrid:
             assert values[base_index] == round(base, 4), base
 
     def test_floored_steps_are_exactly_the_floor(self) -> None:
-        # every floored grid steps _DELTA_STEP_FLOOR per cell — the "one
+        # every floored grid steps _DELTA_STEP_FLOOR per cell. The "one
         # strike per cell" guarantee lives in this spacing
         for base in (0.03, 0.05, 0.1, 0.16, 0.24):
             values, _, floored = _delta_grid(base)
@@ -202,7 +202,7 @@ class TestDeltaMutations:
 
     def test_below_probe_floor_is_disclosed(self) -> None:
         # review finding (three angles): a 2-delta spec kept the fully
-        # degenerate [0.03]×5 grid SILENTLY — one engine run graded as a
+        # degenerate [0.03]×5 grid SILENTLY: one engine run graded as a
         # plateau one epsilon below where disclosure kicked in. The grid
         # stays pre-floor (outside the floor's grounded scale) but the
         # note now names the collapse.
@@ -216,7 +216,7 @@ class TestDeltaMutations:
         assert "0.03" in delta_note
 
     def test_note_numerals_are_grounded(self) -> None:
-        # guardrail #4: the note rides into verdict caveats — validated
+        # guardrail #4: the note rides into verdict caveats, validated
         # with the SHIPPING validator against an allowed set built the
         # way production builds it (the sweep values the report carries)
         for spec_value in (0.05, 0.02):  # floored note + below-floor note
@@ -231,7 +231,7 @@ class TestDeltaLabels:
     def test_sub_point_cells_label_exactly(self) -> None:
         # review finding (three angles): the floored grid makes
         # half-point cells routine, and the old 2-digit label rounded
-        # them to values the sweep never ran (.08Δ for 0.075) — a
+        # them to values the sweep never ran (.08Δ for 0.075), so a
         # recommendation would tell the user to re-run at an untested
         # delta. Labels must name the EXACT tested value.
         from app.api.payload import _param_label
@@ -261,7 +261,7 @@ def _weekdays(start: date, n: int) -> list[date]:
 
 def _fine_delta_store():
     """Persistent integer-strike grid whose put deltas step ~0.02 per $1
-    strike (slope 1/50) — fine enough that 0.025Δ cells resolve to
+    strike (slope 1/50), fine enough that 0.025Δ cells resolve to
     DIFFERENT strikes while the old 0.005Δ cells around a 0.05Δ base
     would all have landed on the same contract."""
     sessions = _weekdays(date(2024, 1, 1), 160)
@@ -331,7 +331,7 @@ class TestDeltaSweepIntegration:
         assert row.values == [0.05, 0.075, 0.1, 0.125, 0.15]
         assert row.base_index == 0
         # the sweep RE-RAN the engine at deltas far enough apart to pick
-        # different contracts — every cell ran (this fixture quotes the
+        # different contracts. Every cell ran (this fixture quotes the
         # full grid) and the cells genuinely differ (on the old
         # 0.04…0.06 grid every cell landed on the same strike)
         valid = [s for s in row.sharpes if s is not None]

@@ -1,4 +1,4 @@
-"""R2 lake access — the backend's only door to the data lake.
+"""R2 lake access: the backend's only door to the data lake.
 
 Mirrors the collector's helpers (collector/collect.py) so both sides read
 the same layout. All chain-data access will move behind MarketView(as_of)
@@ -18,7 +18,7 @@ import pandas as pd
 
 
 class R2NotConfigured(RuntimeError):
-    """R2 credentials are missing — data routes must report this honestly."""
+    """R2 credentials are missing, so data routes must report this honestly."""
 
 
 _REQUIRED_ENV = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET")
@@ -55,8 +55,8 @@ def get_json(s3: Any, key: str, default: Any) -> Any:
 
 
 def put_json(s3: Any, key: str, payload: Any) -> None:
-    """State artifacts only (aggregates, priorities, calibration stats) —
-    chain data rows never travel through here (legal rail)."""
+    """State artifacts only (aggregates, priorities, calibration stats).
+    Chain data rows never travel through here (legal rail)."""
     s3.put_object(
         Bucket=bucket(),
         Key=key,

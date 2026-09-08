@@ -1,9 +1,9 @@
-"""Unusual Whales lake readers — PIT-bounded access to the banked UW prefixes.
+"""Unusual Whales lake readers: PIT-bounded access to the banked UW prefixes.
 
 F0 (ENGINE-V4 data spine): these readers establish the point-in-time bounds
 and `unavailable` semantics that every UW signal phase (F1 dealer positioning,
-F2 flow, F3 OI/pin) will inherit. Nothing in the engine consumes them yet —
-they ship with tests and coverage surfacing only (zero engine-behavior change).
+F2 flow, F3 OI/pin) will inherit. Nothing in the engine consumes them yet.
+They ship with tests and coverage surfacing only (zero engine-behavior change).
 
 Layouts (written by collector/backfill_unusual_whales.py):
   reference/uw/{family}/ticker={T}.parquet        series (one obs per date)
@@ -13,15 +13,15 @@ Layouts (written by collector/backfill_unusual_whales.py):
 
 PIT rules established here (guardrail #2, inherited by all later phases):
   * `as_of` is REQUIRED everywhere. A request for a session beyond it raises
-    LookaheadError — same contract as MarketView.
+    LookaheadError, same contract as MarketView.
   * ROW-LEVEL truncation: per-session files carry intraday timestamps, so a
-    reader at 10:35 returns only rows stamped at or before 10:35 — file-date
+    reader at 10:35 returns only rows stamped at or before 10:35. File-date
     filtering alone is not point-in-time for intraday data.
   * `captured_at` / `created_at` are collector metadata, never observation
     time. Rows predating our capture carry UW's own historical timestamps,
     trusted as observation time and disclosed in docs/HONESTY.md.
   * Absent data → None (honest `unavailable`), never a guess or a zero.
-  * UW 1-min bars are side-attributed TRADE CANDLES — no NBBO bid/ask.
+  * UW 1-min bars are side-attributed TRADE CANDLES (no NBBO bid/ask).
     They inform the decision clock and fill validation, NEVER a fill price
     (guardrail #1: fills quote from real NBBO only).
 """
@@ -43,7 +43,7 @@ from app.engine.market import LookaheadError
 # screener_contracts: banked by the 2026-07-09 trial-endgame one-off (top-500
 # by-volume daily contract cross-sections, 91 sessions × 3 tickers, standard
 # rows.parquet layout, lake-verified); the trial is over, so the window is
-# immutable — there is deliberately no collector mode for it.
+# immutable. There is deliberately no collector mode for it.
 TICKER_DATE_FAMILIES = frozenset({
     "atm_chains", "darkpool", "etf_tide", "expiry_breakdown",
     "flow_per_strike", "flow_per_strike_intraday", "greek_exposure_expiry",
@@ -73,12 +73,12 @@ SERIES_FAMILIES = frozenset({
 })
 
 # Observation-time column, searched in order. `captured_at`/`created_at` are
-# deliberately excluded — collector metadata is never observation time.
+# deliberately excluded: collector metadata is never observation time.
 _TIME_COLUMNS = ("timestamp", "time", "start_time", "executed_at", "tape_time")
 _DATE_COLUMNS = ("date", "trading_date", "report_date", "settlement_date")
 
 _FRAME_CACHE: OrderedDict[str, pd.DataFrame] = OrderedDict()
-_FRAME_CACHE_MAX = 64  # bounded — post-OOM rule: every cache has a ceiling
+_FRAME_CACHE_MAX = 64  # bounded, post-OOM rule: every cache has a ceiling
 
 
 def _cached_frame(s3: Any, key: str) -> pd.DataFrame | None:
@@ -112,12 +112,12 @@ def _truncate_rows(
     col = _time_column(df)
     if col is None:
         # session-level rows only (no intraday stamps): the whole file is a
-        # same-day observation — visible only at a date-level view, so an
+        # same-day observation, visible only at a date-level view, so an
         # intra-session moment honestly sees nothing rather than guessing.
         return df.iloc[0:0]
     stamps = stamps_utc(df[col])
     if stamps is None:
-        # stamps carry no timezone reference — FAIL CLOSED rather than
+        # stamps carry no timezone reference. FAIL CLOSED rather than
         # localize by assumption (a naive ET stamp read as UTC would leak
         # up to a session of lookahead)
         return df.iloc[0:0]
@@ -134,7 +134,7 @@ def daily_rows(
     """Rows for one per-session family file, PIT-truncated at as_of.
 
     ticker=None reads the market-wide layout. Returns None when the lake has
-    nothing for that (family, session) — honest `unavailable`.
+    nothing for that (family, session): honest `unavailable`.
     """
     if ticker is None:
         if family not in MARKET_DATE_FAMILIES:
@@ -160,7 +160,7 @@ def series(
     """A reference series truncated to observations dated at or before as_of.
 
     Series rows are session-level (typically end-of-day) observations, so a
-    datetime as_of EXCLUDES the as_of session itself — today's daily
+    datetime as_of EXCLUDES the as_of session itself. Today's daily
     observation does not exist mid-session (docs/HONESTY.md). Rows without a
     recognizable date column cannot be bounded and are dropped (never
     returned unbounded)."""
@@ -187,7 +187,7 @@ def minute_bars(
 ) -> pd.DataFrame | None:
     """UW 1-min per-contract candles for one session, PIT-truncated.
 
-    These are side-attributed TRADE CANDLES (no NBBO) — decision-clock and
+    These are side-attributed TRADE CANDLES (no NBBO), decision-clock and
     validation data only, never a fill source (guardrail #1)."""
     session_bound, moment = as_of_parts(as_of)
     if session > session_bound:
@@ -211,8 +211,8 @@ def minute_bars(
 
 
 def daily_sessions(s3: Any, family: str, ticker: str | None) -> list[str]:
-    """Sessions banked for a per-session family (coverage/ledger use — this
-    is a lake listing, never called from an engine hot path)."""
+    """Sessions banked for a per-session family (coverage/ledger use). This
+    is a lake listing, never called from an engine hot path."""
     if ticker is None:
         if family not in MARKET_DATE_FAMILIES:
             raise ValueError(f"unknown market-wide UW family: {family}")

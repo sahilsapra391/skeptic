@@ -2,15 +2,15 @@
 
 The notebook is the run's story in IVolAI's medium with Skeptic's spine:
 it OPENS with how the strategy was agreed (the Chunk A provenance record
-as markdown — prompt, clarifying Q&A, confirmed decision grid), shows the
+as markdown: prompt, clarifying Q&A, confirmed decision grid), shows the
 stored results with their data window, walks the honesty gauntlet, and
 closes with a deterministic re-execution against the deployed API that
-pins the recorded per-session resolution map (never silently re-resolve —
-plan do-NOT list).
+pins the recorded per-session resolution map (never silently re-resolve,
+a plan do-NOT list item).
 
 Design stances, all owner-visible in the output:
   * API-backed, not self-contained: cells call the deployed API with the
-    single-user bearer token from SKEPTIC_ACCESS_TOKEN — no lake
+    single-user bearer token from SKEPTIC_ACCESS_TOKEN. No lake
     credentials ever ride in a file, and the numbers are guaranteed to be
     the app's because the same engine serves both.
   * The token is NEVER embedded. Cells read the environment and fail with
@@ -21,6 +21,13 @@ Design stances, all owner-visible in the output:
     closes the file (legal rails: every results surface).
   * Deterministic export: same run row → byte-identical notebook (cell
     ids are sequential, no timestamps beyond the run's own record).
+  * House punctuation on every markdown cell, the prompt included. The
+    .ipynb is a terminal render artifact: it is downloaded and read, never
+    submitted back, so the read-time exemption that protects a
+    round-tripped value (app/api/payload.py) does not apply and the
+    owner's rule governs instead. No em-dash on any page, including a
+    visitor's own words quoted back at them. The stored row is untouched:
+    normalization builds a display copy.
 """
 
 from __future__ import annotations
@@ -29,7 +36,9 @@ import json
 from itertools import count
 from typing import Any
 
-# nbformat 4.5 written directly — the schema is tiny and stable, and a
+from app.text import normalize, normalize_mapping
+
+# nbformat 4.5 written directly. The schema is tiny and stable, and a
 # hand-built dict keeps the export dependency-free server-side
 NBFORMAT = 4
 NBFORMAT_MINOR = 5
@@ -49,14 +58,14 @@ def _cell(kind: str, source: str, cell_id: str) -> dict[str, Any]:
 
 
 def _fence(text: str) -> str:
-    """User text inside markdown — fenced so it can't inject formatting."""
+    """User text inside markdown, fenced so it can't inject formatting."""
     safe = text.replace("```", "``​`")
     return f"```text\n{safe}\n```"
 
 
 def _provenance_md(record: dict[str, Any], grid: dict[str, Any]) -> str:
     """Section 2 of the story: how the strategy was agreed. Renders ONLY
-    what the record holds — a derived record has no conversation and says
+    what the record holds. A derived record has no conversation and says
     so (the conversation is never invented, owner amendment 2026-07-14)."""
     lines: list[str] = ["## How this strategy was agreed", ""]
 
@@ -65,7 +74,7 @@ def _provenance_md(record: dict[str, Any], grid: dict[str, Any]) -> str:
         note = record.get("note") or f"automatic run ({origin})"
         lines += [f"*{note}*", ""]
     if record.get("derived"):
-        lines += ["*Setup story derived from the stored spec — this run "
+        lines += ["*Setup story derived from the stored spec. This run "
                   "predates provenance recording, so the clarifying "
                   "conversation was never captured (and is not invented).*",
                   ""]
@@ -79,7 +88,7 @@ def _provenance_md(record: dict[str, Any], grid: dict[str, Any]) -> str:
             p["entry"] + (f" → {p['exit']}" if p.get("exit") else "")
             for p in chart["pins"]
         )
-        lines += [f"*Taught on the {chart.get('ticker', '')} chart — "
+        lines += [f"*Taught on the {chart.get('ticker', '')} chart, "
                   f"pinned bars: {pins}*", ""]
 
     conversation = record.get("conversation") or []
@@ -93,7 +102,7 @@ def _provenance_md(record: dict[str, Any], grid: dict[str, Any]) -> str:
         lines.append("")
         truncated = record.get("truncated", {}).get("dropped_events")
         if truncated:
-            lines += [f"*({truncated} further exchange(s) not shown — "
+            lines += [f"*({truncated} further exchange(s) not shown, "
                       "size-capped at recording time.)*", ""]
 
     lines += ["**The decision grid that ran (from the validated spec):**", ""]
@@ -137,11 +146,11 @@ def _reproducibility_md(payload: dict[str, Any], grid: dict[str, Any]) -> str:
         "",
         "The re-execution cell at the bottom asks the server to re-run this "
         "exact spec with the **same seed**, over the **recorded effective "
-        "window**, and — for intraday runs — with the **recorded per-session "
+        "window**, and (for intraday runs) with the **recorded per-session "
         "bar resolution pinned**. A fresh run made in the app may legitimately "
         "differ: the lake deepens nightly and sessions can upgrade to finer "
         "bars (that is the product's self-improvement contract). A *replay* "
-        "never silently re-resolves — it either reproduces the recorded run "
+        "never silently re-resolves. It either reproduces the recorded run "
         "or names what diverged.",
         "",
         f"Seed: `{grid.get('seed')}`",
@@ -157,11 +166,11 @@ def _reproducibility_md(payload: dict[str, Any], grid: dict[str, Any]) -> str:
         lines.append("")
     elif payload.get("clock") not in (None, "daily"):
         lines += ["*This run carries no per-session resolution record "
-                  "(pre-FX.1) — the replay pins the window and seed only.*", ""]
+                  "(pre-FX.1). The replay pins the window and seed only.*", ""]
     return "\n".join(lines)
 
 
-DISCLAIMER = ("*Personal research only — not financial advice; nothing here "
+DISCLAIMER = ("*Personal research only, not financial advice; nothing here "
               "is a recommendation to trade anything.*")
 
 _SETUP_CODE = '''\
@@ -177,7 +186,7 @@ RUN_ID = {run_id!r}
 
 if not TOKEN:
     raise SystemExit(
-        "Set SKEPTIC_ACCESS_TOKEN in the environment first — the API is "
+        "Set SKEPTIC_ACCESS_TOKEN in the environment first. The API is "
         "token-gated and this notebook never embeds credentials."
     )
 
@@ -214,7 +223,7 @@ print(len(eq), "equity points ·", len(dd), "drawdown points ·",
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True,
                                height_ratios=[3, 1])
 ax1.plot(pd.to_datetime(eq["t"]), eq["v"])
-ax1.set_title(f'{run["name"]} — equity (stored run)')
+ax1.set_title(f'{run["name"]}: equity (stored run)')
 ax2.fill_between(pd.to_datetime(dd["t"]), dd["v"], 0, alpha=0.4)
 ax2.set_title("drawdown")
 plt.tight_layout()
@@ -242,7 +251,7 @@ else:
 
 _AGREEMENT_CODE = '''\
 # ── cross-source agreement (F7): how well independent vendors agree on
-#    the sessions this run touched — reported, never blended into a score ──
+#    the sessions this run touched: reported, never blended into a score ──
 dc = run.get("dataConfidence")
 if dc is None:
     print("no cross-source confidence block on this run")
@@ -257,10 +266,10 @@ else:
 
 _LADDER_CODE = '''\
 # ── scale-in depth attribution (D5b): P&L by ladder depth, and whether
-#    the deep adds themselves are net negative — both views tie out ──
+#    the deep adds themselves are net negative (both views tie out) ──
 ld = run.get("ladderDepth")
 if ld is None:
-    print("not a scale-in run — no depth table")
+    print("not a scale-in run, no depth table")
 else:
     print("per-tier (baskets grouped by max depth reached):")
     print(pd.DataFrame(ld.get("tiers", [])).to_string(index=False))
@@ -288,7 +297,7 @@ if sens:
 '''
 
 _VERDICT_CODE = '''\
-# ── the verdict — grounded: every number in it exists in the stats ──
+# ── the verdict, grounded: every number in it exists in the stats ──
 v = run["verdict"]
 for key in ("headline", "survived", "evidence", "breaks", "caveat"):
     if v.get(key):
@@ -305,14 +314,14 @@ import time
 kick = api(f"/api/runs/{RUN_ID}/reproduce", method="POST")
 print(kick)
 # poll until the server's own 30-minute staleness window would declare
-# the job dead anyway — the two deadlines deliberately agree
+# the job dead anyway. The two deadlines deliberately agree
 deadline = time.time() + 30 * 60
 report = api(f"/api/runs/{RUN_ID}/reproduce")
 while report.get("status") == "reproducing" and time.time() < deadline:
     time.sleep(6)
     report = api(f"/api/runs/{RUN_ID}/reproduce")
 if report.get("status") == "reproducing":
-    raise SystemExit("reproduce still running — re-run this cell in a minute")
+    raise SystemExit("reproduce still running, re-run this cell in a minute")
 if report.get("error"):
     print("REPRODUCE REFUSED / FAILED:")
     print(report["error"])
@@ -343,10 +352,22 @@ def build_notebook(
     sweep_notes: list[str] | None = None,
 ) -> dict[str, Any]:
     """Assemble the .ipynb dict. `grid` is the decision grid derived from
-    the VALIDATED spec (app.api.provenance.derived_boxes) — the spec is
+    the VALIDATED spec (app.api.provenance.derived_boxes). The spec is
     what ran, so the table can never disagree with the engine."""
+    # House punctuation at the door, on a copy, before a single cell is
+    # built. Doing it here rather than per-cell also catches the values
+    # that get `json.dumps`-ed into the decision grid, where the default
+    # ensure_ascii would have written the character out as a backslash
+    # escape: invisible to a dash-shaped search, and turned back into a
+    # dash by every notebook reader that parses the file.
+    name = normalize(name)
+    payload = normalize_mapping(payload)
+    provenance = normalize_mapping(provenance)
+    grid = normalize_mapping(grid)
+    sweep_notes = [normalize(note) for note in sweep_notes] if sweep_notes else None
+
     cells: list[dict[str, Any]] = []
-    counter = count()  # one flat sequence — the id carries no type info,
+    counter = count()  # one flat sequence, the id carries no type info,
     # cell_type already does (review finding: a typed prefix over a shared
     # counter reads as per-type numbering and its gaps look like bugs)
 
@@ -361,7 +382,7 @@ def build_notebook(
     md(_provenance_md(provenance, grid))
     md(_reproducibility_md(payload, grid))
     md("## The numbers\n\nEverything below is fetched live from the same "
-       "API the app uses — the stored run is the single source of truth.")
+       "API the app uses. The stored run is the single source of truth.")
     code(_SETUP_CODE.format(api_base=api_base, run_id=run_id))
     code(_HEADLINE_CODE)
     code(_EQUITY_CODE)
@@ -372,7 +393,7 @@ def build_notebook(
         code(_LADDER_CODE)
     gauntlet_md = (
         "## The honesty gauntlet\n\n"
-        "Out-of-sample split, walk-forward, Monte Carlo (seeded — same seed, "
+        "Out-of-sample split, walk-forward, Monte Carlo (seeded: same seed, "
         "same fan), threshold sensitivity with its coverage disclosure, and "
         "the deflated Sharpe's multiple-testing tax. Thin samples are never "
         "blessed: below the evidence bar the verdict is capped at "
@@ -381,7 +402,7 @@ def build_notebook(
     if sweep_notes:
         gauntlet_md += (
             "\n\n**Sweep coverage, disclosed** (what the sensitivity stage "
-            "did and did NOT probe — absence is never a free pass):\n\n"
+            "did and did NOT probe). Absence is never a free pass:\n\n"
             + "\n".join(f"- {note}" for note in sweep_notes)
         )
     md(gauntlet_md)
@@ -393,7 +414,7 @@ def build_notebook(
        "tolerance. A mismatch is REPORTED with its likely cause (lake "
        "drift, build change), never papered over.")
     code(_REPRODUCE_CODE)
-    md(f"---\n\n{DISCLAIMER}\n\nGenerated by Skeptic — the honesty layer "
+    md(f"---\n\n{DISCLAIMER}\n\nGenerated by Skeptic. The honesty layer "
        "is the product.")
 
     return {

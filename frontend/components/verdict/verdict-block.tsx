@@ -1,5 +1,5 @@
 /**
- * The Verdict Block — the signature element (hero size). Renders the honest
+ * The Verdict Block, the signature element (hero size). Renders the honest
  * verdict: headline first (the uncomfortable part), trust band, attack
  * chips, evidence vs where-it-breaks, caveats. The refusal state is a
  * first-class design, not an error.
@@ -21,7 +21,7 @@ export function VerdictBlock({
   regraded,
 }: {
   verdict: VerdictPayload;
-  /** the async narration upgrade hasn't landed — numbers are final,
+  /** the async narration upgrade hasn't landed. Numbers are final,
    * only the wording may still improve */
   narrationPending?: boolean;
   /** re-decided at the viewer's minimum-trades setting, not the run's */
@@ -35,7 +35,7 @@ export function VerdictBlock({
     >
       <div className="mb-2.5 flex items-center justify-between">
         <span className="font-mono text-[11.5px] font-medium tracking-[.14em] text-trust">
-          VERDICT — THE HONEST READ
+          VERDICT: THE HONEST READ
         </span>
         <span className="font-mono text-[12px] font-medium text-trust">{verdict.survived}</span>
       </div>
@@ -46,7 +46,7 @@ export function VerdictBlock({
         <div className="mt-2 flex items-center gap-2">
           <PulsingDots size={4} />
           <span className="thinking-shimmer text-[13px]">
-            still writing the narration — every number here is already final
+            still writing the narration (every number here is already final)
           </span>
         </div>
       )}

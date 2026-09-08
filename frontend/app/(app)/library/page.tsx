@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Strategy Library — sorted by trust, not by return. Each card carries the
+ * Strategy Library: sorted by trust, not by return. Each card carries the
  * miniaturized signature element. The empty state teaches the philosophy in
  * one line and routes to New Analysis.
  */
@@ -16,21 +16,21 @@ import type { RunSummary } from "@/lib/types";
 import { DemoBadge, Disclaimer } from "@/components/disclaimer";
 import { TrustBandCard } from "@/components/verdict/trust-band";
 
-/** V-12: group a family — each root followed immediately by its variants in
+/** V-12: group a family, each root followed immediately by its variants in
  * ordinal order. Roots keep the listing's own (newest-first) order; a variant
  * whose root is absent from the listing stands alone, badge intact.
  *
  * LOAD-BEARING INVARIANT (V-45): a chain never re-roots, so every descendant
  * of R carries `rootRunId === R.id` regardless of depth and `byRoot` is flat.
  * Family expansion therefore happens only in the main loop's push branch and
- * never recurses. If re-rooting is ever introduced — a "promote to root"
- * action, a repair script, a migration — variants of a variant would be
+ * never recurses. If re-rooting is ever introduced (a "promote to root"
+ * action, a repair script, a migration), variants of a variant would be
  * skipped by the guard and pushed by no family pass, vanishing from the
  * Library with no error. Any change there must revisit this function.
  */
 function groupFamilies(runs: RunSummary[]): RunSummary[] {
   const byRoot = new Map<string, RunSummary[]>();
-  // one pass, and one id set — the membership test below was an O(n) scan
+  // one pass, and one id set. The membership test below was an O(n) scan
   // inside the loop, on a list that re-renders every 4s while a run is live
   const ids = new Set(runs.map((r) => r.id));
   for (const r of runs) {
@@ -47,7 +47,7 @@ function groupFamilies(runs: RunSummary[]): RunSummary[] {
   const placed = new Set<string>();
   for (const r of runs) {
     if (placed.has(r.id)) continue;
-    // a variant renders under its root's pass — unless the root is not in
+    // a variant renders under its root's pass, unless the root is not in
     // this listing at all, in which case it stands alone. (The old
     // `byRoot.has(r.rootRunId)` guard here was dead: a variant with a
     // rootRunId was itself just inserted under that key.)
@@ -67,7 +67,7 @@ function groupFamilies(runs: RunSummary[]): RunSummary[] {
 export default function LibraryPage() {
   const settings = useSettings();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
-  // V-180: grouping is derived, not recomputed per render — the listing polls
+  // V-180: grouping is derived, not recomputed per render. The listing polls
   // every 4s while any run is in progress
   const grouped = useMemo(() => (runs ? groupFamilies(runs) : []), [runs]);
   const [demo, setDemo] = useState(false);
@@ -104,7 +104,7 @@ export default function LibraryPage() {
       <h1 className="mb-1 font-serif text-[32px] font-medium">Library</h1>
       <div className="mb-[22px] flex items-center gap-2.5">
         <p className="text-[15px] text-ink-3">Sorted by trust, not by return.</p>
-        {demo && <DemoBadge text="demo entries — engine lands at M2" />}
+        {demo && <DemoBadge text="demo entries, engine lands at M2" />}
       </div>
 
       {error && (
@@ -114,7 +114,7 @@ export default function LibraryPage() {
       )}
 
       {runs === null && !error && (
-        // loading skeleton — the header used to sit over a BLANK page for
+        // loading skeleton. The header used to sit over a BLANK page for
         // the whole cold fetch (several seconds through the proxy on a cold
         // backend); pulse cards mirror the real card geometry
         <div className="grid grid-cols-2 gap-3.5" aria-hidden data-testid="library-skeleton">
@@ -163,7 +163,7 @@ export default function LibraryPage() {
                 <span className="font-mono text-[12px] text-ink-4">{r.meta}</span>
                 {r.status !== "running" && !r.example && !r.demo && (
                   // V-173: a sibling of the card's overlay link, so it needs no
-                  // click interception — and a Link, not window.location, so it
+                  // click interception, and a Link, not window.location, so it
                   // routes client-side like every other navigation here rather
                   // than tearing down the SPA and the 30s listing cache
                   <Link
@@ -176,7 +176,7 @@ export default function LibraryPage() {
               </div>
               {r.example && (
                 <div className="mb-2 inline-block rounded-full border border-trust-border bg-trust-dim px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
-                  EXAMPLE RUN — a showcase result, not yours
+                  EXAMPLE RUN: a showcase result, not yours
                 </div>
               )}
               {r.autoNote && (
@@ -186,11 +186,11 @@ export default function LibraryPage() {
               )}
               {r.supersededBy && (
                 <div className="mb-2 inline-block rounded-full border border-line px-2.5 py-0.5 font-mono text-[10.5px] text-ink-4">
-                  superseded — re-ran automatically on new data
+                  superseded: re-ran automatically on new data
                 </div>
               )}
               {/* V-12: the ordinal badge is what tells same-name variants
-                  apart (V-80/V-174) — lineage register, navigation only */}
+                  apart (V-80/V-174). Lineage register, navigation only */}
               {r.variantOrdinal != null && (
                 <div className="mb-2 inline-block rounded-full border border-trust-border px-2.5 py-0.5 font-mono text-[10.5px] text-trust">
                   ↳ variant {r.variantOrdinal}
@@ -199,7 +199,7 @@ export default function LibraryPage() {
               {r.status === "running" ? (
                 <div className="flex min-h-[72px] flex-col justify-center gap-1.5">
                   <div className="font-mono text-[12px] tracking-[.1em] text-trust">
-                    GAUNTLET IN PROGRESS — STAGE {Math.min((r.stage ?? 0) + 1, 6)} OF 6
+                    GAUNTLET IN PROGRESS: STAGE {Math.min((r.stage ?? 0) + 1, 6)} OF 6
                   </div>
                   <div className="text-[13px] text-ink-4">Open to watch it live.</div>
                 </div>
@@ -214,7 +214,7 @@ export default function LibraryPage() {
               {/* LAST child, deliberately: a <button>/<a> inside the card's
                   link was invalid HTML and broke keyboard and screen-reader
                   nav, so the whole-card target is an overlay SIBLING instead.
-                  It must come last and carry no z-index — that way it paints
+                  It must come last and carry no z-index. That way it paints
                   above the content by DOM order and catches clicks anywhere,
                   while the action's `relative z-10` is the one thing that
                   beats it. Giving the CONTENT z-10 (the first attempt) made

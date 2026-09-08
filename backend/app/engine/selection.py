@@ -19,7 +19,7 @@ def select_expiration(
 ) -> date | None:
     """Expiration nearest target DTE within bounds. `dte_fn` declares the
     DTE basis: default calendar days (the daily clock, v1 semantics); the
-    5-min clock passes a trading-day counter (owner-confirmed — Friday
+    5-min clock passes a trading-day counter (owner-confirmed: Friday
     "1DTE" selects Monday's expiry)."""
     if dte_fn is None:
         def dte_fn(e: date) -> int:
@@ -67,7 +67,7 @@ def select_legs(
                 # the 50Δ strike IS the at-the-money strike by definition, so
                 # on sessions whose source carries no greeks (yahoo rows store
                 # delta=None) nearest-to-spot selects the same contract without
-                # them — not an approximation, the definitional equivalent
+                # them (not an approximation, the definitional equivalent)
                 pick = min(pool, key=lambda k: (abs(k.strike - spot), k.strike))
             else:
                 return None, "no_delta_data"
@@ -81,8 +81,8 @@ def select_legs(
             if ref_index is None or ref_index >= len(resolved):
                 return None, "bad_reference_leg"
             ref = resolved[ref_index]
-            # protective wings: puts sit BELOW the reference, calls ABOVE —
-            # candidates come only from that side, so a coarse strike grid
+            # protective wings: puts sit BELOW the reference, calls ABOVE.
+            # Candidates come only from that side, so a coarse strike grid
             # can never resolve the wing onto the reference (a dead
             # duplicate-strike skip) or onto the wrong side (an inverted
             # spread that isn't the strategy the user asked for)
@@ -97,11 +97,11 @@ def select_legs(
             pick = min(side_pool, key=lambda k: (abs(k.strike - target_strike), k.strike))
             # tolerance: the filled width may deviate from the requested width
             # by at most the width itself (≤ 2× asked). A $5 wing on a $25
-            # grid is not "roughly $5" — it is 5× the specified max loss, and
+            # grid is not "roughly $5". It is 5× the specified max loss, and
             # this engine skips rather than approximates (module contract).
             if abs(pick.strike - target_strike) > sel.value:
                 return None, "wing_width_unavailable"
-        else:  # pragma: no cover — enum is exhaustive
+        else:  # pragma: no cover (enum is exhaustive)
             return None, "unknown_strike_method"
         resolved.append(pick)
     if len({(k.expiration, k.right, k.strike) for k in resolved}) != len(resolved):

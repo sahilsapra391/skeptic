@@ -16,7 +16,7 @@ Instead the real setter is REPLAYED: apply it to the parent spec at each swept
 value and ask whether the result IS the variant's spec. A match means the parent
 literally ran this. Anything else gets nothing.
 
-That is V-231 as written — stored cells, exact match, absence over approximation —
+That is V-231 as written (stored cells, exact match, absence over approximation)
 and it is deliberately narrow. A variant that changes a swept parameter AND
 something else gets no argue-back, because the sweep held everything else fixed and
 so is not evidence about that run.
@@ -219,8 +219,8 @@ class TestOneMutationSpanningSeveralFields:
 
         Found by asking production rather than by inventing one: of every stored
         spec, only `iron_condor` carries two delta legs (legs 0 and 2, the shorts;
-        the longs are `width_from_leg` off them). A put credit spread does NOT —
-        its long leg is width-derived, so `set_delta` moves one field and the
+        the longs are `width_from_leg` off them). A put credit spread does NOT.
+        Its long leg is width-derived, so `set_delta` moves one field and the
         single-field path already covers it. The first version of this test hand-
         added a second leg to a `short_put`, which fails structure validation, so
         `lookup` correctly returned None and the test failed for the wrong reason.
@@ -324,7 +324,7 @@ class TestTheTwoSilencesStayDistinct:
 
 
 class TestTheEndpoint:
-    """POST /api/runs/{id}/argue-back — read-only, free, and silent by default."""
+    """POST /api/runs/{id}/argue-back: read-only, free, and silent by default."""
 
     def test_a_hit_is_returned_for_a_swept_edit(self, client, seeded_parent) -> None:
         parent_id, parent_spec = seeded_parent
@@ -455,7 +455,7 @@ class TestThreeNumbersThreeHomes:
 
         Checked against CODE, not prose. The first version of this grepped the raw
         source for "ordinal" and failed on a comment that says the ordinal is not
-        this number — the same mistake the V-221 hook made when it grepped prose it
+        this number, the same mistake the V-221 hook made when it grepped prose it
         was supposed to guard. Comments are stripped before asserting.
         """
         import inspect

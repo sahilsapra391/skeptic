@@ -2,7 +2,7 @@
 
 M2+M3: POST /api/backtest runs the engine AND the full honesty gauntlet
 (OOS split, walk-forward, Monte Carlo, sensitivity, DSR, regime guard),
-then the verdict writer — trust levels computed deterministically, every
+then the verdict writer: trust levels computed deterministically, every
 narrated number validated against the stats payload.
 /api/runs/{id}/ask answers questions grounded in the stored stats bundle
 (same numeric validator); /api/parse (M4) stays an explicit 501.
@@ -24,7 +24,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.api.jobs import claim_run_job, marker_age_minutes, pinned_engine_rerun
-from app.api.payload import build_run_payload, run_summary
+from app.api.payload import build_run_payload, normalize_payload_prose, run_summary
 from app.api.provenance import (
     attach_mechanics,
     creation_record,
@@ -34,24 +34,25 @@ from app.api.provenance import (
 from app.engine.concurrency import ENGINE_LOCK, release_memory
 from app.honesty.stages import MIN_TRADES
 from app.models.spec import StrategySpec
+from app.text import normalize
 
 log = logging.getLogger("runs")
 router = APIRouter()
 
 _PENDING_PARSE_KEY = (
-    "the NL parser needs OPENROUTER_API_KEY — without it nothing is "
+    "the NL parser needs OPENROUTER_API_KEY. Without it nothing is "
     "guessed server-side, ever."
 )
 _PENDING_ASK_KEY = (
-    "grounded Q&A needs OPENROUTER_API_KEY — no key, no answers, "
+    "grounded Q&A needs OPENROUTER_API_KEY: no key, no answers, "
     "and no numbers are invented in the meantime."
 )
 _PENDING_ASK_STATS = (
-    "this run predates grounded Q&A (no stored stats bundle) — "
-    "re-run the strategy to ask about it."
+    "this run predates grounded Q&A (no stored stats bundle). "
+    "Re-run the strategy to ask about it."
 )
 _PENDING_SWEEP = (
-    "standalone sweeps arrive with the compare/sweep UI — the gauntlet already "
+    "standalone sweeps arrive with the compare/sweep UI. The gauntlet already "
     "runs a sensitivity sweep on every backtest."
 )
 
@@ -68,7 +69,7 @@ AUTO_NOTE_MAX = 120
 def _validation_detail(exc: ValidationError, limit: int | None = None) -> list[Any]:
     """Pydantic errors stripped to JSON-safe fields (type/loc/msg). Raw
     errors() embeds the live ValueError in ctx for every model_validator
-    refusal, and the HTTPException handler json.dumps's the detail — so an
+    refusal, and the HTTPException handler json.dumps's the detail, so an
     honest 422 explanation became a bare `500: {}` in the UI (2026-07-07)."""
     errors = exc.errors(include_url=False, include_context=False, include_input=False)
     return errors if limit is None else errors[:limit]
@@ -77,17 +78,17 @@ def _validation_detail(exc: ValidationError, limit: int | None = None) -> list[A
 class BacktestRequest(BaseModel):
     spec: dict[str, Any]
     seed: int | None = None
-    # D3: automatic runs declare themselves — origin drives the trial-
+    # D3: automatic runs declare themselves. Origin drives the trial-
     # counter policy and the Library's upgrade markers
     origin: str = "user"
     parent_run_id: str | None = None
     auto_note: str | None = None  # e.g. "62 new sessions" (server-truncated)
     # the evidence bar for a graded verdict (user setting, 2026-07-14).
-    # Floor 1 — zero would grade an untraded strategy, which is nonsense;
+    # Floor 1: zero would grade an untraded strategy, which is nonsense;
     # None = the standard bar (or the parent's, for automatic re-runs)
     min_trades: int | None = Field(default=None, ge=1, le=10_000)
     # UX Chunk A: the client-captured setup story (prompt, clarifying Q&A,
-    # confirmed draft) — display-only, size-capped in creation_record;
+    # confirmed draft). Display-only, size-capped in creation_record;
     # ignored on automatic runs, which have no conversation
     provenance: dict[str, Any] | None = None
     # launch L4 anon armor: the Cloudflare Turnstile token, required only on
@@ -97,7 +98,7 @@ class BacktestRequest(BaseModel):
 
 def _inherit_trials(parent_run_id: str | None, family: str) -> int:
     """Trial count for an AUTO re-run (owner decision, HONESTY.md): the same
-    spec on more data is NOT a new try at the family — no bump. Prefer the
+    spec on more data is NOT a new try at the family. No bump. Prefer the
     parent's recorded trial count; fall back to the current counter value
     read without incrementing."""
     if parent_run_id:
@@ -115,22 +116,30 @@ def _inherit_trials(parent_run_id: str | None, family: str) -> int:
 
 
 def _run_label(run: db.Run) -> str | None:
-    """V-155/V-160: how a person recognises a run — the Library's own name
+    """V-155/V-160: how a person recognises a run: the Library's own name
     (summary_json), falling back to spec meta.name only when no summary
     exists. Shared by the variant endpoint and the lineage header so the
-    screen and the Library can never disagree about what a run is called."""
+    screen and the Library can never disagree about what a run is called.
+
+    Display only, in every one of its callers (the lineage header, the
+    variant framing, the back link, the argue-back sentence). Nothing here
+    is written back or re-submitted, so house punctuation belongs on it: a
+    run named before the em-dash ban is quoted on four screens by this one
+    function, and the stored row it reads keeps its bytes.
+    """
     if run.summary_json:
         try:
             name = (json.loads(run.summary_json) or {}).get("name")
             if name:
-                return str(name)
+                return normalize(str(name))
         except Exception:
             # a corrupt summary must not look like a legitimately unnamed run:
             # this feeds the variant framing, the back link and the lineage
             # header, so it degrades three surfaces at once and silently
             log.warning("unreadable summary_json on run %s", run.id, exc_info=True)
     try:
-        return (json.loads(run.spec_json).get("meta") or {}).get("name")
+        fallback = (json.loads(run.spec_json).get("meta") or {}).get("name")
+        return normalize(str(fallback)) if fallback else fallback
     except Exception:
         log.warning("unreadable spec_json on run %s", run.id, exc_info=True)
         return None
@@ -142,8 +151,8 @@ def _is_ordinal_collision(exc: IntegrityError) -> bool:
     Postgres names the constraint on the diagnostics object; SQLite names the
     columns instead ("UNIQUE constraint failed: runs.root_run_id,
     runs.variant_ordinal") and carries no constraint name at all, so both
-    engines need their own read. Anything else — a credit-ledger partial index,
-    a duplicate run id — is NOT this race and must not be reported as one.
+    engines need their own read. Anything else (a credit-ledger partial index,
+    a duplicate run id) is NOT this race and must not be reported as one.
     """
     diag = getattr(getattr(exc, "orig", None), "diag", None)
     if getattr(diag, "constraint_name", None) == "uq_runs_variant_ordinal":
@@ -168,7 +177,7 @@ def _next_ordinal(s: Any, root: str) -> int:
 
 def _inherit_min_trades(parent_run_id: str | None) -> int:
     """Evidence bar for an AUTOMATIC re-run (auto-unlock / receipt): the
-    bar its parent was scored at — an unlock promised at the parent's bar
+    bar its parent was scored at. An unlock promised at the parent's bar
     must not silently re-refuse (or over-bless) at a different one. Falls
     back to the standard bar when the parent predates the setting."""
     if parent_run_id:
@@ -188,7 +197,7 @@ def _execute_run(run_id: str, auto_note: str | None = None,
                  min_trades: int = MIN_TRADES) -> None:
     """Background job: serialize on the engine lock, run one gauntlet, then
     return freed memory to the OS regardless of outcome. The LLM narration
-    runs AFTER the lock releases — it is pure network I/O (2–5 minutes at
+    runs AFTER the lock releases. It is pure network I/O (2–5 minutes at
     worst on OpenRouter retries) and must hold neither the user's result
     nor the next queued engine run hostage."""
     with ENGINE_LOCK:
@@ -237,16 +246,16 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             # event log so a stuck stage is distinguishable from work
             with db.session() as ps:
                 ps.add(db.RunEvent(run_id=run_id, stage=0,
-                                   label=f"simulating — {done}/{total} sessions"))
+                                   label=f"simulating {done}/{total} sessions"))
                 ps.commit()
 
         engine_t0 = time.monotonic()
         result = run_backtest(spec, store, intraday, progress=_progress)
         engine_seconds = time.monotonic() - engine_t0
 
-        # every HUMAN attempt at a family is a trial — the multiple-testing
+        # every HUMAN attempt at a family is a trial, the multiple-testing
         # bias the deflated Sharpe corrects for (TECH-SPEC §6.5). AUTO
-        # re-runs are the same spec on more data — no new choice was made,
+        # re-runs are the same spec on more data (no new choice was made),
         # so they inherit the parent's count instead of bumping (owner
         # decision; docs/HONESTY.md).
         family = f"{spec.underlying.ticker.value}:{spec.position.structure.value}"
@@ -272,12 +281,12 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
         report = run_gauntlet(spec, store, result, trials=trials, on_stage=on_stage,
                               intraday=intraday, min_trades=min_trades)
         gauntlet_seconds = time.monotonic() - gauntlet_t0
-        # D3a: refused verdicts store their unlock needs structured — the
+        # D3a: refused verdicts store their unlock needs structured. The
         # nightly auto-unlock scan reasons from these
         from app.honesty.stages import unlock_conditions
 
         unlock = unlock_conditions(report, spec)
-        # Deterministic templates ship the run NOW — grounded by
+        # Deterministic templates ship the run NOW, grounded by
         # construction, same numbers the LLM would narrate. The narration
         # upgrade happens in _narrate_and_patch, off the critical path
         # (owner ask 2026-07-14: this stage stalled 2–5 min on LLM retries).
@@ -295,7 +304,7 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
         # the UI polls this flag briefly and swaps the wording in when the
         # async narration lands; without a key there is nothing to wait for.
         # The start stamp bounds the wait: a worker killed mid-narration
-        # would otherwise strand the flag true forever (review finding) —
+        # would otherwise strand the flag true forever (review finding).
         # get_run clears it once the attempt is provably dead.
         payload["narrationPending"] = bool(os.environ.get("OPENROUTER_API_KEY"))
         if payload["narrationPending"]:
@@ -310,10 +319,10 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             "honesty_report": report.model_dump(),
             # FX.4: the per-run resolution mix rides the stats bundle so a
             # future receipt comparing two resolution-carrying runs can name
-            # an upgrade (empty on daily runs — they have no mix)
+            # an upgrade (empty on daily runs, which have no mix)
             "resolutionMix": result.resolution_mix or None,
         }
-        # measured run cost — the pre-run time estimates are medians over
+        # measured run cost. The pre-run time estimates are medians over
         # these rows (per clock, on THIS box), never invented numbers
         perf = {
             "clock": spec.backtest.clock.value,
@@ -321,11 +330,11 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             "engine_s": round(engine_seconds, 2),
             "gauntlet_s": round(gauntlet_seconds, 2),
             # the BLOCKING verdict cost the user actually waits on (template
-            # assembly — the LLM narration moved off the critical path and
+            # assembly; the LLM narration moved off the critical path and
             # records narration_s when its upgrade lands). The estimate adds
             # this so wall-clock predictions stay honest.
             "verdict_s": round(verdict_seconds, 2),
-            # marks the NEW verdict_s semantics — pre-change rows measured
+            # marks the NEW verdict_s semantics. Pre-change rows measured
             # the blocking LLM narration (minutes) and must not inflate the
             # estimate's verdict constant now that nothing blocks on it
             "narration_off_path": True,
@@ -340,7 +349,7 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             run.perf_json = json.dumps(perf)
             # UX Chunk A section 4: measured mechanics complete the setup
             # story written at creation. Isolated: a paperwork failure must
-            # never error a computed run — the verdict outranks the diary.
+            # never error a computed run. The verdict outranks the diary.
             try:
                 run.provenance_json = attach_mechanics(
                     run.provenance_json,
@@ -359,7 +368,7 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
             if origin == "auto_unlock":
                 summary["upgradeOf"] = parent_run_id
                 summary["autoNote"] = (
-                    f"re-ran automatically — {auto_note}" if auto_note
+                    f"re-ran automatically ({auto_note})" if auto_note
                     else "re-ran automatically on new data"
                 )
             elif origin == "receipt":
@@ -378,7 +387,7 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                     except Exception:
                         pass
             # D3c: a completed replay writes its receipt onto the ORIGINAL
-            # run — appended, never overwriting the stored verdict
+            # run, appended, never overwriting the stored verdict
             if origin == "receipt" and parent_run_id:
                 parent = s.get(db.Run, parent_run_id)
                 if parent is not None and parent.stats_json:
@@ -400,9 +409,9 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                         parent.receipts_json = json.dumps(existing)
                     except Exception:
                         log.exception("receipt attach failed for %s", parent_run_id)
-            # L2 credit law: a refusal refunds — you only pay for a GRADED
+            # L2 credit law: a refusal refunds. You only pay for a GRADED
             # verdict. Written in THIS transaction (with status='done'), so the
-            # run becomes visible and refunded ATOMICALLY — a concurrent
+            # run becomes visible and refunded ATOMICALLY. A concurrent
             # read-time re-grade can never catch it in an un-refunded window
             # (the paywall SEAL keys on the refund). Idempotent + self-scoped
             # (a no-op for anon / service runs that were never charged).
@@ -417,19 +426,19 @@ def _run_and_store(run_id: str, auto_note: str | None = None,
                 run.status = "error"
                 run.error = f"{type(exc).__name__}: {exc}"
                 s.add(db.RunEvent(run_id=run_id, stage=run.stage, label="failed"))
-                # an our-fault failure refunds too — atomic with status='error'
+                # an our-fault failure refunds too, atomic with status='error'
                 db.refund_run_tx(s, run_id)
                 s.commit()
     finally:
         # this run's daily-series memo, dropped on the store THIS run used
-        # (it is cached for 30 minutes across runs — chains.STORE_TTL_SECONDS
-        # — so the transient must not ride along). Error paths too.
+        # (it is cached for 30 minutes across runs, chains.STORE_TTL_SECONDS,
+        # so the transient must not ride along). Error paths too.
         if store is not None:
             store.drop_daily_series_cache()
 
 
 def _patch_perf_narration(run: db.Run, narration_seconds: float | None) -> None:
-    """Record the measured narration time on the run's perf row — the ONE
+    """Record the measured narration time on the run's perf row. The ONE
     writer for narration_s, shared by the success and fallback paths."""
     if narration_seconds is None or not run.perf_json:
         return
@@ -443,7 +452,7 @@ def _patch_perf_narration(run: db.Run, narration_seconds: float | None) -> None:
 
 def _clear_narration_pending(run_id: str,
                              narration_seconds: float | None = None) -> None:
-    """The narration attempt is over (failed, or template stood) — stop the
+    """The narration attempt is over (failed, or template stood). Stop the
     UI's brief upgrade poll and record the measured narration time."""
     with db.session() as s:
         run = s.get(db.Run, run_id)
@@ -462,7 +471,7 @@ def _narrate_and_patch(run_id: str) -> None:
     'honest verdict' stage stalled 2–5 minutes on OpenRouter retries). The
     run is already stored done with grounded template verdicts; when the
     narration clears the numeric + English validators it swaps the WORDING
-    in place — same numbers, same trust, better words. Any failure leaves
+    in place: same numbers, same trust, better words. Any failure leaves
     the template standing, exactly like the old inline fallback."""
     with db.session() as s:
         run = s.get(db.Run, run_id)
@@ -485,7 +494,7 @@ def _narrate_and_patch(run_id: str) -> None:
         report = HonestyReport.model_validate(report_doc)
         verdict, retail_verdict = write_verdicts(report)
     except Exception:
-        log.exception("narration failed for %s — the template verdict stands",
+        log.exception("narration failed for %s, the template verdict stands",
                       run_id)
         _clear_narration_pending(run_id)
         return
@@ -505,7 +514,7 @@ def _narrate_and_patch(run_id: str) -> None:
         payload["narrationPending"] = False
         run.payload_json = json.dumps(payload)
         _patch_perf_narration(run, narration_seconds)
-        # the library card quotes the headline — keep it in the narrated
+        # the library card quotes the headline, so keep it in the narrated
         # voice, formatted by the same run_summary the initial store used
         # (only the quote fields move; upgradeOf/autoNote markers stay)
         if run.summary_json:
@@ -531,9 +540,9 @@ def parse(req: ParseRequest) -> dict[str, Any]:
     try:
         outcome = parse_strategy(req.text, answers or None)
     except ParserUnavailableError as exc:
-        # upstream failed or the parse budget ran out — a retryable error,
+        # upstream failed or the parse budget ran out: a retryable error,
         # reported as one; never a fake "clarifying question" (it rendered as
-        # "QUESTION 1 OF 1 — I DON'T GUESS" and entered the provenance record)
+        # a "QUESTION 1 OF 1" card and entered the provenance record)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if outcome is None:
         raise HTTPException(status_code=501, detail=_PENDING_PARSE_KEY)
@@ -560,14 +569,14 @@ def backtest(
     response: Response,
 ) -> dict[str, Any]:
     # launch L1b: runs belong to the account that started them. Resolution
-    # is lazy and optional — service/automation and anonymous runs stamp
+    # is lazy and optional: service/automation and anonymous runs stamp
     # NULL, which stays claimable at signup. The verified-email bar applies
     # to signed-in people only, and only once the owner flips
     # SKEPTIC_REQUIRE_VERIFIED (needs a configured mail sender).
     from app import auth
 
     # a session presented but unresolvable (accounts DB on the SQLite
-    # fallback) is a likely signed-in person we can't validate right now —
+    # fallback) is a likely signed-in person we can't validate right now,
     # remembered so the anon armor doesn't clamp/Turnstile-gate a real account
     # mid-outage (a bogus cookie under NORMAL operation still resolves to None
     # and IS armored)
@@ -585,8 +594,8 @@ def backtest(
     ):
         raise HTTPException(
             status_code=403,
-            detail="verify your email to run backtests — resend the link "
-            "from your account",
+            detail="verify your email to run backtests (resend the link "
+            "from your account)",
         )
     try:
         spec = StrategySpec.model_validate(req.spec)
@@ -608,7 +617,7 @@ def backtest(
     # A variant is a HUMAN copy: origin "user" carrying parent_run_id. The
     # automatic origins re-run the SAME spec by design (HONESTY.md D3b), so
     # the zero-edit guard must never see them. Order: lock check first,
-    # zero-edit guard second, and only then the debit — a rejection here
+    # zero-edit guard second, and only then the debit. A rejection here
     # happens BEFORE the debit exists in any form, not rolled back after.
     variant_root: str | None = None
     variant_diff: list[dict[str, Any]] | None = None
@@ -621,7 +630,7 @@ def backtest(
         and run_user is None
         and not auth.is_service(request)
     ):
-        # V-04 said the button "shows and routes to signup" — that was only
+        # V-04 said the button "shows and routes to signup". That was only
         # ever enforced in the client, and `origin` defaults to "user", so an
         # anonymous POST carrying parent_run_id walked straight into the
         # variant path: free (charge_credit is False for anon), and stamping
@@ -665,7 +674,7 @@ def backtest(
         # tier (b) dial and speaks rep.reasons in the dial's own words.
         _IDENTITY_WHY = (
             "ticker and structure define the strategy family the trial "
-            "counter tracks — changing them is a New Analysis, not a variant"
+            "counter tracks. Changing them is a New Analysis, not a variant"
         )
         _PATH_DIAL = {
             "underlying.ticker": "ticker",
@@ -708,7 +717,7 @@ def backtest(
             raise HTTPException(
                 status_code=422,
                 detail="zero-edit mismatch: no dial was touched, yet the "
-                f"rebuilt spec differs from the parent at {drifted} — this "
+                f"rebuilt spec differs from the parent at {drifted}. This "
                 "is the lossy rebuild resurfacing (V-19), a defect, not "
                 "your edit; no credit was spent",
             )
@@ -721,14 +730,14 @@ def backtest(
     anon_ip_h: str | None = None
     # anonymous = no account we can act for AND not the service principal. It
     # deliberately does NOT key on req.origin: an anon POSTing origin=auto_unlock
-    # (VALID_ORIGINS, no service bearer) must be ARMORED, not waved through —
-    # the only legitimate auto_unlock/receipt caller is the nightly principal,
+    # (VALID_ORIGINS, no service bearer) must be ARMORED, not waved through.
+    # The only legitimate auto_unlock/receipt caller is the nightly principal,
     # which carries the service bearer and is excluded by not is_service.
     is_anon = run_user is None and not auth.is_service(request)
     # a session presented but unresolvable (accounts DB on the SQLite fallback)
     # is a likely signed-in person we can't validate right now. The DB-free
     # layers below (the human check + the fast-path constraint) STILL apply to
-    # them — so an outage is never a bot-flushable free-compute hole — but the
+    # them (so an outage is never a bot-flushable free-compute hole), but the
     # per-device DB limits (token/IP/budget) relax, so we don't one-run-block a
     # real account mid-outage. A bogus cookie under NORMAL operation resolves to
     # None (no exception) → outage_session is False → the full armor applies.
@@ -740,7 +749,7 @@ def backtest(
         if not anon.verify_turnstile(req.turnstile_token, ip):
             raise HTTPException(
                 status_code=403,
-                detail="the human check didn't pass — please try again",
+                detail="the human check didn't pass. Please try again",
             )
         anon.enforce_constraints(spec)  # daily clock + <=3y window, or 422
         if not outage_session:
@@ -750,16 +759,16 @@ def backtest(
             if verdict == "budget":
                 raise HTTPException(
                     status_code=402,
-                    detail="free trials are busy right now — create a free "
+                    detail="free trials are busy right now. Create a free "
                     "account for 5 backtests, no card",
                 )
             if verdict in ("used_token", "used_ip"):
                 raise HTTPException(
                     status_code=402,
-                    detail="you've used this device's free backtest — create a "
+                    detail="you've used this device's free backtest. Create a "
                     "free account for 5 more, no card",
                 )
-            if anon_token_h is None:  # first run from this device — mint a token
+            if anon_token_h is None:  # first run from this device, mint a token
                 raw_token, anon_token_h = anon.new_token()
                 response.set_cookie(
                     anon.ANON_COOKIE,
@@ -795,7 +804,7 @@ def backtest(
     )
     if variant_diff:
         # V-204: the reconciler's misses are counted, never swallowed, and they
-        # are reported WITH the total they came from — a bare miss count reads
+        # are reported WITH the total they came from. A bare miss count reads
         # as coverage, and exchanges are already a lossy sample of the triggers
         # that fired, since the parser caps a round at four questions.
         #
@@ -807,7 +816,7 @@ def backtest(
         counts = (stored.get("reconcile_telemetry") or {}).get("counts")
         if counts:
             # V-214: telemetry, and the wording says so. "would have fired" is
-            # not hedging — nothing renders, so a match is a hypothetical, and
+            # not hedging: nothing renders, so a match is a hypothetical, and
             # a log line that read "superseded: 1" would be the same false
             # claim as the marker, written somewhere a future reader trusts.
             log.info(
@@ -825,12 +834,12 @@ def backtest(
         labeling = stored.get("labeling")
         if labeling and labeling["unlabeled"]:
             log.info(
-                "variant labels: %d of %d changed fields have no label — "
-                "add them to app/api/field_labels.py (parent %s)",
+                "variant labels: %d of %d changed fields have no label. "
+                "Add them to app/api/field_labels.py (parent %s)",
                 labeling["unlabeled"], labeling["rows"], req.parent_run_id,
             )
     # V-172: the ordinal race (two tabs submitting variants of one root
-    # at the same moment) retries ONCE with a fresh transaction — the
+    # at the same moment) retries ONCE with a fresh transaction. The
     # loser recomputes max+1 and lands the next ordinal. One run per
     # submit, no error surfaced on the legitimate double-submit path; the
     # 409 below remains only for a double collision, genuine contention.
@@ -840,7 +849,7 @@ def backtest(
                 uid = run_user.id
                 # lock THIS account's row (Postgres) so two simultaneous runs
                 # can't both spend the last credit, then recompute the balance
-                # under the lock and debit + create in ONE transaction — a crash
+                # under the lock and debit + create in ONE transaction. A crash
                 # between them leaves NEITHER (the atomicity guarantee). On the
                 # SQLite fallback with_for_update is a no-op, so a concurrent
                 # overdraft of 1 credit is possible there; acceptable, as the
@@ -849,13 +858,13 @@ def backtest(
                 if db.credit_balance_tx(s, uid) <= 0:
                     raise HTTPException(
                         status_code=402,
-                        detail="you're out of backtest credits — top-ups are coming soon",
+                        detail="you're out of backtest credits. Top-ups are coming soon",
                     )
                 s.add(
                     db.CreditLedger(user_id=uid, delta=-1, reason="run_debit", run_id=run_id)
                 )
             # V-167 step 3: lineage is stamped in the SAME transaction as the
-            # debit. A crash between them must leave neither — a run with a debit
+            # debit. A crash between them must leave neither: a run with a debit
             # and no lineage is a variant that lost its parent, unrepairable.
             variant_ordinal: int | None = None
             if variant_root is not None:
@@ -879,7 +888,7 @@ def backtest(
                 s.commit()
                 break
             except IntegrityError as exc:
-                # the rollback discards the debit with the insert — nothing
+                # the rollback discards the debit with the insert, nothing
                 # half-written, whatever the cause turns out to be
                 s.rollback()
                 # Only the ordinal index may be BLAMED on the ordinal race, and
@@ -889,31 +898,31 @@ def backtest(
                 # established first (db.was_refunded, the V-168 lock message).
                 if not _is_ordinal_collision(exc):
                     raise
-                # V-172: attempt 1 retries on a fresh transaction — the loser
+                # V-172: attempt 1 retries on a fresh transaction. The loser
                 # of a cross-tab race recomputes max+1 and lands the next
                 # ordinal, so a legitimate double submit sees ONE run and no
                 # error. A second collision is genuine contention: honest 409.
                 if _ordinal_attempt == 1:
                     log.warning(
-                        "variant ordinal collision on root %s — retrying",
+                        "variant ordinal collision on root %s, retrying",
                         variant_root,
                     )
                     continue
                 raise HTTPException(
                     status_code=409,
                     detail="another variant of this run landed at the same "
-                    "moment — try again",
+                    "moment. Try again",
                 ) from None
     # record the anon trial only after the run row exists, so a failed
     # creation never burns the visitor's one free run. Best-effort: a
     # trial-write hiccup must not 500 a run that already exists and is about
-    # to execute — the per-IP window and global daily budget still bound abuse.
+    # to execute. The per-IP window and global daily budget still bound abuse.
     if is_anon and anon_token_h is not None and anon_ip_h is not None:
         from app import anon
 
         try:
             anon.record_trial(anon_token_h, anon_ip_h, run_id)
-        except Exception:  # noqa: BLE001 — never fail a created run on the audit write
+        except Exception:  # noqa: BLE001 (never fail a created run on the audit write)
             log.exception("anon trial write failed for run %s", run_id)
     tasks.add_task(_execute_run, run_id, note, min_trades)
     out: dict[str, Any] = {"run_id": run_id, "demo": False, "status": "queued"}
@@ -927,7 +936,7 @@ def backtest(
 
 def example_run_ids() -> tuple[str, ...]:
     """The showcase runs every visitor sees (owner picks, 2026-07-17): a
-    solid pass, a big winner, a destructive one, and a withheld verdict —
+    solid pass, a big winner, a destructive one, and a withheld verdict:
     the instrument's full range, all real. Env-overridable so re-pinning
     never needs a deploy."""
     raw = os.environ.get(
@@ -943,14 +952,14 @@ def list_runs(
     scope: str = Query(default="examples"),
     include: str = Query(default="", max_length=1200),
 ) -> dict[str, Any]:
-    """Library listing. Reads ONLY the small summary column — pulling 50
+    """Library listing. Reads ONLY the small summary column. Pulling 50
     full payloads (equity series and all) per listing is how a database
     transfer quota dies. Queued/running runs get an ephemeral summary so
     navigating away from the progress screen never 'loses' a run.
 
     Curation (owner 2026-07-17): a signed-in user's library is THEIR runs
     plus the pinned, badged examples; anonymous/pre-account callers get
-    the examples plus the ids their device remembers (`include` — exactly
+    the examples plus the ids their device remembers (`include`, exactly
     the list signup re-parents). scope=all stays for the service principal
     and pre-flip owner use (nightly automation reads the DB directly)."""
     from app import auth
@@ -967,18 +976,18 @@ def list_runs(
             db.Run.stage,
             db.Run.summary_json,
             db.Run.spec_json,
-            # V-12: lineage rides the ROW, injected at read — never written
+            # V-12: lineage rides the ROW, injected at read, never written
             # into summary_json, so old summaries and the narration rebuild
             # need no special-casing and pre-phase rows group correctly
             db.Run.root_run_id,
             db.Run.variant_ordinal,
         )
-        # scope=all is the full cross-account listing — automation ONLY.
+        # scope=all is the full cross-account listing, automation ONLY.
         # A non-service caller appending it (review finding: it was
         # unguarded) just gets the normal curated view, never everyone's
         # runs.
         examples_only = not (scope == "all" and auth.is_service(request))
-        examples = set(example_run_ids())  # once — not per row (env parse)
+        examples = set(example_run_ids())  # once, not per row (env parse)
         if examples_only:
             from sqlalchemy import ColumnElement, or_
 
@@ -990,7 +999,7 @@ def list_runs(
                 # the account's own runs ride on OWNERSHIP, not breadcrumbs
                 conds.append(db.Run.user_id == viewer.id)
             if own:
-                # include= surfaces an anon device's OWN runs — which are
+                # include= surfaces an anon device's OWN runs, which are
                 # unowned. An owned run named in include stays private to
                 # its account (review finding: include= leaked owned
                 # summaries by id, contradicting get_run's 404)
@@ -999,7 +1008,7 @@ def list_runs(
         rows = (
             query.filter(db.Run.status.in_(["queued", "running", "done"]))
             .order_by(db.Run.created_at.desc())
-            # the curated branch is already bounded by the id filter — a flat
+            # the curated branch is already bounded by the id filter. A flat
             # 50 would trim the OLDER pinned examples out from under a heavy
             # user's 50 own runs (review finding)
             .limit(60 if examples_only else 50)
@@ -1018,7 +1027,12 @@ def list_runs(
                         "demo": False,
                         "status": "running",
                         "stage": stage or 0,
-                        "name": spec.get("meta", {}).get("name", run_id),
+                        # the parser MODEL named this run. A spec written
+                        # before the ban still carries an em-dash in it, and
+                        # this card is the one Library row built from the
+                        # stored spec rather than from a summary, so it is
+                        # the one the summary's normalization never reaches
+                        "name": normalize(str(spec.get("meta", {}).get("name", run_id))),
                         "meta": f"started {created}" if created else "in progress",
                         "quote": "",
                         "kind": "verdict",
@@ -1037,9 +1051,11 @@ def list_runs(
                 if variant_ordinal is not None:
                     summary["rootRunId"] = root_run_id
                     summary["variantOrdinal"] = variant_ordinal
-                runs.append(summary)
+                # a card written before the em-dash ban quotes a headline that
+                # still carries one. Cleaned on the wire, never in the row
+                runs.append(normalize_payload_prose(summary))
                 continue
-            # stored before summary_json existed — build once, persist, done
+            # stored before summary_json existed: build once, persist, done
             run = s.get(db.Run, run_id)
             if run is None or not run.payload_json:
                 continue
@@ -1055,11 +1071,11 @@ def list_runs(
 
 def _enforce_run_access(run: db.Run, run_id: str, request: Request) -> None:
     """launch L1b: OWNED runs are private to their account (service and the
-    pinned examples excepted; unowned pre-account runs stay reachable by id —
-    that's how an anonymous device revisits its own run). 404, not 403 —
+    pinned examples excepted; unowned pre-account runs stay reachable by id,
+    which is how an anonymous device revisits its own run). 404, not 403:
     existence is nobody else's business. Shared by get_run / ask / replay so
     reading, questioning, and receipting a run all enforce the SAME boundary
-    (ask + replay were missing it — a cross-user IDOR on paid graded runs)."""
+    (ask + replay were missing it, a cross-user IDOR on paid graded runs)."""
     if run.user_id is None or run_id in example_run_ids():
         return
     from app import auth
@@ -1088,9 +1104,9 @@ def get_run(
     if run.status == "done" and run.payload_json:
         payload = dict(json.loads(run.payload_json))
         # a worker killed mid-narration must not leave the UI polling a
-        # forever-pending flag — release it once the attempt is stale
+        # forever-pending flag. Release it once the attempt is stale
         payload = _release_stale_narration(run_id, payload)
-        # D3c: receipts arrive AFTER the payload froze — merged at read
+        # D3c: receipts arrive AFTER the payload froze, merged at read
         # time; the stored verdict/trust inside the payload is untouched
         if run.receipts_json:
             try:
@@ -1103,14 +1119,14 @@ def get_run(
                 payload["fillAudit"] = json.loads(run.audit_json)
             except Exception:
                 pass
-        # 2026-07-14: the evidence bar is a user setting — a stored run
+        # 2026-07-14: the evidence bar is a user setting. A stored run
         # re-grades at read time against the caller's bar (both ways:
         # a 13-trade refusal unlocks at bar 1, a graded run re-caps at
         # 300). Per-request view; the stored row is never mutated.
-        # L2 SEAL: a REFUNDED refusal must NOT unlock at a lower bar — the
+        # L2 SEAL: a REFUNDED refusal must NOT unlock at a lower bar. The
         # credit was given back, so blessing it now would be a free graded
         # verdict (submit at min_trades=10000 to force a refund, then view at
-        # ?min_trades=1 to unlock it — a full paywall bypass). Only a stored
+        # ?min_trades=1 to unlock it, a full paywall bypass). Only a stored
         # refusal can be unlocked downward, so the ledger check is scoped to
         # that case (graded and anon/unpaid runs re-grade freely).
         if min_trades is not None and run.stats_json:
@@ -1126,7 +1142,7 @@ def get_run(
         spec_dict = json.loads(run.spec_json) if run.spec_json else {}
         # UX Chunk A: the setup story. Stored records merge verbatim; rows
         # predating the column get a READ-TIME derivation from stored fields
-        # (owner amendment 2026-07-14) — nothing is written back, and the
+        # (owner amendment 2026-07-14). Nothing is written back, and the
         # never-stored conversation is never invented. A corrupt record must
         # not take the run screen down: degrade to no key.
         try:
@@ -1142,7 +1158,7 @@ def get_run(
                 )
         except Exception:
             log.exception("provenance merge failed for %s", run_id)
-        # V-12: the lineage header — "Variant N, from <parent>", parent and
+        # V-12: the lineage header ("Variant N, from <parent>"), parent and
         # root both linkable, parent named the way the Library names it
         # (V-155). A deleted parent keeps the lineage and says so (V-45).
         if run.variant_ordinal is not None:
@@ -1162,11 +1178,14 @@ def get_run(
         payload["replayEligible"] = (
             (run.origin or "user") == "user" and replay_eligible_spec(spec_dict)
         )
-        # owner 2026-07-17: the two pinned showcase runs say so, explicitly —
-        # a stranger must never mistake an example for their own result
+        # owner 2026-07-17: the two pinned showcase runs say so, explicitly.
+        # A stranger must never mistake an example for their own result
         if run_id in example_run_ids():
             payload["example"] = True
-        return payload
+        # house punctuation on the way OUT, never on the way in: a run saved
+        # before the em-dash ban renders clean while its stored row keeps the
+        # byte-exact record (app/api/payload.py explains the split)
+        return normalize_payload_prose(payload)
     if run.status == "error":
         return {"id": run_id, "demo": False, "status": "error",
                 "error": run.error or "run failed", "stage": run.stage}
@@ -1177,7 +1196,7 @@ def get_run(
         "status": "running",
         "stage": run.stage,
         "name": spec.get("meta", {}).get("name", run_id),
-        # real intermediate stats from finished stages — the progress teasers
+        # real intermediate stats from finished stages (the progress teasers)
         "previews": json.loads(run.previews_json) if run.previews_json else [],
     }
 
@@ -1185,7 +1204,7 @@ def get_run(
 class AskRequest(BaseModel):
     question: str
     verbiage: str | None = None  # "institutional" (default) | "retail"
-    # the viewer's evidence bar — Q&A must describe the SAME verdict the
+    # the viewer's evidence bar: Q&A must describe the SAME verdict the
     # screen shows when a stored run was re-graded at read time
     min_trades: int | None = Field(default=None, ge=1, le=10_000)
 
@@ -1195,7 +1214,7 @@ def variant_draft(run_id: str, request: Request) -> dict[str, Any]:
     """V-08 / V-20 / V-28: everything the spec screen needs to reopen THIS run
     as a variant, projected server-side from the stored spec.
 
-    Costs nothing and commits to nothing (V-09) — the credit is debited at
+    Costs nothing and commits to nothing (V-09). The credit is debited at
     submit, atomically with run creation, exactly as for any other run.
 
     Works for every run the caller owns, including refused ones (V-03): the
@@ -1262,7 +1281,7 @@ def argue_back(run_id: str, req: ArgueBackRequest, request: Request) -> dict[str
     """V-14: did the parent's sweep already run the edit the user is about to submit?
 
     Read-only and free. It reads the parent's STORED sweep and returns that cell's
-    stored numbers, or nothing. No engine call, no credit, no run, no write — the
+    stored numbers, or nothing. No engine call, no credit, no run, no write. The
     whole point is that this answer already exists and nobody has to pay to see it
     again.
 
@@ -1303,13 +1322,13 @@ def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[st
         spec_dict = json.loads(run.spec_json)
     # a REFUNDED run's verdict is sealed (you got the credit back, not the
     # verdict). Replaying it would spawn a fresh, never-charged receipt run
-    # that a lower-bar re-grade could unlock for free — the seal's escape
+    # that a lower-bar re-grade could unlock for free, the seal's escape
     # hatch. Block it. (An uncharged anon/example refused run has no such
     # paywall and can still be receipted.)
     if db.was_refunded(run_id):
         raise HTTPException(
             status_code=409,
-            detail="nothing to replay — this run's verdict was withheld and "
+            detail="nothing to replay: this run's verdict was withheld and "
                    "its credit refunded; there is no blessed result to receipt",
         )
     if not replay_eligible_spec(spec_dict):
@@ -1344,14 +1363,14 @@ def replay_run(run_id: str, tasks: BackgroundTasks, request: Request) -> dict[st
 _AUDIT_RUNNING = "__running__"
 
 # narration worst case is ~3 validated retries × 45s per register; a pending
-# flag older than this survived a worker death mid-attempt — the template
+# flag older than this survived a worker death mid-attempt. The template
 # verdict stands and the UI's upgrade poll must be released
 _NARRATION_STALE_MINUTES = 10
 
 
 def _release_stale_narration(run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     """A narrationPending flag whose attempt is provably dead (no start
-    stamp, or one past the stale horizon) is cleared — persisted, so every
+    stamp, or one past the stale horizon) is cleared and persisted, so every
     later read is cheap and the pollers stop."""
     if not payload.get("narrationPending"):
         return payload
@@ -1359,7 +1378,7 @@ def _release_stale_narration(run_id: str, payload: dict[str, Any]) -> dict[str, 
                                  _NARRATION_STALE_MINUTES)
     if age_min < _NARRATION_STALE_MINUTES:
         return payload
-    log.warning("run %s: narration attempt is stale (%.0f min) — the "
+    log.warning("run %s: narration attempt is stale (%.0f min), the "
                 "template verdict stands", run_id, age_min)
     _clear_narration_pending(run_id)
     return {**payload, "narrationPending": False}
@@ -1369,7 +1388,7 @@ def _release_stale_narration(run_id: str, payload: dict[str, Any]) -> dict[str, 
 def audit_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
     """On-demand fill audit (F7, owner decision 2026-07-08): re-run THIS
     spec deterministically over the ORIGINAL effective window and check
-    every regenerated option-leg fill against Alpaca minute TRADES — a
+    every regenerated option-leg fill against Alpaca minute TRADES, a
     vendor no fill price came from. Stored like a receipt; the run's
     verdict is never rewritten. Repeated POSTs while one is in flight
     are refused (each audit is a full engine re-run behind the lock)."""
@@ -1391,13 +1410,13 @@ def _execute_audit(run_id: str) -> None:
         from app.data.fill_audit import audit_fills
 
         # window pin + lock + refresh=False stores: the shared verification
-        # scaffold (app.api.jobs) — the fill-count guard below is this job's
+        # scaffold (app.api.jobs). The fill-count guard below is this job's
         # own drift check on top of it
         rerun = pinned_engine_rerun(spec_doc, stats)
         spec, result = rerun.spec, rerun.result
         # in-window lake drift is still possible (self-healing artifacts,
         # growing resolution maps): the regenerated run must reproduce the
-        # ORIGINAL fill count or the audit refuses — attributing
+        # ORIGINAL fill count or the audit refuses. Attributing
         # independent verification to fills the run never made is the
         # worst class of bug on this product
         original_filled = stats.get("filled")
@@ -1408,7 +1427,7 @@ def _execute_audit(run_id: str) -> None:
                     run.audit_json = json.dumps({
                         "error": (
                             f"audit refused: the lake has changed since this "
-                            f"run — the deterministic re-run produced "
+                            f"run. The deterministic re-run produced "
                             f"{result.filled} fills vs the original "
                             f"{original_filled}; the regenerated fills are "
                             f"not this run's fills"),
@@ -1438,7 +1457,7 @@ def _execute_audit(run_id: str) -> None:
             run = s.get(db.Run, run_id)
             if run is not None:
                 run.audit_json = json.dumps(
-                    {"error": "audit failed — see server logs"})
+                    {"error": "audit failed. See server logs"})
                 s.commit()
 
 
@@ -1458,11 +1477,11 @@ def ask(run_id: str, req: AskRequest, request: Request) -> dict[str, Any]:
     from app.honesty.ask import answer_question
 
     stats = json.loads(run.stats_json)
-    # L2 seal: a refunded run (always a refusal) is NOT re-graded down — the
+    # L2 seal: a refunded run (always a refusal) is NOT re-graded down. The
     # answer stays consistent with the sealed screen and can't verbally bless
     # a run whose credit was refunded (the paywall-bypass vector get_run seals)
     if req.min_trades is not None and not db.was_refunded(run_id):
-        # same re-gate the displayed payload got — answers and screen agree,
+        # same re-gate the displayed payload got, so answers and screen agree,
         # and the bar number itself is grounded (it rides the sample dump)
         stats = regrade_stats_for_min_trades(stats, req.min_trades)
     answer = answer_question(

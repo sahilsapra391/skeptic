@@ -4,7 +4,7 @@ backfill frontier state. Needs R2 creds in the environment.
 
     uv run --project backend python diagnostics/count_chain_partitions.py [TICKER ...]
 
-Prints only DATES and COUNTS — never chain rows (guardrail: never log chain
+Prints only DATES and COUNTS, never chain rows (guardrail: never log chain
 data rows).
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ SOURCES = ("ivolatility", "alphavantage", "yahoo", "dolthub")
 
 def report(ticker: str) -> None:
     s3 = r2.r2_client()
-    print(f"\n=== {ticker} — options chain date partitions in R2 ===")
+    print(f"\n=== {ticker}: options chain date partitions in R2 ===")
     union: set[str] = set()
     per_source: dict[str, list[str]] = {}
     for src in SOURCES:
@@ -48,14 +48,14 @@ def report(ticker: str) -> None:
     if frontier is not None:
         print(f"  backfill_frontier.json: {frontier}")
 
-    verdict = "CONFIRMS SEVENTEEN root cause" if len(effective) <= 40 else "larger than expected — re-open SEVENTEEN.md"
+    verdict = "CONFIRMS SEVENTEEN root cause" if len(effective) <= 40 else "larger than expected, re-open SEVENTEEN.md"
     print(f"  [{verdict}]")
 
 
 def main() -> None:
     tickers = sys.argv[1:] or ["SPY", "QQQ", "IWM"]
     if not r2.r2_configured():
-        print("R2 not configured — set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / "
+        print("R2 not configured. Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / "
               "R2_SECRET_ACCESS_KEY / R2_BUCKET (see collector/.env).")
         raise SystemExit(1)
     for t in tickers:

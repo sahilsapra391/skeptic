@@ -1,4 +1,4 @@
-"""Anonymous-trial armor (launch L4 — the public-launch blocker).
+"""Anonymous-trial armor (launch L4, the public-launch blocker).
 
 An anonymous visitor gets exactly ONE real backtest, defended in layers so
 a doctored client can't turn the engine into free compute:
@@ -11,7 +11,7 @@ a doctored client can't turn the engine into free compute:
                                                     a doctored client asks
                                                     for more)
 
-Signed-in accounts and the service principal skip ALL of this — the armor
+Signed-in accounts and the service principal skip ALL of this. The armor
 is only for the anonymous free-run path. No raw token or IP is ever stored;
 only salted/HMAC'd hashes. The signature on the anon token lets us reject a
 forged token before it ever touches the database.
@@ -85,7 +85,7 @@ def token_hash(token: str) -> str:
 
 
 def verified_hash(token: str | None) -> str | None:
-    """The storage hash of a token whose signature checks out — None for a
+    """The storage hash of a token whose signature checks out. None for a
     missing, malformed, or FORGED token (rejected before the DB)."""
     if not token or "." not in token:
         return None
@@ -116,18 +116,18 @@ _warned_no_turnstile = False
 
 
 def verify_turnstile(token: str | None, ip: str) -> bool:
-    """True when the human check passes — or when Turnstile isn't configured
+    """True when the human check passes, or when Turnstile isn't configured
     (dev / pre-launch), so the flow works without Cloudflare keys."""
     secret = os.environ.get("TURNSTILE_SECRET")
     if not secret:
         # deploy-safety: nothing forces the human check on for public launch,
-        # so warn ONCE the first time an anon run proceeds without it — a
+        # so warn ONCE the first time an anon run proceeds without it: a
         # silent bot could otherwise drain the free-run budget
         global _warned_no_turnstile
         if not _warned_no_turnstile:
             _warned_no_turnstile = True
             log.warning(
-                "anon armor: TURNSTILE_SECRET is unset — the human check is "
+                "anon armor: TURNSTILE_SECRET is unset. The human check is "
                 "SKIPPED. Set it before public launch, or bots can spend the "
                 "anonymous free-run budget."
             )
@@ -141,7 +141,7 @@ def verify_turnstile(token: str | None, ip: str) -> bool:
             timeout=10,
         )
     except requests.RequestException:
-        # a transport failure (cold DNS/TLS, Cloudflare unreachable) — logged
+        # a transport failure (cold DNS/TLS, Cloudflare unreachable), logged
         # distinctly from a real reject so the two are separable in prod logs
         log.exception("turnstile verify failed (transport)")
         return False
@@ -157,7 +157,7 @@ def verify_turnstile(token: str | None, ip: str) -> bool:
         return True
     # surface WHY Cloudflare rejected: machine codes like timeout-or-duplicate
     # (token already redeemed / expired) or invalid-input-response. Discarding
-    # these left prod 403s unexplained — logging them makes a first-click
+    # these left prod 403s unexplained. Logging them makes a first-click
     # failure diagnosable without weakening the gate (still fail-closed).
     log.warning("turnstile reject: error-codes=%s", body.get("error-codes"))
     return False
@@ -172,19 +172,19 @@ def enforce_constraints(spec: StrategySpec) -> None:
     if spec.backtest.clock is not Clock.DAILY:
         raise HTTPException(
             status_code=422,
-            detail="free trial runs use the daily clock — create a free "
+            detail="free trial runs use the daily clock. Create a free "
             "account to run intraday (5-minute) backtests",
         )
     long_window = HTTPException(
         status_code=422,
-        detail="free trial runs cover up to a 3-year window — create a "
+        detail="free trial runs cover up to a 3-year window. Create a "
         "free account to test the full history",
     )
     start, end = spec.backtest.start, spec.backtest.end
     # Open-ended windows are the COMMON case, not an edge: every preset window
     # sends end=None (runs to the latest session ~= today) and "all" sends
-    # start=None too (full ~20-year history). Resolve both before measuring —
-    # otherwise the span check short-circuits on the None and the <=3y cap
+    # start=None too (full ~20-year history). Resolve both before measuring.
+    # Otherwise the span check short-circuits on the None and the <=3y cap
     # silently never fires for the normal client.
     if start is None:
         raise long_window  # open-ended start = full history, always past the cap
@@ -203,14 +203,14 @@ def check_limits(token_h: str | None, ip_h: str) -> str:
     This is check-then-act, not atomic: a burst of concurrent first-run POSTs
     from one IP (no cookie yet, so each mints a distinct token) can each read
     the counts as empty and slip through before the first commits. That window
-    is deliberately left un-locked — the residual is bounded on every side: the
+    is deliberately left un-locked. The residual is bounded on every side: the
     per-IP window blocks the NEXT burst, the global daily budget caps the total
     (no unbounded free compute), and the engine serializes every run behind its
     lock (a flood can't amplify compute past the budget). A DB lock here would
     add contention to the hot path for a threat the budget already ceilings."""
     now = datetime.now(UTC)
     with db.session() as s:
-        # global daily ceiling first — cheapest signal, protects the engine
+        # global daily ceiling first: cheapest signal, protects the engine
         since_midnight = now - timedelta(hours=24)
         total = (
             s.query(db.AnonTrial).filter(db.AnonTrial.created_at >= since_midnight).count()
@@ -239,7 +239,7 @@ def record_trial(token_h: str, ip_h: str, run_id: str) -> None:
 
 def claim_anon_runs(token: str | None, user_id: str) -> list[str]:
     """Re-parent the runs made under this device's anon token to a new
-    account at signup (the conversion moment) — only UNOWNED user-origin
+    account at signup (the conversion moment), only UNOWNED user-origin
     runs. Returns the run ids ACTUALLY claimed (so a caller can count them
     without double-counting an already-owned run)."""
     token_h = verified_hash(token)

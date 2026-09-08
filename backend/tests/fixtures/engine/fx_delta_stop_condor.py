@@ -1,5 +1,5 @@
 """Fixture: an iron condor's delta stop fires on the short put (D1c,
-owner amendment 5 — the delta-stop fixture set must include a multi-leg
+owner amendment 5: the delta-stop fixture set must include a multi-leg
 case; the WHOLE condor closes when one watched leg breaches).
 
   2025-01-06 (Mon)  entry. Spot 100.00. Exp 2025-01-17.

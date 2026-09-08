@@ -6,8 +6,8 @@
  * light/dark here and re-checks each minute so the palette flips at the
  * 8am / 6pm ET boundaries on its own. data-theme is only ever light|dark.
  *
- * Printing always gets the paper palette: beforeprint flips to light —
- * covering Save PDF and Cmd+P alike — and afterprint re-resolves from
+ * Printing always gets the paper palette: beforeprint flips to light
+ * (covering Save PDF and Cmd+P alike) and afterprint re-resolves from
  * settings. The flag stops the Market Hours interval from wrestling the
  * flip back mid-dialog in engines where print() doesn't block. */
 
@@ -22,7 +22,7 @@ export function ThemeApplier() {
   const pathname = usePathname();
   const printing = useRef(false);
   // the public surface (landing + auth + legal) owns data-theme via the
-  // landing preference — without this gate the app-settings writer here
+  // landing preference. Without this gate the app-settings writer here
   // would win a 60s tug-of-war those pages can't see. Accent stays shared.
   const onPublic = isPublicSurface(pathname);
   useEffect(() => {

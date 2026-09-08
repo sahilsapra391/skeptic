@@ -3,7 +3,7 @@
 /**
  * Run-in-progress state: the gauntlet attacking the strategy stage by
  * stage. As each stage finishes, its REAL headline stat appears in the
- * live feed — computed numbers only, never a fabrication. While the
+ * live feed: computed numbers only, never a fabrication. While the
  * engine crunches, rotating tips teach the platform.
  */
 
@@ -23,7 +23,7 @@ const RETAIL_STAGES: { t: string; n: string }[] = [
 ];
 
 // the "Attacking your strategy…" heading fades into a sibling phrase
-// every few seconds — same promise, twenty ways
+// every few seconds (same promise, twenty ways)
 const HEADINGS = [
   "Attacking your strategy",
   "Stress-testing your idea",
@@ -48,109 +48,109 @@ const HEADINGS = [
 ];
 
 const TIPS = [
-  "One stated exit rule is enough — the parser never invents the ones you didn't give.",
+  "One stated exit rule is enough. The parser never invents the ones you didn't give.",
   "Chart mode: pin up to 10 examples. More examples make the test stricter, not easier.",
-  "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld — good-looking numbers don't override it.",
-  "Every re-run of the same strategy family counts as a trial, and so does every sweep the gauntlet runs — the deflated Sharpe gets harder to impress each time.",
-  "On the results screen, ask questions — answers use only this run's computed stats.",
-  "Commission and slippage come from the spec you confirmed — Settings supply the starting values when a strategy is first compiled, and a variant inherits its parent's.",
-  "In the sensitivity grid, the ringed column is your spec — brighter neighbors did better.",
+  "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld. Good-looking numbers don't override it.",
+  "Every re-run of the same strategy family counts as a trial, and so does every sweep the gauntlet runs. The deflated Sharpe gets harder to impress each time.",
+  "On the results screen, ask questions. Answers use only this run's computed stats.",
+  "Commission and slippage come from the spec you confirmed. Settings supply the starting values when a strategy is first compiled, and a variant inherits its parent's.",
+  "In the sensitivity grid, the ringed column is your spec, and brighter neighbors did better.",
   "The verdict leads with the most uncomfortable finding on purpose. That's the product.",
-  "Fills never happen at mid price — buys lean toward the ask, sells toward the bid, plus slippage.",
+  "Fills never happen at mid price. Buys lean toward the ask, sells toward the bid, plus slippage.",
   "The shaded strip on the equity chart is data the strategy never saw during testing.",
   "Hover the equity curve for the exact date, account value and drawdown at any point.",
   "Hover a walk-forward bar to see that window's dates, return and trade count.",
-  "Verbiage Complexity in Settings rewrites everything in plain English — same numbers, zero jargon.",
+  "Verbiage Complexity in Settings rewrites everything in plain English (same numbers, zero jargon).",
   "Switch between light and dark mode in Settings → Appearance; the accent color is yours to pick too.",
-  "The accent color never touches profit or loss — green and red stay strictly P/L.",
+  "The accent color never touches profit or loss. Green and red stay strictly P/L.",
   "A 'plateau' in the nudge test is good: small settings changes don't wreck the result.",
   "A 'cliff' is the warning: the result only works at exactly your settings. That smells like luck.",
-  "Recommendations are computed from sweeps we actually ran on your strategy — never opinion.",
-  "The trust band is a range, not a score — precision would be dishonest.",
+  "Recommendations are computed from sweeps we actually ran on your strategy, never opinion.",
+  "The trust band is a range, not a score. Precision would be dishonest.",
   "Trust level 5 still isn't a promise. It means the strategy survived everything we could throw at it.",
   "If out-of-sample keeps less than half the in-sample result, the verdict flags it as curve-fit.",
   "The Monte Carlo test reshuffles your trade order 1,000 times to measure how much was sequence luck.",
-  "Every run is seeded — same strategy, same data, same seed gives the identical result.",
+  "Every run is seeded: same strategy, same data, same seed gives the identical result.",
   "The trade log shows fills first; skipped entries hide behind their own toggle, each with a reason.",
   "SKIP reasons matter: zero bids and wide spreads are the market telling you the fill was fantasy.",
-  "SPY has options history to 2020 in the lake; QQQ and IWM start much later — coverage bounds every verdict.",
-  "The data window is printed on every result — verdicts never pretend to more history than they have.",
+  "SPY has options history to 2020 in the lake; QQQ and IWM start much later. Coverage bounds every verdict.",
+  "The data window is printed on every result. Verdicts never pretend to more history than they have.",
   "Speak your strategy: the mic in the composer does dictation.",
   "Presets on the home page reorder by what you actually run most.",
   "The library sorts by trust, not by return. On purpose.",
   "Old runs stay honest: their verdicts were computed on the coverage available at the time.",
-  "The parser asks rather than guesses — a vague trigger like 'when it dips' earns you a question.",
-  "Answer clarifying questions with the chips or your own words — either works.",
-  "You can edit every dial on the spec screen before anything runs — nothing runs unconfirmed.",
+  "The parser asks rather than guesses. A vague trigger like 'when it dips' earns you a question.",
+  "Answer clarifying questions with the chips or your own words. Either works.",
+  "You can edit every dial on the spec screen before anything runs. Nothing runs unconfirmed.",
   "Custom exits compose: profit target, stop loss and a time exit can all apply at once.",
-  "0DTE strategies are refused for now — honest simulation needs minute data we don't serve yet.",
-  "The sidebar is drag-resizable — pull the edge, or drop it below 120px to snap to icons.",
+  "0DTE strategies are refused for now. Honest simulation needs minute data we don't serve yet.",
+  "The sidebar is drag-resizable: pull the edge, or drop it below 120px to snap to icons.",
   "The deflated Sharpe counts trials, its own sweeps included: 100 trials at one family makes a good number likely luck.",
-  "The gauntlet's five attacks run on every single backtest — there's no express lane.",
+  "The gauntlet's five attacks run on every single backtest. There's no express lane.",
   "Grounded Q&A refuses to invent: if a number isn't in this run's stats, it says so.",
-  "Verdict text is validated number-by-number against computed stats — hallucinated digits get rejected.",
+  "Verdict text is validated number-by-number against computed stats. Hallucinated digits get rejected.",
   "If the narration model misbehaves, a deterministic template ships instead. A run never fails because an LLM did.",
   "Expiration is simulated honestly: ITM shorts get assigned, stock unwinds at the next open.",
-  "The equity curve is net of costs — commissions and slippage are already in it.",
+  "The equity curve is net of costs. Commissions and slippage are already in it.",
   "Walk-forward windows are ~2 months each; one great quarter can't carry a verdict.",
-  "Insufficient evidence isn't failure — it unlocks automatically as more data accrues.",
+  "Insufficient evidence isn't failure. It unlocks automatically as more data accrues.",
   "The 'as specced' column is ringed in the sensitivity grid so you can see exactly where you stand.",
-  "Charts prefetch on the home page — Show on Chart opens instantly after the first visit.",
-  "Trust is computed by fixed rules, not vibes — the LLM narrates the verdict; it never chooses it.",
+  "Charts prefetch on the home page. Show on Chart opens instantly after the first visit.",
+  "Trust is computed by fixed rules, not vibes. The LLM narrates the verdict; it never chooses it.",
 ];
 
-// the same 50 lessons with the jargon translated away — shown when
+// the same 50 lessons with the jargon translated away, shown when
 // Verbiage Complexity is set to Retail
 const TIPS_RETAIL = [
-  "One stated exit rule is enough — the parser never invents the ones you didn't give.",
+  "One stated exit rule is enough. The parser never invents the ones you didn't give.",
   "Chart mode: pin up to 10 examples. More examples make the test stricter, not easier.",
-  "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld — good-looking numbers don't override it.",
-  "Every re-run of a similar strategy raises the bar, and the tests we run for you count too — retrying until something works gets caught.",
-  "On the results screen, ask questions — answers use only this run's computed numbers.",
-  "Trading costs come from the setup you confirmed — Settings fill in the starting numbers when you first describe a strategy, and a variant keeps the original run's.",
-  "In the settings-nudge grid, the ringed column is your exact setup — brighter neighbors did better.",
+  "Below your minimum-trades bar (Settings, standard 15) the verdict is withheld. Good-looking numbers don't override it.",
+  "Every re-run of a similar strategy raises the bar, and the tests we run for you count too. Retrying until something works gets caught.",
+  "On the results screen, ask questions. Answers use only this run's computed numbers.",
+  "Trading costs come from the setup you confirmed. Settings fill in the starting numbers when you first describe a strategy, and a variant keeps the original run's.",
+  "In the settings-nudge grid, the ringed column is your exact setup, and brighter neighbors did better.",
   "The verdict leads with the most uncomfortable finding on purpose. That's the product.",
-  "Trades never fill at the perfect midpoint price — buys pay a little more, sells get a little less, like real life.",
+  "Trades never fill at the perfect midpoint price. Buys pay a little more, sells get a little less, like real life.",
   "The shaded strip on the account chart is data the strategy never saw during testing.",
   "Hover the account-value chart for the exact date, balance and loss-from-peak at any point.",
   "Hover a time-window bar to see that window's dates, return and trade count.",
-  "You're in plain-English mode now — Settings can switch back to the technical wording any time.",
+  "You're in plain-English mode now. Settings can switch back to the technical wording any time.",
   "Switch between light and dark mode in Settings → Appearance; the accent color is yours to pick too.",
-  "The accent color never touches profit or loss — green and red stay strictly for money.",
+  "The accent color never touches profit or loss. Green and red stay strictly for money.",
   "'Stable' in the nudge test is good: small settings changes don't wreck the result.",
   "'Fragile' is the warning: the result only works at exactly your settings. That smells like luck.",
-  "Suggestions come from tests we actually ran on your strategy — never opinion.",
-  "The trust band is a range, not a score — false precision would be dishonest.",
+  "Suggestions come from tests we actually ran on your strategy, never opinion.",
+  "The trust band is a range, not a score. False precision would be dishonest.",
   "Trust level 5 still isn't a promise. It means the strategy survived everything we could throw at it.",
   "If the hidden-data result keeps less than half of the training result, the verdict calls it out.",
   "The luck check reshuffles your trade order 1,000 times to see how much was just sequence.",
-  "Every run is repeatable — the same strategy on the same data always gives the identical result.",
+  "Every run is repeatable: the same strategy on the same data always gives the identical result.",
   "The trade log shows real trades first; skipped entries hide behind their own toggle, each with a reason.",
   "Skip reasons matter: no buyers or huge price gaps are the market saying the trade was fantasy.",
-  "SPY has options history to 2020 here; QQQ and IWM start much later — every verdict says what data it used.",
-  "The data window is printed on every result — verdicts never pretend to more history than they have.",
+  "SPY has options history to 2020 here; QQQ and IWM start much later. Every verdict says what data it used.",
+  "The data window is printed on every result. Verdicts never pretend to more history than they have.",
   "Speak your strategy: the mic in the chatbox does dictation, tuned for tickers and numbers.",
   "Presets on the home page reorder by what you actually run most.",
   "The library sorts by trustworthiness, not by biggest return. On purpose.",
   "Old runs stay honest: their verdicts reflect the data that existed when they ran.",
-  "The parser asks rather than guesses — a vague trigger like 'when it dips' earns you a question.",
-  "Answer clarifying questions with the chips or your own words — either works.",
-  "You can edit every dial on the review screen before anything runs — nothing runs unconfirmed.",
+  "The parser asks rather than guesses. A vague trigger like 'when it dips' earns you a question.",
+  "Answer clarifying questions with the chips or your own words. Either works.",
+  "You can edit every dial on the review screen before anything runs. Nothing runs unconfirmed.",
   "Exits stack: a profit target, a stop loss and a time limit can all apply at once.",
-  "Same-day-expiry strategies are refused for now — honest testing needs finer data than we serve yet.",
-  "The sidebar is drag-resizable — pull the edge, or push it small to snap to icons.",
+  "Same-day-expiry strategies are refused for now. Honest testing needs finer data than we serve yet.",
+  "The sidebar is drag-resizable: pull the edge, or push it small to snap to icons.",
   "Every test counts, including the ones we run for you: 100 trials at the same idea makes one good result likely luck.",
-  "All five attacks run on every single backtest — there's no express lane.",
+  "All five attacks run on every single backtest. There's no express lane.",
   "The Q&A refuses to invent: if a number wasn't computed for this run, it says so.",
-  "Every number in the verdict is checked against the computed results — made-up digits get rejected.",
+  "Every number in the verdict is checked against the computed results. Made-up digits get rejected.",
   "If the writing model misbehaves, a plain fallback ships instead. A run never fails because an AI did.",
   "Expiration is simulated honestly: options that finish in the money become stock, sold at the next open.",
-  "The account chart already includes all costs — commissions and slippage are baked in.",
+  "The account chart already includes all costs. Commissions and slippage are baked in.",
   "Time windows are about 2 months each; one great quarter can't carry a verdict.",
-  "'Not enough evidence' isn't failure — it unlocks automatically as more data accrues.",
+  "'Not enough evidence' isn't failure. It unlocks automatically as more data accrues.",
   "The 'as specced' column is ringed in the nudge grid so you can see exactly where you stand.",
-  "Charts preload on the home page — Show on Chart opens instantly after the first visit.",
-  "Trust is computed by fixed rules, not vibes — the AI writes the words; it never picks the verdict.",
+  "Charts preload on the home page. Show on Chart opens instantly after the first visit.",
+  "Trust is computed by fixed rules, not vibes. The AI writes the words; it never picks the verdict.",
 ];
 
 function shuffled<T>(list: T[]): T[] {
@@ -178,7 +178,7 @@ export function GauntletProgress({
   const previewLines = previews.map((p) =>
     typeof p === "string" ? p : retail ? p.retail : p.pro,
   );
-  // tips play in a shuffled order — no repeats until the pool is exhausted
+  // tips play in a shuffled order, no repeats until the pool is exhausted
   const [tipOrder, setTipOrder] = useState(() => shuffled(retail ? TIPS_RETAIL : TIPS));
   const [tipIndex, setTipIndex] = useState(0);
   const [headingIndex, setHeadingIndex] = useState(0);
@@ -196,7 +196,7 @@ export function GauntletProgress({
   }, [tipOrder.length]);
 
   useEffect(() => {
-    // fade out, swap the phrase, fade back in — every 5 seconds
+    // fade out, swap the phrase, fade back in (every 5 seconds)
     const id = setInterval(() => {
       setHeadingVisible(false);
       setTimeout(() => {
@@ -251,8 +251,8 @@ export function GauntletProgress({
         <div className="mt-7 rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
           <div className="mb-2.5 font-mono text-[11px] font-medium tracking-[.14em] text-trust">
             {retail
-              ? "LIVE RESULTS — YOUR STRATEGY'S REAL NUMBERS, AS THEY LAND"
-              : "LIVE FROM THE GAUNTLET — REAL NUMBERS, NOT A LOADING BAR"}
+              ? "LIVE RESULTS: YOUR STRATEGY'S REAL NUMBERS, AS THEY LAND"
+              : "LIVE FROM THE GAUNTLET: REAL NUMBERS, NOT A LOADING BAR"}
           </div>
           <div className="flex flex-col gap-1.5">
             {previewLines.map((p, i) => (

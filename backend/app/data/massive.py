@@ -1,16 +1,16 @@
-"""Massive lake readers — PIT-bounded access to the banked Massive prefixes.
+"""Massive lake readers: PIT-bounded access to the banked Massive prefixes.
 
 F0 (ENGINE-V4 data spine). Massive Options Basic contributes daily OHLCV
 aggregates for QQQ/IWM option contracts: a COVERAGE and VOLUME CROSS-CHECK.
 It carries no bid/ask, so it is NEVER a fill source (owner decision, ENGINE-V4
-masterplan §F5; guardrail #1 — fills quote from real NBBO only).
+masterplan §F5; guardrail #1, fills quote from real NBBO only).
 
 Layouts (written by collector/backfill_massive.py):
   reference/massive/contracts/ticker={T}.parquet            contract directory
   reference/massive/option_agg/ticker={T}/symbol={S}.parquet daily OHLCV rows
 
 PIT: `option_agg` rows carry a session date and are truncated at as_of, with
-LookaheadError on requests beyond it — same contract as MarketView. The
+LookaheadError on requests beyond it, the same contract as MarketView. The
 contract directory carries no listing timestamps, so it CANNOT answer "which
 contracts existed at date T"; `contracts_reference` is exposed for coverage
 counting only and is documented as non-point-in-time reference metadata.
@@ -30,7 +30,7 @@ from app.data.pit import as_of_parts
 from app.engine.market import LookaheadError
 
 _FRAME_CACHE: OrderedDict[str, pd.DataFrame] = OrderedDict()
-_FRAME_CACHE_MAX = 32  # bounded — post-OOM rule
+_FRAME_CACHE_MAX = 32  # bounded (post-OOM rule)
 
 
 def _cached_frame(s3: Any, key: str) -> pd.DataFrame | None:
@@ -55,16 +55,16 @@ def option_agg(
 ) -> pd.DataFrame | None:
     """Daily OHLCV aggregate rows for one contract, dated at or before as_of.
 
-    occ_symbol uses Massive's own key (e.g. "O:QQQ240708C00408000" — the
+    occ_symbol uses Massive's own key (e.g. "O:QQQ240708C00408000", the
     collector banks files under that symbol verbatim). Volume/OHLC only:
     cross-check data, never a fill price.
 
     `session` narrows to one session and raises LookaheadError when that
-    session lies beyond as_of (an explicit future request — guardrail #2);
+    session lies beyond as_of (an explicit future request, guardrail #2);
     without it, rows are truncated at as_of and a contract with nothing
     visible yet is an honest None, not an error.
 
-    Rows are DAILY aggregates — end-of-day observations — so a datetime
+    Rows are DAILY aggregates (end-of-day observations), so a datetime
     as_of excludes the as_of session itself: today's daily OHLCV does not
     exist mid-session (docs/HONESTY.md)."""
     bound, moment = as_of_parts(as_of)
@@ -87,7 +87,7 @@ def option_agg(
 
 
 def contracts_reference(s3: Any, ticker: str) -> pd.DataFrame | None:
-    """The banked contract directory — REFERENCE METADATA, not point-in-time.
+    """The banked contract directory: REFERENCE METADATA, not point-in-time.
 
     Massive's contract list carries no listing timestamps, so it cannot say
     which contracts existed at a past date. Coverage counting only; simulation
@@ -97,7 +97,7 @@ def contracts_reference(s3: Any, ticker: str) -> pd.DataFrame | None:
 
 
 def agg_symbols(s3: Any, ticker: str) -> list[str]:
-    """Symbols with banked aggregates (coverage/ledger use — lake listing,
+    """Symbols with banked aggregates (coverage/ledger use: lake listing,
     never called from an engine hot path)."""
     prefix = f"reference/massive/option_agg/ticker={ticker}/"
     out = []

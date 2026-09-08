@@ -1,4 +1,4 @@
-"""In-house signal derivations (forward record) — every statistic against a
+"""In-house signal derivations (forward record): every statistic against a
 hand-computed fixture (repo rule: honesty-layer math never ships untested).
 
 Hand computations are spelled out inline so a reviewer can re-derive every
@@ -35,7 +35,7 @@ def _chain_rows() -> pd.DataFrame:
             "open_interest": oi, "spot": 100.0,
         })
 
-    # dte 20 — ATM 100: call .19 / put .21 (mean .20); 25Δ wings bracket:
+    # dte 20, ATM 100: call .19 / put .21 (mean .20); 25Δ wings bracket:
     # puts 95 (−.30, .22) & 90 (−.20, .24) → .23 at 25Δ;
     # calls 105 (.30, .19) & 110 (.20, .18) → .185 at 25Δ
     add("2026-07-27", "call", 100.0, 0.19, 0.50, gamma=0.05, volume=60, oi=100)
@@ -44,7 +44,7 @@ def _chain_rows() -> pd.DataFrame:
     add("2026-07-27", "put", 90.0, 0.24, -0.20)
     add("2026-07-27", "call", 105.0, 0.19, 0.30)
     add("2026-07-27", "call", 110.0, 0.18, 0.20)
-    # dte 40 — ATM mean .30; wings identical to dte 20 (so the 30d wing
+    # dte 40, ATM mean .30; wings identical to dte 20 (so the 30d wing
     # interpolation is exact: variance-linear between equal IVs is flat)
     add("2026-08-16", "call", 100.0, 0.29, 0.50, volume=40, oi=10)
     add("2026-08-16", "put", 100.0, 0.31, -0.50, volume=60, oi=10)
@@ -52,7 +52,7 @@ def _chain_rows() -> pd.DataFrame:
     add("2026-08-16", "put", 90.0, 0.24, -0.20)
     add("2026-08-16", "call", 105.0, 0.185, 0.30)
     add("2026-08-16", "call", 110.0, 0.185, 0.20)
-    # dte 90 — exact ATM tenor hit: mean .32
+    # dte 90, exact ATM tenor hit: mean .32
     add("2026-10-05", "call", 100.0, 0.31, 0.50)
     add("2026-10-05", "put", 100.0, 0.33, -0.50)
     return pd.DataFrame(rows)
@@ -270,7 +270,7 @@ class TestDataProvenance:
 
     def test_spliced_series_carry_the_stale_tail_guard(self) -> None:
         # review finding: the in-house continuations can die exactly like a
-        # vendor feed (recorder down, derive failing) — skew/term/ivx/hv
+        # vendor feed (recorder down, derive failing), so skew/term/ivx/hv
         # get the SAME tail protection as the UW families
         from datetime import timedelta
 

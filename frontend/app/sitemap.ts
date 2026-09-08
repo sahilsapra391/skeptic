@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 // SEO (launch L4): the indexable face is the landing + the auth placeholder
 // pages + legal. App surfaces under (app)/ are noindexed in their layout and
-// /api/ is disallowed in robots.ts — neither belongs here. Public run pages
+// /api/ is disallowed in robots.ts. Neither belongs here. Public run pages
 // join only when a server-rendered share surface exists.
 const BASE = "https://skeptic.fyi";
 

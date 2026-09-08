@@ -26,7 +26,7 @@ from tests.fixtures.engine import fx_short_put_assigned as fx
 SERVICE_TOKEN = "svc-test-token"
 PASSWORD = "correct-horse-battery"
 
-# the module-level limiters persist across tests — every test owns its
+# the module-level limiters persist across tests, so every test owns its
 # whole per-IP window by sourcing requests from an address nobody reuses
 _ip_counter = itertools.count(1)
 
@@ -49,8 +49,8 @@ def as_service() -> dict[str, str]:
 
 
 def as_proxy() -> dict[str, str]:
-    """How the Next proxy opens the gate for forwarded browser traffic —
-    it is NOT the automation principal and gets no data-layer bypass."""
+    """How the Next proxy opens the gate for forwarded browser traffic.
+    It is NOT the automation principal and gets no data-layer bypass."""
     return {"x-skeptic-gate": SERVICE_TOKEN}
 
 
@@ -64,7 +64,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "R2_BUCKET",
         "SIGNUP_GRANT_CREDITS",
         "SKEPTIC_REQUIRE_VERIFIED",
-        "RESEND_API_KEY",  # no sender configured — the mailer only logs
+        "RESEND_API_KEY",  # no sender configured, so the mailer only logs
         "SKEPTIC_SMTP_HOST",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -83,7 +83,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 @pytest.fixture()
 def dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """Local-dev shape (no service token) on the hermetic fixture lake —
+    """Local-dev shape (no service token) on the hermetic fixture lake:
     how anonymous devices run backtests pre-flip, and what the claim flow
     re-parents at signup."""
     _clear_env(monkeypatch)
@@ -147,7 +147,7 @@ def test_signup_creates_account_grant_and_session(client: TestClient) -> None:
         user = s.query(db.User).filter(db.User.email == email).one()
         assert user.password_hash is not None
         assert user.password_hash.startswith("$argon2id$")
-        # the plaintext never persists — not in ANY column of the row
+        # the plaintext never persists, not in ANY column of the row
         for column in db.User.__table__.columns:
             assert PASSWORD not in str(getattr(user, column.name))
         grants = (
@@ -252,7 +252,7 @@ def test_login_roundtrip(client: TestClient) -> None:
 
 
 def test_login_failures_are_uniform(client: TestClient) -> None:
-    # wrong password and unknown account must be indistinguishable — no
+    # wrong password and unknown account must be indistinguishable, with no
     # account-existence oracle on the login form
     email = unique_email()
     signup(client, email)
@@ -312,7 +312,7 @@ def test_logout_revokes_the_session(client: TestClient) -> None:
     token = session_of(signup(client))
     assert client.get("/api/me").status_code == 200
     assert client.post("/api/auth/logout").json() == {"ok": True}
-    # revoked server-side — the raw token is dead, not just the cookie cleared
+    # revoked server-side: the raw token is dead, not just the cookie cleared
     assert client.get("/api/me", headers=as_user(token)).status_code == 401
     assert client.get("/api/me").status_code == 401
 
@@ -340,7 +340,7 @@ def test_garbage_session_rejected(client: TestClient) -> None:
 
 def test_session_rides_secondary_header_beside_service_bearer(client: TestClient) -> None:
     # the pre-launch proxy shape: owner token in Authorization, the user's
-    # session in x-skeptic-session — identity must still resolve
+    # session in x-skeptic-session, and identity must still resolve
     email = unique_email()
     token = session_of(signup(client, email))
     client.cookies.clear()
@@ -353,7 +353,7 @@ def test_session_rides_secondary_header_beside_service_bearer(client: TestClient
 
 
 def _capture_mailer(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """The DB stores only token digests — the raw token is observable
+    """The DB stores only token digests, and the raw token is observable
     exactly where production hands it off: the mailer call."""
     sent: list[str] = []
 
@@ -431,7 +431,7 @@ def test_resend_verification_needs_session_and_is_limited(
         "/api/auth/resend-verification", headers={**as_user(token), **fresh_ip()}
     )
     assert done.json() == {"ok": True, "verified": True}
-    assert len(sent) == 4  # 1 signup + 3 resends — the verified resend sent nothing
+    assert len(sent) == 4  # 1 signup + 3 resends, the verified resend sent nothing
 
 
 # ----------------------------------------------------------- verified bar
@@ -444,11 +444,11 @@ def test_verified_bar_gates_backtest(
     token = session_of(signup(client))
     client.cookies.clear()  # identity rides the explicit header below
     monkeypatch.setenv("SKEPTIC_REQUIRE_VERIFIED", "1")
-    # the bar fires BEFORE spec validation — an empty spec would 422
+    # the bar fires BEFORE spec validation (an empty spec would otherwise 422)
     r = client.post("/api/backtest", json={"spec": {}}, headers=as_user(token))
     assert r.status_code == 403
     assert "verify your email" in r.json()["detail"]
-    # the bar applies to signed-in people only — the service principal
+    # the bar applies to signed-in people only: the service principal
     # resolves no user and proceeds straight to spec validation
     assert client.post("/api/backtest", json={"spec": {}}, headers=as_service()).status_code == 422
 
@@ -477,7 +477,7 @@ def test_signup_claims_anonymous_runs_once(dev_client: TestClient) -> None:
         assert s.get(db.Run, first).user_id == uid
         assert s.get(db.Run, second).user_id == uid
 
-    # a second account claiming the same ids gets nothing — they're owned now
+    # a second account claiming the same ids gets nothing, they're owned now
     again = signup(dev_client, claim=[first, second])
     assert again.json()["claimedRuns"] == 0
     with db.session() as s:
@@ -514,7 +514,7 @@ def test_owned_runs_are_private(
         s.add(db.Run(id=unowned, status="queued", spec_json='{"meta": {"name": "u"}}'))
         s.commit()
 
-    # 404, not 403 — existence is nobody else's business
+    # 404, not 403: existence is nobody else's business
     assert dev_client.get(f"/api/runs/{run_a}", headers=as_user(token_b)).status_code == 404
     dev_client.cookies.clear()
     assert dev_client.get(f"/api/runs/{run_a}").status_code == 404
@@ -538,7 +538,7 @@ def test_proxy_gate_is_not_a_service_bypass(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """THE review-critical invariant: the Next proxy opens the gate with
-    x-skeptic-gate, which must NOT read as the automation principal — else
+    x-skeptic-gate, which must NOT read as the automation principal, or else
     every browser request bypasses the per-run ownership 404. The service
     token is set (deployed shape)."""
     import app.data.chains as chains_module
@@ -557,7 +557,7 @@ def test_proxy_gate_is_not_a_service_bypass(
     ).json()["run_id"]
 
     # an anonymous request carrying ONLY the proxy gate key (no session) is
-    # NOT the owner and NOT service — it gets the ownership 404
+    # NOT the owner and NOT service, so it gets the ownership 404
     client.cookies.clear()
     assert client.get(f"/api/runs/{run_a}", headers=as_proxy()).status_code == 404
     # …and scope=all through the proxy gate is the curated view, never the
@@ -577,7 +577,7 @@ def test_proxy_gate_is_not_a_service_bypass(
 def test_include_does_not_leak_owned_runs(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """include= is an anon device's own-run breadcrumb — naming another
+    """include= is an anon device's own-run breadcrumb, and naming another
     account's OWNED run id in it must not surface that run's summary
     (review finding: it contradicted get_run's 404)."""
     import app.data.chains as chains_module
@@ -639,7 +639,7 @@ def test_gate_matrix(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> Non
     # anonymous: blocked off the app surface, open on the doorway itself
     assert client.get("/api/runs").status_code == 401
     assert client.get("/api/runs", headers=as_service()).status_code == 200
-    token = session_of(signup(client))  # no Authorization — /api/auth is an open prefix
+    token = session_of(signup(client))  # no Authorization: /api/auth is an open prefix
     # a signed-in user passes the app surface (the L1b widening)…
     assert client.get("/api/runs", headers=as_user(token)).status_code == 200
     # …and ONLY the listed prefixes: "/api/messages" must not ride "/api/me"
@@ -658,7 +658,7 @@ def test_accounts_refuse_on_sqlite_fallback(
     email = unique_email()
     token = session_of(signup(client, email))
     monkeypatch.setattr(db, "FALLBACK_REASON", "neon unreachable (test)")
-    # a ledger written to a container-local file evaporates on redeploy —
+    # a ledger written to a container-local file evaporates on redeploy, so
     # every account surface refuses rather than fake it
     assert signup(client).status_code == 503
     login = client.post(
@@ -669,7 +669,7 @@ def test_accounts_refuse_on_sqlite_fallback(
     r = client.get("/api/me", headers=as_user(token))
     assert r.status_code == 503
     assert "accounts" in r.json()["detail"]
-    # the automation principal is unaffected — the runs-DB fallback is
+    # the automation principal is unaffected: the runs-DB fallback is
     # deliberate for system work
     assert client.get("/api/runs", headers=as_service()).status_code == 200
 
@@ -699,11 +699,11 @@ def test_limiter_keys_are_bounded() -> None:
     lim.check("b", now=1.0)
     lim.check("c", now=2.0)  # evicts "a"
     assert len(lim._hits) == 2
-    assert lim.check("a", now=3.0)[0]  # "a" starts fresh — budget reset, not leaked
+    assert lim.check("a", now=3.0)[0]  # "a" starts fresh: budget reset, not leaked
 
 
 def test_me_rate_limited_per_account(client: TestClient) -> None:
-    # the route's real budget (120/min per account) — a unique user gets a
+    # the route's real budget (120/min per account). A unique user gets a
     # fresh key, so this test owns its whole window
     token = session_of(signup(client))
     client.cookies.clear()

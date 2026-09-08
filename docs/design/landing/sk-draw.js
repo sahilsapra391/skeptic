@@ -1,4 +1,4 @@
-/* <sk-draw> — inlines the brand draw-on wordmark SVG (design system,
+/* <sk-draw>: inlines the brand draw-on wordmark SVG (design system,
    assets/brand/skeptic-draw-white.svg) so its paths animate via pathLength
    dash. Theme-recolored via currentColor. Click to replay. */
 (function () {

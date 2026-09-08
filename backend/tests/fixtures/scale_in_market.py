@@ -1,7 +1,7 @@
 """Multi-session scale-in stores for the D5a interlock proof (fixture 5).
 
 `scale_in_multi_session` builds a martingale ladder that clears the 15-trade
-bar across two volatility regimes — deliberately NOT sample-capped — so the
+bar across two volatility regimes (deliberately NOT sample-capped) so the
 interlock test can prove the refusal is the pending-defenses cap (D5c), not
 luck of a thin sample. Rungs use price_vs_vwap_pct (session-anchored, so no
 cross-session contamination). `ruin_single_session` is the one-basket ruin run
@@ -52,7 +52,7 @@ def _call(expiry: str, bid: float, ask: float) -> dict:
 def _session(session_iso: str, expiry_iso: str, ruin: bool) -> SessionSlice:
     """One session, one basket. A SHALLOW win only trips rung0 (−1% vs VWAP)
     and takes profit; a DEEP loss cascades into rung1 (−2.5%) and is
-    force-flatted at 15:45. So the deep tier IS the loss — the martingale
+    force-flatted at 15:45. So the deep tier IS the loss, the martingale
     tell the depth attribution must surface. Equal per-bar volume ⇒ VWAP is
     the running mean of session lasts."""
     quotes = {
@@ -119,7 +119,7 @@ def _overfit_session(session_iso: str, expiry_iso: str, lucky: bool) -> SessionS
     """A martingale-overfit session: EVERY basket cascades into the deep rung
     (+2 @ 0.60, +5 @ 0.30 → 7 ct, blended 0.3857). Most collapse and are
     force-flatted at 0.04 (ruin); a lucky FEW spike to 3.05 (PT). The edge, if
-    any, lives entirely in the deep rung — removing it flips the sign."""
+    any, lives entirely in the deep rung: removing it flips the sign."""
     quotes = {
         "09:30": [_call(expiry_iso, 1.00, 1.10)],
         "09:35": [_call(expiry_iso, 1.00, 1.10)],
@@ -141,10 +141,10 @@ def _overfit_session(session_iso: str, expiry_iso: str, lucky: bool) -> SessionS
 def martingale_overfit_multi_session(
     n: int = 20, lucky: int = 3
 ) -> tuple[MarketStore, ScaleInIntraday]:
-    """One lucky deep reversal in a sea of ruinous ones — the martingale trap.
+    """One lucky deep reversal in a sea of ruinous ones, the martingale trap.
     `lucky` deep baskets spike to a big win; the other n−lucky collapse. Net
     positive (the wins outweigh) BUT the profit is entirely in the deepest
-    rung, so removing it flips the sign — deep-rung dependency + ruin tail both
+    rung, so removing it flips the sign. Deep-rung dependency + ruin tail both
     fire. ≥15 baskets across two vol regimes, so it is NOT sample-capped: the
     refusal is the martingale defenses, not thin evidence.
 

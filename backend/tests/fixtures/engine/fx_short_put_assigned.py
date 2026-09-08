@@ -16,7 +16,7 @@ Timeline (all prices hand-picked; SPY stand-in):
       cash: 10,204.35 − 10,000.00               = 204.35
       equity that evening = cash + 100 sh × 94  = 204.35 + 9,400 = 9,604.35
 
-  2025-01-21 (Tue; Mon 1/20 is MLK — next session)  liquidation at OPEN.
+  2025-01-21 (Tue; Mon 1/20 is MLK, so next session)  liquidation at OPEN.
     Open 94.50: sell 100 sh                     = +9,450.00
       final cash = 204.35 + 9,450.00            = 9,654.35
 

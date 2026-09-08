@@ -1,4 +1,4 @@
-"""Billing endpoints (launch L3 — Stripe top-ups).
+"""Billing endpoints (launch L3, Stripe top-ups).
 
 Two routes, two trust models:
   POST /api/checkout        signed-in user → a Stripe-hosted Checkout URL
@@ -37,7 +37,7 @@ def checkout(request: Request) -> dict[str, str]:
     if not billing.checkout_configured():
         raise HTTPException(
             status_code=503,
-            detail="purchases aren't available yet — credit top-ups are coming soon",
+            detail="purchases aren't available yet (credit top-ups are coming soon)",
         )
     app = _app_url()
     try:
@@ -50,14 +50,14 @@ def checkout(request: Request) -> dict[str, str]:
         log.exception("stripe checkout session create failed for %s", user.id)
         raise HTTPException(
             status_code=502,
-            detail="couldn't reach the payment processor — try again in a moment",
+            detail="couldn't reach the payment processor, try again in a moment",
         ) from None
     return {"url": url}
 
 
 @router.post("/stripe/webhook")
 async def stripe_webhook(request: Request) -> dict[str, bool]:
-    """Stripe calls this DIRECTLY (no proxy, no session) — the signature is the
+    """Stripe calls this DIRECTLY (no proxy, no session): the signature is the
     only auth. On a completed Checkout, grant the account its credits, exactly
     once per event."""
     if not billing.webhook_configured():
@@ -67,7 +67,7 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
     try:
         event = billing.verify_webhook_event(payload, sig)
     except (stripe.SignatureVerificationError, ValueError):
-        # forged / stale / malformed — refuse without touching the ledger
+        # forged / stale / malformed: refuse without touching the ledger
         log.warning("stripe webhook signature verification failed")
         raise HTTPException(status_code=400, detail="invalid signature") from None
 
@@ -101,14 +101,14 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
                     # a later refund/dispute; the owner would need a manual
                     # admin_adjust. Standard card Checkout always has one.
                     log.warning(
-                        "purchase event %s granted with no payment_intent — "
+                        "purchase event %s granted with no payment_intent, "
                         "not auto-reversible on refund/dispute",
                         event["id"],
                     )
             else:
-                log.info("purchase event %s already processed — idempotent skip", event["id"])
+                log.info("purchase event %s already processed, idempotent skip", event["id"])
     elif event["type"] in billing.REVERSAL_EVENTS:
-        # a refund or a filed dispute — claw back the credits that payment
+        # a refund or a filed dispute: claw back the credits that payment
         # granted. Both event objects (a Charge or a Dispute) carry the
         # payment_intent that links back to the granting purchase row.
         obj = event["data"]["object"]
@@ -122,7 +122,7 @@ async def stripe_webhook(request: Request) -> dict[str, bool]:
                 )
             else:
                 log.info(
-                    "chargeback event %s (%s) — no matching purchase or already reversed",
+                    "chargeback event %s (%s), no matching purchase or already reversed",
                     event["id"], event["type"],
                 )
     return {"received": True}

@@ -4,7 +4,7 @@ What these protect: the VM's nightly EOD chain and a manual `workflow_dispatch`
 of collect-eod.yml / alpaca-backfill.yml spend the SAME Alpaca account (one
 200 req/min budget) and write the same R2 lake. `concurrency: group: collector`
 used to keep them apart, but it only covers Actions runs, and the schedules
-moved to the VM on 2026-08-04. An overlap corrupts nothing — it halves both
+moved to the VM on 2026-08-04. An overlap corrupts nothing. It halves both
 sides' throughput, and the VM chain has a 2700s wall to run into.
 
 Two properties matter more than the happy path, and both are here: a lease
@@ -13,7 +13,7 @@ is the outage this subsystem was built after), and release must never touch a
 lease that is not ours.
 
 Nothing here reaches the network: R2 is a fake, and the chain tests run
-against a staged deploy/ with a loopback HEALTHCHECK_URL — a passing suite
+against a staged deploy/ with a loopback HEALTHCHECK_URL. A passing suite
 that pages the owner is a bug, not a detail.
 """
 
@@ -128,7 +128,7 @@ def test_a_live_lease_refuses_the_second_host(s3):
 
 def test_the_same_host_cannot_pile_onto_its_own_running_chain(s3):
     """A second local run overlapping the first is the same shared-budget
-    collision as a cross-host overlap, so `another host` is not the test — a
+    collision as a cross-host overlap, so `another host` is not the test. A
     live lease is."""
     lock.acquire(s3, "vm-collect-eod", settle_seconds=0, now=NOW)
     with pytest.raises(lock.LeaseHeld):
@@ -151,7 +151,7 @@ def test_a_lease_one_second_short_of_its_ttl_still_holds(s3):
 
 def test_an_unreadable_lease_never_wedges_the_lane(s3):
     """Fail-open on purpose. A truncated or hand-edited object must not stop
-    collection every night until someone reads a journal — over-collecting is
+    collection every night until someone reads a journal. Over-collecting is
     recoverable, a lane that never runs is the outage we are preventing."""
     for broken in ({"host": "x"}, {"started_at": "not-a-date", "ttl_seconds": 60},
                    {"started_at": lock._iso(NOW), "ttl_seconds": "3000"},
@@ -229,7 +229,7 @@ def test_release_is_idempotent_and_survives_a_missing_lease(s3):
 
 def test_releasing_our_own_expired_lease_writes_nothing(s3):
     """The run outlived its own TTL. The lane is already free, so a tombstone
-    buys nothing — and it can LOSE something: between the read and the write
+    buys nothing, and it can LOSE something: between the read and the write
     another host can legitimately acquire, and stamping our stale copy would
     erase their live lease and let a third run in. Not writing closes it,
     because that race needs exactly this precondition."""
@@ -306,7 +306,7 @@ def test_cli_release_of_a_foreign_lease_stays_quiet_and_exits_zero(s3, capsys):
 
 def test_bytes_that_are_not_json_at_all_read_as_a_free_lane(s3):
     """r2_get_json only handles NoSuchKey, so a truncated write or an empty
-    body raises out of every subcommand — including the `release --force`
+    body raises out of every subcommand, including the `release --force`
     the RUNBOOK sends you to run to clear exactly that object."""
     for junk in (b'{"host": "vm", "started_at": "2026-08-', b"", b"\xff\xfe\x00",
                  b'{"started_at": "2026-08-04T21:30:00Z", "ttl_seconds": NaN}',
@@ -329,7 +329,7 @@ def test_a_ttl_beyond_the_ceiling_is_clamped_not_honoured(s3, capsys):
 
 def test_the_token_reaches_disk_before_the_claim_reaches_r2(s3, tmp_path):
     """A process that dies between the claim landing and the token being
-    written leaves a live lease nobody can release — up to six hours for a
+    written leaves a live lease nobody can release, up to six hours for a
     backfill. The ordering is the fix, so pin the ordering."""
     token_file = tmp_path / "collector.lock.token"
     seen = {}
@@ -346,7 +346,7 @@ def test_the_token_reaches_disk_before_the_claim_reaches_r2(s3, tmp_path):
 
 def test_a_retried_acquire_recognises_its_own_claim(s3, tmp_path, monkeypatch):
     """A transient failure on the read-back must not leave the retry refusing
-    against the lease it just wrote — that pages 'leased elsewhere' naming
+    against the lease it just wrote. That pages 'leased elsewhere' naming
     ourselves and wedges the lane for the whole TTL over a lease we own."""
     calls = {"n": 0}
     real = lock.read_lease
@@ -402,7 +402,7 @@ def test_cli_release_with_an_empty_token_file_frees_nothing(s3, tmp_path):
 
 def _stage(tmp_path: Path) -> Path:
     """Copy deploy/ next to a fabricated .env, exactly as the sibling schedule
-    tests do — run from the real deploy/ these scripts read the developer's own
+    tests do. Run from the real deploy/ these scripts read the developer's own
     .env and POST to the LIVE Healthchecks endpoint."""
     (tmp_path / ".env").write_text(f"HEALTHCHECK_URL={HC_TEST_URL}\n")
     deploy = tmp_path / "deploy"
@@ -419,7 +419,7 @@ def _run_chain(tmp_path: Path, acquire_rc: int = 0,
     """Drive collect-eod.sh against a stub `uv` that answers the lock CLI.
 
     `failing` names data steps that should exit non-zero, so the release can
-    be asserted on a RED chain — the case where keeping the lane would take
+    be asserted on a RED chain, the case where keeping the lane would take
     the 22:30 catch-up down with it.
     """
     script = _stage(tmp_path) / "collect-eod.sh"
@@ -483,13 +483,13 @@ def test_a_held_lane_stops_the_chain_before_it_spends_a_single_request(tmp_path)
     result = _run_chain(tmp_path, acquire_rc=lock.EXIT_HELD)
     assert result["rc"] == lock.EXIT_HELD
     assert result["ran"] == []
-    # nothing to release — we never held it
+    # nothing to release, we never held it
     assert result["lock"] == ["acquire"]
 
 
 def test_a_refused_chain_pages_instead_of_disappearing(tmp_path):
     """collect.py pings the tile itself, so a chain that never starts would
-    otherwise leave the tile untouched and the night silently empty — the
+    otherwise leave the tile untouched and the night silently empty, the
     exact shape of the Jul 27-31 outage."""
     result = _run_chain(tmp_path, acquire_rc=lock.EXIT_HELD)
     assert len(result["pings"]) == 1, result["pings"]
@@ -519,7 +519,7 @@ def test_the_chain_releases_the_lease_even_when_a_step_fails(tmp_path):
 
 def test_the_chain_releases_the_lease_when_the_collector_itself_fails(tmp_path):
     """The other shape: collect.py dies at step 1, the minute top-up is
-    skipped, the derivations still run — and the lane still comes back."""
+    skipped, the derivations still run, and the lane still comes back."""
     result = _run_chain(tmp_path, failing=frozenset({"collect.py"}))
     assert result["rc"] != 0
     assert "alpaca.py" not in result["ran"]
@@ -529,7 +529,7 @@ def test_the_chain_releases_the_lease_when_the_collector_itself_fails(tmp_path):
 def test_the_chain_hands_the_lease_back_when_a_signal_kills_it(tmp_path):
     """The systemd-wall case. Bash runs EXIT traps on an untrapped signal
     only if a handler exists for it, so without the TERM trap the 2700s kill
-    — the one death most likely to leave a lease behind — would keep the lane
+    (the one death most likely to leave a lease behind) would keep the lane
     for the rest of the TTL. Asserted by sending the signal, not by grepping
     for the trap line."""
     script = _stage(tmp_path) / "collect-eod.sh"
@@ -563,7 +563,7 @@ def test_the_chain_hands_the_lease_back_when_a_signal_kills_it(tmp_path):
     while time.time() < deadline and not locks.exists():
         time.sleep(0.05)
     time.sleep(0.3)                       # let the chain reach the hanging step
-    # the whole process group, the way systemd's default KillMode does it —
+    # the whole process group, the way systemd's default KillMode does it:
     # bash defers a trap while a foreground child runs, so signalling only
     # the shell would just wait out the child
     os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -612,7 +612,7 @@ def test_the_workflow_leases_the_lane_before_it_touches_the_account(workflow):
 
 @pytest.mark.parametrize("workflow", LEASED_WORKFLOWS)
 def test_no_always_step_outruns_a_refused_lease(workflow):
-    """`if: always()` steps run even when an earlier step failed — including
+    """`if: always()` steps run even when an earlier step failed, including
     when the failure IS the refusal. Ungated, every derivation would still
     write the lake the holder is writing, which is the overlap this prevents."""
     for name, body in _steps((WORKFLOWS / workflow).read_text()):
@@ -639,7 +639,7 @@ def test_the_backfill_ttl_tracks_the_budget_it_was_given():
     text = (WORKFLOWS / "alpaca-backfill.yml").read_text()
     assert re.search(r"--ttl \"\$\(\( \(MAX_MINUTES \+ \d+\) \* 60 \)\)\"", text)
     assert re.search(r"case \"\$MAX_MINUTES\" in ''\|\*\[!0-9\]\*\)", text), \
-        "max_minutes is free text from a dispatch form — validate before arithmetic"
+        "max_minutes is free text from a dispatch form. Validate before arithmetic"
     clamp = re.search(r'if \[ "\$MAX_MINUTES" -gt (\d+) \]; then MAX_MINUTES=(\d+)', text)
     assert clamp and clamp.group(1) == clamp.group(2), \
         "digits-only is not enough: 99999 is digits and mints a two-year lease"
@@ -661,7 +661,7 @@ def _lock_argv(text: str) -> list[list[str]]:
         if not m:
             continue
         # whatever the caller computes the TTL from ("$LOCK_TTL", "$(( … ))"),
-        # the parser must see an int — the flag is what is under test
+        # the parser must see an int. The flag is what is under test
         raw = re.sub(r'(--ttl\s+)("[^"]*"|\S+)', r"\g<1>3000", m.group(1))
         raw = re.sub(r'"[^"]*\$\{?\w+\}?[^"]*"', "substituted", raw)  # "$HOLDER", "$X/y"
         raw = re.sub(r"\s*(\|\||&&|;|2>&1).*$", "", raw)              # shell tails
@@ -719,7 +719,7 @@ def test_acquire_waits_for_the_settle_window_before_reading_back(s3, monkeypatch
 def test_the_ttl_clears_the_catch_up_slot_it_must_not_swallow():
     """The comment on DEFAULT_TTL_SECONDS claims a hard-killed 21:30 holder
     frees the lane before the 22:30 catch-up. That is a property of the gap
-    between the timer's two slots, not of TimeoutStartSec — they agree today
+    between the timer's two slots, not of TimeoutStartSec. They agree today
     by five minutes, and nothing else would notice them diverging."""
     slots = re.findall(r"^OnCalendar=.*?(\d{2}):(\d{2}):00 UTC$",
                        (DEPLOY / "skeptic-collect-eod.timer").read_text(), re.M)
@@ -730,7 +730,7 @@ def test_the_ttl_clears_the_catch_up_slot_it_must_not_swallow():
                         (DEPLOY / "collect-eod.sh").read_text()).group(1))
     assert ttl < gap, (
         f"a hard-killed 21:30 chain holds the lane for {ttl}s, past the "
-        f"catch-up {gap}s later — the catch-up would refuse over a dead holder")
+        f"catch-up {gap}s later. The catch-up would refuse over a dead holder")
     assert lock.DEFAULT_TTL_SECONDS == ttl
 
 

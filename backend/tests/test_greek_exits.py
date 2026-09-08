@@ -1,4 +1,4 @@
-"""Greek-based exits and the net-vega entry cap (D1c) — hand-computed.
+"""Greek-based exits and the net-vega entry cap (D1c), hand-computed.
 
 Delta-stop unevaluable-day sequence (single short put, threshold 0.60):
   day1 entry: bid 2.00/2.20 → SELL 2.05 → cash +205.00 − 0.65 = +204.35
@@ -8,12 +8,12 @@ Delta-stop unevaluable-day sequence (single short put, threshold 0.60):
         cash −422.50 − 0.65 = −423.15 → final 10,204.35 − 423.15 = 9,781.20
         P/L = 204.35 − 423.15 = −218.80
 
-Net-vega cap (owner amendment 2 — |NET| vega of the contract-set):
+Net-vega cap (owner amendment 2, |NET| vega of the contract-set):
   spread: short 100-put vega 0.30, long 95-put vega 0.22
           net = (+0.22) + (−0.30) = −0.08 → |net|×100 = $8
   naked:  short 100-put alone → $30
-  cap $10: the spread fits ($8), the naked short put does not ($30) —
-  netting is the whole point.
+  cap $10: the spread fits ($8), the naked short put does not ($30).
+  Netting is the whole point.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ class TestNetVegaCap:
         assert "vega_cap_exceeded" in skips
 
     def test_naked_leg_shows_netting_matters(self) -> None:
-        # the SAME short leg alone carries $30 of vega — the $10 cap that
+        # the SAME short leg alone carries $30 of vega, and the $10 cap that
         # admitted the spread refuses the naked put
         filled, skips = self._run(copy.deepcopy(SHORT_PUT_LEG), "short_put", cap=10.0)
         assert filled == 0

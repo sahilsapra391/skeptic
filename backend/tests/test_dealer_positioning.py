@@ -1,16 +1,16 @@
-"""UW dealer-positioning signals (ENGINE-V4 F1) — hand-computed.
+"""UW dealer-positioning signals (ENGINE-V4 F1), hand-computed.
 
 Spec v6 gating, loader coercion/dedupe, PIT boundedness, the BarView
 previous-session rule, sign/rank condition semantics with the ≥126-obs
-rank floor (owner amendment — inherits the D1 ivx_rank convention), and
+rank floor (owner amendment, inherits the D1 ivx_rank convention), and
 the PRE-RUN signal-coverage refusal (owner decision 2026-07-07: a window
 starting before the signal's first covered session is refused with the
-covered window offered — corrupted long-window stats are prevented, not
+covered window offered, so corrupted long-window stats are prevented, not
 disclosed).
 
 Values are VENDOR UNITS: only the sign (threshold 0) and the trailing
 percentile rank are honest vocabulary; the parser refuses raw-unit
-thresholds. The engine compares numbers either way — the unit discipline
+thresholds. The engine compares numbers either way. The unit discipline
 lives in the vocabulary layer, pinned by the eval set.
 """
 
@@ -102,7 +102,7 @@ class TestPointInTime:
         gex = {d.isoformat(): float(i) for i, d in enumerate(days)}
         store, _ = _store(gex=gex, days=days)
         assert MarketView(store, days[2]).gex_level() == 2.0
-        # history is bounded — never the later values
+        # history is bounded, never the later values
         assert MarketView(store, days[2]).gex_history() == [0.0, 1.0, 2.0]
 
     def test_before_first_observation_is_none(self) -> None:
@@ -157,8 +157,8 @@ class TestConditionSemantics:
 
 
 class TestRankFloor:
-    """Owner amendment: gex/dex ranks inherit the D1 ivx_rank floor —
-    below 126 trailing observations the rank is unevaluable that day.
+    """Owner amendment: gex/dex ranks inherit the D1 ivx_rank floor.
+    Below 126 trailing observations the rank is unevaluable that day.
     UW's window crossed the floor ~124 sessions in; the rank 'unlocks as
     data accrues' with no code change."""
 
@@ -300,7 +300,7 @@ class TestSignalCoverageRefusal:
             run_backtest(spec, store)
 
     def test_default_full_window_is_refused_too(self) -> None:
-        # start=None means "everything" — which includes the uncovered
+        # start=None means "everything", which includes the uncovered
         # years, so it refuses the same way (no diluted verdicts exist)
         days = _weekdays(date(2024, 1, 1), 6)
         gex = {days[3].isoformat(): 5.0}
@@ -322,7 +322,7 @@ class TestSignalCoverageRefusal:
         assert [t.day for t in opens] == [days[3]]
 
     def test_unconditioned_spec_never_refuses(self) -> None:
-        # the refusal is scoped to specs that USE the signal — a plain
+        # the refusal is scoped to specs that USE the signal. A plain
         # strategy over the same window is untouched (additive guarantee)
         days = _weekdays(date(2024, 1, 1), 6)
         store = _chained_store(days, gex={})
@@ -337,7 +337,7 @@ class TestSignalCoverageRefusal:
             run_backtest(spec, store)
 
     def test_entirely_before_window_offers_the_real_covered_window(self) -> None:
-        # review finding F1 #1: start AND end before the signal — the old
+        # review finding F1 #1: start AND end before the signal, where the old
         # message offered "signal_first → win_end", an INVERTED window
         days = _weekdays(date(2024, 1, 1), 6)
         gex = {days[4].isoformat(): 5.0, days[5].isoformat(): 5.0}
@@ -359,7 +359,7 @@ class TestSignalCoverageRefusal:
     def test_stale_tail_past_grace_is_refused(self) -> None:
         # the feed died on day 5 of a 12-session window: 7 uncovered tail
         # sessions (> STALE_TAIL_GRACE_SESSIONS) would silently re-read one
-        # stale observation — refused, covered window offered
+        # stale observation. Refused, covered window offered
         days = _weekdays(date(2024, 1, 1), 12)
         gex = {days[i].isoformat(): 5.0 for i in range(5)}
         store = _chained_store(days, gex)
@@ -372,7 +372,7 @@ class TestSignalCoverageRefusal:
 
     def test_stale_tail_entirely_after_coverage_never_offers_inverted(self) -> None:
         # review finding: a window starting AFTER the frozen series' last
-        # observation must be offered the series' own covered window —
+        # observation must be offered the series' own covered window.
         # "Run <later> → <earlier>" is the F1 #1 inverted-offer class
         days = _weekdays(date(2024, 1, 1), 20)
         gex = {days[i].isoformat(): 5.0 for i in range(5)}
@@ -386,7 +386,7 @@ class TestSignalCoverageRefusal:
 
     def test_stale_tail_within_grace_runs(self) -> None:
         # exactly STALE_TAIL_GRACE_SESSIONS uncovered tail sessions =
-        # vendor publishing lag, not a dead feed — the run proceeds
+        # vendor publishing lag, not a dead feed, so the run proceeds
         days = _weekdays(date(2024, 1, 1), 10)
         gex = {days[i].isoformat(): 5.0 for i in range(5)}
         store = _chained_store(days, gex)
@@ -397,7 +397,7 @@ class TestSignalCoverageRefusal:
 
     def test_rank_condition_refusal_names_the_unlock_date(self) -> None:
         # review finding F1 #2: the offered window must not hide six
-        # structurally unevaluable months — the rank floor date is named
+        # structurally unevaluable months, so the rank floor date is named
         days = _weekdays(date(2024, 1, 1), 260)
         gex = {d.isoformat(): float(i) for i, d in enumerate(days[4:])}
         store = _chained_store(days, gex)

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-derive_inhouse_signals.py — cboe_eod chains + our own dailies → the
+derive_inhouse_signals.py: cboe_eod chains + our own dailies → the
 in-house forward signal series (owner decision 2026-07-08: no vendor
 subscriptions; compute what the lake honestly supports).
 
-Two artifacts per ticker (reduction MATH lives in the backend —
+Two artifacts per ticker (reduction MATH lives in the backend,
 app/data/inhouse_signals.py, one implementation, fixture-tested):
   reference/derived/inhouse_signals/ticker={T}.parquet
       date · skew_25d · term_slope_30_90 · atm_iv_30d · atm_iv_90d ·
-      net_gex · net_dex · put_call_ratio · max_pain_dist_pct
-      — incremental by SET DIFFERENCE over the cboe_eod chain dates
+      net_gex · net_dex · put_call_ratio · max_pain_dist_pct.
+      Incremental by SET DIFFERENCE over the cboe_eod chain dates
       (self-healing: unreadable chains retry next night; a session whose
       chain derives Nones still writes a row and is not retried).
   reference/derived/hv_inhouse/ticker={T}.parquet
-      date · hv_30d — FULL history from the underlying dailies, cheap
+      date · hv_30d. FULL history from the underlying dailies, cheap
       vector math, overwritten every run (the dailies themselves are a
       full-history overwrite; convention probe-pinned vs the frozen
       vendor series, MAE 0.0002 over 5,408 overlap sessions).
@@ -45,7 +45,7 @@ def _load_dotenv(path: Path = Path(__file__).parent / ".env") -> None:
 
 _load_dotenv()
 
-# single-source the reduction from the backend (F0 pattern — pandas-only)
+# single-source the reduction from the backend (F0 pattern, pandas-only)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.data.inhouse_signals import (  # noqa: E402
     CHAIN_SIGNALS_KEY,
@@ -63,7 +63,7 @@ from collect import (  # noqa: E402  (env loads first, like the other derives)
 )
 
 # the artifact read/append helpers carry a reviewed invariant (ONE read,
-# never a second that could truncate) — import the originals instead of
+# never a second that could truncate). Import the originals instead of
 # forking them (review finding)
 from derive_flow_signals import _append, _load_artifact  # noqa: E402
 
@@ -83,14 +83,14 @@ def _closes_by_date(daily: pd.DataFrame | None) -> dict[str, float]:
 def derive_ticker(s3, ticker: str) -> int:
     daily = r2_get_parquet(s3, f"underlying/ticker={ticker}/daily.parquet")
 
-    # HV — full history, overwritten (deterministic vector math)
+    # HV: full history, overwritten (deterministic vector math)
     hv = hv30_frame(daily)
     if hv.empty:
         log.warning("%s: no dailies → hv_inhouse skipped this run", ticker)
     else:
         r2_put_parquet(s3, HV_KEY.format(ticker=ticker), hv)
 
-    # chain signals — set-difference incremental over cboe_eod sessions
+    # chain signals: set-difference incremental over cboe_eod sessions
     key = CHAIN_SIGNALS_KEY.format(ticker=ticker)
     existing, have = _load_artifact(s3, key)
     todo = [d for d in list_chain_dates(s3, "cboe_eod", ticker) if d not in have]
@@ -104,14 +104,14 @@ def derive_ticker(s3, ticker: str) -> int:
         chain = r2_get_parquet(
             s3, f"options/source=cboe_eod/ticker={ticker}/date={d}/chain.parquet")
         if chain is None or chain.empty:
-            skipped.append(d)  # unreadable driving input — retry next run
+            skipped.append(d)  # unreadable driving input, retry next run
             continue
         close = closes.get(d)
         if close is None:
             # the dailies refresh is nightly and full-history: a missing
             # close is a TRANSIENT gap, and banking a row now would None
             # max_pain_dist_pct forever (set difference never retries a
-            # written session — review finding). Leave it pending instead.
+            # written session, per review finding). Leave it pending instead.
             skipped.append(d)
             continue
         row = derive_chain_signal_row(chain, d, close)

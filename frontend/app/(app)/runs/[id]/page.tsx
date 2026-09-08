@@ -1,8 +1,8 @@
 "use client";
 
-/** Saved-run view — the same Results surface, loaded by id from the library.
+/** Saved-run view: the same Results surface, loaded by id from the library.
  * A run that's still in the gauntlet shows the live progress screen and
- * polls until the verdict lands — navigating away never loses a run. */
+ * polls until the verdict lands, so navigating away never loses a run. */
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -32,7 +32,7 @@ export default function RunPage({ params }: { params: { id: string } }) {
           timer = setTimeout(tick, 1200);
         } else if (payload.narrationPending) {
           // numbers are final; the narration upgrade is being written off
-          // the critical path — poll slowly until the wording lands
+          // the critical path, so poll slowly until the wording lands
           timer = setTimeout(tick, 3000);
         }
       } catch (e) {
@@ -79,7 +79,7 @@ export default function RunPage({ params }: { params: { id: string } }) {
   }
 
   // no onNew here: the saved-run screen's New analysis button was redundant
-  // with the left nav's — its slot now holds the "How this was built" toggle.
+  // with the left nav's. Its slot now holds the "How this was built" toggle.
   // key remounts per run: sidebar run-to-run navigation must not carry over
   // the story/results tab choice or a previous run's grounded answer.
   return (
@@ -90,7 +90,7 @@ export default function RunPage({ params }: { params: { id: string } }) {
             EXAMPLE RUN
           </span>
           <span className="text-[13px] text-ink-2">
-            One of two showcase results included with every account — a real
+            One of two showcase results included with every account: a real
             backtest, but not yours. Runs you start appear alongside it.
           </span>
         </div>

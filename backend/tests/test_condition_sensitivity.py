@@ -1,9 +1,9 @@
-"""Entry-condition threshold sweeps (ENGINE-V4 F8) — hand-computed.
+"""Entry-condition threshold sweeps (ENGINE-V4 F8), hand-computed.
 
 The anti-overfitting gauntlet now perturbs entry-condition thresholds,
 not just strike/dte/exits: a strategy overfit to "RSI < 30" or "skew > 5"
 is caught. Owner decisions 2026-07-08: cap the first 3 entry conditions;
-SKIP sign-at-zero conditions (the sign IS the signal — nothing to
+SKIP sign-at-zero conditions (the sign IS the signal, nothing to
 perturb), disclosed; rank forms sweep as 0-100; entry conditions only in
 v1 (exit/rung deferred, disclosed). Recommendations, the sensitivity
 grid, and the verdict caveat consume the sweep params generically, so
@@ -57,7 +57,7 @@ class TestConditionMutations:
         assert mutated.entry.conditions[0].value == 24.0
 
     def test_sign_test_is_skipped_and_disclosed(self) -> None:
-        # a threshold of 0 (e.g. "price below its SMA") is a sign test —
+        # a threshold of 0 (e.g. "price below its SMA") is a sign test:
         # the sign is the signal, there is nothing to perturb
         spec = _spec_with([{"indicator": "price_vs_sma_pct", "operator": "<",
                             "value": 0, "period": 20}])
@@ -99,7 +99,7 @@ class TestConditionMutations:
 
     def test_sign_test_past_the_cap_is_still_disclosed(self) -> None:
         # review finding F8 #1: a sign gate positioned AFTER the 3-cap was
-        # silently undisclosed — the exact "absence misread as a free
+        # silently undisclosed, the exact "absence misread as a free
         # pass" failure. A realistic 0DTE spec: 3 real filters + a trailing
         # gex_level sign gate.
         spec = _spec_with([
@@ -114,7 +114,7 @@ class TestConditionMutations:
 
     def test_cap_count_excludes_interleaved_sign_tests(self) -> None:
         # [real,real,real,sign,real] → 3 swept, 1 capped (the 5th real),
-        # 1 sign disclosed — the cap count must not miscount the sign test
+        # 1 sign disclosed. The cap count must not miscount the sign test
         spec = _spec_with([
             {"indicator": "rsi", "operator": "<", "value": 30, "period": 14},
             {"indicator": "vix_level", "operator": ">", "value": 20},
@@ -166,7 +166,7 @@ class TestScaleAwareFloors:
             m for m in muts if m[0] == "cond_skew_25d")
         assert values == [-0.5, 0.0, 0.5, 1.0, 1.5]
         assert base_index == 2 and values[base_index] == 0.5
-        assert len(values) == 5  # never more cells — the tax is unchanged
+        assert len(values) == 5  # never more cells, the tax is unchanged
         assert note is not None and "absolute family-scale steps" in note
         # operator + specced value attribute the grid (review finding:
         # bare indicator names were ambiguous for the max-pain pair)
@@ -207,7 +207,7 @@ class TestScaleAwareFloors:
     def test_negative_base_sweeps_around_it(self) -> None:
         # signed family, base -1 → step |−1|·0.1 = 0.1 < 0.25 →
         # -1 + [-2..2]·0.25 = [-1.5, -1.25, -1.0, -0.75, -0.5]; no bound,
-        # no shift — the grid is symmetric around the specced value
+        # no shift: the grid is symmetric around the specced value
         spec = _spec_with([{"indicator": "max_pain_distance_pct",
                             "operator": ">", "value": -1}], version=7)
         muts, _, _ = _mutations(spec)
@@ -250,9 +250,9 @@ class TestScaleAwareFloors:
 
     def test_ivx_zscore_small_threshold_gets_a_real_probe(self) -> None:
         # THE motivating case (PR #97 review): 'ivx_zscore_1y > 0.3' swept
-        # 0.24…0.36 — a 0.12σ band of a ±3σ scale, a guaranteed false
+        # 0.24…0.36, a 0.12σ band of a ±3σ scale, a guaranteed false
         # plateau. Floor 0.25σ: 0.3 + [-2..2]·0.25 = [-0.2, 0.05, 0.3,
-        # 0.55, 0.8] — a full σ band. Expressible since spec v8 merged;
+        # 0.55, 0.8], a full σ band. Expressible since spec v8 merged;
         # the string-keyed floor engaged with zero changes here.
         spec = _spec_with([{"indicator": "ivx_zscore_1y", "operator": ">",
                             "value": 0.3}], version=8)
@@ -265,7 +265,7 @@ class TestScaleAwareFloors:
         assert "ivx_zscore_1y > 0.3 swept -0.2…0.8" in note
 
     def test_floor_table_matches_the_vocabulary(self) -> None:
-        # every floor key is a real indicator — a typo here would silently
+        # every floor key is a real indicator. A typo here would silently
         # disable a floor. ivx_zscore_1y is spec v8 (PR #97): keyed by
         # string ON PURPOSE so the floor engages the moment the vocabulary
         # lands, whichever merges first.
@@ -280,7 +280,7 @@ class TestScaleAwareFloors:
 
     def test_note_numerals_are_grounded(self) -> None:
         # guardrail #4 interaction: the note rides into verdict caveats and
-        # the LLM may echo it — validated with the SHIPPING validator
+        # the LLM may echo it, validated with the SHIPPING validator
         # (review finding: a hand-rolled membership check could drift from
         # validate_numbers' tolerance/scrub semantics), against an allowed
         # set built exactly the way production builds it: harvesting the
@@ -300,7 +300,7 @@ class TestScaleAwareFloors:
         self,
     ) -> None:
         # review finding (executed live): 'rsi < -5' floored to a grid
-        # [1,3,5,7,9] with base_index -3 — the specced value fell OFF the
+        # [1,3,5,7,9] with base_index -3, the specced value fell OFF the
         # grid and Python negative indexing mislabeled the as-specced cell
         # downstream. A threshold at/below the family's lower bound now
         # keeps the pre-floor multiplicative path: hand-computed
@@ -327,7 +327,7 @@ class TestScaleAwareFloors:
 
     def test_max_pain_pair_disclosures_are_attributable(self) -> None:
         # review finding: the canonical band pair produced two same-named
-        # entries — the operator + specced value now tell them apart
+        # entries. The operator + specced value now tell them apart
         spec = _spec_with([
             {"indicator": "max_pain_distance_pct", "operator": "<", "value": 1},
             {"indicator": "max_pain_distance_pct", "operator": ">", "value": -1},
@@ -441,7 +441,7 @@ class TestSweepIntegration:
         names = [p.name for p in sens.params]
         assert "cond_rsi" in names
         rsi = next(p for p in sens.params if p.name == "cond_rsi")
-        # the sweep RE-RAN the engine at 5 thresholds — at least one
+        # the sweep RE-RAN the engine at 5 thresholds, at least one
         # neighbor differs from the base (the threshold actually bites)
         valid = [s for s in rsi.sharpes if s is not None]
         assert len(valid) >= 3
@@ -449,7 +449,7 @@ class TestSweepIntegration:
         assert rsi.classification in ("plateau", "cliff")
 
     def test_recommendation_can_name_a_better_threshold(self) -> None:
-        # not asserting a specific direction — asserting that IF a condition
+        # not asserting a specific direction, asserting that IF a condition
         # neighbor beats the base, the recommendation names the indicator
         # (never a fabricated %); this pins the weave into recommendations
         store = _grid_store()

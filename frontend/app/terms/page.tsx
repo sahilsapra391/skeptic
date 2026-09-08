@@ -22,7 +22,7 @@ export default function TermsPage() {
         not agree, do not use the Service.
       </Lead>
 
-      <Section n={1} title="What Skeptic is — and is not">
+      <Section n={1} title="What Skeptic is, and is not">
         <p>
           Skeptic is a research and education tool that lets you describe options
           strategies in plain language and evaluates them against approximate,
@@ -42,14 +42,14 @@ export default function TermsPage() {
         </p>
       </Section>
 
-      <Section n={2} title="Hypothetical performance — inherent limitations">
+      <Section n={2} title="Hypothetical performance: inherent limitations">
         <p>
           All results the Service produces are hypothetical and are computed on
           approximate, self-collected data that may be incomplete, delayed, or contain
           errors. Hypothetical and backtested results have inherent limitations, including
           that they are prepared with the benefit of hindsight, do not represent actual
-          trading, and cannot account for all market factors — such as liquidity, order
-          execution, fees, taxes, or the financial risk of real capital — that affect
+          trading, and cannot account for all market factors (such as liquidity, order
+          execution, fees, taxes, or the financial risk of real capital) that affect
           live results. No representation is made that any account will or is likely to
           achieve results similar to those shown. Past performance does not predict future
           results.

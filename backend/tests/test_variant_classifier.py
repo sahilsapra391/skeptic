@@ -122,7 +122,7 @@ def test_the_production_tier_b_case_reads_in_plain_words() -> None:
         ],
     )
     # `atm` normalizes to delta 0.5 in the model, so classify the RAW stored
-    # shape — which is what the endpoint reads out of spec_json.
+    # shape, which is what the endpoint reads out of spec_json.
     rep = classify(spec)
     assert rep.tier == "b"
     assert rep.reasons["strike"] == "at the money"

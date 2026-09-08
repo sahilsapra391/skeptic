@@ -1,4 +1,4 @@
-# DoltHub community options archive — backfill evaluation
+# DoltHub community options archive: backfill evaluation
 
 *Evaluated 2026-07-01 against `docs/DATA-PIPELINE.md` §4 (canonical schema) and
 §6 (quality thresholds), per the DECIDED block of 2026-07-01 (Yahoo-forward
@@ -12,7 +12,7 @@ SQL API; nothing was imported to R2 and no data files are committed.*
 
 ---
 
-## Verdict: GO — scoped to SPY, 2020-01-06 → 2026-06-30
+## Verdict: GO (scoped to SPY, 2020-01-06 → 2026-06-30)
 
 Adopt as the **SPY-only historical backfill**, subject to the ingest
 conditions in §7. The data is real, clean, and honest about what it is:
@@ -23,7 +23,7 @@ It is **not** a general chain archive. QQQ and IWM are absent entirely,
 snapshots are Mon/Wed/Fri-only before 2024-09, and each snapshot carries
 only ~3 expirations (~14 / ~28 / one of 44–66 DTE) with strikes ~±30% of
 spot. Backtests on this history are therefore **checkpoint-marked, not
-daily-marked** — a limitation the coverage layer and every verdict must
+daily-marked**, a limitation the coverage layer and every verdict must
 disclose (guardrail #6), not a data-quality defect.
 
 QQQ/IWM options history remains impossible for $0: it begins 2026-07-01
@@ -35,7 +35,7 @@ with our own Yahoo record, full stop.
 
 - Maintainer `post-no-preference` (post.no.preference@protonmail.com);
   automated commits every collection morning ~06:34 UTC titled
-  "option_chain YYYY-MM-DD update" — data is stamped to the prior trading
+  "option_chain YYYY-MM-DD update". Data is stamped to the prior trading
   session. Current through 2026-06-30 (yesterday) at evaluation time.
 - Cadence history observed in the data: one stray snapshot 2019-05-10;
   Mon/Wed/Fri from 2020-01-06; daily from ~2024-09.
@@ -44,7 +44,7 @@ with our own Yahoo record, full stop.
   data-sources documentation. Redistribution is already forbidden
   project-wide; ShareAlike therefore never triggers.
 - The database spans a large symbol universe (full clone impractical and
-  unnecessary — see §6 ingest sketch; the SPY slice is ~166k rows total).
+  unnecessary, see §6 ingest sketch; the SPY slice is ~166k rows total).
 
 ## 2. Schema (as found)
 
@@ -62,11 +62,11 @@ option_chain                             volatility_history
 
 Not present anywhere: **last price, volume, open interest, underlying
 spot, quote timestamp**. `volatility_history` is a per-(date,symbol)
-IV/HV summary — useful as a weekly-quality cross-check input, not needed
+IV/HV summary, useful as a weekly-quality cross-check input, not needed
 for the backfill itself.
 
 Operational note: the public SQL API times out (~50 s) on any full-table
-scan. Every query must pin `date` (PK prefix) — point lookups and
+scan. Every query must pin `date` (PK prefix). Point lookups and
 `date IN (...)` lists return in ~1–4 s. This constrains ingest design but
 costs nothing (§6).
 
@@ -78,8 +78,8 @@ sessions) for all three tickers.
 | ticker | snapshot sessions | range | notes |
 |---|---|---|---|
 | SPY | 1,116 valid (+53 holiday phantoms, +1 stray 2019 date) | 2020-01-06 → 2026-06-30 | ~166k rows total |
-| QQQ | **0** | — | absent from the archive |
-| IWM | **0** | — | absent from the archive |
+| QQQ | **0** | n/a | absent from the archive |
+| IWM | **0** | n/a | absent from the archive |
 
 **Eras (SPY):**
 
@@ -91,7 +91,7 @@ sessions) for all three tickers.
 **Gaps.** M/W/F era misses 29 expected M/W/F sessions
 (2020: 5, 2021: 8, 2022: 4, 2023: 7, 2024: 5); the only multi-session
 outage is **2024-07-31 → 2024-08-09 (5 sessions), which spans the
-2024-08-05 VIX-spike week — a known blind spot** worth a named flag in
+2024-08-05 VIX-spike week, a known blind spot** worth a named flag in
 coverage. Daily era misses 12 sessions (2024: 09-03, 09-05, 09-10, 10-28,
 11-12; 2025: 08-26, 09-10; 2026: 02-19, 02-20, 05-01, 05-13, 05-14).
 
@@ -99,19 +99,19 @@ coverage. Daily era misses 12 sessions (2024: 09-03, 09-05, 09-10, 10-28,
 Friday, Memorial, July 4th, Labor, Thanksgiving, Christmas, New Year,
 Juneteenth, and the 2025-01-09 national day of mourning). Verified
 byte-identical duplicates of the prior session (2026-06-19 ≡ 2026-06-18,
-212/212 rows) — the scraper runs on its own schedule and re-stamps stale
+212/212 rows). The scraper runs on its own schedule and re-stamps stale
 quotes. **Ingest must drop non-XNYS dates.**
 
 ## 4. What each snapshot contains (chain structure)
 
 The archive is a *filtered* chain, per snapshot:
 
-- **Expirations: 3 slots (4 on some 2026 dates)** — the expiration nearest
+- **Expirations: 3 slots (4 on some 2026 dates)**, the expiration nearest
   ~14 DTE, nearest ~28 DTE, and one in the **44–66 DTE** band (usually the
   next monthly; the occupant of the third slot varies snapshot-to-snapshot).
   Across all 1,116 sessions: min DTE never below 10, max never above 66.
   No weeklies below ~14 DTE, no LEAPS, nothing beyond 66 DTE.
-- **Consequence — quoting is checkpoint-based per contract.** Verified on
+- **Consequence: quoting is checkpoint-based per contract.** Verified on
   exp 2022-08-19 (monthly): quoted continuously 65→44 DTE (third slot),
   then only at ~28 DTE and ~14 DTE, then never again before expiry.
   Weeklies (e.g. 2022-07-13) appear **only** near the 28- and 14-DTE marks.
@@ -136,7 +136,7 @@ phantoms), not a sample:
 | 2026 | 124 | 210 | 0.00 | 0.000 | 0.00 | 0.00 |
 
 - **Dead quotes** (null/zero bid AND ask): 2 sessions of 1,169 breach the
-  20% flag — 2021-03-03 (26.1%) and 2025-03-26 (23.1%). Isolated scrape
+  20% flag: 2021-03-03 (26.1%) and 2025-03-26 (23.1%). Isolated scrape
   glitches; flag-and-keep or drop those two sessions at ingest.
 - **Crossed markets** (bid > ask): **zero rows in the entire 165,874-row
   SPY history.** No session comes near the 1% flag.
@@ -163,16 +163,16 @@ crash, as it should be).
 |---|---|---|
 | ticker | `act_symbol` | 'SPY' only |
 | trading_date | `date` | **after** XNYS filter (drops the 53 phantoms) |
-| snapshot_ts | derived | XNYS session close (UTC) for `date`; vendor capture time unknown — EOD stamp, documented as such |
+| snapshot_ts | derived | XNYS session close (UTC) for `date`; vendor capture time unknown (EOD stamp, documented as such) |
 | expiration / strike | `expiration` / `strike` | decimal → float |
 | dte | computed | `expiration − trading_date` |
 | right | `call_put` | `Call`/`Put` → `call`/`put` |
 | bid / ask | `bid` / `ask` | as-is; nullable |
-| last, volume, open_interest | — | **NULL — not in source.** No OI/volume liquidity filters on backfill history |
+| last, volume, open_interest | n/a | **NULL, not in source.** No OI/volume liquidity filters on backfill history |
 | iv | `vol` | fraction, verified against regimes |
 | delta…rho | vendor columns | pass sanity; keep |
-| greeks_source | constant | **`vendor`** — the handoff assumption that greeks would need computing is wrong for this source; recomputing would discard vendor info and add rate/div assumptions. Weekly quality job should BS-recompute from `vol` on a sample and flag drift |
-| spot | join | from our `underlying/ticker=SPY/daily.parquet` (1993→) on trading_date — same pattern BUILD-LOG records for AV chains; refuse rows that fail the join |
+| greeks_source | constant | **`vendor`**. The handoff assumption that greeks would need computing is wrong for this source; recomputing would discard vendor info and add rate/div assumptions. Weekly quality job should BS-recompute from `vol` on a sample and flag drift |
+| spot | join | from our `underlying/ticker=SPY/daily.parquet` (1993→) on trading_date, same pattern BUILD-LOG records for AV chains; refuse rows that fail the join |
 | source | constant | `dolthub` |
 
 **Ingest mechanics.** No dolt clone needed: batched SQL-API pulls
@@ -186,7 +186,7 @@ Idempotent by date key; record the dolt commit hash + row counts in
 `state/dolthub_backfill.json`. Bounded at 2026-06-30: the forward record
 is the Yahoo leg (DECIDED block), so the sources never contend. Query-time
 precedence extends to `alphavantage > yahoo > dolthub`. Size: ~3–6 MB
-parquet total — noise inside the R2 free tier.
+parquet total, noise inside the R2 free tier.
 
 ## 7. Conditions attached to the GO
 
@@ -200,17 +200,17 @@ parquet total — noise inside the R2 free tier.
    daily), and any verdict computed on pre-2024-09 history must carry a
    "checkpoint marks (M/W/F EOD), not daily marks" methodology note.
 6. **Engine/parser gating:** strategies whose rules need marks the grid
-   cannot provide — option-price stop-losses between checkpoints,
-   manage-at-21-DTE exits (nearest marks: ~28/~14), anything <10 DTE or
-   >66 DTE, strikes beyond ±30% of spot — must be refused or trust-capped
-   for the dolthub era, never silently approximated (guardrails #3/#5).
+   cannot provide must be refused or trust-capped for the dolthub era,
+   never silently approximated (guardrails #3/#5). Those are option-price
+   stop-losses between checkpoints, manage-at-21-DTE exits (nearest marks:
+   ~28/~14), anything <10 DTE or >66 DTE, and strikes beyond ±30% of spot.
 7. **Legal rails:** personal use; no redistribution; attribution note;
    data to R2 only, never git.
 
 **What this history supports well:** 28-ish/14-ish DTE entry cycles (CSPs,
 covered calls, verticals, iron condors), 44–66 DTE entries managed at the
 28/14 checkpoints or held to expiration (settlement from underlying
-closes), IV-regime-conditioned entries — across COVID crash, 2021 melt-up,
+closes), IV-regime-conditioned entries. Across COVID crash, 2021 melt-up,
 2022 bear, 2023–24 bull, 2025 vol events: a genuinely multi-regime SPY
 sample (guardrail #5 satisfiable). **What it cannot support:** QQQ/IWM
 (nothing exists before 2026-07-01 at $0), daily-marked equity curves
@@ -265,7 +265,7 @@ queries pin `date` values (PK prefix seeks, ~1–4 s per 15-date batch).
   `S·e^{(r−q)T}`, era 3M T-bill rates, q=1.4%.
 
 *Not financial advice; backtests overstate live performance. This
-evaluation authorizes nothing by itself — ingest happens only after the
+evaluation authorizes nothing by itself. Ingest happens only after the
 owner accepts the conditions in §7.*
 
 ---
@@ -276,8 +276,8 @@ Cross-validating the ingested archive against the independent Alpaca
 minute-bar lake (collector/validate_minute_vs_eod.py, owner-requested)
 exposed a failure mode invisible to every per-session quality metric in
 §5: **some archive sessions carry quotes that do not belong to their
-labeled trading date.** The chains are internally consistent — plausible
-IV, sane greeks, clean spreads, zero crossed markets — but priced off a
+labeled trading date.** The chains are internally consistent (plausible
+IV, sane greeks, clean spreads, zero crossed markets) but priced off a
 different day's underlying level (worst: 2025-03-31, quote-implied
 forward 19.9% from the actual close; late March 2025 is a wholesale
 broken scrape period) or captured intraday and stale in shape.
@@ -298,11 +298,11 @@ Remediation, permanent:
 
 Final lake: **1,070 verified sessions** (of 1,115 ingested; 4.0%
 quarantined). On the verified overlap, 4.5% of joined contracts sit
-outside the widened closing spread — residual attributable to
+outside the widened closing spread. The residual is attributable to
 wide-EOD-spread wings, the vendor's inexact capture minute (measured
 per-session as `capture_offset`), and first-order-only delta adjustment;
 no evidence of any defect in our own pipelines (structural joins clean
 across 24,597 contracts). Honest caveats: pre-2024-02 sessions have only
 the parity gate (no overlap source exists); the 2026 era shows the
-highest vendor staleness rate — the era where our own live recorder
+highest vendor staleness rate, the era where our own live recorder
 takes over anyway.

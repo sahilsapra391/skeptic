@@ -10,7 +10,7 @@ $5-wide, the parser's tenor band replaced by target-10 / target+15.
 HOW IT RUNS (V-59)
     Node imports `frontend/lib/spec.ts` directly, by its real path, using
     native TypeScript type stripping. No build step, no bundler, no committed
-    intermediate fixture, and no second copy of draftToSpec — a copy would mean
+    intermediate fixture, and no second copy of draftToSpec. A copy would mean
     this test measures the copy.
 
 IT NEVER SKIPS (V-58)
@@ -46,7 +46,7 @@ REPO = Path(__file__).resolve().parents[2]
 SPEC_TS = REPO / "frontend" / "lib" / "spec.ts"
 CONFIRM_TS = REPO / "frontend" / "lib" / "confirm.ts"
 
-# the D3d-earned defaults (233M tape prints) — what an untouched Settings and
+# the D3d-earned defaults (233M tape prints), what an untouched Settings and
 # every anonymous caller resolve to
 DEFAULT_COSTS = {
     "commission_per_contract": 0.65,
@@ -55,7 +55,7 @@ DEFAULT_COSTS = {
 }
 
 # Node reads [{draft, base}, ...] on stdin and returns [spec, ...]. It imports
-# the real module — the whole point of the guard.
+# the real module (the whole point of the guard).
 _HARNESS = """
 import {{ draftToSpec }} from "{spec_ts}";
 import {{ confirmDefaults }} from "{confirm_ts}";
@@ -162,7 +162,7 @@ def _ladder_spec() -> dict[str, Any]:
 
 
 def _multi_condition_spec() -> dict[str, Any]:
-    """Entry conditions beyond the first — the trigger dial edits only the
+    """Entry conditions beyond the first: the trigger dial edits only the
     first, and the rest render as "& …" chips."""
     spec = copy.deepcopy(CANONICAL)
     spec["meta"]["name"] = "SPY conditioned short put"
@@ -192,7 +192,7 @@ CORPUS: dict[str, Any] = {
 
 def _validated(spec: dict[str, Any]) -> dict[str, Any]:
     """Every corpus entry is a REAL spec, not hand-waved JSON. V-163: this IS
-    the submit-side canonicalizer from app.api.variant — the guard and the
+    the submit-side canonicalizer from app.api.variant. The guard and the
     variant diff share one implementation, because two canonicalizers is the
     two-code-paths-one-comparison structure that produced four defects in the
     audit script's date handling. Extending canonicalization means extending
@@ -225,13 +225,13 @@ def _rebuild_all(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if node is None:
         pytest.fail(
             "V-18 round-trip guard could not run: node is not on PATH. "
-            "This guard must never skip — see V-58."
+            "This guard must never skip (see V-58)."
         )
     for path in (SPEC_TS, CONFIRM_TS):
         if not path.is_file():
             pytest.fail(
                 f"V-18 round-trip guard could not run: {path} not found. "
-                "This guard must never skip — see V-58."
+                "This guard must never skip (see V-58)."
             )
 
     # the harness needs a real file: stdin carries the payload, not the script
@@ -301,7 +301,7 @@ def test_zero_edit_round_trip_is_byte_identical(
 
 def test_one_edited_dial_changes_only_what_it_owns() -> None:
     """The other half of the rule. Moving the DTE dial must move the tenor and
-    NOTHING else — not the $10 spread width, not the strike method."""
+    NOTHING else: not the $10 spread width, not the strike method."""
     spec = _validated(CORPUS["custom_spread_width"])
     draft = _draft_for(spec)
     draft["dte"] = 30  # the single user edit
@@ -350,8 +350,8 @@ def test_custom_width_survives_a_strike_edit() -> None:
 
 
 def test_the_guard_actually_detects_a_rewrite() -> None:
-    """A guard that cannot fail is not a guard. Force the pre-V-17 condition —
-    a strike dial the user DID move — and prove the diff reports it."""
+    """A guard that cannot fail is not a guard. Force the pre-V-17 condition
+    (a strike dial the user DID move) and prove the diff reports it."""
     spec = _validated(CORPUS["offset_pct_strike"])
     draft = _draft_for(spec)
     # moving the STRIKE dial nulls the label, exactly as the select does
@@ -376,7 +376,7 @@ def test_v78_a_name_only_difference_is_unreachable() -> None:
 
     `meta.name` regenerates only when ticker, structure or strike moves. On a
     variant ticker and structure are LOCKED (V-06), so the only reachable
-    trigger is a strike move — and a strike move also rewrites the lead leg.
+    trigger is a strike move, and a strike move also rewrites the lead leg.
     A name-only delta therefore cannot occur, which means it can never read as
     a real edit and spend a credit, and `meta.name` needs no exclusion from the
     canonicalized V-10/V-19 comparison.
@@ -394,7 +394,7 @@ def test_v78_a_name_only_difference_is_unreachable() -> None:
 
     assert ".meta.name" in changed, "the premise moved: a strike move should rename"
     assert changed != {".meta.name"}, (
-        "a name-only delta became reachable — V-19 must now name meta.name in "
+        "a name-only delta became reachable. V-19 must now name meta.name in "
         "its loud failure instead of treating this as a legitimate variant"
     )
     assert ".position.legs[0].strike_selection.value" in changed
@@ -444,7 +444,7 @@ def test_v68_anon_path_falls_back_to_the_d3d_defaults() -> None:
 
 
 def test_v37_non_default_settings_reach_the_spec() -> None:
-    """Settings still govern a normal run — they are just applied at parse time
+    """Settings still govern a normal run. They are just applied at parse time
     now instead of reaching past the confirmed spec at submit."""
     spec = _validated(CORPUS["canonical"])
     res = _client_path(

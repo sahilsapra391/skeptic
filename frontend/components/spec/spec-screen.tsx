@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Spec confirmation — every dial the engine will use, editable in place:
+ * Spec confirmation (every dial the engine will use, editable in place):
  * ticker, structure, strike (Δ.05 steps), DTE (0–50), anchor, the entry
  * trigger (any indicator / direction / level), and the exit. A missing
  * exit becomes a focused question (never a default), 0DTE is refused
@@ -14,18 +14,19 @@ import clsx from "clsx";
 import { Hint } from "@/components/hint";
 import { getEstimate } from "@/lib/api";
 import type { ArgueBackHit } from "@/lib/api";
+import { stripEmDashes } from "@/lib/punctuation";
 import { useSettings } from "@/lib/settings";
 import type { EstimatePayload, SpecDraft, Structure, Ticker, TriggerSpec, WindowKind } from "@/lib/types";
 import { STRUCTURE_LABEL } from "@/lib/types";
 
-/** Plain-English one-liners for every dial — [institutional, retail]. */
+/** Plain-English one-liners for every dial: [institutional, retail]. */
 const SPEC_HINTS: Record<string, [string, string]> = {
   TICKER: [
-    "Which ETF to trade options on. Coverage differs — SPY has the longest record.",
+    "Which ETF to trade options on. Coverage differs. SPY has the longest record.",
     "Which fund to trade options on. SPY has the most history to test against.",
   ],
   STRUCTURE: [
-    "The option position type — what gets bought or sold at entry.",
+    "The option position type: what gets bought or sold at entry.",
     "The kind of options trade to place.",
   ],
   STRIKE: [
@@ -41,11 +42,11 @@ const SPEC_HINTS: Record<string, [string, string]> = {
     "How many trades can open in a day. Default is one; every setup lets it re-enter each time the signal fires again after an exit.",
   ],
   RESOLUTION: [
-    "Bar resolution per session. Default simulates on the 5-minute grid; finest uses the minute grid where minute data is banked — the run discloses its mix.",
+    "Bar resolution per session. Default simulates on the 5-minute grid; finest uses the minute grid where minute data is banked. The run discloses its mix.",
     "How fine-grained each day's simulation is. Default checks every 5 minutes; finest checks minute by minute where that data exists.",
   ],
   ANCHOR: [
-    "The first pinned example on your chart — where the pattern was taught from.",
+    "The first pinned example on your chart, where the pattern was taught from.",
     "The first example you pinned on the chart.",
   ],
   TRIGGER: [
@@ -57,38 +58,38 @@ const SPEC_HINTS: Record<string, [string, string]> = {
     "How often a new trade is considered.",
   ],
   SIZE: [
-    "How many contracts each trade uses. Editable — sizing scales P/L and risk together.",
+    "How many contracts each trade uses. Editable: sizing scales P/L and risk together.",
     "How many contracts each trade buys or sells. You can change it.",
   ],
   WINDOW: [
-    "How much history to test on — required. Session counts are real coverage; time estimates are medians of measured runs on this server. Shorter windows run faster but see fewer regimes, so verdicts earn less trust.",
-    "How many years to test against — you must pick one. Less history is faster but the verdict is based on less evidence.",
+    "How much history to test on (required). Session counts are real coverage; time estimates are medians of measured runs on this server. Shorter windows run faster but see fewer regimes, so verdicts earn less trust.",
+    "How many years to test against. You must pick one. Less history is faster but the verdict is based on less evidence.",
   ],
   CAPITAL: [
     "Starting cash for the simulated account.",
     "How much money the test account starts with.",
   ],
   EXIT: [
-    "When the trade closes — a profit target, a stop loss, a time exit, or a combination.",
-    "When the trade closes — take profit, cut losses, a time limit, or a mix.",
+    "When the trade closes: a profit target, a stop loss, a time exit, or a combination.",
+    "When the trade closes: take profit, cut losses, a time limit, or a mix.",
   ],
   FILLS: [
-    "How fills are priced: buys toward the ask, sells toward the bid, plus slippage — never at mid.",
+    "How fills are priced: buys toward the ask, sells toward the bid, plus slippage, never at mid.",
     "Trades are priced like real life: buy a bit above fair value, sell a bit below, plus costs.",
   ],
   LADDER: [
-    "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic — dials can't edit them; re-compile to change the ladder.",
+    "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic: dials can't edit them; re-compile to change the ladder.",
     "The plan for buying in steps as the signal deepens, with a hard cap. To change the steps, edit your strategy text and re-compile.",
   ],
 };
 
 /** V-177: the LADDER hint tells the reader to edit their strategy text and
  * re-compile. On a variant there is no text of theirs to edit and no compile
- * step at all — the spec came from a stored run. Same rule as V-154: a string
+ * step at all. The spec came from a stored run. Same rule as V-154: a string
  * written for the fresh path must not assert an action this path cannot take. */
 const LADDER_HINT_VARIANT: [string, string] = [
-  "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic and carry over from the original run — dials can't edit them, and a variant can't re-compile. Start a New Analysis to change the ladder.",
-  "The plan for buying in steps as the signal deepens, with a hard cap. It carries over from the original run and can't be changed here — start a New Analysis to change the steps.",
+  "The scale-in ladder: each rung adds contracts as its signal fires, capped at the ruin limit. Rungs are the entry logic and carry over from the original run. Dials can't edit them, and a variant can't re-compile. Start a New Analysis to change the ladder.",
+  "The plan for buying in steps as the signal deepens, with a hard cap. It carries over from the original run and can't be changed here. Start a New Analysis to change the steps.",
 ];
 
 const TILE = "rounded-xl border border-line bg-panel px-4 py-3.5";
@@ -127,8 +128,8 @@ const OPERATORS: { id: string; label: string; sym: string }[] = [
 ];
 
 // crosses_* need a bar series (yesterday's value); everything else is read
-// as a single point-in-time observation and the spec refuses the pair —
-// mirrors CROSS_CAPABLE_INDICATORS in backend/app/models/spec.py
+// as a single point-in-time observation and the spec refuses the pair.
+// Mirrors CROSS_CAPABLE_INDICATORS in backend/app/models/spec.py
 const CROSS_CAPABLE = new Set([
   "rsi",
   "sma",
@@ -148,7 +149,7 @@ export function triggerLabel(t: TriggerSpec): string {
 }
 
 /** Tile header: the dial's name plus its tooltip in the chosen register.
- * A tile with no SPEC_HINTS entry renders NO hint — echoing the name back
+ * A tile with no SPEC_HINTS entry renders NO hint. Echoing the name back
  * as its own tooltip is the bug, not a fallback (SCANNING/RESOLUTION
  * shipped that way once). */
 function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
@@ -166,7 +167,7 @@ function TileLabel({ name, warn = false }: { name: string; warn?: boolean }) {
 const SELECT_CLS =
   "rounded-[8px] border border-line bg-panel-deep px-2.5 py-1.5 font-mono text-[13px] text-ink";
 
-/** Tile-sized dropdown — dial values pick from the full legal range. */
+/** Tile-sized dropdown: dial values pick from the full legal range. */
 const TILE_SELECT_CLS =
   "w-full cursor-pointer appearance-none rounded-[7px] border border-transparent " +
   "bg-transparent py-[2px] font-mono text-[17px] font-semibold text-ink " +
@@ -186,7 +187,7 @@ const WINDOW_LABEL: Record<string, string> = {
   all: "all available",
 };
 
-/** Honest time label: measured medians only — unmeasured says so. */
+/** Honest time label: measured medians only, unmeasured says so. */
 function fmtEst(seconds: number | null): string {
   if (seconds == null) return "unmeasured";
   if (seconds < 90) return `~${Math.max(1, Math.round(seconds))}s`;
@@ -253,7 +254,30 @@ export function SpecScreen({
       draft.costs?.slippage_half_spread_fraction_sell ?? settings.slippageSell,
   };
   // V-155: a name a person recognises, never a raw run id in a sentence
-  const parentName = draft.variantWindow?.parentLabel ?? "The run this came from";
+  const parentName = stripEmDashes(draft.variantWindow?.parentLabel ?? "The run this came from");
+  /* DISPLAY COPIES, and the distinction is the whole point.
+   *
+   * This screen renders prose that arrives on the two payloads the fetch
+   * layer is forbidden to clean (/api/parse and the variant endpoint), and
+   * that the client then hands straight back to the server: `draft` rides
+   * the next /api/backtest as the run's confirmed spec and its provenance
+   * (`provenance.confirmed.draft`, and `quote` as `provenance.text`).
+   *
+   * So the punctuation rule is applied HERE, to copies, and never to
+   * `draft` itself. A normalized value re-submitted as authoritative would
+   * overwrite the stored record with the client's punctuation, and the
+   * database keeps the bytes the person actually typed. Rendered clean,
+   * stored verbatim: both halves are the requirement, not a compromise
+   * between them.
+   *
+   * `quote` is the user's own pitch on a fresh parse and the PARENT's pitch
+   * on a variant, which is exactly why it needs this: an em-dash a visitor
+   * typed, echoed back onto the page, still puts one on a Skeptic surface. */
+  const quoteText = stripEmDashes(draft.quote);
+  const parentLabel = draft.variantOf?.label ? stripEmDashes(draft.variantOf.label) : null;
+  const strikeLabel = draft.strikeLabel ? stripEmDashes(draft.strikeLabel) : null;
+  const triggerText = draft.trigger ? stripEmDashes(draft.trigger) : null;
+  const exitText = draft.exit ? stripEmDashes(draft.exit) : null;
   const [exitEditing, setExitEditing] = useState(false);
   const [customProfit, setCustomProfit] = useState("");
   const [customStop, setCustomStop] = useState("");
@@ -265,7 +289,7 @@ export function SpecScreen({
 
   // real session counts + measured time estimates per window (per ticker+clock)
   const [estimate, setEstimate] = useState<EstimatePayload | null>(null);
-  // a 0DTE dial runs intraday — the window estimates must price THAT clock
+  // a 0DTE dial runs intraday. The window estimates must price THAT clock
   const clock = draft.dte === 0 ? "5min" : (draft.clock ?? "daily");
   useEffect(() => {
     let alive = true;
@@ -280,7 +304,7 @@ export function SpecScreen({
     };
   }, [draft.ticker, clock]);
 
-  // F1: dealer-positioning indicators are coverage-capped — windows
+  // F1: dealer-positioning indicators are coverage-capped. Windows
   // starting before the signal's first session are REFUSED at run time,
   // so the bound is shown here while composing (owner decision). This
   // surface is DELIBERATELY partial: it keys off the trigger dial only;
@@ -354,7 +378,7 @@ export function SpecScreen({
   return (
     <div>
       {/* V-159: on the variant path, "edit input" offers to edit words the
-          user did not write — the same misattribution as "Here's what I
+          user did not write, the same misattribution as "Here's what I
           heard", relocated to the navigation. Back means the parent run.
           Starting fresh is still possible, but it says so plainly and sits
           second. */}
@@ -364,7 +388,7 @@ export function SpecScreen({
             href={`/runs/${draft.variantOf.runId}`}
             className="text-[12.5px] text-ink-4 hover:text-ink-3"
           >
-            ‹ back to {draft.variantOf.label ?? "the original run"}
+            ‹ back to {parentLabel ?? "the original run"}
           </a>
           <button
             onClick={onBack}
@@ -381,11 +405,11 @@ export function SpecScreen({
 
       <div className="mb-4 flex justify-end">
         <div className="max-w-[70%] rounded-[12px_12px_4px_12px] border border-line bg-raised px-4 py-3 font-mono text-[14px] leading-[1.55] text-ink-2">
-          {draft.fromChart ? `◉ ${draft.quote}` : `“${draft.quote}”`}
+          {draft.fromChart ? `◉ ${quoteText}` : `“${quoteText}”`}
         </div>
       </div>
       {/* V-154: on the variant path "Here's what I heard" claims the user said
-          this. They did not — the quote above is the parent run's prompt. The
+          this. They did not. The quote above is the parent run's prompt. The
           framing is REPLACED rather than supplemented, so no reader can come
           away believing they authored it. */}
       {draft.variantOf ? (
@@ -395,13 +419,13 @@ export function SpecScreen({
             href={`/runs/${draft.variantOf.runId}`}
             className="text-trust underline decoration-trust-border underline-offset-2 hover:decoration-trust"
           >
-            {draft.variantOf.label ?? "an earlier run"}
+            {parentLabel ?? "an earlier run"}
           </a>
-          . That run's words are above, not yours — every dial below is
+          . That run's words are above, not yours. Every dial below is
           adjustable.
         </p>
       ) : (
-        <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard — every dial is adjustable:</p>
+        <p className="mb-3.5 text-[16px] text-ink-3">Here's what I heard. Every dial is adjustable:</p>
       )}
 
       <div className="grid grid-cols-4 gap-2.5">
@@ -428,14 +452,14 @@ export function SpecScreen({
             className={TILE_SELECT_CLS}
             title={
               draft.ladder
-                ? "The scale-in ladder runs on single-leg long calls / long puts only — other structures can't carry it"
+                ? "The scale-in ladder runs on single-leg long calls / long puts only. Other structures can't carry it"
                 : "Position type"
             }
           >
             {STRUCTURES.map((s) => (
               // same trap class as scan+ladder: the ladder survives the
               // rebuild whole, and the spec model refuses it on anything
-              // but a single-leg long — don't offer what can't run
+              // but a single-leg long. Don't offer what can't run
               <option
                 key={s}
                 value={s}
@@ -457,7 +481,7 @@ export function SpecScreen({
             className={TILE_SELECT_CLS}
             title="Strike selection"
           >
-            {draft.strikeLabel && <option value="__parsed">{draft.strikeLabel}</option>}
+            {draft.strikeLabel && <option value="__parsed">{strikeLabel}</option>}
             {STRIKE_DELTAS.map((d) => (
               <option key={d} value={d}>
                 .{String(d).padStart(2, "0")}Δ
@@ -471,7 +495,7 @@ export function SpecScreen({
             value={draft.dte}
             onChange={(e) => set({ dte: Number(e.target.value) })}
             className={TILE_SELECT_CLS}
-            title="Days to expiration — 0 to 50"
+            title="Days to expiration (0 to 50)"
           >
             {DTE_CHOICES.map((d) => (
               <option key={d} value={d}>
@@ -495,12 +519,12 @@ export function SpecScreen({
                 className={TILE_SELECT_CLS}
                 title={
                   draft.ladder
-                    ? "The ladder is its own multi-entry semantic — rungs already add on each signal, so continuous scanning can't combine with it"
-                    : "How often the intraday clock may open positions — every_setup takes one entry per signal episode and re-enters after intraday exits"
+                    ? "The ladder is its own multi-entry semantic: rungs already add on each signal, so continuous scanning can't combine with it"
+                    : "How often the intraday clock may open positions: every_setup takes one entry per signal episode and re-enters after intraday exits"
                 }
               >
                 <option value="">once / session</option>
-                {/* scan + ladder is refused by the spec model — offering it
+                {/* scan + ladder is refused by the spec model. Offering it
                     here just manufactures a refusal (incident 2026-07-07) */}
                 <option value="every_setup" disabled={!!draft.ladder}>
                   {draft.ladder ? "every setup (n/a with ladder)" : "every setup"}
@@ -516,7 +540,7 @@ export function SpecScreen({
                   set({ resolution: e.target.value === "finest" ? "finest" : null })
                 }
                 className={TILE_SELECT_CLS}
-                title="Bar resolution per session — finest uses the minute grid where minute data is banked (the run discloses its mix); default is the 5-minute grid everywhere"
+                title="Bar resolution per session. Finest uses the minute grid where minute data is banked (the run discloses its mix); default is the 5-minute grid everywhere"
               >
                 <option value="">5-min grid</option>
                 <option value="finest">finest available</option>
@@ -541,7 +565,7 @@ export function SpecScreen({
             <div className={TILE}>
               <TileLabel name="TRIGGER" />
               <div className="pt-[3px] font-mono text-[13.5px] font-semibold">
-                {trig ? triggerLabel(trig) : draft.trigger ?? "—"}
+                {trig ? triggerLabel(trig) : triggerText ?? "not set"}
               </div>
             </div>
           </>
@@ -615,12 +639,12 @@ export function SpecScreen({
                 set({ window: { ...(draft.window ?? {}), kind: "custom" }, variantWindow: undefined });
                 return;
               }
-              // V-40: touching the window ends its "carried" status — it is a
+              // V-40: touching the window ends its "carried" status. It is a
               // normal user choice from here and stops being labelled inherited
               set({ window: { kind: v }, variantWindow: undefined });
             }}
             className={TILE_SELECT_CLS}
-            title={estimate?.basis.note ?? "Data window — required before running"}
+            title={estimate?.basis.note ?? "Data window (required before running)"}
           >
             {!windowSet && <option value="__unset">choose…</option>}
             {draft.window?.kind === "custom" || draft.window?.start ? (
@@ -636,8 +660,8 @@ export function SpecScreen({
           </select>
           {dealerBound && (
             <div className="mt-1 font-mono text-[10.5px] leading-[1.4] text-ink-4">
-              dealer-positioning data starts {dealerBound.first} — earlier
-              windows are refused
+              dealer-positioning data starts {dealerBound.first} (earlier
+              windows are refused)
               {dealerRankBound
                 ? `; rank filters evaluable from ${dealerRankBound}`
                 : null}
@@ -690,7 +714,7 @@ export function SpecScreen({
             <Hint text={settings.verbiage === "retail" ? SPEC_HINTS.EXIT[1] : SPEC_HINTS.EXIT[0]} align="right" />
           </div>
           <div className="pt-0.5 font-mono text-[15px] font-semibold">
-            {draft.exit ?? "not set"}
+            {exitText ?? "not set"}
           </div>
         </button>
         <div className={TILE}>
@@ -706,7 +730,7 @@ export function SpecScreen({
       {draft.ladder && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3">
           <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
-            LADDER — ADDS ON SIGNAL
+            LADDER: ADDS ON SIGNAL
             <Hint
               text={
                 (draft.variantOf ? LADDER_HINT_VARIANT : SPEC_HINTS.LADDER)[
@@ -732,7 +756,7 @@ export function SpecScreen({
       {(draft.fromChart || draft.triggerSpec) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3.5 py-3">
           <span className="font-mono text-[10.5px] font-medium tracking-[.1em] text-ink-4">
-            TRIGGER — ENTER WHEN
+            TRIGGER: ENTER WHEN
           </span>
           <select
             value={trig?.indicator ?? "drawdown_from_high_pct"}
@@ -742,7 +766,7 @@ export function SpecScreen({
               setTrig({
                 indicator: e.target.value,
                 period: ind?.period ? (trig?.period ?? 14) : undefined,
-                // crosses need a bar series — switching to a point-in-time
+                // crosses need a bar series. Switching to a point-in-time
                 // indicator keeps the direction but drops to the level form
                 ...(op?.startsWith("crosses_") && !CROSS_CAPABLE.has(e.target.value)
                   ? { operator: op === "crosses_above" ? ">" : "<" }
@@ -775,7 +799,7 @@ export function SpecScreen({
           >
             {OPERATORS.filter(
               // hide crosses for point-in-time indicators, but never hide
-              // the operator a loaded draft actually carries — the dial
+              // the operator a loaded draft actually carries. The dial
               // shows the stored truth; the run's 422 names the fix
               (o) =>
                 !o.id.startsWith("crosses_") ||
@@ -797,7 +821,7 @@ export function SpecScreen({
           />
           {(draft.conditionList ?? []).length > 1 ? (
             // conditions beyond the first survive the rebuild whole (FX.5)
-            // but the dial can't edit them — show them so the screen never
+            // but the dial can't edit them. Show them so the screen never
             // hides part of the entry logic
             <span className="font-mono text-[13px] text-ink-3">
               {(draft.conditionList ?? [])
@@ -820,7 +844,7 @@ export function SpecScreen({
               <b className="text-trust">Edit exit</b>
             ) : (
               <>
-                <b className="text-trust">One question</b> — you gave no exit. Close at:
+                <b className="text-trust">One question</b>: you gave no exit. Close at:
               </>
             )}
           </span>
@@ -856,7 +880,7 @@ export function SpecScreen({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") applyCustomExit();
                   }}
-                  placeholder="—"
+                  placeholder="…"
                   className="w-[52px] rounded-[7px] border border-line bg-panel-deep px-2 py-[3px] text-center font-mono text-[12px] text-ink placeholder:text-ink-4 focus:border-trust-border focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <span className="font-mono text-[11px] text-ink-4">{suffix}</span>
@@ -880,7 +904,7 @@ export function SpecScreen({
 
       {draft.fromChart && (
         <div className="mt-3 rounded-xl border border-trust-border bg-trust-dim px-3.5 py-3 text-[13.5px] leading-[1.5] text-ink">
-          You showed me winners — that's what eyes do. I'll test{" "}
+          You showed me winners. That's what eyes do. I'll test{" "}
           <b>every look-alike since {earliestYear}</b>, losers included. If the edge lives only in
           your examples, the verdict will say exactly that.
         </div>
@@ -888,7 +912,7 @@ export function SpecScreen({
 
       {zeroDte && (
         <div className="mt-3 rounded-xl border border-line px-3.5 py-3 text-[13px] leading-[1.5] text-ink-3">
-          0DTE runs on the 5-minute intraday engine — sessions with intraday coverage only
+          0DTE runs on the 5-minute intraday engine, on sessions with intraday coverage only
           (the results page shows the exact window and resolution mix it was computed on).
         </div>
       )}
@@ -896,7 +920,7 @@ export function SpecScreen({
       {windowSet && draft.variantWindow && draft.variantWindow.state !== "unset" && (
         <div className="mt-3 rounded-xl border border-line bg-panel px-3.5 py-3 text-[13px] leading-[1.5] text-ink-3">
           {/* V-133: the carried states say so where the unset callout would
-              sit — one statement, one place. V-51: an inherited "all" may
+              sit. One statement, one place. V-51: an inherited "all" may
               legitimately test MORE history than the parent, and says so. */}
           Window carried from {parentName}
           {draft.variantWindow.state === "carried_all" ? (
@@ -922,7 +946,7 @@ export function SpecScreen({
       )}
       {!windowSet && (
         <div className="mt-3 rounded-xl border border-trust-border bg-trust-dim px-3.5 py-3 text-[13.5px] leading-[1.5] text-ink">
-          <b className="text-trust">Pick a data window</b> — how much history should this run test
+          <b className="text-trust">Pick a data window</b>. How much history should this run test
           against? Shorter is faster; longer sees more market regimes and earns more trust.
           {/* V-156: ONE statement about the window, in one place. The tile no
               longer repeats this in a second register. */}
@@ -943,11 +967,11 @@ export function SpecScreen({
           number is quotable without running anything. Everything here is read from
           the stored sweep cell: no interpolation between swept values, no extension
           past the sweep's range, and no panel at all when the parent did not run
-          this. It argues, it does not block — the run button is untouched. */}
+          this. It argues, it does not block. The run button is untouched. */}
       {argueBack && (
         <div className="mt-5 rounded-[14px] border border-trust-border bg-trust-dim px-5 py-4">
           <div className="font-mono text-[10.5px] font-medium tracking-[.12em] text-trust">
-            {/* V-243: name the PARENT, not "your last run" — on a chain the parent
+            {/* V-243: name the PARENT, not "your last run". On a chain the parent
                 may be several runs back, and this is the same label the carried
                 Q&A header and the lineage line use, so the three can never
                 disagree about which run is speaking. */}

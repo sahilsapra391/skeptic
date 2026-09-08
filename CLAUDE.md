@@ -1,4 +1,4 @@
-# CLAUDE.md — Skeptic
+# CLAUDE.md: Skeptic
 
 Standing instructions for every Claude Code session in this repo. Read
 `docs/TECH-SPEC.md`, `docs/DATA-PIPELINE.md`, and `docs/BUILD-PLAN.md` before
@@ -44,9 +44,9 @@ skeptic/
   - **The rule, not the instances (V-153):** on this machine, invoke Python
     tooling as `python -m <tool>`. Console-script entry points (`pytest`,
     `mypy`, `uvicorn`, and presumably the next one) resolve to a 3.13
-    interpreter while the project pins 3.12. The failures do not look alike —
-    pytest raises `ModuleNotFoundError: fastapi`, mypy reports 43 phantom
-    errors from the wrong stubs, uvicorn fails to spawn at all — so each one
+    interpreter while the project pins 3.12. The failures do not look alike
+    (pytest raises `ModuleNotFoundError: fastapi`, mypy reports 43 phantom
+    errors from the wrong stubs, uvicorn fails to spawn at all), so each one
     reads as its own bug until you know the pattern. CI builds fresh and is
     unaffected.
   - **Never verify through a relative `cd` (V-196).** `cd frontend && npm run
@@ -92,7 +92,7 @@ skeptic/
     production's database and auth gate**, because it reads `collector/.env`,
     which holds `DATABASE_URL` and `SKEPTIC_ACCESS_TOKEN`. It uses
     `setdefault`, so a value already present wins: that is why
-    `.claude/launch.json`'s pins hold, and why **unsetting cannot work** —
+    `.claude/launch.json`'s pins hold, and why **unsetting cannot work**:
     `env -u` removes the variable and the import puts it back. Pin, never
     clear (V-189, V-209).
   - The V-18 round-trip guard shells out to **node** (22.6+, native TS type
@@ -162,6 +162,69 @@ PreToolUse hook on `git commit` and escalates to a user prompt when application
 surface is staged without `README.md`. Do not work around it by staging the
 README with a cosmetic edit.
 
+## No em-dash, anywhere (non-negotiable)
+
+Never write an em-dash in this repo, in any file. Not in prose or docs, not in
+code comments or docstrings, not in commit messages or PR descriptions, not in
+user-visible copy, and not in a prompt sent to a model. Replace it with a comma,
+a period, or parentheses, whichever the sentence actually wants.
+
+Do not substitute another dash. An en-dash, a horizontal bar, a double hyphen
+standing in for a dash, and an HTML dash entity (the named `mdash` form or its
+numeric equivalents) are all the same defect wearing a different hat: the reader
+still sees the punctuation the house does not use. The replacement is house
+punctuation or nothing.
+
+When code genuinely needs the character, build it from its code point:
+`chr(0x2014)` in Python, `String.fromCharCode(0x2014)` in TypeScript. The
+backslash-u escape is reserved for the two normalizer implementations
+(`backend/app/text.py`, `frontend/lib/punctuation.ts`) and the tests that drive
+them, which are the files whose actual job is to name the character. The guard
+holds that exemption as a short list of PATHS and checks that the list has not
+grown; everywhere else an escape counts as the glyph, because an escape in a
+`.ts` string puts an em-dash on a page while a grep for the character calls the
+tree clean. Code that needs the character anywhere else builds it from the code
+point.
+
+This is enforced, not remembered. A CI test (`backend/tests/test_no_em_dash.py`)
+fails the build when any tracked file contains one, and a PreToolUse hook on
+`git commit` (`.claude/hooks/no-em-dash.sh`) gives the same answer locally and
+sooner. CI is the real gate: it cannot be clicked through, and it covers anyone
+contributing without Claude Code in front of them.
+
+There are two exclusions, both under `docs/design`: the vendored design-system
+bundle under `_ds/`, and the two generated canvas runtimes
+(`docs/design/support.js` and `docs/design/landing/support.js`). Both are
+design-tool output whose first line reads GENERATED, do not edit, and `git grep`
+shows the runtimes are loaded only by the `.dc.html` design canvases, never by
+frontend source, so a dash inside one reaches no page. The exclusion keys on the
+PATH, never on that banner: a banner is prose, prose gets reworded, and that is
+exactly how the pointer-sha guard next door died silently for a day (V-221).
+
+Source cleaning cannot reach text written at runtime, so a normalizer covers
+that half: on model output at write time, and on outbound prose at read time
+(see the README architecture section). Three rules govern it.
+
+1. **Stored bytes are never rewritten.** The database keeps the byte-exact
+   record of what a person typed and what a model wrote. Provenance has to stay
+   a record rather than a rendering of one.
+2. **Everything rendered is normalized**, text the user typed included. The
+   requirement is about what appears on a page, so a visitor's own em-dash
+   echoed back at them still fails it.
+3. **Never normalize a value the client sends back.** Where a value is both
+   displayed and re-submitted, normalize at the render site on a display copy
+   and leave the value held for submission untouched. A normalized string
+   accepted as authoritative would overwrite the stored record, which breaks
+   rule 1.
+
+A SPACED double hyphen is the same defect wearing a different glyph, so the
+normalizer collapses it to a comma too. A bare or leading double hyphen is not:
+`--project` and `--reload` are command-line flags and must survive untouched.
+
+Prompts also ask the models to avoid the character. Worth doing, worth nothing
+by itself: a prompt is a request, and the normalizer is the part that cannot be
+talked out of it.
+
 ## Engineering conventions
 
 - Python: uv, ruff, mypy (strict on `engine/` and `honesty/`), pydantic v2
@@ -173,12 +236,12 @@ README with a cosmetic edit.
 - Determinism: all stochastic steps (Monte Carlo) take a seed, logged with
   the run. Same spec + same data + same seed = identical ENGINE and gauntlet
   output. The verdict GATE additionally reads the minimum-trades setting
-  (guardrail #5) — a view-time policy recorded on the report, never an
+  (guardrail #5), a view-time policy recorded on the report, never an
   engine input.
 - Frontend implements the approved mockups in `docs/design/`; do not restyle
   by taste. P/L colors never appear on verdict components and vice versa.
 - **Typography (owner directive 2026-07-03, strict):** three voices, no
-  more — Archivo (sans) for body/UI text, IBM Plex Mono for data (numbers,
+  more: Archivo (sans) for body/UI text, IBM Plex Mono for data (numbers,
   chips, chart text), and the Newsreader serif RESERVED for headings and
   important moments (page h1s, the hero headline, the verdict headline).
   Never introduce another font family; never spread the serif into body copy.
@@ -190,5 +253,5 @@ Personal-use research tool. Collected market data is never redistributed or
 exposed via public endpoints. Every results surface carries the disclaimer:
 research tool, not financial advice. (Owner directive 2026-07-17: the
 "backtests overstate live performance" clause was removed from every
-surface — liability protection now lives in the legal pages; do NOT re-add
+surface. Liability protection now lives in the legal pages; do NOT re-add
 it.) The app never emits buy/sell recommendations for live trading.

@@ -1,4 +1,4 @@
-"""Launch L5: the admin surface — award / claw back credits + launch metrics.
+"""Launch L5: the admin surface (award / claw back credits + launch metrics).
 
 Admin = an email on SKEPTIC_ADMIN_EMAILS (env). There is no self-serve path to
 becoming one; a non-admin gets a 404 (existence hidden), an anon a 401.
@@ -120,7 +120,7 @@ def test_non_admin_is_404_on_grant_and_metrics(admin_client: TestClient) -> None
     _signup(nonadmin, _email())
     assert nonadmin.post(
         "/api/admin/grant-credits", json={"email": "x@x.com", "credits": 5}
-    ).status_code == 404  # 404, not 403 — existence is hidden
+    ).status_code == 404  # 404, not 403 (existence is hidden)
     assert nonadmin.get("/api/admin/metrics").status_code == 404
 
 
@@ -171,7 +171,7 @@ def test_revenue_net_usd_subtracts_chargebacks(admin_client: TestClient) -> None
 
 def test_unverified_allowlisted_email_is_not_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     """The squat defense: an allowlisted email that signed up but is NOT
-    verified is not an admin — so an attacker can't claim an allowlisted-but-
+    verified is not an admin, so an attacker can't claim an allowlisted-but-
     unregistered email and get instant admin. Verifying flips it on."""
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
     email = f"squatter-{uuid.uuid4().hex[:8]}@skeptic.fyi"
@@ -187,8 +187,8 @@ def test_unverified_allowlisted_email_is_not_admin(monkeypatch: pytest.MonkeyPat
 
 
 def test_no_admin_when_allowlist_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail CLOSED: with no SKEPTIC_ADMIN_EMAILS, nobody is an admin — even an
-    email that WOULD be one under a configured allowlist."""
+    """Fail CLOSED: with no SKEPTIC_ADMIN_EMAILS, nobody is an admin, not even
+    an email that WOULD be one under a configured allowlist."""
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
     monkeypatch.delenv("SKEPTIC_ADMIN_EMAILS", raising=False)
     c = _client()

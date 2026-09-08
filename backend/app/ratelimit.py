@@ -49,7 +49,7 @@ class SlidingWindowLimiter:
 
 def client_ip(request: Request) -> str:
     """First hop of x-forwarded-for, else the socket peer. TRUST BOUNDARY:
-    the value is only as honest as whoever set it — through the Next proxy
+    the value is only as honest as whoever set it: through the Next proxy
     it is Vercel's spoof-resistant client IP, but a direct-to-backend
     caller controls it freely. Fine while every limited surface is keyed
     per-account; L4's anonymous armor must NOT rely on this alone (it
@@ -62,7 +62,7 @@ def client_ip(request: Request) -> str:
 
 def _rate_key(request: Request) -> str:
     """Per-account when the request carries a resolved identity, per-IP
-    otherwise — a signed-in user behind a shared NAT must not exhaust
+    otherwise: a signed-in user behind a shared NAT must not exhaust
     strangers' budget, and vice versa."""
     user = getattr(request.state, "auth_user", None)
     if user is not None:
@@ -79,7 +79,7 @@ def rate_limited(scope: str, limit: int, window_s: float) -> Callable[[Request],
         if not allowed:
             raise HTTPException(
                 status_code=429,
-                detail=f"rate limit exceeded — try again in {math.ceil(retry_after)}s",
+                detail=f"rate limit exceeded, try again in {math.ceil(retry_after)}s",
                 headers={"Retry-After": str(math.ceil(retry_after))},
             )
 

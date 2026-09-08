@@ -34,19 +34,19 @@ const config: Config = {
         chart: "var(--chart)",
         "chart-bright": "var(--chart-bright)",
         warn: "rgb(var(--warn-rgb) / <alpha-value>)",
-        // trust hue family — verdict/trust surfaces ONLY
+        // trust hue family: verdict/trust surfaces ONLY
         trust: "rgb(var(--ac-rgb) / <alpha-value>)",
         "trust-dim": "var(--acd)",
         "trust-border": "var(--acb)",
         "trust-faint": "var(--ac-faint)",
-        // P/L pair — profit/loss data ONLY
+        // P/L pair: profit/loss data ONLY
         "pl-pos": "var(--pl-pos)",
         "pl-neg": "var(--pl-neg)",
         "on-accent": "var(--on-accent)",
       },
       // three-voice type system (owner directive 2026-07-03): Archivo for
       // body, Plex Mono for data, Newsreader serif for headings/important
-      // moments only — no other families
+      // moments only, no other families
       fontFamily: {
         sans: ["var(--font-archivo)", "sans-serif"],
         mono: ["var(--font-plex-mono)", "monospace"],

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-validate_minute_vs_eod.py — one-off cross-source validation over the
+validate_minute_vs_eod.py: one-off cross-source validation over the
 SPY overlap window (2024-02 → 2026-06): DoltHub EOD quote chains vs
 Alpaca 1-minute trade bars.
 
-The two sources share exactly one observable — price level — so the check
+The two sources share exactly one observable (price level), so the check
 is: for every contract present in both on the same session, does the day's
 LAST TRADE (Alpaca, last bar ≤ options close) sit inside/near the day's
 CLOSING BID/ASK (DoltHub)? Plus structural alignment: joined contracts
 prove that expiration parsing, strike scaling, and date attribution agree
 across two independently written ingest pipelines. Tick-exact equality is
 not expected (trades lag quotes on illiquid strikes; the archive chain is
-filtered to ~3 expirations, ±30% strikes) — systematic disagreement is
+filtered to ~3 expirations, ±30% strikes). Systematic disagreement is
 what would indicate a bug.
 
 Run once after both backfills complete; record results in BUILD-LOG.
@@ -64,7 +64,7 @@ def session_report(s3, und_cache: dict, d: str) -> dict | None:
     spots = underlying_minute_closes(s3, und_cache, d)
     if spots is None:
         return None  # underlying minute bars not landed yet; session recounted next run
-    # last trade of the session per contract — but a stale print from hours
+    # last trade of the session per contract, but a stale print from hours
     # before the close legitimately disagrees with the closing quote (delta
     # times the intraday move), so price comparison uses only contracts whose
     # last trade happened near the close. Diagnosed on 2024-05-31: all large
@@ -144,7 +144,7 @@ def main() -> int:
             log.info("… %d/%d sessions, %d compared", i, len(sessions), len(reports))
 
     if not reports:
-        log.error("nothing to compare — are both backfills complete?")
+        log.error("nothing to compare. Are both backfills complete?")
         return 1
 
     df = pd.DataFrame(reports)
@@ -156,7 +156,7 @@ def main() -> int:
     total_viol = int(df["violations"].sum())
     print("\n================ cross-source validation: DoltHub EOD vs Alpaca minute ================")
     print(f"window {args.start} → {args.end}: {len(df)} sessions compared, "
-          f"{skipped} skipped (missing on one side — archive gaps expected pre-2024-09)")
+          f"{skipped} skipped (missing on one side, archive gaps expected pre-2024-09)")
     print(f"contracts joined (two-sided quote + near-close trade): {total_joined:,}")
     print(f"mean join rate: {df['join_rate'].mean():.1%}")
     print(f"last-trade outside [bid-tol, ask+tol]: {total_viol:,} "

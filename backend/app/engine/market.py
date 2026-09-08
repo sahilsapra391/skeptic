@@ -3,7 +3,7 @@
 `MarketStore` holds everything loaded for a run; strategy logic can only
 touch it through `MarketView(store, as_of)`, whose every accessor is
 hard-bounded by `as_of`. Requesting anything after `as_of` raises
-`LookaheadError` — the canary test asserts this.
+`LookaheadError`. The canary test asserts this.
 
 D2a adds the minute scale: `SessionSlice` holds ONE session's 5-minute
 intraday record (bars, per-bar option quotes for the short-DTE ATM slice,
@@ -44,23 +44,23 @@ class MarketStore:
     vix_dates: list[date] = field(default_factory=list)
     vix_close: dict[date, float] = field(default_factory=dict)
     atm_iv: dict[date, float] = field(default_factory=dict)  # per chain session
-    # vendor IVX / HV 30d series (decimals), 2005+ — spec-v2 filters (D1c)
+    # vendor IVX / HV 30d series (decimals), 2005+, spec-v2 filters (D1c)
     ivx_dates: list[date] = field(default_factory=list)
     ivx_30d: dict[date, float] = field(default_factory=dict)
     hv_dates: list[date] = field(default_factory=list)
     hv_30d: dict[date, float] = field(default_factory=dict)
-    # IVS-derived surface signals (VOL POINTS), 2007+ — spec-v5 filters (F4)
+    # IVS-derived surface signals (VOL POINTS), 2007+, spec-v5 filters (F4)
     skew_dates: list[date] = field(default_factory=list)
     skew_25d: dict[date, float] = field(default_factory=dict)
     term_dates: list[date] = field(default_factory=list)
     term_slope: dict[date, float] = field(default_factory=dict)
-    # UW dealer positioning (VENDOR UNITS — sign/rank vocabulary only),
-    # 2025-07-08+ — spec-v6 filters (F1)
+    # UW dealer positioning (VENDOR UNITS, sign/rank vocabulary only),
+    # 2025-07-08+, spec-v6 filters (F1)
     gex_dates: list[date] = field(default_factory=list)
     net_gex: dict[date, float] = field(default_factory=dict)
     dex_dates: list[date] = field(default_factory=list)
     net_dex: dict[date, float] = field(default_factory=dict)
-    # UW flow/sentiment/pin EOD reductions, 2026-02-24+ — spec-v7 (F2/F3).
+    # UW flow/sentiment/pin EOD reductions, 2026-02-24+, spec-v7 (F2/F3).
     # market_tide is MARKET-WIDE: one series regardless of ticker.
     flow_dates: list[date] = field(default_factory=list)
     net_premium: dict[date, float] = field(default_factory=dict)
@@ -94,7 +94,7 @@ class MarketStore:
         self.mpd_dates = sorted(self.mpd_dates)
         self.tide_dates = sorted(self.tide_dates)
         self._closes: list[float] = [self.underlying_close[d] for d in self.sessions]
-        # lazily attached per RUN (daily_series.DailySeriesCache) — the
+        # lazily attached per RUN (daily_series.DailySeriesCache). The
         # store outlives runs in chains._STORE_CACHE, so the engine lane
         # drops it when the run ends (OOM directive)
         self._daily_series: DailySeriesCache | None = None
@@ -110,7 +110,7 @@ class MarketStore:
         return self._daily_series
 
     def drop_daily_series_cache(self) -> None:
-        """Release the memo — called when a run finishes, because the
+        """Release the memo, called when a run finishes, because the
         STORE is cached across runs and would otherwise hold every
         series a spec ever asked for."""
         self._daily_series = None
@@ -118,7 +118,7 @@ class MarketStore:
 
 class MarketViewLike(Protocol):
     """The surface strategy logic reads through. Satisfied by MarketView
-    (daily close) and the engine's BarView (one intraday bar) — the SAME
+    (daily close) and the engine's BarView (one intraday bar). The SAME
     entry/exit/fill code runs at every clock (D2 architecture)."""
 
     @property
@@ -155,7 +155,7 @@ class MarketViewLike(Protocol):
     # D2c: the run's rolling 5-minute underlying lasts (≤ current bar,
     # across sessions) and the session-anchored VWAP at the current bar.
     # The daily view has no bars: empty / None. Implementations return AT
-    # MOST the trailing INTRADAY_LOOKBACK_BARS values — indicators never
+    # MOST the trailing INTRADAY_LOOKBACK_BARS values. Indicators never
     # read deeper, and an unbounded per-bar prefix copy is O(bars²) over a
     # run (the 2026-07-06 OOM incident).
     def intraday_closes_upto(self) -> list[float]: ...
@@ -172,7 +172,7 @@ class IntradayProvider(Protocol):
     def slice_for(self, session: date) -> SessionSlice | None: ...
     # FX.1 (resolution="finest"): sessions eligible for the minute grid per
     # the F0 resolution map, and the 1-min slice itself. A provider with no
-    # minute data returns empty/None — the engine falls back to 5-min and
+    # minute data returns empty/None. The engine falls back to 5-min and
     # RECORDS the session as five_min (honest degrade, never an error).
     def minute_sessions(self) -> set[date]: ...
     def minute_slice_for(self, session: date) -> SessionSlice | None: ...
@@ -198,7 +198,7 @@ class MarketView:
     def fill_source(self) -> str:
         return "eod_chain"  # daily fills come from the EOD chain record
 
-    # the daily view has no intraday bars — 5min-timeframe conditions are
+    # the daily view has no intraday bars, so 5min-timeframe conditions are
     # unevaluable here (and validation forbids them at clock="daily")
     def intraday_closes_upto(self) -> list[float]:
         return []
@@ -209,7 +209,7 @@ class MarketView:
     def _check(self, d: date) -> None:
         if d > self._as_of:
             raise LookaheadError(
-                f"simulation at {self._as_of} attempted to read {d} — lookahead is banned"
+                f"simulation at {self._as_of} attempted to read {d}, lookahead is banned"
             )
 
     # ------------------------------------------------------------- chains
@@ -235,7 +235,7 @@ class MarketView:
         return self._store.underlying_open.get(d)
 
     def closes_upto(self) -> list[float]:
-        """Trailing closes ≤ as_of (full loaded history — legitimately
+        """Trailing closes ≤ as_of (full loaded history, legitimately
         observable; indicator warmup predating the sim window is fine)."""
         idx = bisect_right(self._store.sessions, self._as_of)
         return self._store._closes[:idx]
@@ -243,12 +243,12 @@ class MarketView:
     def daily_series_pair(self, cond: Condition) -> list[float] | None:
         """The condition's (prev, current) evaluation pair, read from the
         store's memoized full-history series instead of recomputing the
-        indicator over closes_upto() — same numbers, O(1) per session.
+        indicator over closes_upto(), same numbers, O(1) per session.
 
         Bounded HERE, at the same as_of closes_upto() uses, and BarView
         overrides it the same way it overrides closes_upto (its daily
         reads are the PREVIOUS session's): the date bound is the view's
-        job, never the cache's — a cache keyed on BarView.as_of would
+        job, never the cache's. A cache keyed on BarView.as_of would
         read today's close at an intraday bar (guardrail #2)."""
         return self._store.daily_series_cache().tail_pair(cond, self._as_of)
 
@@ -288,7 +288,7 @@ class MarketView:
             return None
         return self._store.hv_30d[self._store.hv_dates[idx - 1]]
 
-    # F4: IVS-derived surface signals (VOL POINTS) — most recent
+    # F4: IVS-derived surface signals (VOL POINTS), most recent
     # observation at or before as_of, like every daily analytic series
     def skew_25d(self) -> float | None:
         idx = bisect_right(self._store.skew_dates, self._as_of)
@@ -302,7 +302,7 @@ class MarketView:
             return None
         return self._store.term_slope[self._store.term_dates[idx - 1]]
 
-    # F1: UW dealer positioning (vendor units) — most recent observation
+    # F1: UW dealer positioning (vendor units), most recent observation
     # at or before as_of; histories are the bounded rank inputs
     def gex_level(self) -> float | None:
         idx = bisect_right(self._store.gex_dates, self._as_of)
@@ -326,7 +326,7 @@ class MarketView:
         idx = bisect_right(self._store.dex_dates, self._as_of)
         return [self._store.net_dex[d] for d in self._store.dex_dates[:idx]]
 
-    # F2/F3: flow/sentiment/pin EOD reductions — same PIT shape as every
+    # F2/F3: flow/sentiment/pin EOD reductions, same PIT shape as every
     # daily analytic series (most recent ≤ as_of; bounded histories)
     def net_premium_level(self) -> float | None:
         idx = bisect_right(self._store.flow_dates, self._as_of)
@@ -377,9 +377,9 @@ class SessionSlice:
 
     `quote_source` is per-SESSION, not per-quote: a session is served by its
     best available source (ivol_5min: true NBBO; cboe_minute: ~15-min
-    delayed, forward coverage only — owner amendment 1) and every fill made
+    delayed, forward coverage only, owner amendment 1) and every fill made
     from it inherits that provenance. Sources are never mixed within a
-    session — a blend would blur what the verdict must disclose."""
+    session. A blend would blur what the verdict must disclose."""
 
     session: date
     bars: list[datetime]  # ordered decision bars, ET wall-clock tz-naive
@@ -387,17 +387,17 @@ class SessionSlice:
     underlying: dict[datetime, float]  # per-bar underlying last
     quote_source: str  # "ivol_5min" | "cboe_minute"
     # per-bar underlying volume (D2c, session-anchored VWAP input); empty
-    # when the source carries none (pre-2026-07-08 CBOE snapshots) — VWAP
+    # when the source carries none (pre-2026-07-08 CBOE snapshots). VWAP
     # is honestly unevaluable then.
     # A bar ABSENT from a populated dict means its volume is UNKNOWN (e.g. an
-    # unparseable vendor cell): the bar sits out of session VWAP — consumers
+    # unparseable vendor cell): the bar sits out of session VWAP, and consumers
     # read it as 0 weight, never as a fabricated value.
     underlying_volume: dict[datetime, float] = field(default_factory=dict)
     # FX.1: the session's bar grid ("5min" | "1min"). Minute grids carry the
-    # SAME 5-min NBBO quote stamps — bars between stamps have no chain and
+    # SAME 5-min NBBO quote stamps. Bars between stamps have no chain and
     # can fill nothing (guardrail #1); they refine when the engine LOOKS.
     bar_resolution: str = "5min"
-    # FX.1: on a minute grid, the 5-MIN underlying stamps — the ONLY bars
+    # FX.1: on a minute grid, the 5-MIN underlying stamps, the ONLY bars
     # whose underlying value enters the rolling timeframe-"5min" indicator
     # series (identical inputs to the 5-min grid; resolution never changes
     # signal meaning). None = every underlying bar samples (the 5-min grid).
@@ -410,7 +410,7 @@ class SessionSlice:
 class IntradayView:
     """All reads bounded by the current bar (guardrail #2 at minute scale).
 
-    quote_at() serves ONLY the current bar — there is deliberately no
+    quote_at() serves ONLY the current bar. There is deliberately no
     timestamp parameter to ask for another bar's quote. History accessors
     (bars_upto / underlying_history) end at bar_ts. Anything else raises."""
 
@@ -433,7 +433,7 @@ class IntradayView:
     def _check(self, ts: datetime) -> None:
         if ts > self._bar_ts:
             raise LookaheadError(
-                f"bar {self._bar_ts} attempted to read {ts} — lookahead is banned"
+                f"bar {self._bar_ts} attempted to read {ts}, lookahead is banned"
             )
 
     def chain(self) -> dict[ContractKey, Quote]:
@@ -441,7 +441,7 @@ class IntradayView:
         return self._slice.quotes.get(self._bar_ts, {})
 
     def quote_at(self, key: ContractKey) -> tuple[Quote, str] | None:
-        """(quote, fill_source) at the CURRENT bar, or None — a gap is a gap
+        """(quote, fill_source) at the CURRENT bar, or None. A gap is a gap
         (no synthetic quotes in D2; owner decision)."""
         q = self._slice.quotes.get(self._bar_ts, {}).get(key)
         if q is None:
@@ -460,7 +460,7 @@ class IntradayView:
 
     def underlying_history(self) -> list[float]:
         """Underlying lasts at bars ≤ the current bar (intraday indicator
-        input, D2c). Bars without an underlying print are skipped — never
+        input, D2c). Bars without an underlying print are skipped, never
         interpolated."""
         out: list[float] = []
         for b in self.bars_upto():

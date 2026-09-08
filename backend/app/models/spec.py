@@ -1,4 +1,4 @@
-"""Strategy Spec IR — pydantic models for docs/strategy-spec.schema.json.
+"""Strategy Spec IR: pydantic models for docs/strategy-spec.schema.json.
 
 These models are maintained to match the JSON schema exactly (same enums,
 same numeric bounds, same required fields). One deliberate strictness beyond
@@ -81,12 +81,12 @@ class Indicator(StrEnum):
     IVX_RANK_1Y = "ivx_rank_1y"
     IVX_LEVEL_30D = "ivx_level_30d"
     HV_IV_SPREAD_30D = "hv_iv_spread_30d"
-    # spec v2 (D2c): intraday-only — % distance from session-anchored VWAP
+    # spec v2 (D2c): intraday-only, % distance from session-anchored VWAP
     PRICE_VS_VWAP_PCT = "price_vs_vwap_pct"
     # spec v5 (F4): IVS-derived vol-surface signals, 2007+ (VOL POINTS)
     SKEW_25D = "skew_25d"
     TERM_STRUCTURE_SLOPE = "term_structure_slope"
-    # spec v6 (F1): UW dealer positioning, 2025-07-08+ (vendor units —
+    # spec v6 (F1): UW dealer positioning, 2025-07-08+ (vendor units:
     # sign/rank vocabulary only; raw thresholds refused by the parser)
     GEX_LEVEL = "gex_level"
     GEX_RANK_1Y = "gex_rank_1y"
@@ -103,7 +103,7 @@ class Indicator(StrEnum):
     NOPE_RANK_1Y = "nope_rank_1y"
     PUT_CALL_FLOW_RATIO = "put_call_flow_ratio"
     MAX_PAIN_DISTANCE_PCT = "max_pain_distance_pct"
-    # spec v8 (parity Tier 3): standardized 30d IVX — the same series as
+    # spec v8 (parity Tier 3): standardized 30d IVX, the same series as
     # ivx_rank_1y, in σ units instead of percentile (raw thresholds legal)
     IVX_ZSCORE_1Y = "ivx_zscore_1y"
 
@@ -111,14 +111,14 @@ class Indicator(StrEnum):
 class Timeframe(StrEnum):
     """Which bar series a condition's indicator reads (D2c). daily = the
     underlying daily closes (v1 semantics). 5min = the run's 5-minute
-    underlying lasts — requires clock="5min"."""
+    underlying lasts (requires clock="5min")."""
 
     DAILY = "daily"
     FIVE_MIN = "5min"
 
 
-# Indicators (and fields, checked separately) that require spec_version 2 —
-# a v1 spec using v2 vocabulary is a versioning error, never silent.
+# Indicators (and fields, checked separately) that require spec_version 2.
+# A v1 spec using v2 vocabulary is a versioning error, never silent.
 V2_INDICATORS = {
     Indicator.IVX_RANK_1Y,
     Indicator.IVX_LEVEL_30D,
@@ -126,14 +126,14 @@ V2_INDICATORS = {
     Indicator.PRICE_VS_VWAP_PCT,
 }
 
-# F4: vol-surface indicators require spec_version 5 — a versioned
+# F4: vol-surface indicators require spec_version 5, a versioned
 # migration like every vocabulary addition, never silent.
 V5_INDICATORS = {
     Indicator.SKEW_25D,
     Indicator.TERM_STRUCTURE_SLOPE,
 }
 
-# F1: dealer-positioning indicators require spec_version 6 — a versioned
+# F1: dealer-positioning indicators require spec_version 6, a versioned
 # migration like every vocabulary addition, never silent.
 V6_INDICATORS = {
     Indicator.GEX_LEVEL,
@@ -142,7 +142,7 @@ V6_INDICATORS = {
     Indicator.DEX_RANK_1Y,
 }
 
-# F2/F3: flow/sentiment/pin indicators require spec_version 7 — a
+# F2/F3: flow/sentiment/pin indicators require spec_version 7, a
 # versioned migration like every vocabulary addition, never silent.
 V7_INDICATORS = {
     Indicator.NET_PREMIUM_LEVEL,
@@ -155,7 +155,7 @@ V7_INDICATORS = {
     Indicator.MAX_PAIN_DISTANCE_PCT,
 }
 
-# Parity Tier 3: the standardized IVX form requires spec_version 8 — a
+# Parity Tier 3: the standardized IVX form requires spec_version 8, a
 # versioned migration like every vocabulary addition, never silent.
 V8_INDICATORS = {
     Indicator.IVX_ZSCORE_1Y,
@@ -175,10 +175,10 @@ INTRADAY_CAPABLE_INDICATORS = {
 }
 
 # Indicators the engine evaluates over a bar SERIES (yesterday's value
-# exists in the evaluation pair — conditions.py routes them through
+# exists in the evaluation pair, so conditions.py routes them through
 # _series_pair). crosses_above/crosses_below are defined ONLY here. Every
 # other indicator is read as a single point-in-time observation per bar
-# (vix_level, the ivx/hv family, ranks, flow, VWAP distance, ...) — a
+# (vix_level, the ivx/hv family, ranks, flow, VWAP distance, ...). A
 # "cross" has no previous value there, and the engine's _compare refuses
 # it, so validation must refuse it first: a spec that cannot run must
 # never validate (it used to 500 at the first evaluated session).
@@ -233,8 +233,8 @@ class StrikeSelection(BaseModel):
     @classmethod
     def _atm_is_50_delta(cls, data: Any) -> Any:
         # ATM IS the 50-delta strike (owner directive). Normalizing at the
-        # model means EVERY ingress — parser, POST /api/backtest, stored
-        # specs re-validated for a run — lands on the same editable .50Δ,
+        # model means EVERY ingress (parser, POST /api/backtest, stored
+        # specs re-validated for a run) lands on the same editable .50Δ,
         # and a spread can never collide both legs onto the spot strike.
         if isinstance(data, dict) and data.get("method") == "atm":
             return {**data, "method": "delta", "value": 0.5}
@@ -268,7 +268,7 @@ class ExpirationSelection(BaseModel):
     """DTE bounds. At clock="daily" these are CALENDAR days (unchanged
     v1 semantics). At clock="5min" they are TRADING days (owner-confirmed:
     Friday "1DTE" selects Monday's expiry), and 0 (same-day expiry) is
-    legal — 0DTE requires spec_version 2."""
+    legal. 0DTE requires spec_version 2."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -284,8 +284,8 @@ class Position(BaseModel):
     legs: list[Leg] = Field(min_length=1, max_length=4)
     expiration_selection: ExpirationSelection
     # spec v2 (D1c): entry-time cap on |NET vega| of the contract-set, in
-    # DOLLARS per contract-set per vol point (leg vegas sum signed —
-    # long +, short −, × ratio — then abs, × 100). Owner amendment 2.
+    # DOLLARS per contract-set per vol point (leg vegas sum signed:
+    # long +, short −, × ratio, then abs, × 100). Owner amendment 2.
     max_vega_per_contract: float | None = Field(default=None, gt=0)
 
 
@@ -307,14 +307,14 @@ class Condition(BaseModel):
             and self.indicator not in INTRADAY_CAPABLE_INDICATORS
         ):
             raise ValueError(
-                f"indicator {self.indicator.value} is a daily series — it cannot "
+                f"indicator {self.indicator.value} is a daily series. It cannot "
                 "read the 5min timeframe"
             )
         if self.indicator is Indicator.PRICE_VS_VWAP_PCT and (
             self.timeframe is not Timeframe.FIVE_MIN
         ):
             raise ValueError(
-                "price_vs_vwap_pct is intraday-only — VWAP is session-anchored; "
+                "price_vs_vwap_pct is intraday-only. VWAP is session-anchored; "
                 'set timeframe "5min"'
             )
         return self
@@ -328,7 +328,7 @@ class Condition(BaseModel):
             supported = ", ".join(sorted(i.value for i in CROSS_CAPABLE_INDICATORS))
             raise ValueError(
                 f"indicator {self.indicator.value} is read as a single "
-                f"point-in-time observation — '{self.operator.value}' needs a "
+                f"point-in-time observation. '{self.operator.value}' needs a "
                 "bar series to detect a cross. Use 'above'/'below' for a level "
                 f"comparison; crosses are supported on {supported}."
             )
@@ -367,7 +367,7 @@ class Rung(Condition):
 class StopAddingOn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # only next_rung_not_reached is implemented in D5a — the field exists so
+    # only next_rung_not_reached is implemented in D5a. The field exists so
     # the schema is forward-compatible when the reversal detector lands later
     mode: StopAddingMode = StopAddingMode.NEXT_RUNG_NOT_REACHED
 
@@ -376,7 +376,7 @@ class ScaleIn(BaseModel):
     """The scale-in ladder primitive (spec v3, D5a). Legs accumulate into ONE
     basket with a blended cost basis; the whole basket exits together. A run
     that uses scale_in is hard-capped at insufficient_evidence until the
-    martingale defenses land (D5c) — the interlock lives in the honesty layer,
+    martingale defenses land (D5c). The interlock lives in the honesty layer,
     not here, but every scale_in spec inherits it (docs/HONESTY.md)."""
 
     model_config = ConfigDict(extra="forbid")
@@ -392,7 +392,7 @@ class ScaleIn(BaseModel):
     def _basket_must_be_true(self) -> ScaleIn:
         if self.basket is not True:
             raise ValueError(
-                "scale_in.basket must be true — legs accumulate into one blended "
+                "scale_in.basket must be true. Legs accumulate into one blended "
                 "basket that exits together"
             )
         return self
@@ -414,9 +414,9 @@ class IntradayScan(StrEnum):
     ONCE_PER_SESSION is the D2 behavior (the first fill ends the session's
     entries). EVERY_SETUP is continuous opportunity scanning: one entry per
     SIGNAL EPISODE (entry conditions transitioning false→true arm exactly
-    one entry — a persistent signal is one setup, never a burst), re-entry
+    one entry: a persistent signal is one setup, never a burst), re-entry
     after intraday exits, and for condition-less strategies the position
-    LIFECYCLE is the episode (re-arm when a position closes — the
+    LIFECYCLE is the episode (re-arm when a position closes, the
     always-in-the-market pattern). Bounded by max_concurrent_positions and
     capital; every fill still requires a real liquid quote (guardrail #1)
     and every skip is counted with a reason."""
@@ -442,7 +442,7 @@ class Entry(BaseModel):
 class ThetaHarvest(BaseModel):
     """DTE-band profit harvest (spec v2, owner-confirmed semantics): inside
     the DTE window [dte_to, dte_from], close as soon as profit reaches
-    profit_pct of max — "take profits during peak decay"."""
+    profit_pct of max ("take profits during peak decay")."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -452,7 +452,7 @@ class ThetaHarvest(BaseModel):
 
     @model_validator(mode="after")
     def _window_runs_downward(self) -> ThetaHarvest:
-        # owner amendment 4: DTE counts DOWN — the window must too
+        # owner amendment 4: DTE counts DOWN, the window must too
         if self.dte_from <= self.dte_to:
             raise ValueError(
                 "theta_harvest.dte_from must be greater than dte_to "
@@ -476,7 +476,7 @@ class Exit(BaseModel):
     # accepted; normalized to the decimal like StrikeSelection deltas.
     delta_stop_abs: float | None = Field(default=None, gt=0, lt=1)
     theta_harvest: ThetaHarvest | None = None
-    # spec v3 (D5a): general intraday session force-flat — flatten every open
+    # spec v3 (D5a): general intraday session force-flat. Flatten every open
     # position at the first 5-min bar ≥ this ET time ("no overnight"),
     # symmetric with entry.schedule.time_of_day. Requires clock="5min".
     close_at_time: str | None = Field(
@@ -528,13 +528,13 @@ class Costs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     commission_per_contract: float = Field(default=0.65, ge=0)
-    # 0 (mid fills) is forbidden by the schema's exclusiveMinimum — guardrail #1.
+    # 0 (mid fills) is forbidden by the schema's exclusiveMinimum (guardrail #1).
     # Defaults are EARNED, not assumed (D3d calibration, owner 2026-07-13):
     # 233M real tape prints put the median implied slip near 0.87 and
-    # side-asymmetric — buyers lifting offers concede ~0.85-0.87 of the
+    # side-asymmetric: buyers lifting offers concede ~0.85-0.87 of the
     # half-spread; seller-aggressor prints hit harder (p50 ~0.90, 17-26%
     # beyond the displayed bid). The PARSER sets BOTH fields when the user
-    # states a single slippage number — asymmetry only ever comes from these
+    # states a single slippage number. Asymmetry only ever comes from these
     # defaults or an explicit two-value request, never a silent guess.
     slippage_half_spread_fraction: float = Field(default=0.85, gt=0, le=1)
     slippage_half_spread_fraction_sell: float = Field(default=0.90, gt=0, le=1)
@@ -542,7 +542,7 @@ class Costs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _mirror_single_slippage(cls, data: Any) -> Any:
-        """A lone stated slippage number sets BOTH sides — enforced at the
+        """A lone stated slippage number sets BOTH sides, enforced at the
         model layer, not just the parser prompt. This also keeps every
         pre-2026-07-13 stored spec (which pins only the buy field) on the
         exact flat model its run used: audits and replays re-validate to
@@ -559,7 +559,7 @@ class Costs(BaseModel):
             ]
         return data
     # Liquidity floors (D1b, owner-confirmed Moderate defaults). Defaulted
-    # cost knobs like commission/slippage — never entry/strike/exit params,
+    # cost knobs like commission/slippage, never entry/strike/exit params,
     # so guardrail #3 (no silent parser defaults) does not apply.
     max_spread_pct: float = Field(default=25.0, gt=0)  # (ask−bid)/mid, in percent
     min_open_interest: int = Field(default=10, ge=0)  # 0 disables the floor
@@ -580,7 +580,7 @@ class Resolution(StrEnum):
     """Intraday bar-resolution policy (FX.1, spec v4). FIXED_5MIN is the
     D2 behavior (every covered session steps 5-minute bars). FINEST selects
     the finest HONEST resolution PER SESSION from the F0 resolution map:
-    minute where minute data is banked for that session, else 5-min — the
+    minute where minute data is banked for that session, else 5-min. The
     mix is recorded on the run and disclosed (ENGINE-V4 owner decisions
     2-4). Fills quote from real NBBO at every resolution; minute bars
     between quote stamps cannot fill anything (guardrail #1)."""
@@ -603,7 +603,7 @@ class BacktestWindow(BaseModel):
 
 
 # Structures with a DEFINED maximum profit (the collected credit / capped
-# appreciation). theta_harvest measures "profit % of max" — undefined on
+# appreciation). theta_harvest measures "profit % of max", undefined on
 # unlimited-upside longs, so it is forbidden there (owner amendment 1).
 DEFINED_MAX_PROFIT_STRUCTURES = {
     Structure.SHORT_PUT,
@@ -650,7 +650,7 @@ class StrategySpec(BaseModel):
         if used:
             raise ValueError(
                 f"spec_version {self.spec_version} cannot use v8 vocabulary: "
-                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 8"
+                f"{', '.join(f'indicator {u}' for u in used)}, set spec_version 8"
             )
         return self
 
@@ -670,7 +670,7 @@ class StrategySpec(BaseModel):
         if used:
             raise ValueError(
                 f"spec_version {self.spec_version} cannot use v7 vocabulary: "
-                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 7"
+                f"{', '.join(f'indicator {u}' for u in used)}, set spec_version 7"
             )
         return self
 
@@ -691,7 +691,7 @@ class StrategySpec(BaseModel):
         if used:
             raise ValueError(
                 f"spec_version {self.spec_version} cannot use v6 vocabulary: "
-                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 6"
+                f"{', '.join(f'indicator {u}' for u in used)}, set spec_version 6"
             )
         return self
 
@@ -702,7 +702,7 @@ class StrategySpec(BaseModel):
         if self.spec_version >= 5:
             return self
         all_conditions = list(self.entry.conditions) + list(self.exit.conditions or [])
-        # a Rung IS a Condition and the rearm is one too — the gate must see
+        # a Rung IS a Condition and the rearm is one too. The gate must see
         # the ladder's vocabulary or a v3 ladder smuggles v5 in silently
         # (review finding; the D5d wrong-answer-no-error class)
         if self.entry.scale_in is not None:
@@ -714,7 +714,7 @@ class StrategySpec(BaseModel):
         if used:
             raise ValueError(
                 f"spec_version {self.spec_version} cannot use v5 vocabulary: "
-                f"{', '.join(f'indicator {u}' for u in used)} — set spec_version 5"
+                f"{', '.join(f'indicator {u}' for u in used)}, set spec_version 5"
             )
         return self
 
@@ -732,17 +732,17 @@ class StrategySpec(BaseModel):
         if used:
             raise ValueError(
                 f"spec_version {self.spec_version} cannot use v4 vocabulary: "
-                f"{', '.join(used)} — set spec_version 4"
+                f"{', '.join(used)}, set spec_version 4"
             )
         return self
 
     @model_validator(mode="after")
     def _resolution_needs_intraday_clock(self) -> StrategySpec:
-        """Resolution is a policy over intraday bars — meaningless at the
+        """Resolution is a policy over intraday bars, meaningless at the
         daily clock, so it is refused there rather than silently ignored."""
         if self.backtest.resolution is not None and self.backtest.clock is Clock.DAILY:
             raise ValueError(
-                'backtest.resolution requires clock "5min" — the daily clock '
+                'backtest.resolution requires clock "5min". The daily clock '
                 "has no intraday bars to resolve"
             )
         return self
@@ -750,19 +750,19 @@ class StrategySpec(BaseModel):
     @model_validator(mode="after")
     def _intraday_scan_constraints(self) -> StrategySpec:
         """FX.2: continuous scanning is an intraday-clock policy, and the
-        scale-in ladder is its OWN multi-entry semantic — combining them
+        scale-in ladder is its OWN multi-entry semantic. Combining them
         would double-manage the book, so it is refused loudly."""
         if self.entry.intraday_scan is None:
             return self
         if self.backtest.clock is Clock.DAILY:
             raise ValueError(
-                'entry.intraday_scan requires clock "5min" — the daily clock '
+                'entry.intraday_scan requires clock "5min". The daily clock '
                 "has no intraday bars to scan"
             )
         if self.entry.scale_in is not None:
             raise ValueError(
-                "entry.intraday_scan cannot combine with entry.scale_in — "
-                "the ladder is its own multi-entry semantic (and "
+                "entry.intraday_scan cannot combine with entry.scale_in. "
+                "The ladder is its own multi-entry semantic (and "
                 '"once_per_session" would misdescribe a rung-firing ladder)'
             )
         return self
@@ -795,7 +795,7 @@ class StrategySpec(BaseModel):
             used.append('timeframe "5min"')
         if used:
             raise ValueError(
-                f"spec_version 1 cannot use v2 vocabulary: {', '.join(used)} — set spec_version 2"
+                f"spec_version 1 cannot use v2 vocabulary: {', '.join(used)}, set spec_version 2"
             )
         return self
 
@@ -813,7 +813,7 @@ class StrategySpec(BaseModel):
         if used:
             raise ValueError(
                 f"spec_version {self.spec_version} cannot use v3 vocabulary: "
-                f"{', '.join(used)} — set spec_version 3"
+                f"{', '.join(used)}, set spec_version 3"
             )
         return self
 
@@ -832,7 +832,7 @@ class StrategySpec(BaseModel):
         ):
             raise ValueError(
                 "scale_in is supported only on single-leg long_call / long_put "
-                "structures in this build — multi-leg ladders are not yet supported"
+                "structures in this build. Multi-leg ladders are not yet supported"
             )
         # rung add_contracts are ABSOLUTE counts, so percent-of-capital sizing
         # is incoherent with a ladder (the non-obvious constraint spelled out).
@@ -846,7 +846,7 @@ class StrategySpec(BaseModel):
     @model_validator(mode="after")
     def _intraday_vocabulary_needs_5min_clock(self) -> StrategySpec:
         """5-minute indicators, time-of-day entries and the session
-        force-flat only exist at the 5-minute clock — a daily engine has no
+        force-flat only exist at the 5-minute clock. A daily engine has no
         bars to evaluate them on."""
         if self.backtest.clock is Clock.FIVE_MIN:
             return self
@@ -862,8 +862,8 @@ class StrategySpec(BaseModel):
             needs.append("exit.close_at_time")
         if needs:
             raise ValueError(
-                f"{' and '.join(needs)} require backtest.clock \"5min\" — "
-                "the daily clock has no intraday bars"
+                f"{' and '.join(needs)} require backtest.clock \"5min\". "
+                "The daily clock has no intraday bars"
             )
         return self
 

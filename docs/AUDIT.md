@@ -1,7 +1,7 @@
-# AUDIT.md — Honest Parity Plan v2, Tier 0
+# AUDIT.md: Honest Parity Plan v2, Tier 0
 
 2026-07-14 · Audit-before-building pass over the three v1 items the plan
-marked "likely resolved by later fixtures — verify, don't rebuild", plus the
+marked "likely resolved by later fixtures: verify, don't rebuild", plus the
 two dependency checks the sequencing needs (provenance Chunk A, iv_zscore).
 Method: code + fixture reading, and read-only R2 probes of real deep-history
 sessions (aggregates only, no chain rows logged).
@@ -13,13 +13,13 @@ sessions (aggregates only, no chain rows logged).
 | 1 | Short-leg bid/ask fill direction (D1b + FX fixtures) | **PARITY** |
 | 2 | Per-leg capital (D5 basket bookkeeping) | **PARITY** |
 | 3 | Expiration bridging + requested-vs-effective DTE, deep-history paths | **PARITY** (one small test gap noted) |
-| 4 | Tier 3 pre-check: `iv_zscore` | **GAP** — does not exist |
-| 5 | Tier 1 dependency: provenance Chunk A | **NOT STARTED** — Tier 1 stays blocked |
+| 4 | Tier 3 pre-check: `iv_zscore` | **GAP**, does not exist |
+| 5 | Tier 1 dependency: provenance Chunk A | **NOT STARTED**, Tier 1 stays blocked |
 
 Only true GAPs proceed → the build list out of Tier 0 is exactly one small
 chunk (iv_zscore, Tier 3) plus one test-only nicety (see item 3).
 
-## 1 · Short-leg fill direction — PARITY
+## 1 · Short-leg fill direction: PARITY
 
 `app/engine/fills.py` is the single fill model: BUY = mid + slip·(ask − mid),
 SELL = mid − slip·(mid − bid); `open_action(short) = "sell"` (toward bid),
@@ -32,11 +32,11 @@ Evidence, all hand-computed:
   sell 0.90 → 2.01 on a 2.00/2.20 quote).
 - `tests/fixtures/engine/fx_credit_spread_stop.py`: short leg entry 2.05
   (toward bid), long leg 1.075 (toward ask); the close reverses sides
-  (btc 4.225, stc 1.85) — asserted to the cent through the full sim.
+  (btc 4.225, stc 1.85), asserted to the cent through the full sim.
 - Marking is liquidation-side with the same model (`common.py` conventions),
   so triggers, marks, and exit fills can never disagree on direction.
 
-## 2 · Per-leg capital — PARITY
+## 2 · Per-leg capital: PARITY
 
 - Every leg's open fill is logged individually (`state.fill_log`: action,
   qty, price, expiration, source) with per-leg cash deltas and commission
@@ -44,14 +44,14 @@ Evidence, all hand-computed:
   `cash_flow` accumulates and realized P/L is attached at finalize.
 - Sizing risk is defined-risk per contract-set (`_risk_per_contract` by
   structure; long structures = debit; short put = strike − premium, i.e.
-  cash-secured). There is deliberately no margin model — capital is cash
+  cash-secured). There is deliberately no margin model. Capital is cash
   accounting; this is a design stance, not missing bookkeeping.
 - D5b is the iVol ladder-depth table and better: per-tier P&L AND
   marginal-rung attribution, hand-computed on fixture 1
   (−12.60 / +41.10 / +143.50 = +172.00) and tied out against the trade log
   on a 20-basket run (`tests/test_scale_in_depth.py`).
 
-## 3 · Expiration bridging + requested-vs-effective DTE — PARITY
+## 3 · Expiration bridging + requested-vs-effective DTE: PARITY
 
 Mechanics (`app/engine/selection.py::select_expiration`): nearest listed
 expiration to `target_dte` **within the user's [min_dte, max_dte] bounds**;
@@ -81,7 +81,7 @@ Facts the plan should absorb (corrections, not gaps):
   strategies starts later. Coverage honesty (guardrail #6) already surfaces
   this per run.
 - Deep-history greeks are partial (delta null: QQQ 2010 ~12.5%, IWM 2018
-  ~19.1%) — delta selection correctly restricts to quoted rows.
+  ~19.1%). Delta selection correctly restricts to quoted rows.
 - dolthub rows carry NO open interest/volume (100% null) → liquidity floors
   never gate on those sessions (unknown is disclosed, never punished);
   ivolatility rows carry both (0% null) → gates active. Behavior differs by
@@ -89,20 +89,20 @@ Facts the plan should absorb (corrections, not gaps):
 
 Small gap worth a test-only follow-up: `select_expiration` had no direct
 unit test (nearest-to-target, earlier-tie-break, bounds exclusion,
-sparse-monthlies chain) — the FX fixtures exercise it only through rich
+sparse-monthlies chain). The FX fixtures exercise it only through rich
 chains. Closed in the same PR as this audit: a dedicated block in
 `tests/test_selection.py`, chain shapes taken from the probes above.
 
-## 4 · iv_zscore — GAP (the one build item)
+## 4 · iv_zscore: GAP (the one build item)
 
 No `zscore`/`z_score` token existed anywhere in backend, schema, or
 frontend at audit time. Closed in the same PR as this audit:
-`ivx_zscore_1y` (spec v8) — the 30d IVX standardized within the trailing
+`ivx_zscore_1y` (spec v8), the 30d IVX standardized within the trailing
 252 observations, the σ-unit sibling of `ivx_rank_1y` with the same
 126-obs floor, raw thresholds legal, PARSER RE-ACCEPT gate carried by
 the PR.
 
-## 5 · Provenance Chunk A — in flight, not merged
+## 5 · Provenance Chunk A: in flight, not merged
 
 No prompt/Q&A/decision-grid snapshot exists at run creation on main;
 `provenance` in code is F8's `data_provenance` (signal splicing), a

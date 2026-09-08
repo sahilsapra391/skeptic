@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""derive_flow_inhouse.py — Alpaca minute trades × recorder minute quotes →
+"""derive_flow_inhouse.py: Alpaca minute trades × recorder minute quotes →
 the in-house forward flow family (post-UW continuation candidate; math and
 honesty contract in backend app/data/flow_inhouse.py, fixture-tested).
 
@@ -8,7 +8,7 @@ honesty contract in backend app/data/flow_inhouse.py, fixture-tested).
       nope_eod · volume accounting · tape_side_agreement (overlap only)
 
 Sessions = Alpaca options_minute ∩ recorder cboe_delayed, strictly before
-the current ET session (both inputs exist in partial form intraday — the
+the current ET session (both inputs exist in partial form intraday, the
 recorder_vs_uw_tape rule). Bars are sliced into each snapshot's shifted
 validity window (source_ts − the measured 15-min feed lag, 60 s, clamped
 disjoint) via the same recorder_tape_window helper the tape pair uses;
@@ -18,7 +18,7 @@ per-(contract, minute) side is scored against the tape's true sides and
 the volume-weighted agreement rides the row.
 
 Incremental by SET DIFFERENCE, checkpointed every 10 sessions. Grows
-nightly with the Alpaca top-up + recorder — the forward record the frozen
+nightly with the Alpaca top-up + recorder, the forward record the frozen
 UW families cannot provide.
 
 Bounded by a wall-clock budget (--budget-seconds, default 1200). The step
@@ -151,7 +151,7 @@ def _norm_keys(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def derive_session(s3, ticker: str, d: str, has_tape: bool) -> dict | None:
-    """One session → the flow row, or None (unreadable — retried next run)."""
+    """One session → the flow row, or None (unreadable, retried next run)."""
     bars = r2_get_parquet(
         s3, f"options_minute/source=alpaca/ticker={ticker}/date={d}/bars.parquet",
         columns=_BAR_COLUMNS)
@@ -206,7 +206,7 @@ def derive_session(s3, ticker: str, d: str, has_tape: bool) -> dict | None:
         b = pd.to_numeric(snap["bid"], errors="coerce")
         a = pd.to_numeric(snap["ask"], errors="coerce")
         # build on the FULL frame, then filter once (the documented
-        # fill_calibration footgun — an all-bad-quote snap must yield an
+        # fill_calibration footgun: an all-bad-quote snap must yield an
         # empty quote table, never resurrected NaN-keyed rows)
         work = snap.assign(
             mid=(b + a) / 2,
@@ -220,7 +220,7 @@ def derive_session(s3, ticker: str, d: str, has_tape: bool) -> dict | None:
                                on=_JOIN, how="left")
                       .rename(columns={"_delta": "delta"}))
     if failed_reads:
-        log.warning("%s %s: %d snap reads failed — no row, retrying next run",
+        log.warning("%s %s: %d snap reads failed (no row, retrying next run)",
                     ticker, d, failed_reads)
         return None
     uncovered = bars[~covered].assign(mid=pd.NA, delta=pd.NA)

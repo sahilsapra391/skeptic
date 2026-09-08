@@ -1,17 +1,17 @@
-"""FX.1 — minute-grid data plumbing (app/data/intraday.py).
+"""FX.1: minute-grid data plumbing (app/data/intraday.py).
 
 The frame builder: bars_1m rows carry the MOST RECENT print, so a session's
 open repeats the prior session's close until a fresh print lands
 (probe-verified 2026-07-07: Monday 09:30 rows carried Friday's
-lastDateTime). Those stale rows must be dropped — a Friday print is not a
-Monday price — the grid bounded to regular hours, non-minute-aligned stamps
+lastDateTime). Those stale rows must be dropped (a Friday print is not a
+Monday price), the grid bounded to regular hours, non-minute-aligned stamps
 dropped, and the frame is PRICE-ONLY (the 5-min frame stays the single
-source of indicator samples and VWAP volume — review finding 1).
+source of indicator samples and VWAP volume, per review finding 1).
 
 The store glue: minute_slice_for merges the 5-MIN underlying frame (wins at
 its stamps, price + volume, 16:00+ tail included) with bars_1m price-only
 rows between stamps, and marks the 5-min stamps as the indicator sampling
-set — the minute grid reads the SAME indicator/VWAP record the 5-min grid
+set. The minute grid reads the SAME indicator/VWAP record the 5-min grid
 does."""
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def _und5_frame() -> pd.DataFrame:
 
 
 def _und1_frame() -> pd.DataFrame:
-    # bars_1m disagrees at 09:30 (100.02) — the 5-min frame must WIN there
+    # bars_1m disagrees at 09:30 (100.02): the 5-min frame must WIN there
     return pd.DataFrame({
         "bar_ts": [pd.Timestamp(f"{D} 09:30:00"), pd.Timestamp(f"{D} 09:31:00"),
                    pd.Timestamp(f"{D} 09:32:00")],
@@ -137,7 +137,7 @@ def test_minute_slice_merges_und5_wins_at_stamps(store: intraday.IntradayStore) 
     assert slc.underlying[t("09:31")] == 100.10
     assert slc.underlying[t("09:32")] == 100.20
     assert slc.underlying[t("16:00")] == 101.0
-    # VWAP volume comes ONLY from the 5-min stamps — minute rows carry none
+    # VWAP volume comes ONLY from the 5-min stamps (minute rows carry none)
     assert set(slc.underlying_volume) == {t("09:30"), t("09:35"), t("16:00")}
     # indicator sampling set == the 5-min stamps (incl. the tail)
     assert slc.indicator_stamps == {t("09:30"), t("09:35"), t("16:00")}
@@ -158,7 +158,7 @@ def test_ineligible_session_is_none_and_not_cached(
 ) -> None:
     monkeypatch.setattr(store, "minute_sessions", lambda: set())
     assert store.minute_slice_for(_SESSION) is None
-    assert _SESSION not in store._lru_1m  # negatives never cached — data may arrive
+    assert _SESSION not in store._lru_1m  # negatives never cached (data may arrive)
 
 
 def test_minute_und_disk_cache_round_trip(store: intraday.IntradayStore,

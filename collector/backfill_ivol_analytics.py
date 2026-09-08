@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-backfill_ivol_analytics.py — bank every entitled iVolatility analytics
+backfill_ivol_analytics.py banks every entitled iVolatility analytics
 dataset into R2, in product-value order:
 
-  1. ivx     IV index history (IV term structure per session) — powers
+  1. ivx     IV index history (IV term structure per session), powers
              iv_percentile with 20 years of depth on every ticker
-  2. hv      realized-volatility series — cross-check for our computed vol
-  3. ivs     daily IV surfaces (delta × tenor grid) — future skew/term triggers
-  4. bars1m  1-minute underlying bars — extends the frozen Alpaca window
+  2. hv      realized-volatility series, cross-check for our computed vol
+  3. ivs     daily IV surfaces (delta × tenor grid), future skew/term triggers
+  4. bars1m  1-minute underlying bars, extends the frozen Alpaca window
   5. yield   dividend yield   (best-effort: empty on some tariffs)
   6. rates   interest rates   (best-effort: empty on some tariffs)
 
@@ -60,7 +60,7 @@ def _get(headers: dict[str, str], path: str, **params) -> list[dict] | None:
             body = r.json()
             data = body.get("data") if isinstance(body, dict) else body
             return data if isinstance(data, list) else []
-        except Exception as exc:  # noqa: BLE001 — retry then surface
+        except Exception as exc:  # noqa: BLE001 (retry then surface)
             if attempt == RETRIES - 1:
                 log.warning("%s %s: giving up (%s)", path, params.get("symbol", ""), exc)
                 return None
@@ -103,7 +103,7 @@ class Job:
         for i, chunk in enumerate(todo):
             rows = fetch(chunk)
             if rows is None:
-                continue  # errored — next run retries
+                continue  # errored, next run retries
             if not rows:
                 st["empty"].append(chunk)
             else:
@@ -136,7 +136,7 @@ class Job:
             )
 
     def ivs(self) -> None:
-        # the ivs endpoint IGNORES from/to (returns zero rows) — verified
+        # the ivs endpoint IGNORES from/to (returns zero rows), verified
         # live 2026-07-04; only single-date queries work, so surfaces pull
         # one session per request. Surface history starts ~2008.
         start = date(max(self.from_year, 2007), 1, 1)
@@ -177,7 +177,7 @@ class Job:
                 r2_put_parquet(self.s3, f"reference/ivol/yield_ticker={t}.parquet",
                                _frame(rows, t))
             else:
-                log.info("yield %s: empty on this tariff — skipped", t)
+                log.info("yield %s: empty on this tariff, skipped", t)
 
     def rates(self) -> None:
         rows = _get(self.h, "/equities/interest-rates",
@@ -187,7 +187,7 @@ class Job:
             r2_put_parquet(self.s3, "reference/ivol/interest_rates.parquet",
                            _frame(rows, "USD"))
         else:
-            log.info("interest-rates: empty on this tariff — skipped")
+            log.info("interest-rates: empty on this tariff, skipped")
 
 
 def main() -> int:

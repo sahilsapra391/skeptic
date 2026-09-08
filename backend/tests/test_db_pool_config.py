@@ -2,7 +2,7 @@
 
 After the app sits idle, Neon drops the pooled SSL connection; without
 pool_pre_ping the next request hands out the dead socket and dies with
-'SSL connection has been closed unexpectedly' — surfacing as `500: {}` on
+'SSL connection has been closed unexpectedly', surfacing as `500: {}` on
 Library/Data. These pins keep the pool config from silently regressing.
 """
 
@@ -17,7 +17,7 @@ def test_postgres_engine_pre_pings_and_recycles() -> None:
     kwargs = _engine_kwargs("postgresql://u:p@host/db")
     assert kwargs["pool_pre_ping"] is True
     assert kwargs["pool_recycle"] == 280
-    # create_engine is lazy (no connection made) — assert the pool actually
+    # create_engine is lazy (no connection made), so assert the pool actually
     # carries the setting, not just the kwarg dict
     engine = create_engine("postgresql+psycopg2://u:p@localhost/db", **kwargs)
     assert engine.pool._pre_ping is True

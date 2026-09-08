@@ -1,22 +1,22 @@
 """Black-Scholes greeks for chain rows that lack vendor greeks.
 
 DATA-PIPELINE §4 promised Yahoo rows their greeks "computed via Black-Scholes
-at ingest"; until D1a that never happened — Yahoo sessions carried delta=None
+at ingest"; until D1a that never happened: Yahoo sessions carried delta=None
 into the engine. This module fills the gap at LOAD time (backend ingest), so
 the whole lake benefits retroactively, and tags every filled row
 `greeks_source="computed"` (guardrail #6: sources are never blurred).
 
 Unit conventions match the lake's vendor greeks (verified against DoltHub
-vendor rows with an aggregate-diff probe, 2026-07-05 — see PR):
+vendor rows with an aggregate-diff probe, 2026-07-05, see PR):
   theta per calendar DAY, vega per 1 vol POINT (1%), rho per 1% rate move,
   T in calendar days / 365.
 
 Inputs:
-  r — FRED DGS3MO series banked at reference/rates_dgs3mo.parquet by the
-      collector (point-in-time: last observation ≤ trading date). When the
-      series is absent the flat FALLBACK_R applies, logged once per load.
-  q — static per-ticker trailing dividend yields, a documented approximation
-      (the iVolatility yield endpoint is tariff-empty; see BUILD-LOG).
+  r: FRED DGS3MO series banked at reference/rates_dgs3mo.parquet by the
+     collector (point-in-time: last observation ≤ trading date). When the
+     series is absent the flat FALLBACK_R applies, logged once per load.
+  q: static per-ticker trailing dividend yields, a documented approximation
+     (the iVolatility yield endpoint is tariff-empty; see BUILD-LOG).
 """
 
 from __future__ import annotations
@@ -115,10 +115,10 @@ def bs_greeks(
 
 def rates_asof(trading_dates: pd.Series, rates: pd.DataFrame | None) -> FloatArray:
     """Per-row risk-free rate (decimal): last DGS3MO observation ≤ trading
-    date. Point-in-time by construction — never a future observation."""
+    date. Point-in-time by construction, never a future observation."""
     n = len(trading_dates)
     if rates is None or rates.empty or "date" not in rates or "rate_pct" not in rates:
-        log.warning("no rates series in the lake — using flat fallback r=%.2f%%",
+        log.warning("no rates series in the lake, using flat fallback r=%.2f%%",
                     FALLBACK_R * 100)
         return np.full(n, FALLBACK_R, dtype=np.float64)
     r = rates.dropna(subset=["rate_pct"]).sort_values("date")
@@ -155,7 +155,7 @@ def fill_missing_greeks(
             df[col] = np.nan
     # the Yahoo collector pre-labels rows greeks_source="computed" as a
     # promise (DATA-PIPELINE §4); rows that carry no delta have no greeks
-    # yet, whatever the label claims — normalize, then tag what WE compute
+    # yet, whatever the label claims. Normalize, then tag what WE compute
     df.loc[df["delta"].isna(), "greeks_source"] = None
 
     td = pd.to_datetime(df["trading_date"])

@@ -2,7 +2,7 @@
 
 The one rule that outranks convenience: missing exit rules, strike
 selection, underlying, or an undefined trigger ("when it dips") produce
-QUESTIONS — never fabricated parameters. The single allowed convention:
+QUESTIONS, never fabricated parameters. The single allowed convention:
 unstated tenor on a premium trade whose time-stop implies one (e.g.
 "close at 21 DTE") may use the standard 45-DTE cycle, because the spec
 screen shows every dial and nothing runs unconfirmed.
@@ -30,6 +30,7 @@ from app.models.spec import (
     V8_INDICATORS,
     StrategySpec,
 )
+from app.text import normalize
 
 _V2_INDICATOR_NAMES = {i.value for i in V2_INDICATORS}
 _V5_INDICATOR_NAMES = {i.value for i in V5_INDICATORS}
@@ -39,7 +40,7 @@ _V8_INDICATOR_NAMES = {i.value for i in V8_INDICATORS}
 
 
 def _required_spec_version(raw_spec: dict[str, Any]) -> int:
-    """Server-computed from the vocabulary actually used — the version is a
+    """Server-computed from the vocabulary actually used. The version is a
     contract, never trusted from the LLM."""
     entry = raw_spec.get("entry") or {}
     exit_rules = raw_spec.get("exit") or {}
@@ -48,7 +49,7 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     schedule = entry.get("schedule") or {}
     expiration = position.get("expiration_selection") or {}
     backtest = raw_spec.get("backtest") or {}
-    # v5 (F4): vol-surface indicators — checked first, the version is the MAX
+    # v5 (F4): vol-surface indicators, checked first; the version is the MAX
     # the vocabulary needs (a skew condition on a finest-resolution spec is 5).
     # Ladder rungs and the rearm are conditions too (review finding).
     scale_in = entry.get("scale_in") or {}
@@ -56,7 +57,7 @@ def _required_spec_version(raw_spec: dict[str, Any]) -> int:
     if isinstance(scale_in.get("rearm"), dict):
         ladder_conds.append(scale_in["rearm"])
     all_conds = conds + ladder_conds
-    # v8 (parity Tier 3): the standardized IVX form — checked first, max wins
+    # v8 (parity Tier 3): the standardized IVX form, checked first, max wins
     if any(isinstance(c, dict) and c.get("indicator") in _V8_INDICATOR_NAMES
            for c in all_conds):
         return 8
@@ -99,21 +100,21 @@ log = logging.getLogger("parser")
 MAX_TEXT_CHARS = 1200
 
 # The frontend proxy gives LLM routes a 100s leash (frontend/app/api/
-# [...path]/route.ts) — the WHOLE attempt loop must answer inside it, or a
+# [...path]/route.ts). The WHOLE attempt loop must answer inside it, or a
 # healthy engine gets reported as a 504 mid-retry. The budget bounds both
 # attempts together: each upstream call gets what's left of it, and a retry
 # that can't get a useful slice is refused honestly instead. requests applies
 # its timeout PER PHASE (connect, then read), so each phase is bounded
-# separately — a single float would let one attempt run ~2x its nominal
+# separately; a single float would let one attempt run ~2x its nominal
 # bound on a connect stall and blow the leash anyway.
 PARSE_BUDGET_SECONDS = 90.0
 _ATTEMPT_TIMEOUT_SECONDS = 60.0
 _CONNECT_TIMEOUT_SECONDS = 10.0
-# clarify re-parses regularly pass 30s — a thinner read slice than this is a
+# clarify re-parses regularly pass 30s, and a thinner read slice than this is a
 # retry that almost certainly times out, burning the budget to say less
 _MIN_RETRY_SECONDS = 20.0
 
-_monotonic = time.monotonic  # patchable in tests — the budget clock
+_monotonic = time.monotonic  # patchable in tests; the budget clock
 
 
 def _attempt_timeout(remaining: float) -> tuple[float, float]:
@@ -125,13 +126,13 @@ def _attempt_timeout(remaining: float) -> tuple[float, float]:
 
 class ParserUnavailableError(Exception):
     """The upstream LLM failed or the parse budget ran out. The /parse route
-    maps this to an honest 503 — it must never masquerade as a clarifying
+    maps this to an honest 503. It must never masquerade as a clarifying
     question (a fake question polluted the run's provenance record and put
     words in the product's mouth: "I don't guess")."""
 
 
 class _UpstreamHTTPError(Exception):
-    """Non-200 from the LLM gateway — transient, worth ONE retry within the
+    """Non-200 from the LLM gateway: transient, worth ONE retry within the
     budget; a second one is an outage, not a parsing problem, and must
     become the 503 (never the could-not-compile question)."""
 
@@ -155,6 +156,8 @@ class ParseOutcome(BaseModel):
 _SYSTEM = """You compile plain-English options strategies into a strict JSON spec for a
 backtesting research tool, or you ask clarifying questions. You NEVER guess.
 Write every clarifying question and any prose you emit in English.
+PUNCTUATION: never use an em-dash (the long dash) in a question or an option.
+Use a comma, a period, or parentheses instead.
 
 Respond with JSON only, one of:
   {"result": "spec", "spec": { ...full spec... }}
@@ -174,12 +177,12 @@ THE SPEC (all fields required unless noted):
              "strike_selection": {"method": "delta"|"offset_pct"|"width_from_leg",
                                   "value": <number>, "reference_leg": <int, width_from_leg only>}}],
    "expiration_selection": {"target_dte": <1-90>, "min_dte": <int>, "max_dte": <int>},
-   "max_vega_per_contract": <number, OPTIONAL — dollars of NET position vega
+   "max_vega_per_contract": <number, OPTIONAL: dollars of NET position vega
                              per contract-set per vol point>
  },
  "entry": {"schedule": {"frequency": "daily"|"weekly"|"monthly"|"signal_only",
                         "day_of_week": "monday"..."friday" (weekly only),
-                        "time_of_day": "HH:MM" (OPTIONAL, ET, clock "5min" only —
+                        "time_of_day": "HH:MM" (OPTIONAL, ET, clock "5min" only;
                                        earliest bar an entry may fill)},
            "conditions": [{"indicator": "rsi"|"sma"|"ema"|"price_vs_sma_pct"|"price_vs_ema_pct"
                           |"ema_cross_state"|"iv_percentile_1y"|"vix_level"
@@ -196,46 +199,46 @@ THE SPEC (all fields required unless noted):
                                         price-series indicators only),
                            "operator": "<"|"<="|">"|">="|"above"|"below"
                                      |"crosses_above"|"crosses_below"
-                                      (crosses_*: series indicators ONLY —
+                                      (crosses_*: series indicators ONLY;
                                        see the crosses convention),
                            "value": <number>}],
            "max_concurrent_positions": <1-10>,
-           "intraday_scan": "every_setup" (OPTIONAL, clock "5min" only — continuous
+           "intraday_scan": "every_setup" (OPTIONAL, clock "5min" only; continuous
                             opportunity scanning: one entry per signal episode,
                             re-entry after intraday exits; omit for the default
                             one-entry-per-session behavior; NEVER with scale_in),
-           "scale_in": {  // OPTIONAL — a scale-in ladder (add size as a signal deepens)
+           "scale_in": {  // OPTIONAL: a scale-in ladder (add size as a signal deepens)
              "mode": "signal_ladder", "basket": true,
              "rungs": [{<a condition: indicator/operator/value/period/timeframe>,
                         "add_contracts": <int>}],  // ordered shallow → deep
-             "rearm": {<a condition — the signal LEAVING the zone>},
+             "rearm": {<a condition, the signal LEAVING the zone>},
              "stop_adding_on": {"mode": "next_rung_not_reached"},  // only mode supported
-             "max_total_contracts": <int>  // REQUIRED with scale_in — the ruin cap
+             "max_total_contracts": <int>  // REQUIRED with scale_in: the ruin cap
            }},
  "exit": {"profit_target_pct": <number>, "stop_loss_pct": <number>,
           "time_exit_dte": <int>, "conditions": [...],
           "delta_stop_abs": <decimal in (0,1), OPTIONAL>,
           "theta_harvest": {"dte_from": <int>, "dte_to": <int>,
                             "profit_pct": <number>} (OPTIONAL),
-          "close_at_time": "HH:MM" (OPTIONAL, ET, clock "5min" only — flatten every open
+          "close_at_time": "HH:MM" (OPTIONAL, ET, clock "5min" only; flatten every open
                            position at/after this bar; "no overnight")},
  "sizing": {"method": "fixed_contracts", "value": 1},
  "costs": {"commission_per_contract": 0.65, "slippage_half_spread_fraction": 0.85,
            "slippage_half_spread_fraction_sell": 0.90},
  "backtest": {"start": null, "end": null, "initial_capital": 25000, "seed": 42,
               "clock": "daily" (default) | "5min",
-              "resolution": "finest" (OPTIONAL, clock "5min" only — per-session
+              "resolution": "finest" (OPTIONAL, clock "5min" only; per-session
                             finest-honest bar grid; ONLY on explicit phrasing)}
 }
 
 CONVENTIONS:
 - A single stated slippage ("slippage 30%", "0.3 slippage") sets BOTH
   slippage_half_spread_fraction AND slippage_half_spread_fraction_sell to that
-  number — never leave one side at its default when the user gave one value.
+  number. Never leave one side at its default when the user gave one value.
   Distinct buy/sell values only on an explicit two-value request.
 - "30 delta" → {"method": "delta", "value": 0.30}. Delta values are decimals in (0, 1).
 - "5% below spot" (a put) → {"method": "offset_pct", "value": -0.05}; above spot → positive.
-- "ATM" / "at the money" → {"method": "delta", "value": 0.50} — an at-the-money
+- "ATM" / "at the money" → {"method": "delta", "value": 0.50}. An at-the-money
   option IS the 50-delta strike; never emit method "atm".
 - "$5 wide" spread long leg →
   {"method": "width_from_leg", "value": 5, "reference_leg": <short leg index>}.
@@ -244,30 +247,30 @@ CONVENTIONS:
   (about target-10 floored at 1, target+15 capped at 120).
 - "stop at 2x credit" → stop_loss_pct 200.
 - "exit at expiration" / "hold to expiry" → time_exit_dte 0. NEVER include
-  time_exit_dte unless the user states a time-based exit — untriggered positions
+  time_exit_dte unless the user states a time-based exit; untriggered positions
   are handled by the engine's expiration model; encoding an unstated rule is
   fabrication.
 - The exit object contains ONLY rules the user stated. ONE stated rule (a profit
-  target, OR a stop, OR a time exit) is a COMPLETE exit — do not ask for the
+  target, OR a stop, OR a time exit) is a COMPLETE exit. Do not ask for the
   others and do not add them.
 - "close at X% profit or N days" → profit_target_pct X AND time_exit_dte N;
   a bare "or N days" / "at N days" / "N days left" in an exit clause means a
-  time exit at N DTE — don't ask about those forms.
+  time exit at N DTE. Don't ask about those forms.
   BUT exits counted FROM ENTRY ("sell it after 10 days", "hold for two
-  weeks") are NOT expressible as DTE without knowing the tenor relationship —
-  ask ONE question offering the DTE equivalent (e.g. "exit at 35 DTE, i.e.
+  weeks") are NOT expressible as DTE without knowing the tenor relationship.
+  Ask ONE question offering the DTE equivalent (e.g. "exit at 35 DTE, i.e.
   10 days after entering a 45 DTE position?"). Never silently convert.
 - "9 EMA below the 20 EMA" → {"indicator": "ema_cross_state", "operator": "below",
   "value": 0, "params": {"fast": 9, "slow": 20}}.
-- "crosses above/below" is a SERIES operator — legal ONLY on rsi/sma/ema/
+- "crosses above/below" is a SERIES operator, legal ONLY on rsi/sma/ema/
   price_vs_sma_pct/price_vs_ema_pct/ema_cross_state/drawdown_from_high_pct.
   Every other indicator (vix_level, iv_percentile_1y, realized_vol_20d, the
   ivx/hv/z-score family, skew_25d, term_structure_slope, gex/dex, flow/tide/
   NOPE/put-call/max-pain, price_vs_vwap_pct) is read as a single
-  point-in-time observation — cross-detection is NOT supported on it.
+  point-in-time observation; cross-detection is NOT supported on it.
   "when VIX crosses above 20" → ask ONE question: is the LEVEL form
-  acceptable ("VIX above 20" — true on every bar while it holds, not just
-  the crossing bar)? NEVER silently emit "above" for "crosses" — the two
+  acceptable ("VIX above 20", true on every bar while it holds, not just
+  the crossing bar)? NEVER silently emit "above" for "crosses": the two
   fire on different bars and the substitution changes the strategy.
 - Entry conditions present but no cadence stated → frequency "signal_only";
   a stated evaluation cadence (e.g. "daily signal") keeps that frequency with the
@@ -278,60 +281,60 @@ CONVENTIONS:
   "RSI(14)" → period 14; "its 50 SMA" / "50-day SMA" → period 50;
   "9 EMA below the 20 EMA" → params {"fast": 9, "slow": 20}.
 - "one at a time" → max_concurrent_positions 1; otherwise 5 unless stated. Never
-  ask about position count or sizing — the defaults cover them.
+  ask about position count or sizing; the defaults cover them.
 - Percent profit/stop numbers are percents (50 = 50%). The same for percent
   indicators: price_vs_sma_pct / price_vs_ema_pct / drawdown_from_high_pct
   values are percents ("3% below its SMA" → value 3, never 0.03). Only delta
   (0.30), delta_stop_abs (0.60) and offset_pct (-0.05) take decimal values.
 - A DELTA-based stop ("close/stop out if the short strike reaches/hits
-  60 delta", "close when it goes to 60 delta") → delta_stop_abs 0.60 —
+  60 delta", "close when it goes to 60 delta") → delta_stop_abs 0.60,
   NEVER stop_loss_pct (that is a percent-of-credit stop; a delta trigger is
   not a percent, and substituting one is fabrication). Rolling is NOT
   supported: "roll at X delta / X DTE" → ask whether CLOSING there is
   acceptable (offer delta_stop_abs / time_exit_dte as options).
 - Distinguish the two profit-taking forms precisely:
     "close at 50% profit or 21 DTE" (single DTE bound, an OR)
-        → profit_target_pct 50 AND time_exit_dte 21 — NOT theta_harvest.
+        → profit_target_pct 50 AND time_exit_dte 21, NOT theta_harvest.
     "take profits at 50% BETWEEN 21 and 7 DTE" (a DTE WINDOW, two bounds)
         → theta_harvest {"dte_from": 21, "dte_to": 7, "profit_pct": 50},
           dte_from always the HIGHER number; emit NO separate
           profit_target_pct/time_exit_dte for it.
   theta_harvest is ONLY valid on defined-max-profit structures (short_put,
   put/call credit spreads, iron_condor, covered_call). On long_call/long_put
-  it is INVALID — you must ask instead (offer a plain profit target or a
+  it is INVALID. You must ask instead (offer a plain profit target or a
   time exit). Never emit theta_harvest on a long option.
 - "IV rank above 50" / "IVR > 50" → {"indicator": "ivx_rank_1y",
   "operator": ">", "value": 50} (a percentile, 0-100). "IVX above 25" (a
   LEVEL) → ivx_level_30d with value 25 (percentage points, like vix_level).
   "IV rich vs realized by 4 points" → hv_iv_spread_30d with value 4.
 - IV Z-SCORE (the SAME 30d IVX series as ivx_rank_1y, standardized over the
-  trailing year — σ units, raw thresholds LEGAL): "IV z-score above 1.5" /
+  trailing year; σ units, raw thresholds LEGAL): "IV z-score above 1.5" /
   "IV 2 sigma above its 1-year mean" / "IV two standard deviations rich" →
   {"indicator": "ivx_zscore_1y", "operator": ">", "value": 1.5 (or 2)};
   "z-score below -1" / "IV a sigma cheap" → "<" with value -1. PERCENTILE
-  phrasing (rank/IVR/percentile) stays ivx_rank_1y — never convert between
+  phrasing (rank/IVR/percentile) stays ivx_rank_1y; never convert between
   the two forms. Vague "IV stretched/extreme" with NO number → ask for the
   threshold (offer e.g. 1.5, 2).
 - VARIANCE/VOL RISK PREMIUM is the SAME quantity: "VRP above 4", "variance risk
   premium positive", "vol premium rich vs realized" → hv_iv_spread_30d (IV minus
   realized, percentage points). NEVER invent a separate "vrp" indicator.
-- VOL-SURFACE SIGNALS (EOD surface fits, timeframe "daily" ONLY — never "5min";
+- VOL-SURFACE SIGNALS (EOD surface fits, timeframe "daily" ONLY, never "5min";
   usable at any clock): "25-delta skew above 5" / "put skew over 5 (vols/points)"
-  → {"indicator": "skew_25d", "operator": ">", "value": 5} — IV(25Δ put) −
+  → {"indicator": "skew_25d", "operator": ">", "value": 5}. IV(25Δ put) −
   IV(25Δ call) at the 30d tenor, VOL POINTS; positive = puts rich. "term
   structure inverted" / "vol curve in backwardation" → {"indicator":
-  "term_structure_slope", "operator": "<", "value": 0} — ATM IV(90d) − ATM
+  "term_structure_slope", "operator": "<", "value": 0}. ATM IV(90d) − ATM
   IV(30d), vol points; "30/90 slope below −1" → value -1. Vague "when skew is
   high/extreme/steep" with NO number → ask for the threshold (offer e.g. 4, 6).
   Other tenors/deltas ("10-delta skew", "60-day skew", "1-week vs 6-month
   slope") are NOT in the vocabulary → ask, offering the two supported signals.
-- DEALER POSITIONING (UW daily EOD series, timeframe "daily" ONLY — never
+- DEALER POSITIONING (UW daily EOD series, timeframe "daily" ONLY, never
   "5min"; usable at any clock). The values are VENDOR UNITS, meaningful in
   SIGN and RANK only:
     "when dealers are long gamma" / "positive gamma regime" / "dealer gamma
     positive" → {"indicator": "gex_level", "operator": ">", "value": 0};
     "dealers short gamma" / "negative gamma" → operator "<", value 0. There
-    is NO separate dealer_gamma_regime indicator — the sign of gex_level IS
+    is NO separate dealer_gamma_regime indicator; the sign of gex_level IS
     the regime.
     "GEX in the top quartile (of the past year)" → {"indicator":
     "gex_rank_1y", "operator": ">", "value": 75} (a percentile, 0-100, like
@@ -341,28 +344,28 @@ CONVENTIONS:
     "dealers net long delta" → {"indicator": "dex_level", "operator": ">",
     "value": 0}; net short → "<" 0. Percentile phrasing → dex_rank_1y.
     RAW-UNIT thresholds ("GEX above 5 billion", "gamma exposure over 2M")
-    are NEVER emitted — the vendor's units are opaque and unstable → ask,
+    are NEVER emitted; the vendor's units are opaque and unstable → ask,
     offering the sign form ("long/short gamma") or a percentile rank.
 - FLOW / SENTIMENT / PIN (UW daily EOD reductions, timeframe "daily" ONLY;
   usable at any clock):
     "net premium positive" / "bullish options flow" / "flow skewed to calls"
     → {"indicator": "net_premium_level", "operator": ">", "value": 0};
     bearish flow → "<" 0. DOLLAR sums are vendor magnitudes → raw thresholds
-    ("net premium above $50M") are NEVER emitted — ask, offering the sign
+    ("net premium above $50M") are NEVER emitted; ask, offering the sign
     form or a percentile rank (net_premium_rank_1y, like ivx_rank).
     "market tide risk-on" / "market-wide flow bullish" → {"indicator":
-    "market_tide_level", "operator": ">", "value": 0} — MARKET-WIDE (the
+    "market_tide_level", "operator": ">", "value": 0}. MARKET-WIDE (the
     whole tape, not the ticker); percentile phrasing → market_tide_rank_1y.
     "NOPE positive/negative" → nope_level >/< 0; "NOPE unusually high/top
     decile" → nope_rank_1y. RAW NOPE thresholds ("NOPE above 20") are NEVER
-    emitted even though the metric is dimensionless — we ingest the
+    emitted even though the metric is dimensionless; we ingest the
     VENDOR'S implementation and raw values can silently rescale → ask,
     offering sign or rank.
     "put/call ratio above 1" / "more puts than calls trading" →
-    {"indicator": "put_call_flow_ratio", "operator": ">", "value": 1} —
-    unit-free ratio, raw thresholds LEGAL.
+    {"indicator": "put_call_flow_ratio", "operator": ">", "value": 1}.
+    Unit-free ratio, raw thresholds LEGAL.
     "within 1% of max pain" → TWO conditions: max_pain_distance_pct < 1 AND
-    > -1 (signed % distance, front expiry — the expiry where pin dynamics
+    > -1 (signed % distance, front expiry, the expiry where pin dynamics
     operate). "spot below max pain" → max_pain_distance_pct > 0 (max pain
     ABOVE spot). Another expiry's max pain ("next month's max pain") is NOT
     in the vocabulary → ask.
@@ -371,7 +374,7 @@ CONVENTIONS:
   max_dte 0-1, clock "5min". "1DTE" → target_dte 1 (TRADING days at this clock:
   Friday 1DTE correctly finds Monday). Any 0/1/2-DTE strategy, a time-of-day
   entry, or a 5-minute indicator ⇒ set backtest.clock "5min". Intraday quote
-  coverage is SPY, 0-2 trading-DTE, near the money — that is the engine's
+  coverage is SPY, 0-2 trading-DTE, near the money. That is the engine's
   problem to disclose, not yours to block.
 - "enter at/after 10am" / "wait for the first 30 minutes" →
   schedule.time_of_day "10:00" (ET, on the 5-minute grid). Sub-5-minute times
@@ -380,11 +383,11 @@ CONVENTIONS:
   "operator": "<", "value": 30, "timeframe": "5min"}. Same for 5-min SMA/EMA.
 - "below VWAP" → {"indicator": "price_vs_vwap_pct", "operator": "<", "value": 0,
   "timeframe": "5min"}; "1% above VWAP" → value 1, operator ">". VWAP is
-  session-anchored and intraday-only — NEVER emit it with timeframe "daily".
+  session-anchored and intraday-only. NEVER emit it with timeframe "daily".
 - A 1-minute chart/indicator request → ask: only the 5-minute record exists.
 - SCALE-IN LADDER ("add 2 contracts at RSI 30, 3 at 25, 5 at 20, ...", "scale in as it
   falls", "buy more as the signal deepens", "average down in steps") → entry.scale_in.
-  This is SUPPORTED now — RUN IT AS WRITTEN, never flatten it to a single entry and never
+  This is SUPPORTED now. RUN IT AS WRITTEN, never flatten it to a single entry and never
   say it isn't supported. Rules:
     * Only on single-leg long_call / long_put. Each rung is a full condition PLUS
       add_contracts (an ABSOLUTE contract count); rungs ordered shallow → deep.
@@ -395,55 +398,55 @@ CONVENTIONS:
       shallowest threshold). Carry the rung indicator's period/timeframe onto every rung and
       the rearm ("5-minute RSI(14)" → period 14, timeframe "5min" on all of them).
     * A 5-minute ladder indicator ⇒ backtest.clock "5min" (like any intraday indicator).
-    * max_total_contracts is REQUIRED — the ruin cap. If the user states one ("cap at 20",
+    * max_total_contracts is REQUIRED: the ruin cap. If the user states one ("cap at 20",
       "max 20 contracts total") use it. If NO cap is stated, ASK for it: a scale-in with no
-      hard cap is unbounded ruin — NEVER default or invent it.
+      hard cap is unbounded ruin. NEVER default or invent it.
     * "stop adding when it reverses" / "add until the move reverses, then stop" / "stop
       deepening if it doesn't keep falling" → stop_adding_on {"mode":"next_rung_not_reached"}
-      (adds simply stop when the signal doesn't reach the next rung — the ONLY supported
+      (adds simply stop when the signal doesn't reach the next rung; the ONLY supported
       mode; never emit "reversal_signal").
-    * sizing stays fixed_contracts (rung counts are absolute) — never risk_pct with a ladder.
+    * sizing stays fixed_contracts (rung counts are absolute), never risk_pct with a ladder.
 - "flatten by 3:45" / "close everything by 3:45pm" / "no overnight, out by 15:45" (intraday)
   → exit.close_at_time "15:45" (ET, clock "5min"). It is a COMPLETE exit on its own.
-- CONTINUOUS SCANNING — INTRADAY strategies only (0-2 DTE, intraday indicators, or
+- CONTINUOUS SCANNING: INTRADAY strategies only (0-2 DTE, intraday indicators, or
   session language like "all day"/"all session"/"through the day"): phrasing like
   "take every setup", "re-enter after I take profit", "keep selling all day",
   "trade it all day" → entry.intraday_scan "every_setup" (clock "5min"). One entry
-  per SIGNAL EPISODE — the engine handles episode/re-entry mechanics; do NOT emit a
+  per SIGNAL EPISODE. The engine handles episode/re-entry mechanics; do NOT emit a
   ladder for this. Condition-less continuous scanning ("take every setup all day",
   "keep selling", "get right back in after each exit" with NO stated trigger) is
   COMPLETE as written: emit intraday_scan "every_setup" with "conditions": [] and
-  frequency "daily" — the position LIFECYCLE is the setup (the engine re-enters
+  frequency "daily": the position LIFECYCLE is the setup (the engine re-enters
   after each exit); NEVER ask what defines a setup. On a LONGER-TENOR strategy
   ("every time RSI dips below 30, buy a 45 DTE call") the same words are a plain
-  signal_only DAILY strategy — do NOT emit intraday_scan or clock "5min" for them.
+  signal_only DAILY strategy. Do NOT emit intraday_scan or clock "5min" for them.
   "once a day" / "each morning" / one entry per session phrasing → OMIT the field
   entirely (the default). FOR INTRADAY STRATEGIES (0-2 DTE / 5-min), a session
   cycle is the natural reading: when no cadence is stated use frequency "daily"
-  WITHOUT asking — do not ask "how often should we enter" there (the daily-clock
+  WITHOUT asking. Do not ask "how often should we enter" there (the daily-clock
   rule below still applies to everything else). NEVER combine intraday_scan with
-  scale_in — a ladder is its own multi-entry semantic (if the user asks for both,
+  scale_in; a ladder is its own multi-entry semantic (if the user asks for both,
   ASK which they mean).
 - RESOLUTION ("use the finest data", "minute-level where you have it", "best/highest
   resolution available", "minute resolution") → backtest.resolution "finest" (clock
   "5min"). This is a DATA POLICY, never inferred from strategy shape: a plain 0DTE
-  request WITHOUT this phrasing gets NO resolution field — never guess it.
+  request WITHOUT this phrasing gets NO resolution field. Never guess it.
 - sizing/costs/backtest: use the defaults shown unless the user states otherwise.
-  spec_version: always emit 1 — the server recomputes it (ivx_zscore_1y
+  spec_version: always emit 1; the server recomputes it (ivx_zscore_1y
   lifts it to 8; flow/tide/NOPE/put-call/max-pain vocabulary lifts it to 7;
   gex/dex vocabulary
   lifts it to 6; skew_25d or term_structure_slope lifts it to 5; intraday_scan
   or backtest.resolution lifts it to 4; a scale_in ladder or a close_at_time
   lifts it to 3; v2 vocabulary lifts it to 2).
 
-WHEN TO ASK (result "questions") — the tool's identity depends on this:
+WHEN TO ASK (result "questions"). The tool's identity depends on this:
 - ZERO exit rules stated → ask. No strike selection (delta/offset/ATM) stated → ask.
   For an exit-less 0DTE SELLING strategy (short premium, same-day expiry), the ask
   must OFFER the concrete choices: a force-flat time (e.g. "flatten by 15:45"), a
   profit target, or holding to settlement (0DTE settles at the close: ITM = assignment,
-  OTM = expires worthless). Suggest — NEVER default one in. Entry TIME is never a
+  OTM = expires worthless). Suggest; NEVER default one in. Entry TIME is never a
   required question (0DTE included): without time_of_day the entry window is simply
-  the whole session — only ask about entry timing when the user's own words are
+  the whole session; only ask about entry timing when the user's own words are
   ambiguous about a time they stated.
 - Underlying missing or not one of SPY/QQQ/IWM → ask (offer the three).
 - Vague triggers ("when it dips", "when it looks oversold") → ask what defines them
@@ -457,7 +460,7 @@ WHEN TO ASK (result "questions") — the tool's identity depends on this:
   e.g. "VIX above 20"). Never substitute it silently.
 - A scale-in ladder with NO stated max-contracts cap → ask for the cap (offer a couple of
   concrete totals). The ladder is supported; the missing RUIN CAP is the only blocker.
-- No entry cadence AND no entry condition → ask — EXCEPT intraday strategies
+- No entry cadence AND no entry condition → ask, EXCEPT intraday strategies
   (0-2 DTE / 5-min), where a session cycle (frequency "daily") is the natural
   reading and is used without asking. Worked example: "Sell a 30-delta put on
   SPY, close at 50% profit" is a DAILY-clock strategy stating neither tenor nor
@@ -468,9 +471,9 @@ Include 2-4 concrete "options" per question whenever sensible.
 
 THE ONE ALLOWED CONVENTION: if tenor is unstated but the exit ITSELF references a
 DTE ("close at 21 DTE", "exit at 10 DTE"), that implies a longer tenor on a
-premium-selling structure — use target_dte 45 (the standard monthly cycle). It
+premium-selling structure: use target_dte 45 (the standard monthly cycle). It
 applies ONLY when a DTE number appears in the exit: a bare profit target
-("close at 50% profit") implies NOTHING about tenor — tenor stays a question.
+("close at 50% profit") implies NOTHING about tenor; tenor stays a question.
 Do not invent anything else.
 
 If the user supplied ANSWERS to earlier questions, merge them with the original
@@ -484,7 +487,7 @@ def _call_llm(
     import requests
 
     body: dict[str, Any] = {
-        # the parser stays on the pro model (its own override) — flash does not
+        # the parser stays on the pro model (its own override); flash does not
         # clear the parser eval (it fabricates exits); guardrail #3
         "model": os.environ.get("OPENROUTER_PARSER_MODEL", PARSER_MODEL),
         "messages": messages,
@@ -515,7 +518,7 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
     """Parse NL → spec or questions. None when no LLM key is configured.
 
     Raises ParserUnavailableError when the upstream LLM fails or the parse
-    budget runs out — an error the route reports as a retryable 503, never
+    budget runs out, an error the route reports as a retryable 503, never
     dressed up as a clarifying question."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
@@ -533,9 +536,9 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
         remaining = deadline - _monotonic()  # one snapshot per iteration
         if attempt and remaining - _CONNECT_TIMEOUT_SECONDS < _MIN_RETRY_SECONDS:
             # the earned retry can't get a useful read slice inside the
-            # proxy's leash — refuse it here, while we can still say so
+            # proxy's leash; refuse it here, while we can still say so
             raise ParserUnavailableError(
-                "The parser ran out of time before it could finish — "
+                "The parser ran out of time before it could finish; "
                 "try again, or rephrase the strategy in one sentence."
             )
         if retry_note:
@@ -548,26 +551,29 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
         except _UpstreamHTTPError as exc:
             if attempt:
                 raise ParserUnavailableError(
-                    "The parser hit an upstream error — try again, or "
+                    "The parser hit an upstream error; try again, or "
                     "rephrase the strategy in one sentence."
                 ) from exc
-            continue  # transient gateway error — one plain retry within budget
+            continue  # transient gateway error, one plain retry within budget
         except Exception as exc:
             log.exception("parser LLM failed")
             raise ParserUnavailableError(
-                "The parser hit an upstream error — try again, or "
+                "The parser hit an upstream error; try again, or "
                 "rephrase the strategy in one sentence."
             ) from exc
         if data is None:
-            retry_note = "\n\nRespond with the JSON object ONLY — no prose, no code fences."
+            retry_note = "\n\nRespond with the JSON object ONLY, no prose, no code fences."
             continue
 
         if data.get("result") == "questions":
+            # house punctuation on receipt: a clarifying question is copied
+            # verbatim into the run's provenance record, so the text stored
+            # there and the text on screen are the same normalized string
             qs = [
                 Question(
                     id=str(q.get("id", f"q{i}")),
-                    question=str(q.get("question", "")).strip(),
-                    options=[str(o) for o in q.get("options", [])][:4],
+                    question=normalize(str(q.get("question", "")).strip()),
+                    options=[normalize(str(o)) for o in q.get("options", [])][:4],
                 )
                 for i, q in enumerate(data.get("questions", []))
                 if str(q.get("question", "")).strip()
@@ -584,9 +590,20 @@ def parse_strategy(text: str, answers: dict[str, str] | None = None) -> ParseOut
 
         # guardrail: the user's words are the record, never a paraphrase
         raw_spec.setdefault("meta", {})
+        # house punctuation on receipt, BEFORE validation, so the stored
+        # spec is clean and every surface downstream inherits it: the run
+        # name on the Library card, the report and notebook headings, the
+        # lineage header, the argue-back sentence. meta.name is the parser
+        # MODEL's prose, which is why it is normalized here and why the
+        # read-time layer cannot do it: that layer exempts the whole spec
+        # block, and rightly, because the spec round-trips back to the
+        # server as authoritative on the variant path.
+        model_name = raw_spec["meta"].get("name")
+        if isinstance(model_name, str):
+            raw_spec["meta"]["name"] = normalize(model_name)
         raw_spec["meta"]["description_raw"] = text
         raw_spec["spec_version"] = _required_spec_version(raw_spec)
-        # (ATM → .50Δ normalization lives on StrikeSelection itself — every
+        # (ATM → .50Δ normalization lives on StrikeSelection itself; every
         # ingress that validates a spec gets it, not just this one)
         try:
             spec = StrategySpec.model_validate(raw_spec)
@@ -625,7 +642,7 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     sel = lead["strike_selection"]
     method = sel["method"]
     if method == "delta":
-        # method "atm" can't reach here — StrikeSelection normalizes it to
+        # method "atm" can't reach here; StrikeSelection normalizes it to
         # delta 0.5 during validation, so the dial is always a real .XXΔ
         delta = int(round(abs(sel["value"]) * 100 / 5.0) * 5) or 5
         strike_label = None
@@ -671,7 +688,7 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     trigger_spec = _cond_view(conditions[0]) if conditions else None
 
     # Read-only projections (2026-07-07): a scale-in ladder and any condition
-    # beyond the first were INVISIBLE on the pre-run screen — the dials showed
+    # beyond the first were INVISIBLE on the pre-run screen: the dials showed
     # a strategy with no entry logic, and the SCANNING dial happily built the
     # scan+ladder combination the spec model refuses. Dials cannot edit these;
     # the rebuild passes them through whole (FX.5).
@@ -699,7 +716,7 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
     backtest = spec.get("backtest") or {}
     # explicit dates in the strategy text pre-fill a custom window; the
     # pre-run screen still requires the user to CONFIRM a window before
-    # any run (owner directive 2026-07-06) — null forces that choice
+    # any run (owner directive 2026-07-06); null forces that choice
     window = (
         {"kind": "custom", "start": backtest["start"], "end": backtest.get("end")}
         if backtest.get("start")
@@ -715,7 +732,7 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         "cadence": cadence,
         "size": size,
         # structured dials (2026-07-06): the pre-run screen edits THESE and
-        # the outgoing spec is rebuilt from them — display strings above
+        # the outgoing spec is rebuilt from them; display strings above
         # stay for compatibility
         "cadenceSel": {
             "frequency": freq,
@@ -728,7 +745,7 @@ def spec_to_draft(spec: dict[str, Any], text: str) -> dict[str, Any]:
         # FX.5 (v4 dials): surfaced so the pre-run screen shows and edits them
         "intradayScan": spec["entry"].get("intraday_scan"),
         "resolution": backtest.get("resolution"),
-        # read-only entry logic (see above) — shown, never dial-edited
+        # read-only entry logic (see above): shown, never dial-edited
         "ladder": ladder,
         "conditionList": condition_list,
         "window": window,

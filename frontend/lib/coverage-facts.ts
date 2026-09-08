@@ -1,7 +1,7 @@
 /**
  * Facts derived from the coverage payload, shared by the landing receipts,
  * the landing footer, and the Data Observatory (owner 2026-07-17: "days on
- * record" counts from the OLDEST banked data — SPY/QQQ chains reach 2009 —
+ * record" counts from the OLDEST banked data (SPY/QQQ chains reach 2009)
  * and grows daily; the young nightly-record streak reads as a different,
  * smaller thing and confused the story).
  */
@@ -9,7 +9,7 @@
 import type { CoveragePayload, CoverageRange } from "./types";
 
 /** Earliest first-session across every banked per-ticker range (chains +
- * EOD sources + minute bars) — the true start of the record we hold. */
+ * EOD sources + minute bars), the true start of the record we hold. */
 export function oldestDataFirst(coverage: CoveragePayload): string | null {
   const firsts: string[] = [];
   const collect = (ranges?: Record<string, CoverageRange | null>) => {
@@ -26,7 +26,7 @@ export function oldestDataFirst(coverage: CoveragePayload): string | null {
 }
 
 /** Whole days from the oldest banked session to the payload's own
- * generation stamp — computed, never a build-time constant. */
+ * generation stamp. Computed, never a build-time constant. */
 export function daysOnRecord(coverage: CoveragePayload): number | null {
   const first = oldestDataFirst(coverage);
   if (!first) return null;

@@ -1,7 +1,7 @@
 """Submit-side variant gates on POST /api/backtest.
 
 THE ORDER IS THE CONTRACT (V-167): lock check first, zero-edit guard second,
-debit + run creation + lineage stamping third — and the first two happen
+debit + run creation + lineage stamping third, and the first two happen
 BEFORE the debit exists in any form, not rolled back after. Lineage rides the
 same transaction as the debit, so a crash between them leaves neither: a run
 with a debit and no lineage is a variant that lost its parent, and there is
@@ -154,7 +154,7 @@ def test_locked_ticker_rejects_before_any_debit(client: TestClient) -> None:
 
 def test_lock_rejection_speaks_the_tier_b_register(client: TestClient) -> None:
     """V-168: a doctored client gets the same honest sentence a confused
-    legitimate client would — the field, and the parent's real rule in the
+    legitimate client would: the field, and the parent's real rule in the
     same words the read-only dial uses."""
     uid = _signup(client)
     parent = _store_parent(uid, _atm_spec())
@@ -194,8 +194,8 @@ def test_true_noop_blocks_before_the_debit_with_the_parent_link(
 
 
 def test_rebuild_mismatch_fails_loudly_naming_the_field(client: TestClient) -> None:
-    """V-19 / V-169: the user edited NOTHING and the specs differ anyway —
-    that is the lossy rebuild resurfacing, and it fails at the API boundary
+    """V-19 / V-169: the user edited NOTHING and the specs differ anyway.
+    That is the lossy rebuild resurfacing, and it fails at the API boundary
     naming the drifted field, not merely by declining to spend a credit."""
     uid = _signup(client)
     parent = _store_parent(uid, fx.SPEC)
@@ -209,7 +209,7 @@ def test_rebuild_mismatch_fails_loudly_naming_the_field(client: TestClient) -> N
     assert "backtest.seed" in detail, "the drifted field is named"
     assert "rebuild" in detail.lower(), "the cause is named as a rebuild defect"
     assert _debits(uid) == []
-    # V-171: the error's field strings ARE the pinned V-164 vocabulary — when
+    # V-171: the error's field strings ARE the pinned V-164 vocabulary. When
     # this alarm fires in production, its text is what gets grepped against
     # the vocabulary, so they cannot be dialects
     for row in diff_specs(fx.SPEC, drifted):
@@ -258,7 +258,7 @@ def test_variant_debits_and_stamps_lineage_atomically(client: TestClient) -> Non
 
 
 def test_variant_bumps_the_family_trial_counter(client: TestClient) -> None:
-    """V-44: a variant is a human run and bumps like any other — no exemption,
+    """V-44: a variant is a human run and bumps like any other, no exemption,
     no multiplier. (Beside test_human_runs_still_bump in spirit; lives here
     because this file owns the variant fixtures.)"""
     uid = _signup(client)
@@ -280,8 +280,8 @@ def test_crash_after_debit_before_run_insert_leaves_neither(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """V-167: the atomicity guarantee extended to lineage. creation_record is
-    evaluated while building the Run row — AFTER the ledger add, BEFORE the
-    insert — so raising there is a crash in exactly the window where a debit
+    evaluated while building the Run row (AFTER the ledger add, BEFORE the
+    insert), so raising there is a crash in exactly the window where a debit
     exists and lineage does not. Neither may survive."""
     uid = _signup(client)
     parent = _store_parent(uid, fx.SPEC)
@@ -295,8 +295,8 @@ def test_crash_after_debit_before_run_insert_leaves_neither(
     monkeypatch.setattr(runs_api, "creation_record", boom)
     edited = copy.deepcopy(fx.SPEC)
     edited["backtest"]["seed"] = 13
-    # TestClient re-raises server exceptions rather than fabricating a 500 —
-    # the crash is real either way; what matters is the DB state after it
+    # TestClient re-raises server exceptions rather than fabricating a 500.
+    # The crash is real either way; what matters is the DB state after it
     with pytest.raises(RuntimeError, match="crash between debit"):
         _post_variant(client, parent, edited)
 
@@ -410,8 +410,8 @@ def test_a_non_ordinal_integrity_error_is_not_blamed_on_the_race(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The 409 may only be raised for a verified uq_runs_variant_ordinal
-    violation. Any other constraint failure — a credit-ledger partial index, a
-    duplicate run id — must propagate rather than be reported as "another
+    violation. Any other constraint failure (a credit-ledger partial index, a
+    duplicate run id) must propagate rather than be reported as "another
     variant landed at the same moment", a cause nothing checked. Same rule the
     V-168 lock message follows: name a reason you established first."""
     uid = _signup(client)
@@ -444,7 +444,7 @@ def test_a_non_ordinal_integrity_error_is_not_blamed_on_the_race(
     with pytest.raises(IntegrityError):
         _post_variant(client, parent, edited)
 
-    # V-185: NO RETRY on a non-ordinal cause — one attempt, then propagate
+    # V-185: NO RETRY on a non-ordinal cause: one attempt, then propagate
     assert calls["n"] == 1, "a non-ordinal integrity error must not retry"
     # and nothing was written: the rollback still discards the debit
     assert _debits(uid) == []
@@ -487,7 +487,7 @@ def test_a_non_variant_integrity_error_never_yields_the_variant_race_409(
 ) -> None:
     """V-185 case 2. A plain run has no parent, so `variant_root` is None and
     the old handler skipped the retry and fell straight to a 409 announcing
-    that "another variant of this run landed" — on a run with no family at
+    that "another variant of this run landed", on a run with no family at
     all. The error must propagate as itself instead."""
     uid = _signup(client)
 
@@ -497,7 +497,7 @@ def test_a_non_variant_integrity_error_never_yields_the_variant_race_409(
 
     def duplicate_refund(*a: Any, **kw: Any) -> str:
         # a ledger constraint, nothing to do with ordinals, raised while the
-        # Run row is being built — inside the debit transaction
+        # Run row is being built, inside the debit transaction
         raise IntegrityError(
             "INSERT INTO credit_ledger",
             {},

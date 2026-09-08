@@ -3,8 +3,8 @@
    via currentColor so the mark re-inks live on theme flips. */
 .mark {
   /* no display here: it would outrank Tailwind's responsive hidden/block
-     utilities on the same element (module CSS loads after utilities) —
-     callers set `block`/`md:hidden` themselves. The explicit ratio keeps
+     utilities on the same element (module CSS loads after utilities).
+     Callers set `block`/`md:hidden` themselves. The explicit ratio keeps
      width-only sizing honest: without it an attribute-less svg collapses
      to the 150×20 fallback in Chromium. */
   aspect-ratio: 704 / 152;

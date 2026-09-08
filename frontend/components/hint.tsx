@@ -2,7 +2,7 @@
 
 /**
  * Question-mark tooltip: plain-English explanations for stats and dials.
- * Pure CSS hover — no portal, no state. `align` keeps tooltips near the
+ * Pure CSS hover, no portal, no state. `align` keeps tooltips near the
  * viewport edges from clipping.
  */
 

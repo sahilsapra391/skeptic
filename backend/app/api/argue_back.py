@@ -21,10 +21,10 @@ setters in `app/honesty/stages.py` are why:
 So a variant that nudges one leg of a spread, or that sets target_dte without the
 derived band, shares a number with a swept cell while being a materially different
 run. Quoting that cell's Sharpe at it would be a claim about a backtest nobody
-executed — the exact failure A2 spent a phase removing.
+executed, the exact failure A2 spent a phase removing.
 
 Instead the REAL SETTER IS REPLAYED. `_mutations` is imported from the honesty
-layer (imported and called, never edited — the tree is frozen) to obtain the same
+layer (imported and called, never edited, the tree is frozen) to obtain the same
 setter objects the sweep used, applied to a copy of the parent spec at each swept
 value. If the result equals the variant's spec, the parent literally ran this
 configuration and its number is quotable. If not, nothing is returned.
@@ -48,8 +48,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.text import normalize_mapping
+
 _SWEPT_FIELD_HINT: dict[str, str] = {
-    # For the RENDERED SENTENCE only — which field to name when the diff carries
+    # For the RENDERED SENTENCE only: which field to name when the diff carries
     # more than one row for a single swept mutation (dte moves target_dte plus the
     # derived band). Never used to decide a match; the replay does that.
     "dte": "position.expiration_selection.target_dte",
@@ -70,7 +72,7 @@ _SWEEP_LABEL: dict[str, str] = {
     # and neither "leg 1 strike" nor "leg 2 strike" is what the sweep tested.
     #
     # Measured: without this, 8 of 979 replayable production cells returned
-    # nothing despite the parent having run exactly that configuration — silence
+    # nothing despite the parent having run exactly that configuration, silence
     # caused by an inability to NAME the edit rather than by missing evidence,
     # which is not what V-231's absence-over-approximation is for.
     #
@@ -169,7 +171,7 @@ def lookup(
             # the V-208 table (V-229), and quote the stored numbers verbatim.
             rows = diff_specs(parent_spec, variant_spec)
             if not rows:
-                # the setter produced an identical spec (a collapsed grid cell —
+                # the setter produced an identical spec (a collapsed grid cell,
                 # dte rounding two steps onto the same day). Nothing changed, so
                 # there is no edit to argue about. Measured at 12 of 979 cells.
                 return None
@@ -185,7 +187,17 @@ def lookup(
                     return None
                 field, label = None, sweep_label
             base_sharpe = sharpes[base_index]
-            return {
+            # House punctuation on the way out. Every string in here is
+            # rendered on the confirm screen, and one of them is STORED
+            # prose rather than a constant from this file: `parent_label`
+            # is the parent run's Library name, which on a run saved before
+            # the ban still carries an em-dash. This response is its own
+            # read path (it never travels through the run payload, so
+            # `normalize_payload_prose` never sees it) and it is display
+            # only: nothing here is submitted back, so there is no stored
+            # record to corrupt. The numbers pass through untouched, and a
+            # field PATH has no punctuation to change.
+            return normalize_mapping({
                 "sweep": name,
                 "field": field,          # None when the sweep itself is the subject
                 "fields": [r["field"] for r in rows],
@@ -208,7 +220,7 @@ def lookup(
                 "subject": "field" if field is not None else "sweep",
                 "moved": None if field is not None else _SWEEP_MOVED.get(str(name)),
                 # V-243: the evidence is the PARENT'S, so the copy names the parent
-                # the way every other citation of it does — its Library name, via
+                # the way every other citation of it does: its Library name, via
                 # _run_label. "your last run" is false on any chain deeper than one:
                 # variant 3's parent may be several runs back. One naming convention
                 # everywhere the parent is cited means the argue-back, the carried
@@ -216,11 +228,11 @@ def lookup(
                 # speaking.
                 "parent_label": parent_label,
                 # V-244: the range the sweep speaks for. Rendered only when the panel
-                # is ALREADY visible, so it adds no claim about untested values — it
+                # is ALREADY visible, so it adds no claim about untested values. It
                 # tells a reader the sweep had edges, which makes the panel's next
                 # absence interpretable from memory instead of mysterious. Absence
                 # itself still renders nothing; listing every tested value was the
                 # rejected fix, because it implies neighbours inform.
                 "range": [float(min(values)), float(max(values))],
-            }
+            })
     return None

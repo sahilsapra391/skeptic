@@ -1,4 +1,4 @@
-"""Fill-model calibration from the UW option tape (D3d — measured, never
+"""Fill-model calibration from the UW option tape (D3d: measured, never
 asserted; REPORTED, never scored).
 
 The engine's fill model (app/engine/fills.py, guardrail #1) concedes a
@@ -16,7 +16,7 @@ story, now with a number).
 
 Schema truth (review 2026-07-13, verified against the live lake): the
 tape's ask_vol/bid_vol/mid_vol columns are CUMULATIVE contract-day
-counters, useless per print — the per-print aggressor side is the
+counters, useless per print. The per-print aggressor side is the
 {ask_side}/{bid_side}/{mid_side}/{no_side} token in `tags`, which
 partitions every session's prints exactly. There is NO per-print
 multi-leg marker anywhere in the capture (report_flags carries only
@@ -28,7 +28,7 @@ those prints land in the beyond-touch tail rather than being silently
 Artifact (reference/derived/fill_calibration/ticker={T}.parquet): one row
 per (date, side, size_bucket) holding n, the slip HISTOGRAM in fixed bins,
 and the session median. Histograms SUM across sessions, so pooled
-quantiles are estimated from merged bins — per-session medians never
+quantiles are estimated from merged bins. Per-session medians are never
 averaged (that would be wrong math). Every excluded print is counted:
 mid/no-side prints carry no aggressor, locked or crossed quotes have no
 half-spread to measure against, unparseable rows get their own counter. A
@@ -50,7 +50,7 @@ FILL_CAL_KEY = "reference/derived/fill_calibration/ticker={ticker}.parquet"
 
 # fixed slip-histogram bin edges; bins are (edge, next-edge], first bin is
 # (−inf, 0] (mid-or-better), last is (1.5, +inf). Columns are named by their
-# UPPER edge. Changing these invalidates every banked row — frozen once
+# UPPER edge. Changing these invalidates every banked row. Frozen once
 # derived.
 SLIP_EDGES = (0.0, 0.25, 0.5, 0.75, 1.0, 1.5)
 BIN_COLUMNS = ("b_le0", "b_025", "b_050", "b_075", "b_100", "b_150", "b_gt150")
@@ -82,8 +82,8 @@ def _bin_counts(slips: pd.Series) -> list[int]:
 def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
     """Reduce one session's tape prints to (side, size_bucket) histogram
     rows plus, always, the session's exclusion accounting. Returns None
-    only on an unrecognized shape (missing required columns / empty) —
-    a readable session ALWAYS banks at least a context-only row."""
+    only on an unrecognized shape (missing required columns / empty).
+    A readable session ALWAYS banks at least a context-only row."""
     if prints is None or prints.empty \
             or not set(REQUIRED_COLUMNS).issubset(prints.columns):
         return None
@@ -102,7 +102,7 @@ def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
     t = t[good_quote]
 
     # per-print aggressor side: the tags token (the *_vol columns are
-    # cumulative contract-day counters — see module docstring)
+    # cumulative contract-day counters, see module docstring)
     tags = t["tags"].astype(str)
     is_ask = tags.str.contains("ask_side", regex=False)
     is_bid = ~is_ask & tags.str.contains("bid_side", regex=False)
@@ -120,7 +120,7 @@ def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
                "n_bad_quote": n_bad_quote, "n_mid_side": n_mid,
                "n_no_side": n_no_side}
     rows: list[dict[str, Any]] = []
-    # build the working columns on the FULL frame, then filter once —
+    # build the working columns on the FULL frame, then filter once.
     # .assign of full-index Series onto an empty filtered frame resurrects
     # rows via index alignment (found by the nothing-measurable fixture)
     work = t.assign(
@@ -138,7 +138,7 @@ def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
             **context,
         })
     if not rows:
-        # nothing measurable — bank the accounting anyway so the frozen
+        # nothing measurable: bank the accounting anyway so the frozen
         # tape session is never re-read and its exclusions are disclosed
         rows.append({"side": "none", "size_bucket": "none", "n": 0,
                      **dict.fromkeys(BIN_COLUMNS, 0),
@@ -148,8 +148,8 @@ def calibrate_session(prints: pd.DataFrame) -> list[dict[str, Any]] | None:
 
 def _quantile_from_bins(bins: list[int], q: float) -> float | None:
     """Quantile ESTIMATE from merged histogram bins, linear within a bin.
-    The open end bins clamp to their finite edge (≤0 → 0.0, >1.5 → 1.5) —
-    documented as an estimate, never presented as an exact statistic."""
+    The open end bins clamp to their finite edge (≤0 → 0.0, >1.5 → 1.5).
+    Documented as an estimate, never presented as an exact statistic."""
     n = sum(bins)
     if n == 0:
         return None

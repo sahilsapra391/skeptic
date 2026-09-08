@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Landing §4 — receipts strip (design 2a lines 190–209 / 2b 481–491).
+ * Landing §4: receipts strip (design 2a lines 190–209 / 2b 481–491).
  * Every coverage-fed value renders LIVE from /api/data/coverage via the same
  * shared client cache the app composer uses; while loading (or on failure)
- * those values show "—" — a fake number never renders. The two config tiles
+ * those values show "n/a"; a fake number never renders. The two config tiles
  * (0DTE, bid/ask) are engine-guardrail copy, not data, so they render
- * regardless of fetch state. Trust hue only on this surface — no P/L tokens.
+ * regardless of fetch state. Trust hue only on this surface, no P/L tokens.
  */
 
 import clsx from "clsx";
@@ -22,7 +22,7 @@ function daysBetween(a: string, b: string): number {
 }
 
 /** MetricTile "?" badge + hover tooltip (DS bundle §6 Hint, CSS hover instead
- * of the bundle's JS mouseenter). Hover-only affordance, so hidden below md —
+ * of the bundle's JS mouseenter). Hover-only affordance, so hidden below md;
  * the mobile design carries no hints. */
 function Hint({ text, align = "center" }: { text: string; align?: "center" | "right" }) {
   return (
@@ -66,7 +66,7 @@ function MetricTile({
   );
 }
 
-/** Same pill as the app home's coverage chips (coverage-chips.tsx) — thin
+/** Same pill as the app home's coverage chips (coverage-chips.tsx). Thin
  * coverage gets the trust hue on purpose; deep coverage stays quiet ink. */
 function Chip({ label, fill, range }: { label: string; fill: number; range: string }) {
   return (
@@ -93,33 +93,33 @@ export function Receipts() {
       .catch((e) => setError(e instanceof Error ? e.message : "coverage unavailable"));
   }, []);
 
-  // "SESSIONS ON TAP" = distinct SPY daily chain sessions — same fact the
+  // "SESSIONS ON TAP" = distinct SPY daily chain sessions, the same fact the
   // window picker's "all available" offers, from the one coverage fetch
   const sessionsOnTap = coverage?.chains.SPY
     ? coverage.chains.SPY.sessions.toLocaleString("en-US")
-    : "—";
+    : "n/a";
 
   // "CHAINS SINCE" = earliest chain session across the tickers. Live that is
-  // QQQ 2009-10-12 (SPY starts 2012-07-09) — derived, never hand-pinned.
+  // QQQ 2009-10-12 (SPY starts 2012-07-09). Derived, never hand-pinned.
   const chainYears = coverage
     ? Object.values(coverage.chains)
         .filter((c): c is CoverageRange => c !== null)
         .map((c) => Number(c.first.slice(0, 4)))
     : [];
-  const chainsSince = chainYears.length > 0 ? String(Math.min(...chainYears)) : "—";
+  const chainsSince = chainYears.length > 0 ? String(Math.min(...chainYears)) : "n/a";
 
   // owner 2026-07-17: DAYS ON RECORD counts from the OLDEST banked session
-  // (QQQ chains reach Oct '09) and grows daily — computed from the payload,
+  // (QQQ chains reach Oct '09) and grows daily; computed from the payload,
   // never a constant. The Observatory shows the same number.
   const recordDaysN = coverage ? daysOnRecord(coverage) : null;
-  const recordDays = recordDaysN != null ? recordDaysN.toLocaleString("en-US") : "—";
+  const recordDays = recordDaysN != null ? recordDaysN.toLocaleString("en-US") : "n/a";
   const recordSince = coverage ? oldestDataFirst(coverage) : null;
 
   let chips: ReactNode;
   if (error) {
     chips = (
       <span className="inline-flex items-center rounded-full border border-warn/50 px-3 py-[5px] font-mono text-[11px] text-warn">
-        coverage unavailable — {error.includes("backend unreachable") ? "backend offline" : "lake unreadable"}
+        coverage unavailable: {error.includes("backend unreachable") ? "backend offline" : "lake unreadable"}
       </span>
     );
   } else if (!coverage) {
@@ -184,7 +184,7 @@ export function Receipts() {
           <MetricTile
             value={sessionsOnTap}
             label="SESSIONS ON TAP"
-            hint="every distinct SPY chain session — the window picker’s ‘all available’"
+            hint="every distinct SPY chain session, the window picker’s ‘all available’"
           />
           <MetricTile
             value="0DTE"
@@ -194,20 +194,20 @@ export function Receipts() {
           <MetricTile
             value="bid/ask"
             label="NEVER MID"
-            hint="slip 0.85/0.9 · $0.65/ct — measured, not assumed"
+            hint="slip 0.85/0.9 · $0.65/ct (measured, not assumed)"
           />
           <MetricTile
             value={chainsSince}
             label="CHAINS SINCE"
-            hint="earliest chain session across SPY, QQQ, IWM — read live from the coverage endpoint"
+            hint="earliest chain session across SPY, QQQ, IWM (read live from the coverage endpoint)"
           />
           <MetricTile
             value={recordDays}
             label="DAYS ON RECORD"
             hint={
               recordSince
-                ? `since the oldest banked session — ${shortDate(recordSince)}, growing daily`
-                : "since the oldest banked session — live from the lake"
+                ? `since the oldest banked session (${shortDate(recordSince)}), growing daily`
+                : "since the oldest banked session, live from the lake"
             }
             hintAlign="right"
             className="hidden md:block"

@@ -5,7 +5,7 @@
  *
  * Demo fallback: the run pipeline (parse/backtest/runs/ask) answers 501
  * until milestones M2–M4 exist. When that happens (or the backend is down in
- * dev) and SKEPTIC_DEMO_FALLBACK != "0", those routes — and only those —
+ * dev) and SKEPTIC_DEMO_FALLBACK != "0", those routes (and only those)
  * fall back to labeled demo fixtures. Data routes (/api/data/*, /api/health)
  * NEVER fall back: coverage is real or absent, never invented.
  */
@@ -28,13 +28,13 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   const headers: Record<string, string> = {};
   const contentType = req.headers.get("content-type");
   if (contentType) headers["content-type"] = contentType;
-  // the proxy opens the backend gate with x-skeptic-gate — NOT an
+  // the proxy opens the backend gate with x-skeptic-gate, NOT an
   // Authorization bearer. Those are different principals now (launch L1b):
   // the bearer is the automation/service identity with data-layer bypass
-  // (nightly, workflows — they call the backend directly), and if the
+  // (nightly, workflows, which call the backend directly), and if the
   // proxy sent it, every browser request would read as "service" and the
   // per-run ownership 404 would never fire (review finding). IDENTITY is
-  // the httpOnly session cookie the backend set at signup/login — same-
+  // the httpOnly session cookie the backend set at signup/login, same-
   // origin, forwarded untouched for the backend to resolve to a person.
   const token = process.env.SKEPTIC_ACCESS_TOKEN;
   if (token) headers["x-skeptic-gate"] = token;
@@ -45,9 +45,9 @@ async function forward(req: NextRequest, path: string[], body: string | null) {
   const xff = req.headers.get("x-forwarded-for");
   if (xff) headers["x-forwarded-for"] = xff;
   // LLM round-trips get long leashes: the parser bounds its whole attempt
-  // loop to 90s wall-clock (PARSE_BUDGET_SECONDS, backend parse.py — clarify
+  // loop to 90s wall-clock (PARSE_BUDGET_SECONDS, backend parse.py: clarify
   // -loop re-parses on DeepSeek regularly pass 30s) and grounded Q&A runs a
-  // validation retry — the proxy's leash must stay ABOVE those budgets, or it
+  // validation retry. The proxy's leash must stay ABOVE those budgets, or it
   // aborts a healthy engine mid-work and reports it as a 504
   const llmRoute = path[0] === "parse" || path[2] === "ask";
   const timeout = llmRoute ? 100_000 : 30_000;
@@ -69,7 +69,7 @@ function demoEligible(path: string[]): boolean {
   // ask on a REAL run must surface the backend's honest 501 (missing key or
   // stats bundle), never a canned demo answer
   if (path[0] === "runs" && path[2] === "ask" && !path[1]?.startsWith("demo-")) return false;
-  // run exports (notebook/report) exist only on the backend — the demo
+  // run exports (notebook/report) exist only on the backend. The demo
   // fallback would mask "backend down" as "not built yet"
   if (path[0] === "runs" && (path[2] === "notebook" || path[2] === "report")) return false;
   return true;
@@ -98,7 +98,7 @@ function demoResponse(req: NextRequest, path: string[], body: string | null): Ne
     return NextResponse.json({ runs: listDemoRuns(), demo: true });
   }
   if (path[0] === "runs" && path.length === 2 && req.method === "GET") {
-    // demo payloads only for demo ids — a REAL run id never gets fixture data
+    // demo payloads only for demo ids: a REAL run id never gets fixture data
     if (!path[1].startsWith("demo-")) {
       return NextResponse.json({ detail: "run not found" }, { status: 404 });
     }
@@ -140,14 +140,14 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
     });
     // the backend sets/clears the session cookie (auth routes); relay every
     // Set-Cookie so the browser stores it against THIS origin. getSetCookie
-    // is the only spec-correct multi-value read — the single-header fallback
+    // is the only spec-correct multi-value read. The single-header fallback
     // covers runtimes that predate it (one auth cookie today, so safe).
     const single = upstream.headers.get("set-cookie");
     const setCookies = upstream.headers.getSetCookie?.() ?? (single ? [single] : []);
     for (const c of setCookies) res.headers.append("set-cookie", c);
     return res;
   } catch (err) {
-    // a timed-out request is NOT an unreachable backend — the engine was
+    // a timed-out request is NOT an unreachable backend. The engine was
     // healthy and still working when the proxy gave up; say that honestly,
     // checked BEFORE the demo fallback so a slow engine is never papered
     // over with demo fixtures
@@ -155,22 +155,22 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
       err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     if (timedOut) {
       return NextResponse.json(
-        { detail: "the engine took too long to answer — it's still up; try again" },
+        { detail: "the engine took too long to answer. It's still up; try again" },
         { status: 504 },
       );
     }
-    // backend unreachable — run pipeline may demo; data routes stay honest
+    // backend unreachable: run pipeline may demo; data routes stay honest
     if (demoEligible(path) && demoEnabled()) {
       return demoResponse(req, path, body);
     }
     // the dev hint only makes sense against a local backend; in prod the
-    // usual cause is a redeploy window — say so instead of leaking dev docs
+    // usual cause is a redeploy window. Say so instead of leaking dev docs
     const local = /localhost|127\.0\.0\.1/.test(BACKEND);
     return NextResponse.json(
       {
         detail: local
-          ? `backend unreachable at ${BACKEND} — start it with: cd backend && uv run uvicorn app.main:app`
-          : "the engine is unreachable — it may be redeploying; try again in a minute",
+          ? `backend unreachable at ${BACKEND}. Start it with: cd backend && uv run uvicorn app.main:app`
+          : "the engine is unreachable. It may be redeploying; try again in a minute",
       },
       { status: 502 },
     );

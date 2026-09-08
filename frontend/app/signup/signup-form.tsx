@@ -4,7 +4,7 @@
  * Launch L1b: the real signup form (self-rolled accounts). The pre-account
  * runs this browser made ride the request as claim_run_ids (lib/api signup
  * attaches them and clears the breadcrumb on success). Errors surface the
- * backend's own words — 409 additionally offers the sign-in door. Success
+ * backend's own words. A 409 additionally offers the sign-in door. Success
  * honors ?next= (the account gate stamps it), falling back to /new.
  */
 
@@ -27,13 +27,13 @@ export function SignupForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [done, setDone] = useState<AuthAccount | null>(null);
-  // the current query string, for cross-links that must carry ?next= —
-  // read in an effect (window is absent during prerender)
+  // the current query string, for cross-links that must carry ?next=.
+  // Read in an effect (window is absent during prerender).
   const [search, setSearch] = useState("");
   useEffect(() => setSearch(window.location.search), []);
 
   // the Turnstile widget: we mint the human-check token at SUBMIT (not at
-  // mount) so the first click always rides a fresh, single-use token — a
+  // mount) so the first click always rides a fresh, single-use token. A
   // token minted at mount goes stale/consumed and made the first click fail
   // with a retry needed.
   const turnstileRef = useRef<TurnstileHandle>(null);
@@ -45,8 +45,8 @@ export function SignupForm() {
     let token: string | null = null;
     if (turnstileConfigured()) {
       token = (await turnstileRef.current?.refresh()) ?? null;
-      // no fresh token yet (widget still loading / a challenge to finish) —
-      // nudge instead of sending an empty response the backend would reject
+      // no fresh token yet (widget still loading / a challenge to finish).
+      // Nudge instead of sending an empty response the backend would reject
       if (!token) {
         setBusy(false);
         setError(new ApiError(0, "just finishing a quick human check, try again in a second"));
@@ -59,7 +59,7 @@ export function SignupForm() {
       setError(
         err instanceof ApiError
           ? err
-          : new ApiError(0, "the server could not be reached — try again"),
+          : new ApiError(0, "the server could not be reached, try again"),
       );
     } finally {
       setBusy(false);
@@ -73,13 +73,13 @@ export function SignupForm() {
         <p className="text-[15px] font-semibold text-ink">
           Account created
           {claimed > 0 &&
-            ` — ${claimed} ${claimed === 1 ? "run" : "runs"} came with you`}
+            ` (${claimed} ${claimed === 1 ? "run" : "runs"} came with you)`}
           .
         </p>
         <p className="mt-3">
           {done.verificationSent
-            ? "Verification email sent — check your inbox."
-            : "Verification email pending — the sender isn't configured yet; you can keep working."}
+            ? "Verification email sent. Check your inbox."
+            : "Verification email pending. The sender isn't configured yet; you can keep working."}
         </p>
         <Link
           href={nextTarget()}
@@ -140,7 +140,7 @@ export function SignupForm() {
           )}
         </p>
       )}
-      {/* the human check — invisible unless Cloudflare challenges; renders
+      {/* the human check, invisible unless Cloudflare challenges; renders
           nothing when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset (dev). The token
           is minted at submit via the ref, not here. */}
       <div className="mt-5">

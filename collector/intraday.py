@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-intraday.py — forward minute-by-minute options quote recorder (DATA-PIPELINE
+intraday.py: forward minute-by-minute options quote recorder (DATA-PIPELINE
 job 5). Runs as a long-lived launchd agent on the owner's Mac (GitHub Actions
-free minutes cannot host a 6.75h/day loop — see docs/INTRADAY-OPTIONS-DATA-EVAL.md).
+free minutes cannot host a 6.75h/day loop, see docs/INTRADAY-OPTIONS-DATA-EVAL.md).
 
 Every minute of the options session (NYSE open → close + 15 min, XNYS
 calendar-aware including early closes):
@@ -17,7 +17,7 @@ calendar-aware including early closes):
   - Every --yahoo-every minutes (default 15): the yfinance chain snapshot
     (reusing collect.yahoo_snapshot) as cross-source redundancy, dispatched
     to a single worker thread (YahooLeg) so a slow Yahoo session can never
-    starve the per-minute CBOE cadence — a cold first cycle at the open
+    starve the per-minute CBOE cadence. A cold first cycle at the open
     (crumb fetch + per-ticker retries) ran 09:33→09:38 ET on 2026-07-13 and
     cost the 13:34–13:38Z CBOE snapshots. Yahoo at 1-min cadence would need
     ~120 req/min and risks throttling the same source the nightly EOD record
@@ -27,7 +27,7 @@ calendar-aware including early closes):
     log), and a leg hung past that (see YahooLeg) is abandoned and replaced.
 
 Layout: options_intraday/source={cboe_delayed,yahoo}/ticker=T/date=D/
-snap_YYYYMMDDTHHMMZ.parquet — same snap_* shape as the EOD Yahoo record.
+snap_YYYYMMDDTHHMMZ.parquet, same snap_* shape as the EOD Yahoo record.
 
 Missing R2 credentials → clear log line + exit 78; launchd's ThrottleInterval
 retries later, so filling collector/.env is all it takes to go live.
@@ -101,8 +101,8 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
     # it alongside spot); banked per snapshot so the chart's intraday tail can
     # show real volume (diffed to per-bar at read time). None if the feed omits it.
     und_volume = data.get("volume")
-    # the feed's own 30d IV index for the underlying, banked per snapshot —
-    # a free forward cross-check for the in-house ATM-IV derivation now that
+    # the feed's own 30d IV index for the underlying, banked per snapshot.
+    # A free forward cross-check for the in-house ATM-IV derivation now that
     # the iVolatility analytics series is frozen (no subscription)
     iv30 = data.get("iv30")
     rows, dropped = [], 0
@@ -137,7 +137,7 @@ def fetch_cboe_chain(ticker: str) -> pd.DataFrame:
             "source": "cboe_delayed",
             "source_ts": payload.get("timestamp") or data.get("last_trade_time"),
             "und_volume": und_volume,
-            # displayed NBBO depth in contracts — the F5 disclosure input the
+            # displayed NBBO depth in contracts, the F5 disclosure input the
             # feed always carried and the recorder used to drop
             "bid_size": o.get("bid_size"),
             "ask_size": o.get("ask_size"),
@@ -202,7 +202,7 @@ def snapshot_cycle(s3, do_yahoo: bool, dry_run: bool, yahoo_run=yahoo_cycle) -> 
 
 
 def yahoo_tick_due(minute_idx: int, yahoo_every: int) -> bool:
-    """--yahoo-every 0 means never — including minute 0 of a session window,
+    """--yahoo-every 0 means never, including minute 0 of a session window,
     where a bare modulo would still fire (0 % anything == 0)."""
     return yahoo_every > 0 and minute_idx % yahoo_every == 0
 
@@ -216,13 +216,13 @@ class YahooLeg:
     same r2_put_parquet path (boto3 clients are thread-safe; the client is
     created once on the main thread). At most one leg is in flight: a tick
     that fires while the previous leg is still running is skipped, never
-    queued — Yahoo is cross-source redundancy and the next tick recovers
+    queued. Yahoo is cross-source redundancy and the next tick recovers
     it. YAHOO_LEG_BUDGET_SEC bounds a slow-but-progressing leg, so a leg
     still alive after WEDGED_AFTER_SEC of wall time is hung on something
     yfinance's per-request timeout does not cover (DNS, drip-fed reads).
     Python threads cannot be killed, so that leg is abandoned (a bounded
-    leak of one daemon thread per wedge) and a fresh leg takes over —
-    yahoo capture must never stay dead on an unattended host.
+    leak of one daemon thread per wedge) and a fresh leg takes over.
+    Yahoo capture must never stay dead on an unattended host.
     """
 
     WEDGED_AFTER_SEC = 30 * 60
@@ -248,7 +248,7 @@ class YahooLeg:
             thread.start()
         except RuntimeError as exc:
             # thread creation failed (resource pressure); a yahoo dispatch
-            # failure must never take the CBOE cadence down with it — log,
+            # failure must never take the CBOE cadence down with it: log,
             # leave no half-started state, retry at the next tick
             log.error("yahoo leg failed to start: %s", exc)
             self._thread = None
@@ -348,7 +348,7 @@ def run_loop(yahoo_every: int, dry_run: bool, max_lake_gb: float) -> int:
             # writing to a bucket the owner asked to bound.
             over = lake_over_cap(s3, max_lake_gb)
             if over is not None:
-                log.error("intraday lake %.1f GB exceeds cap %.1f GB — pausing "
+                log.error("intraday lake %.1f GB exceeds cap %.1f GB, pausing "
                           "recording; raise INTRADAY_MAX_GB / --max-lake-gb or "
                           "thin the lake", over, max_lake_gb)
                 time.sleep(3600)
@@ -382,7 +382,7 @@ def main() -> int:
 
     required = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET")
     if not args.dry_run and any(k not in os.environ for k in required):
-        log.error("R2 credentials missing — fill collector/.env (see .env.example); "
+        log.error("R2 credentials missing. Fill collector/.env (see .env.example); "
                   "agent will retry via launchd ThrottleInterval")
         return 78  # EX_CONFIG
 

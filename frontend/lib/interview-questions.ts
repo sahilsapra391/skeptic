@@ -1,10 +1,10 @@
 /**
- * The interview card's sample clarifying questions — a different one each
+ * The interview card's sample clarifying questions, a different one each
  * visit, so the landing shows the range of what the parser actually asks.
  * Seeded with real questions harvested from past runs, expanded across the
  * parser's genuine clarification domains (exits, strikes, entry signals,
  * cadence, wing width, stops, sizing/ruin caps, DTE, rolls, resolution).
- * These mirror the product's real behavior — the parser never guesses an
+ * These mirror the product's real behavior: the parser never guesses an
  * ambiguous field, it asks (engine guardrail #3).
  */
 
@@ -25,7 +25,7 @@ export const INTERVIEW_QUESTIONS: InterviewQuestion[] = [
     options: ["20", "30", "50", "custom"],
   },
   {
-    q: "What width for the wings — the dollar distance from each short strike to its long protection?",
+    q: "What width for the wings, the dollar distance from each short strike to its long protection?",
     options: ["$5", "$10", "$15", "$20"],
   },
   {
@@ -46,7 +46,7 @@ export const INTERVIEW_QUESTIONS: InterviewQuestion[] = [
   },
   // ── the parser's real clarification domains ──
   {
-    q: "Two exits could apply at 21 days — take whichever hits first, or profit target only?",
+    q: "Two exits could apply at 21 days. Take whichever hits first, or profit target only?",
     options: ["whichever hits first", "profit target only", "time exit only"],
   },
   {
@@ -217,7 +217,7 @@ export const INTERVIEW_QUESTIONS: InterviewQuestion[] = [
 
 const KEY = "sk-interview-q";
 
-/** This visit's question WITHOUT advancing — safe to seed a useState. */
+/** This visit's question WITHOUT advancing, safe to seed a useState. */
 export function peekInterviewQuestion(): InterviewQuestion {
   if (typeof window === "undefined") return INTERVIEW_QUESTIONS[8]; // the canonical exit one
   try {

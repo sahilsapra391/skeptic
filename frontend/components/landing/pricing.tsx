@@ -2,10 +2,10 @@ import Link from "next/link";
 import clsx from "clsx";
 
 /**
- * Landing §6 — pricing ("That's the whole price list.").
+ * Landing §6: pricing ("That's the whole price list.").
  * Design: docs/design/landing/Skeptic Landing.dc.html option 2a lines 271-298
  * (desktop: ONE panel, three columns) / 2b lines 522-541 (mobile: rows with
- * hairline separators — never three tier cards). Honesty lines verbatim per
+ * hairline separators, never three tier cards). Honesty lines verbatim per
  * copy-deck §6 incl. the OWNER OVERRIDE (Jul 16): "not enough evidence"
  * REFUNDS the credit. Primary CTA anchors back to the live composer
  * (#composer lives on the hero's composer block).
@@ -33,21 +33,21 @@ const ROWS: PriceRow[] = [
     value: "1",
     main: "free backtest, right now",
     sub: "no account, no card",
-    mobile: "free backtest — no account, no card",
+    mobile: "free backtest (no account, no card)",
   },
   {
     value: "5",
     main: "free with an account",
     sub: "yes account, still no card",
-    // 2b's "your first run comes with you" is the claim flow — not built yet
+    // 2b's "your first run comes with you" is the claim flow, not built yet
     // (CONTEXT); no promises the product can't keep today
-    mobile: "free with an account — still no card",
+    mobile: "free with an account (still no card)",
   },
   {
     value: "$10 → 50",
     main: "one-time, fifty more",
     sub: "no subscription, no tiers",
-    mobile: "one-time — no subscription, no tiers",
+    mobile: "one-time (no subscription, no tiers)",
     comingSoon: true,
   },
 ];
@@ -126,14 +126,14 @@ export function Pricing() {
           ))}
         </div>
 
-        {/* honesty lines — VERBATIM (owner override Jul 16); never reword */}
+        {/* honesty lines, VERBATIM (owner override Jul 16); never reword */}
         <div className="mt-3.5 flex flex-col gap-[5px] md:mt-[18px]">
           <div className="font-mono text-[12px] leading-[1.6] text-ink-2">
-            “Not enough evidence” refunds the credit — you only spend on a
+            “Not enough evidence” refunds the credit. You only spend on a
             graded verdict.
           </div>
           <div className="font-mono text-[11px] leading-[1.6] text-ink-4">
-            same if a run fails on our end — the credit comes back on its own
+            same if a run fails on our end, the credit comes back on its own
           </div>
         </div>
 
@@ -148,7 +148,7 @@ export function Pricing() {
             href="/signup"
             className="flex h-[46px] items-center justify-center rounded-[10px] border border-line bg-raised-2 px-[18px] text-[13px] font-semibold text-ink-2 transition-colors hover:border-trust-border hover:bg-raised-3 hover:text-ink md:inline-flex md:h-[42px]"
           >
-            Create an account — 5 free
+            Create an account: 5 free
           </Link>
         </div>
       </div>

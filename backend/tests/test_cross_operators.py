@@ -1,11 +1,11 @@
 """crosses_above/crosses_below need series context (yesterday's value).
 
 Regression for the crosses-on-scalar 500: {indicator: vix_level, operator:
-crosses_above, value: 20} — the natural "when VIX crosses above 20" — used
+crosses_above, value: 20} (the natural "when VIX crosses above 20") used
 to VALIDATE and then crash the run at its first evaluated session (the
 engine's _compare raises on crosses without series context). The Condition
-model now refuses the pair, so every ingress — the parser retry loop,
-POST /api/backtest, stored-spec re-validation, ladder rungs and the rearm —
+model now refuses the pair, so every ingress (the parser retry loop,
+POST /api/backtest, stored-spec re-validation, ladder rungs and the rearm)
 gets an actionable 422 instead of a mid-run 500. Guardrail #3: the parser
 asks whether the level form is meant; it never substitutes it.
 """
@@ -57,14 +57,14 @@ class TestValidation:
         assert cond.operator is Operator.CROSSES_ABOVE
 
     def test_ladder_rung_refuses_crosses_on_scalar_read(self) -> None:
-        # Rung subclasses Condition — the ladder inherits the refusal
+        # Rung subclasses Condition, so the ladder inherits the refusal
         with pytest.raises(ValidationError, match="point-in-time"):
             Rung(indicator=Indicator.VIX_LEVEL, operator=Operator.CROSSES_ABOVE,
                  value=20, add_contracts=1)
 
     def test_parsed_spec_shape_refuses_at_validation(self) -> None:
         """The exact shape the parser used to emit for 'when VIX crosses
-        above 20' — must 422 at validation, never reach the engine."""
+        above 20'. It must 422 at validation, never reach the engine."""
         raw = {
             "spec_version": 1,
             "meta": {"name": "VIX cross regression",
@@ -108,7 +108,7 @@ def _view(with_vix: bool = False) -> MarketView:
 class TestEngineLockstep:
     def test_cross_capable_set_matches_engine(self) -> None:
         """Every CROSS_CAPABLE indicator must actually evaluate a crosses
-        condition (a bool, no raise) — the validation set and the engine's
+        condition (a bool, no raise), so the validation set and the engine's
         _series_pair routing stay in lockstep as vocabulary grows."""
         view = _view()
         for indicator in sorted(CROSS_CAPABLE_INDICATORS):
@@ -118,7 +118,7 @@ class TestEngineLockstep:
 
     def test_engine_backstop_still_refuses_unvalidated_crosses(self) -> None:
         """Defense in depth: a crosses-on-scalar condition built AROUND
-        validation is still refused loudly by the engine — never a
+        validation is still refused loudly by the engine, never a
         fabricated signal."""
         view = _view(with_vix=True)
         cond = Condition.model_construct(

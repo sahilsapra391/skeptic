@@ -11,5 +11,5 @@ ExecStart=/usr/bin/bash /opt/skeptic/collector/deploy/autoupdate.sh
 # MUST stay under the guard's 30-min session lookahead: the script checks the
 # window once at start, so bounding the whole run at 25 min guarantees a
 # stalled fetch/sync can never reach the recorder restart inside a session
-# (a killed run is safe — the deployed code is untouched, retry is tomorrow)
+# (a killed run is safe: the deployed code is untouched, retry is tomorrow)
 TimeoutStartSec=1500

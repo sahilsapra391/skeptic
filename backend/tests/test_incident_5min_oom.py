@@ -4,10 +4,10 @@ OOM-killed the Railway box and left the run spinning as 'running' forever.
 
 Two mechanisms, two pins:
 1. BarView.intraday_closes_upto copied the ENTIRE rolling prefix on every
-   bar — O(bars²) time and multi-MB-per-bar allocator churn. The view must
+   bar (O(bars²) time and multi-MB-per-bar allocator churn). The view must
    return AT MOST the trailing INTRADAY_LOOKBACK_BARS values.
 2. A run left queued/running by a dead process must be swept to an honest
-   error at boot — background tasks never survive the process.
+   error at boot. Background tasks never survive the process.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ class TestBoundedIntradayCloses:
 
     def test_short_history_and_snapshot_bound(self) -> None:
         lasts = [1.0, 2.0, 3.0, 4.0]
-        # lasts_len snapshots the current bar — later appends invisible
+        # lasts_len snapshots the current bar (later appends invisible)
         got = self._bar_view(lasts, lasts_len=2).intraday_closes_upto()
         assert got == [1.0, 2.0]
 

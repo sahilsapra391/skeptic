@@ -3,13 +3,13 @@
 The machinery this module first duplicated while runs.py was owned by a
 parallel session is consolidated now (2026-07-14): single-flight admission
 and the pinned-window engine re-run live in app.api.jobs, the OOM lock in
-app.engine.concurrency — a reproduce holds the same ENGINE_LOCK as runs
+app.engine.concurrency. A reproduce holds the same ENGINE_LOCK as runs
 and audits, so it can never overlap them. The run's merged payload still
 comes from get_run (receipts + provenance merge included).
 
 Reproduce contract (the plan's Tier 1 item 2, D3 receipts semantics):
-same spec, same seed, the ORIGINAL effective window pinned, and — at the
-intraday clock — the RECORDED per-session resolution map pinned. A fresh
+same spec, same seed, the ORIGINAL effective window pinned, and (at the
+intraday clock) the RECORDED per-session resolution map pinned. A fresh
 app run may resolve finer as the lake deepens; a replay never silently
 re-resolves. Divergence (a pinned-minute session that can no longer build
 a minute grid; a stat outside tolerance; a changed build) is REPORTED,
@@ -58,23 +58,23 @@ def _export_inputs(run_id: str, request: Request) -> tuple[dict[str, Any], dict[
     """Everything both export formats render from: the merged display
     payload, the validated spec doc, and the F8 sweep-coverage notes
     (which live on the stored honesty report, frozen at completion, not
-    in the display payload — baked into the exports so the coverage
+    in the display payload, and are baked into the exports so the coverage
     story travels with the file)."""
     from app.api.runs import get_run
 
-    # direct call, not HTTP — FastAPI won't resolve get_run's Query-typed
+    # direct call, not HTTP. FastAPI won't resolve get_run's Query-typed
     # min_trades default, so pass None explicitly (= the omitted-param
     # behavior: the user's stored evidence-bar setting re-grades the read,
-    # #98). The exports then show exactly what the app shows — including
+    # #98). The exports then show exactly what the app shows, including
     # the L1b ownership 404: an export of an owned run is the run.
     payload = get_run(run_id, request, min_trades=None)  # 404s for us;
     # merges receipts + provenance
     if payload.get("status") != "done":
         raise HTTPException(status_code=409,
-                            detail="run not finished — nothing to export yet")
+                            detail="run not finished, nothing to export yet")
     with db.session() as s:
         # column-scoped: get_run already hydrated the full row (multi-MB
-        # payload_json included) — pull only the two small columns it
+        # payload_json included). Pull only the two small columns it
         # doesn't expose rather than re-fetching everything (review finding)
         row = s.execute(
             select(db.Run.spec_json, db.Run.stats_json)
@@ -93,7 +93,7 @@ def _export_inputs(run_id: str, request: Request) -> tuple[dict[str, Any], dict[
 
 @router.get("/runs/{run_id}/notebook")
 def export_notebook(run_id: str, request: Request) -> JSONResponse:
-    """The run's story as an .ipynb — provenance first, then the numbers,
+    """The run's story as an .ipynb: provenance first, then the numbers,
     then the honesty gauntlet, then the pinned re-execution proof."""
     from app.notebook.builder import build_notebook
 
@@ -118,7 +118,7 @@ def export_notebook(run_id: str, request: Request) -> JSONResponse:
 @router.get("/runs/{run_id}/report")
 def export_report(run_id: str, request: Request) -> Response:
     """The run's story as a standalone HTML document (owner ask
-    2026-07-14: a format anyone can open) — same story as the notebook,
+    2026-07-14: a format anyone can open), same story as the notebook,
     static from the stored run, print-to-PDF clean. Served inline so a
     browser renders it; the filename rides along for saves."""
     from app.notebook.report import build_report
@@ -138,7 +138,7 @@ def export_report(run_id: str, request: Request) -> Response:
         headers={
             "Content-Disposition":
                 f'inline; filename="skeptic-run-{run_id}.html"',
-            # defense-in-depth: the document is fully static — even if
+            # defense-in-depth: the document is fully static. Even if
             # escaping ever regressed, nothing may execute or phone out.
             # Fonts are the one sanctioned external fetch (typography
             # directive); everything else is inline or forbidden.
@@ -152,7 +152,7 @@ def export_report(run_id: str, request: Request) -> Response:
 
 def _expand_resolution_runs(runs: list[dict[str, Any]] | None) -> dict[date, str]:
     """Compressed [{first,last,sessions,resolution}] → {session: resolution}.
-    Every calendar day in [first, last] is pinned — uncovered days never
+    Every calendar day in [first, last] is pinned. Uncovered days never
     build a slice, so over-pinning them is inert."""
     pinned: dict[date, str] = {}
     for r in runs or []:
@@ -205,14 +205,14 @@ def _compare_row(key: str, stored: Any, fresh: Any,
     """ONE comparison policy for every stat (review finding: two adjacent
     loops had drifted on None handling and scale). Both-None is a match;
     a stat the STORED run never recorded is unevaluable (ok=None, excluded
-    from `match` — an old stats bundle is a shape gap, not a drift); a
+    from `match`: an old stats bundle is a shape gap, not a drift); a
     stat the fresh run failed to produce IS a mismatch."""
     row: dict[str, Any] = {"stat": key, "stored": stored, "fresh": fresh}
     if stored is None and fresh is None:
         row["ok"] = True
     elif stored is None:
         row["ok"] = None
-        row["note"] = "not recorded on the stored run — not comparable"
+        row["note"] = "not recorded on the stored run, not comparable"
     elif fresh is None:
         row["ok"] = False
     elif exact:
@@ -231,13 +231,13 @@ def _divergence_report(
     record. Per-day pin-vs-actual alone is blind in two ways the review
     caught: a compressed run spans uncovered gap days, so a day the lake
     backfilled AFTER the original run replays inside the range unnoticed
-    (count check catches it — each recorded run carries its session
+    (count check catches it: each recorded run carries its session
     count), and a session the replay no longer covers never appears in
     the replay map at all (same count check). Sessions outside every
     recorded range are named individually."""
     if not recorded_runs:
         # nothing recorded (daily clock, or a pre-FX.1 intraday run whose
-        # notebook already discloses "window and seed only") — there is no
+        # notebook already discloses "window and seed only"). There is no
         # map to diverge FROM; the stat comparison still stands guard
         return []
     out: list[dict[str, Any]] = []
@@ -261,7 +261,7 @@ def _divergence_report(
             out.append({
                 "range": f"{first} → {last}", "pinned": resolution,
                 "issue": (f"recorded {sessions} covered session(s), replay "
-                          f"covered {len(replayed)} — the lake changed "
+                          f"covered {len(replayed)}. The lake changed "
                           "inside this range since the original run"),
             })
     for day in sorted(actual):
@@ -282,16 +282,16 @@ def _execute_reproduce(run_id: str) -> None:
                 return
             spec_doc = json.loads(run.spec_json)
             stats = json.loads(run.stats_json) if run.stats_json else {}
-            # extract ONLY the compressed resolution runs — the parsed
+            # extract ONLY the compressed resolution runs. The parsed
             # payload can be MBs (equity series, full trade log) and must
             # not stay pinned across the engine run (OOM-guard directive;
-            # review finding — the audit baseline never loads it at all)
+            # review finding: the audit baseline never loads it at all)
             recorded_runs = None
             if run.payload_json:
                 recorded_runs = (json.loads(run.payload_json) or {}
                                  ).get("resolutionRuns")
             # provenance is merged into the payload at READ time, not
-            # stored inside payload_json — read the column directly
+            # stored inside payload_json. Read the column directly
             try:
                 prov = json.loads(run.provenance_json) if run.provenance_json else {}
             except ValueError:
@@ -301,7 +301,7 @@ def _execute_reproduce(run_id: str) -> None:
 
         # window pin + lock + refresh=False stores: the shared verification
         # scaffold (app.api.jobs); reproduce additionally pins the RECORDED
-        # per-session resolution map — a replay never silently re-resolves
+        # per-session resolution map. A replay never silently re-resolves
         spec, result, eff_start, eff_end = pinned_engine_rerun(
             spec_doc, stats, pinned_resolutions=pinned or None)
 

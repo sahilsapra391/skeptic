@@ -20,7 +20,7 @@ const PIN_TIME_FMT = new Intl.DateTimeFormat("en-US", {
 });
 
 /** Pinned-bar time → "Mar 4 ’26", or "Apr 7, 10:35" (ET) when the pin is
- * intraday. Date-only inputs format as plain dates — a timezone conversion
+ * intraday. Date-only inputs format as plain dates, because a timezone conversion
  * would parse them as UTC midnight and slide the label back a day in ET.
  * Shared by chart-teach (pinning) and the provenance story (replaying the
  * record) so the two surfaces can never label the same bar differently. */

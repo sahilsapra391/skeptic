@@ -284,7 +284,7 @@ class TestStoredAsTelemetryOnly:
 # V-224: the crashing set, DERIVED by replaying the pre-fix implementation over
 # every spelling `float()` accepts, not recalled. The PR body first said "six
 # inputs"; the real count is 24 across these classes, and a count was never the
-# point — the boundary is generative, so the classes are listed and the RULE is
+# point. The boundary is generative, so the classes are listed and the RULE is
 # asserted separately below.
 NON_FINITE_ANSWERS = [
     # inf, every case and sign float() takes

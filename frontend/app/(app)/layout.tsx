@@ -4,7 +4,7 @@ import { AccountGate } from "@/components/account-gate";
 import { BootSplash } from "@/components/boot-splash";
 import { NavRail } from "@/components/nav-rail";
 
-// the app surfaces are an application, not content — the landing + legal
+// the app surfaces are an application, not content. The landing + legal
 // pages are the indexable face (launch L4). Public run pages become
 // indexable when a server-rendered share surface exists, not before:
 // client-rendered payload screens index as thin/duplicate content.
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
  */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    // AccountGate (L1b): the app is account-gated — signed-out visitors are
+    // AccountGate (L1b): the app is account-gated. Signed-out visitors are
     // walked to /signup. Soft here (children render while it checks); the
     // backend path matrix is the hard gate.
     <AccountGate>

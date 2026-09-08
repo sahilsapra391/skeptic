@@ -1,4 +1,4 @@
-"""Guardrail #2 canary — permanent required check (BUILD-PLAN cross-
+"""Guardrail #2 canary: permanent required check (BUILD-PLAN cross-
 milestone rules). A simulation at date T attempting to read past T must
 raise, always. If this test goes red, everything stops."""
 
@@ -71,8 +71,8 @@ def test_new_sources_raise_beyond_as_of(monkeypatch) -> None:  # type: ignore[no
 
 # ── The daily indicator cache reads the store's FULL close history ──────────
 # (app/engine/daily_series.py) and hands each session position idx-1 of it.
-# That is a POINT-IN-TIME claim, so the canary — not only the equivalence
-# test — must hold it down: the cache is duck-typed off MarketViewLike, so
+# That is a POINT-IN-TIME claim, so the canary (not only the equivalence
+# test) must hold it down: the cache is duck-typed off MarketViewLike, so
 # a Protocol-satisfying fake would silently keep the legacy path and leave
 # the cached path unguarded (owner requirement 2026-07-15).
 
@@ -116,7 +116,7 @@ def test_cached_series_cannot_see_the_future(doc) -> None:
     tainted = DailySeriesCache(poisoned).tail_pair(cond, as_of)
 
     assert honest == tainted, (
-        f"{doc['indicator']}: future closes changed the value at {as_of} — "
+        f"{doc['indicator']}: future closes changed the value at {as_of}, "
         "the daily series cache is reading past as_of (guardrail #2)"
     )
     # and the poison IS visible later, or the test proves nothing
@@ -146,7 +146,7 @@ def test_engine_condition_path_is_bounded_with_the_cache_attached() -> None:
 def test_barview_daily_series_is_bounded_at_the_previous_session() -> None:
     """A daily condition evaluated at an INTRADAY bar must read the
     previous session's history: today's daily close does not exist yet.
-    BarView.closes_upto() delegates to _prev — daily_series_pair must
+    BarView.closes_upto() delegates to _prev, and daily_series_pair must
     delegate identically, or the cache (keyed on BarView.as_of, which IS
     today) would read today's close at 09:30."""
     from app.engine.engine import BarView

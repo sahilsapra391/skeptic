@@ -71,7 +71,7 @@ def compute_metrics(result: RunResult) -> dict[str, float | None]:
         peak = max(peak, v)
         if peak > 0:
             max_dd = max(max_dd, 1.0 - v / peak)
-    # a ruined curve (equity ≤ 0, the halt session) reads as a TOTAL loss —
+    # a ruined curve (equity ≤ 0, the halt session) reads as a TOTAL loss of
     # 100%, never the >100% a negative equity point would arithmetic into
     # (you cannot lose more than everything; the ruin disclosure carries
     # the negative dollar figure)
@@ -86,6 +86,6 @@ def compute_metrics(result: RunResult) -> dict[str, float | None]:
         if gross_loss > 0:
             metrics["profit_factor"] = gross_win / gross_loss
         elif gross_win > 0:
-            metrics["profit_factor"] = None  # undefined without losses — not ∞ theater
+            metrics["profit_factor"] = None  # undefined without losses, not ∞ theater
 
     return metrics

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-backfill_ivol.py — one-shot iVolatility EOD options backfill into the R2 lake.
+backfill_ivol.py: one-shot iVolatility EOD options backfill into the R2 lake.
 
 Built for the Data Cloud API trial: run --probe the moment the key works,
 then the full pull. Every (ticker, session) becomes one parquet object at
@@ -23,7 +23,7 @@ Usage:
   uv run python backfill_ivol.py --tickers SPY --from 2005-01-03 --to 2019-12-31
   uv run python backfill_ivol.py --dry-run              # fetch+validate, no writes
 
-Env (collector/.env): IVOL_API_KEY  — or IVOL_USERNAME + IVOL_PASSWORD —
+Env (collector/.env): IVOL_API_KEY (or IVOL_USERNAME + IVOL_PASSWORD),
 plus the usual R2_* vars. Resumable: already-written dates are skipped via
 an R2 listing; sessions the vendor has no rows for are remembered in
 state/ivol_backfill.json so re-runs don't re-ask.
@@ -63,14 +63,14 @@ REQUEST_TIMEOUT = 120
 RETRIES = 4
 STATE_FLUSH_EVERY = 50
 
-# per-day sanity gates — a day failing these is logged and NOT written
+# per-day sanity gates. A day failing these is logged and NOT written
 MIN_ROWS = 50
 MAX_CROSSED_FRACTION = 0.05
 
 
 def _auth() -> tuple[dict[str, str], dict[str, str]]:
     """(query_params, headers). The official client (pypi `ivolatility`)
-    sends the API key as a HEADER named apiKey — a query param 403s. The
+    sends the API key as a HEADER named apiKey. A query param 403s. The
     header also keeps the secret out of URLs and retry logs."""
     key = os.environ.get("IVOL_API_KEY")
     if key:
@@ -101,7 +101,8 @@ def _fetch_day(auth: tuple[dict[str, str], dict[str, str]], ticker: str, day: st
             body = resp.json()
             data = body.get("data") if isinstance(body, dict) else body
             return data if isinstance(data, list) else []
-        except Exception as exc:  # noqa: BLE001 — retry then surface
+        except Exception as exc:  # noqa: BLE001
+            # retry then surface
             if attempt == RETRIES - 1:
                 log.warning("%s %s: giving up after %s attempts (%s)", ticker, day, RETRIES, exc)
                 return None
@@ -188,10 +189,10 @@ def _weekdays(start: str, end: str) -> list[str]:
 def probe(auth: tuple[dict[str, str], dict[str, str]]) -> int:
     rows = _fetch_day(auth, "SPY", PROBE_DATE)
     if rows is None:
-        print("PROBE FAILED — request errored (check the key / plan access)")
+        print("PROBE FAILED: request errored (check the key / plan access)")
         return 1
     if not rows:
-        print("PROBE FAILED — authenticated but zero rows for a known session")
+        print("PROBE FAILED: authenticated but zero rows for a known session")
         return 1
     df = _normalize("SPY", PROBE_DATE, rows)
     problem = _validate("SPY", PROBE_DATE, df)
@@ -225,7 +226,7 @@ def run(args: argparse.Namespace) -> int:
             nonlocal done_count
             rows = _fetch_day(auth, _t, day)
             if rows is None:
-                return  # errored after retries — a re-run picks it up
+                return  # errored after retries, a re-run picks it up
             if not rows:
                 with state_lock:
                     state["empty"].setdefault(_t, []).append(day)
@@ -247,13 +248,13 @@ def run(args: argparse.Namespace) -> int:
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             list(pool.map(one, todo))
         r2_put_json(s3, STATE_KEY, state)
-        log.info("%s: finished — %s sessions written", ticker, done_count)
+        log.info("%s: finished, %s sessions written", ticker, done_count)
     return 0
 
 
 def _load_dotenv() -> None:
     """collect.py gets its env from CI; local runs read collector/.env
-    (never `source` it — values contain shell-hostile characters)."""
+    (never `source` it: values contain shell-hostile characters)."""
     env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if not os.path.exists(env_file):
         return

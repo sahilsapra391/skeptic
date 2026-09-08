@@ -1,6 +1,6 @@
 "use client";
 
-/** Settings — editable cost assumptions (applied to every new run), the
+/** Settings: editable cost assumptions (applied to every new run), the
  * verbiage-complexity register, live system status, the standing
  * disclaimer. */
 
@@ -23,7 +23,7 @@ const THEME_LABEL: Record<Theme, string> = {
   dark: "dark",
 };
 
-/** Swatch preview colors per accent — the value each theme actually uses. */
+/** Swatch preview colors per accent, the value each theme actually uses. */
 const ACCENT_PREVIEW: Record<Accent, { dark: string; light: string; label: string }> = {
   cyan: { dark: "rgb(63 193 207)", light: "rgb(13 125 138)", label: "Cyan" },
   sage: { dark: "rgb(156 204 163)", light: "rgb(58 122 72)", label: "Sage" },
@@ -114,7 +114,7 @@ export default function SettingsPage() {
       <h1 className="mb-[26px] font-serif text-[32px] font-medium">Settings</h1>
 
       <div className={PANEL}>
-        <div className={PANEL_TITLE}>COSTS — APPLIED TO EVERY NEW RUN</div>
+        <div className={PANEL_TITLE}>COSTS APPLIED TO EVERY NEW RUN</div>
         <div className="flex flex-col gap-3.5 text-[14.5px]">
           <NumberField
             label="Commission"
@@ -126,7 +126,7 @@ export default function SettingsPage() {
             onCommit={(v) => updateSettings({ commission: v })}
           />
           <NumberField
-            label="Slippage — buys"
+            label="Slippage (buys)"
             suffix="× half-spread"
             value={settings.slippage}
             min={0.05}
@@ -135,7 +135,7 @@ export default function SettingsPage() {
             onCommit={(v) => updateSettings({ slippage: v })}
           />
           <NumberField
-            label="Slippage — sells"
+            label="Slippage (sells)"
             suffix="× half-spread"
             value={settings.slippageSell}
             min={0.05}
@@ -146,7 +146,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <span className="text-[12.5px] leading-[1.55] text-ink-4">
               Buys fill toward the ask, sells toward the bid, plus these fractions of the
-              half-spread. The defaults are measured, not assumed — 233M real prints put
+              half-spread. The defaults are measured, not assumed. 233M real prints put
               the median concession near 0.87, harsher on sells. Mid fills (0) are banned
               by design; only 0.1% of real prints ever fill at mid or better.
             </span>
@@ -190,7 +190,7 @@ export default function SettingsPage() {
           </div>
           {settings.theme === "market" && (
             <p className="text-[12.5px] leading-[1.55] text-ink-4">
-              Market Hours follows the clock — light from 8am to 6pm New York time, dark
+              Market Hours follows the clock: light from 8am to 6pm New York time, dark
               after the close. Right now it’s showing{" "}
               <span className="font-mono text-ink-2">{resolved}</span>.
             </p>
@@ -221,7 +221,7 @@ export default function SettingsPage() {
             </div>
           </div>
           <p className="text-[12.5px] leading-[1.55] text-ink-4">
-            The accent is the trust hue — verdicts, trust bands and controls. It never
+            The accent is the trust hue: verdicts, trust bands and controls. It never
             colors profit or loss, in either mode.
           </p>
         </div>
@@ -245,13 +245,13 @@ export default function SettingsPage() {
         </div>
         <p className="text-[13.5px] leading-[1.6] text-ink-3">
           {settings.verbiage === "institutional"
-            ? "Full quantitative language — Sharpe ratios, percentiles, out-of-sample splits, deflated statistics. For readers who live in this vocabulary."
-            : "Plain English everywhere — verdicts, findings and recommendations rewritten for an everyday trader. Same numbers, same honesty, no jargon."}
+            ? "Full quantitative language: Sharpe ratios, percentiles, out-of-sample splits, deflated statistics. For readers who live in this vocabulary."
+            : "Plain English everywhere: verdicts, findings and recommendations rewritten for an everyday trader. Same numbers, same honesty, no jargon."}
         </p>
       </div>
 
       <div className={PANEL}>
-        <div className={PANEL_TITLE}>EVIDENCE BAR — WHEN A VERDICT UNLOCKS</div>
+        <div className={PANEL_TITLE}>EVIDENCE BAR: WHEN A VERDICT UNLOCKS</div>
         <div className="flex flex-col gap-3.5 text-[14.5px]">
           <NumberField
             label="Minimum trades for a verdict"
@@ -266,7 +266,7 @@ export default function SettingsPage() {
             <span className="text-[12.5px] leading-[1.55] text-ink-4">
               Below this many finished trades a verdict is withheld as insufficient
               evidence. It applies to every new run and re-judges saved runs when you
-              open them — lower it and an old 13-trade refusal unlocks; raise it and a
+              open them. Lower it and an old 13-trade refusal unlocks; raise it and a
               thin graded run goes back to withheld. 15 is the standard floor; it can
               never be zero.
             </span>
@@ -282,7 +282,7 @@ export default function SettingsPage() {
           {settings.minTrades < DEFAULT_SETTINGS.minTrades && (
             <p className="rounded-[10px] border border-dashed border-line-hover px-3.5 py-2.5 text-[12.5px] leading-[1.55] text-ink-3">
               You&apos;ve set the bar below the standard {DEFAULT_SETTINGS.minTrades}.
-              Verdicts on samples this thin are statistically weak — they&apos;ll grade,
+              Verdicts on samples this thin are statistically weak. They&apos;ll grade,
               but each one carries a below-standard-sample disclosure. The honesty
               stays; only the gate moves.
             </p>
@@ -300,18 +300,18 @@ export default function SettingsPage() {
           />
           <Row
             label="Data lake (R2)"
-            value={health ? (health.r2_configured ? "configured ✓" : "creds missing") : "—"}
+            value={health ? (health.r2_configured ? "configured ✓" : "creds missing") : "n/a"}
             dim={!health?.r2_configured}
           />
           <Row
             label="Runs database"
-            value={health?.db ?? "—"}
+            value={health?.db ?? "n/a"}
             dim={!!health?.db?.includes("fallback")}
           />
-          <Row label="Backtest engine + gauntlet" value={health?.engine ?? "—"} />
-          <Row label="NL parser" value={health?.parser ?? "—"} />
-          <Row label="Verdict narration" value={health?.verdict_llm ?? "—"} />
-          <Row label="Grounded Q&A" value={health?.ask ?? "—"} />
+          <Row label="Backtest engine + gauntlet" value={health?.engine ?? "n/a"} />
+          <Row label="NL parser" value={health?.parser ?? "n/a"} />
+          <Row label="Verdict narration" value={health?.verdict_llm ?? "n/a"} />
+          <Row label="Grounded Q&A" value={health?.ask ?? "n/a"} />
           {/* One model runs the parser AND narration since 2026-08-14, so a
               single row is the honest reading. Each half still has its own env
               override, so if a prod value pulls them apart, say which is which
@@ -319,12 +319,12 @@ export default function SettingsPage() {
           {health && health.parser_model && health.parser_model !== health.model ? (
             <>
               <Row label="Model · parser" value={health.parser_model} dim />
-              <Row label="Model · narration" value={health.model ?? "—"} dim />
+              <Row label="Model · narration" value={health.model ?? "n/a"} dim />
             </>
           ) : (
-            <Row label="Model" value={health?.model ?? "—"} dim />
+            <Row label="Model" value={health?.model ?? "n/a"} dim />
           )}
-          <Row label="Numeric validation" value="on — no un-computed numbers" />
+          <Row label="Numeric validation" value="on (no un-computed numbers)" />
           <Row label="Seeds" value="fixed & logged per run" />
         </div>
       </div>

@@ -36,7 +36,7 @@ def _blocking_snapshot(release: threading.Event, started: threading.Event):
 
 
 def _join(leg: intraday.YahooLeg, thread: threading.Thread | None = None) -> None:
-    """Join a leg's thread and FAIL if it is still alive — a silently leaked
+    """Join a leg's thread and FAIL if it is still alive. A silently leaked
     worker outlives monkeypatch teardown and starts calling the real yfinance."""
     thread = thread if thread is not None else leg._thread
     if thread is None:  # a failed assert may reach the finally before any start
@@ -127,7 +127,7 @@ def test_yahoo_leg_ticker_failure_is_logged_not_fatal(monkeypatch, caplog):
 
 def test_wedged_leg_is_abandoned_and_replaced(monkeypatch, caplog):
     """A leg in flight past WEDGED_AFTER_SEC is abandoned (logged at ERROR) and
-    a fresh leg starts on the same tick — yahoo capture never stays dead."""
+    a fresh leg starts on the same tick: yahoo capture never stays dead."""
     release, started = threading.Event(), threading.Event()
     monkeypatch.setattr(intraday, "yahoo_snapshot", _blocking_snapshot(release, started))
     monkeypatch.setattr(intraday.YahooLeg, "WEDGED_AFTER_SEC", 0.0)
@@ -152,7 +152,7 @@ def test_wedged_leg_is_abandoned_and_replaced(monkeypatch, caplog):
 
 def test_below_wedge_threshold_skips_do_not_replace(monkeypatch, caplog):
     """Under the wall-clock threshold an in-flight leg only produces skip
-    warnings — never the abandon ERROR, never a second thread."""
+    warnings, never the abandon ERROR, never a second thread."""
     release, started = threading.Event(), threading.Event()
     monkeypatch.setattr(intraday, "yahoo_snapshot", _blocking_snapshot(release, started))
     leg = intraday.YahooLeg()  # default WEDGED_AFTER_SEC of 30 min never trips here

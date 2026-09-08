@@ -2,7 +2,7 @@
 
 In production (Railway) everything arrives as real env vars. For local dev
 the repo already keeps R2 credentials in collector/.env (the intraday
-recorder's pattern) — reuse that single source of truth instead of a second
+recorder's pattern). Reuse that single source of truth instead of a second
 secrets file. Values already present in the environment always win.
 """
 

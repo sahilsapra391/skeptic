@@ -22,7 +22,7 @@ export function SubpageShell({
       <PublicTheme />
       <div className="mx-auto flex max-w-[720px] flex-col px-6 pb-20 pt-12">
         <Link href="/" className="inline-block" aria-label="Skeptic home">
-          {/* theme-appropriate mark: white on dark, black on light — pure
+          {/* theme-appropriate mark: white on dark, black on light. Pure
               CSS swap so this stays a server component (no theme hook) */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img

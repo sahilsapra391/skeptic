@@ -1,11 +1,11 @@
-"""Fixture: the paired-leg (width) reserve — a put credit spread fits on
+"""Fixture: the paired-leg (width) reserve, a put credit spread fits on
 capital a NAKED short put could not (owner 2026-07-15).
 
 Reserve arithmetic (margin.py pairing rule; spot 100):
   naked short put K=100 would reserve max(20, 10) × 100 = $2,000
   paired with the long K=95: reserve = width × 100 = (100 − 95) × 100 = $500
 
-Timeline (SPY stand-in; capital $1,000 — under the naked reserve):
+Timeline (SPY stand-in; capital $1,000, under the naked reserve):
 
   2025-01-06 (Mon)  spot 100. Exp 2025-01-10.
     short put K=100: bid 2.00 / ask 2.20 → SELL fill = 2.10 − 0.05 = 2.05

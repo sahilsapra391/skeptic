@@ -13,7 +13,7 @@
    trust surfaces. */
 
 :root {
-  /* --- dark (default) neutrals — deep neutral charcoal (owner directive
+  /* --- dark (default) neutrals, deep neutral charcoal (owner directive
      2026-07-04): retuned toward a near-black console palette. Only the
      neutral / ink / chart tokens moved; the accent, P/L and warn families
      are untouched so the COLOR CONTRACT (TECH-SPEC §8) still holds. */
@@ -58,7 +58,7 @@
   --ac-faint: rgb(var(--ac-rgb) / 0.03);
 }
 
-/* accents, dark values — soft pastels that read on ink */
+/* accents, dark values: soft pastels that read on ink */
 [data-accent="sage"] {
   --ac-rgb: 156 204 163;
 }
@@ -105,7 +105,7 @@
   --shadow-pop: 0 8px 24px rgba(16, 16, 20, 0.16);
 }
 
-/* accents, light values — deepened so accent text keeps contrast on paper */
+/* accents, light values: deepened so accent text keeps contrast on paper */
 [data-theme="light"] {
   --ac-rgb: 13 125 138;
 }
@@ -148,7 +148,7 @@ textarea {
   resize: none;
 }
 
-/* Every interactive surface eases between states — hovers, selections and
+/* Every interactive surface eases between states: hovers, selections and
    disabled flips never hard-snap. Tailwind transition utilities still win
    (class specificity) when a component needs its own timing. */
 button,
@@ -188,7 +188,7 @@ summary {
   }
 }
 
-/* the live "beat" — a short bright pulse sweeps the FULL heartbeat path
+/* the live "beat": a short bright pulse sweeps the FULL heartbeat path
    (~372 user units) and loops seamlessly; the base waveform stays fully drawn
    underneath, so the trace fills the panel edge to edge at every frame */
 @keyframes hb {
@@ -291,7 +291,7 @@ summary {
 /* ============================================================ PRINT
    Save PDF prints the run screen itself. Charts, heat cells and the
    walk-forward bars are painted with backgrounds the printer strips by
-   default — keep them, or the honesty panels print as empty boxes.
+   default. Keep them, or the honesty panels print as empty boxes.
    (App chrome is hidden per-element with print:hidden; the scroll cage
    is opened in layout.tsx so the full run paginates.) */
 @media print {
@@ -299,7 +299,7 @@ summary {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  /* the root's height:100% (above) would constrain pagination in WebKit —
+  /* the root's height:100% (above) would constrain pagination in WebKit.
      body/main get their print overrides in layout.tsx; html has no class
      hook, so it's released here */
   html {

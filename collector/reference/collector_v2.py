@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-collector_v2.py — Skeptic data pipeline, reference implementation.
+collector_v2.py: Skeptic data pipeline, reference implementation.
 
 Reference for Claude Code to productionize per docs/DATA-PIPELINE.md.
 Three modes:
@@ -298,7 +298,7 @@ def run_backfill(s3, budget: AvBudget) -> None:
                         r2_put_parquet(s3, key, df)
                     time.sleep(AV_PACING_SECONDS)
                 except RuntimeError as exc:
-                    print(f"  [{ticker}] {prev}: {exc} — stopping for today")
+                    print(f"  [{ticker}] {prev}: {exc}, stopping for today")
                     return
             frontier[ticker] = prev.isoformat()
             r2_put_json(s3, "state/backfill_frontier.json", frontier)

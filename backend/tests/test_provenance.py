@@ -1,4 +1,4 @@
-"""UX Chunk A: run provenance — the setup story snapshotted at creation,
+"""UX Chunk A: run provenance, the setup story snapshotted at creation,
 mechanics appended at completion, and READ-TIME derivation for rows that
 predate the column. Derive-don't-fabricate (owner amendment 2026-07-14):
 the clarifying conversation was never stored for old runs and must never
@@ -64,19 +64,19 @@ class TestFreshRuns:
         assert payload["status"] == "done"
         prov = payload["provenance"]
 
-        # section 1 — the prompt, verbatim
+        # section 1: the prompt, verbatim
         assert prov["origin"] == "user"
         assert prov["source"] == "text"
         assert prov["prompt"]["text"] == "sell a put on SPY, exit at expiration"
-        # section 2 — the conversation, in order, with timestamps
+        # section 2: the conversation, in order, with timestamps
         assert [e["kind"] for e in prov["conversation"]] == ["question", "answer"]
         assert prov["conversation"][0]["options"] == ["50% profit", "hold to expiry"]
         assert prov["conversation"][0]["asked_at"]
         assert prov["conversation"][1]["answered_at"]
-        # section 3 — the confirmed draft, not a re-parse
+        # section 3: the confirmed draft, not a re-parse
         assert prov["confirmed"]["draft"]["structure"] == "short_put"
         assert prov["confirmed"]["untouched"] is True
-        # section 4 — measured mechanics, appended at completion
+        # section 4: measured mechanics, appended at completion
         mech = prov["mechanics"]
         assert mech["engine_s"] >= 0 and mech["gauntlet_s"] >= 0
         assert mech["effective_start"] and mech["effective_end"]
@@ -89,7 +89,7 @@ class TestFreshRuns:
     def test_capture_less_user_run_still_marks_recording(self, client: TestClient) -> None:
         # a submitter that captured nothing (curl / old client): the record
         # exists (so "missing" cleanly means "predates the column") but has
-        # NO conversation key — none was captured, none is invented
+        # NO conversation key: none was captured, none is invented
         r = client.post("/api/backtest", json={"spec": fx.SPEC})
         payload = client.get(f"/api/runs/{r.json()['run_id']}").json()
         prov = payload["provenance"]
@@ -109,7 +109,7 @@ class TestAutomaticRuns:
             "origin": "auto_unlock",
             "parent_run_id": parent,
             "auto_note": "62 new sessions",
-            # an automatic run has no conversation — a smuggled one is ignored
+            # an automatic run has no conversation, so a smuggled one is ignored
             "provenance": CLIENT_PROVENANCE,
         })
         payload = client.get(f"/api/runs/{r.json()['run_id']}").json()
@@ -149,9 +149,9 @@ class TestCapsAndCorruption:
         The assertion above is correct and was under-powered: it calls
         creation_record with no `what_changed`, so it exercises the one path where
         a variant's extra keys cannot appear. The overflow it was meant to catch
-        lived entirely on the variant path — labelled diff rows, the labeling
+        lived entirely on the variant path (labelled diff rows, the labeling
         tally and the reconcile telemetry were added AFTER the byte budget had
-        been measured — and the suite stayed green while asserting the opposite.
+        been measured), and the suite stayed green while asserting the opposite.
         That is the same false-green shape as a suite that never clicks a card:
         the claim was right, the coverage did not reach the defect.
 
@@ -164,7 +164,7 @@ class TestCapsAndCorruption:
         # it fills the budget to within ~130 bytes, so a key written after the
         # budget was measured pushes the record over. The first version of this
         # fixture used 1,900-character answers and passed, because their leftover
-        # slack was wider than the overflow — an under-powered test replacing an
+        # slack was wider than the overflow, an under-powered test replacing an
         # under-powered test. Measured against the pre-fix code this configuration
         # exceeds the cap by 102 bytes; the size was found by sweeping, not chosen.
         conversation = [
@@ -204,7 +204,7 @@ class TestCapsAndCorruption:
         )
 
     def test_null_optional_fields_never_become_the_string_none(self) -> None:
-        # dict.get defaults don't fire on present-but-null keys — str(None)
+        # dict.get defaults don't fire on present-but-null keys, so str(None)
         # would store the literal text "None" as a bar time or ticker
         record = json.loads(creation_record({
             "prompt": {"text": "x", "chart": {
@@ -263,7 +263,7 @@ class TestDerivedOldRuns:
         mech = prov["mechanics"]
         assert mech["engine_s"] >= 0
         assert mech["effective_start"] and mech["effective_end"]
-        # the conversation was never stored — it must never appear
+        # the conversation was never stored, so it must never appear
         assert "conversation" not in prov
 
     def test_nothing_fabricated_when_sources_are_missing(self) -> None:

@@ -5,7 +5,7 @@ model_validator, and pydantic keeps the live exception object in
 errors()[].ctx. The custom HTTPException handler json.dumps's the detail,
 so feeding it raw errors() crashed the handler itself and every honest
 422 surfaced as `500: {}` in the UI (incident 2026-07-07: an RSI-ladder
-spec with the SCANNING dial flipped to every_setup — the user never saw
+spec with the SCANNING dial flipped to every_setup, and the user never saw
 "intraday_scan cannot combine with scale_in"). These tests pin the whole
 path: raise site, handler, and the shape the frontend renders."""
 
@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from app.main import app, http_exception_handler
 
 # The incident spec: a valid v4 intraday long call CARRYING a scale-in
-# ladder AND intraday_scan — refused by _intraday_scan_constraints, which
+# ladder AND intraday_scan, refused by _intraday_scan_constraints, which
 # is a model_validator ValueError (the ctx-poisoning class).
 LADDER_PLUS_SCAN_SPEC = {
     "spec_version": 4,
@@ -86,7 +86,7 @@ def test_validator_refusal_is_json_422(client: TestClient) -> None:
 
 def test_validator_refusal_round_trips_as_json(client: TestClient) -> None:
     r = client.post("/api/backtest", json={"spec": LADDER_PLUS_SCAN_SPEC})
-    json.loads(r.text)  # the frontend's res.json() path — plaintext would raise
+    json.loads(r.text)  # the frontend's res.json() path, plaintext would raise
 
 
 def test_handler_survives_non_serializable_detail() -> None:

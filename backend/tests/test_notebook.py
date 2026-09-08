@@ -1,8 +1,8 @@
 """Parity Tier 1: notebook export + pinned reproduce.
 
 Three layers, mirroring how the feature is built:
-  * the resolution PIN in the engine (a replay never silently re-resolves
-    — the plan's do-NOT item, both directions);
+  * the resolution PIN in the engine (a replay never silently re-resolves,
+    the plan's do-NOT item, both directions);
   * the builder (deterministic .ipynb, provenance story first, no
     credentials, ladder cell only on ladder runs);
   * the API loop (export a real completed fixture run; reproduce it and
@@ -52,7 +52,7 @@ class TestResolutionPin:
 
     def test_pin_holds_a_session_down_after_an_upgrade(self) -> None:
         # the lake now offers minute bars for 01-07, but the recorded run
-        # used five_min — the pin must WIN over live "finest"
+        # used five_min. The pin must WIN over live "finest"
         from datetime import date
 
         store, provider = self._mixed()
@@ -84,7 +84,7 @@ class TestResolutionPin:
 
     def test_minute_pin_falls_back_and_records_the_truth(self) -> None:
         # a pinned-minute session whose grid can no longer be built falls
-        # back to 5-min and RECORDS five_min — the caller compares and
+        # back to 5-min and RECORDS five_min. The caller compares and
         # discloses, the record never lies about what actually ran
         from datetime import date
 
@@ -120,7 +120,7 @@ def test_expand_resolution_runs() -> None:
 
 def test_compare_row_one_policy_for_every_stat() -> None:
     # both-None is a match; stored-None is UNEVALUABLE (a legacy stats
-    # bundle is a shape gap, not a drift — review finding: None == 0 was
+    # bundle is a shape gap, not a drift. Review finding: None == 0 was
     # a spurious permanent mismatch); fresh-None is a real failure
     assert _compare_row("sharpe", None, None)["ok"] is True
     row = _compare_row("filled", None, 0, exact=True)
@@ -136,7 +136,7 @@ def test_compare_row_one_policy_for_every_stat() -> None:
 def test_divergence_report_catches_the_gap_day_backfill() -> None:
     # the review's scenario: the compressed run spans an uncovered gap
     # day; the lake later backfills it; the replay covers one MORE
-    # session inside the range — per-day pin-vs-actual alone is blind,
+    # session inside the range. Per-day pin-vs-actual alone is blind,
     # the recorded session COUNT is not
     from datetime import date
 
@@ -191,19 +191,19 @@ _PAYLOAD = {
     "meta": "SPY · short put · clock daily",
     "mtiles": [{"v": "12%", "l": "CAGR"}],
     # the REAL _downsample row shape: {"t": iso, "v": value} (the report's
-    # SVG crashed on a guessed pair shape — API-loop test caught it)
+    # SVG crashed on a guessed pair shape, API-loop test caught it)
     "equitySeries": [{"t": "2024-01-02", "v": 10000.0},
                      {"t": "2024-06-03", "v": 10800.0},
                      {"t": "2025-01-02", "v": 11500.0}],
     "drawdownSeries": [{"t": "2024-01-02", "v": 0.0},
                        {"t": "2024-06-03", "v": 2.5},
                        {"t": "2025-01-02", "v": 1.0}],
-    "trades": [], "tradeHeader": "Trade log — 10 filled",
+    "trades": [], "tradeHeader": "Trade log: 10 filled",
     "verdict": {"headline": "Held up.", "survived": "5 OF 5"},
     # the REAL payload shape: honesty is a dict of panel fields, not a
     # list (the e2e execution caught the earlier wrong guess)
     "honesty": {"isSharpe": "0.8", "oosSharpe": "0.6",
-                "notes": ["OOS keeps 75% of in-sample sharpe — holds ✓"]},
+                "notes": ["OOS keeps 75% of in-sample sharpe, holds ✓"]},
     "mcTerm": {},
     "resolutionRuns": None, "clock": "daily", "ladderDepth": None,
 }
@@ -259,7 +259,7 @@ class TestBuilder:
         assert build_notebook(**kw) == build_notebook(**kw)
 
     def test_sweep_coverage_notes_are_baked_into_the_story(self) -> None:
-        note = ("gex_level is a sign test (threshold 0 — nothing to "
+        note = ("gex_level is a sign test (threshold 0, nothing to "
                 "perturb), not swept")
         nb = build_notebook(run_id="r1", name="n", payload=_PAYLOAD,
                             provenance=_PROVENANCE, grid=_grid(),
@@ -296,7 +296,7 @@ class TestReport:
         assert "Sell a 30 delta put" in doc
         assert "How do you exit?" in doc
         # single-series charts render with their captions
-        assert "Equity — stored run" in doc
+        assert "Equity (stored run)" in doc
         assert "Drawdown" in doc
 
     def test_user_text_is_escaped(self) -> None:
@@ -318,7 +318,7 @@ class TestReport:
         # the typography directive: exactly the three families, no fourth
         for family in ("Archivo", "IBM Plex Mono", "Newsreader"):
             assert family in doc
-        # verdict section carries no color styling — headline is serif ink
+        # verdict section carries no color styling (headline is serif ink)
         verdict_chunk = doc[doc.index("The verdict"):
                             doc.index("Reproducibility")]
         assert "color:" not in verdict_chunk
@@ -342,7 +342,7 @@ class TestReport:
         doc = self._report(payload=poisoned)
         # the chart is omitted rather than rendered with NaN coordinates;
         # the drawdown chart (clean) still renders
-        assert "Equity — stored run" not in doc
+        assert "Equity (stored run)" not in doc
         assert "Drawdown" in doc
 
     def test_deterministic(self) -> None:
@@ -399,7 +399,7 @@ class TestNotebookEndpoints:
         story = "".join(nb["cells"][1]["source"])
         assert "sell a monday put" in story
 
-        # report: the human-readable twin — inline HTML, story present
+        # report: the human-readable twin, inline HTML, story present
         rr = client.get(f"/api/runs/{run_id}/report")
         assert rr.status_code == 200
         assert rr.headers["content-type"].startswith("text/html")

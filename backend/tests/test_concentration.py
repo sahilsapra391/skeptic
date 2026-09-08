@@ -1,4 +1,4 @@
-"""P&L concentration stage (D1d) — hand-computed.
+"""P&L concentration stage (D1d), hand-computed.
 
 Crafted 61-point equity curve → 60 daily P&L points:
   59 alternating ±10 moves (gross 590) + one +600 spike
@@ -8,10 +8,10 @@ Crafted 61-point equity curve → 60 daily P&L points:
 Gamma coincidence: gammas rise 0.00, 0.01, …, 0.59 across the 60 P&L days
 → the top-decile threshold is the 54th sorted value = 0.54. The spike day
 (index 59, γ 0.59) is top-decile; the two ±10 tie-breaker days (indices
-0 and 1 — Python's sort is stable on the |10| ties) are not →
+0 and 1, since Python's sort is stable on the |10| ties) are not →
 coincidence exactly 1/3.
 
-The flag is a REPORTED reason — compute_trust must carry the note without
+The flag is a REPORTED reason: compute_trust must carry the note without
 changing the level (never a cap in D1).
 """
 

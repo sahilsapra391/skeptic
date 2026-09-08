@@ -1,4 +1,4 @@
-"""Chart bars for the underlying — the data behind /api/data/bars/{ticker}.
+"""Chart bars for the underlying, the data behind /api/data/bars/{ticker}.
 
 Sources, in honesty order:
 - Intraday (1m → 4h): the lake's underlying minute bars
@@ -6,7 +6,7 @@ Sources, in honesty order:
   refreshed nightly), resampled server-side with 9:30-ET-anchored bins.
 - Daily / weekly: the lake's daily history (1993 →), weekly = W-FRI.
 - LIVE tail: when APCA_* keys are configured, today's missing minutes come
-  from Alpaca's free IEX feed at request time (stock data — not OPRA-gated,
+  from Alpaca's free IEX feed at request time (stock data, not OPRA-gated,
   unaffected by the options-entitlement freeze). Without keys the payload
   says exactly how fresh it is; nothing is extrapolated.
 
@@ -42,16 +42,16 @@ ET = "America/New_York"
 # CBOE recorder snapshots (options_intraday/source=cboe_delayed/...): each
 # snapshot carries the underlying `spot`, captured ~every 2 minutes and ~15
 # minutes delayed (the feed's own latency). When the Alpaca IEX tail is not
-# configured this is the only intraday-fresh underlying source — one spot per
+# configured this is the only intraday-fresh underlying source, one spot per
 # snapshot, disclosed as delayed, never presented as real-time.
 CBOE_RECORDER = "options_intraday/source=cboe_delayed"
 RECORDER_LIST_TTL = 20.0  # seconds between key re-listings per ticker
 RECORDER_FETCH_WORKERS = 16
 # the recorder captures ~every 2 min while the session is open; if its newest
-# snapshot is older than this, the session has closed — the tail is shown as a
+# snapshot is older than this, the session has closed. The tail is shown as a
 # completed (delayed) record, not "live", and the nightly refresh finalizes it
 RECORDER_SESSION_ACTIVE_MIN = 30
-# parsed spot snapshots for TODAY, per ticker — incremental so a 15s chart
+# parsed spot snapshots for TODAY, per ticker, incremental so a 15s chart
 # poll reads only the snapshot(s) that landed since the last call
 _recorder_cache: dict[str, dict[str, Any]] = {}
 
@@ -93,7 +93,7 @@ def _cached_month(s3: Any, ticker: str, month: str) -> pd.DataFrame | None:
         hit = _month_cache.get((ticker, month))
         if hit and now - hit[0] < _month_ttl(month):
             return hit[1]
-    # R2 I/O stays outside the lock — only the dict mutations serialize
+    # R2 I/O stays outside the lock: only the dict mutations serialize
     df = r2.get_parquet(s3, f"underlying_minute/ticker={ticker}/month={month}/bars.parquet")
     if df is not None and not df.empty:
         df = df[["minute_ts", "open", "high", "low", "close", "volume"]].copy()
@@ -215,11 +215,11 @@ def _recorder_snapshot_ts(key: str) -> pd.Timestamp | None:
 def per_bar_volume(cum: pd.Series, *, seed_first: bool = True,
                    nan_fill: float | None = None) -> pd.Series:
     """Cumulative session volume → per-bar volume (the diff), for the ivol
-    intraday reader (vendor cumulative probed monotonic from 0 — seeding
+    intraday reader (vendor cumulative probed monotonic from 0, so seeding
     the true session-open bar is valid THERE). seed_first: bar 0 takes its
     cumulative as its own volume (callers gate this on the first stamp
     actually being the session open). nan_fill: what an unknown diff
-    becomes — None keeps NaN (unknown bars sit out of session-anchored
+    becomes. None keeps NaN (unknown bars sit out of session-anchored
     VWAP). CBOE RECORDER cumulative must go through
     recorder_per_bar_volume instead: that feed's day-volume field is a
     rollover hazard the seed rule turns into a 42M open-bar spike."""
@@ -238,10 +238,10 @@ def recorder_per_bar_volume(cum: pd.Series,
     then a clean climbing cumulative; the field is ~15-min delayed like
     every value from this source). Rules, honest in both directions:
       * everything at or BEFORE the last cumulative DROP is the stale
-        prior-session plateau — volume UNKNOWN (NaN), never yesterday's
+        prior-session plateau, volume UNKNOWN (NaN), never yesterday's
         total seeded onto today's open bar (the incident);
       * a series with no drop began after the reset (or the recorder
-        restarted mid-session): the first bar's baseline is unknown — no
+        restarted mid-session): the first bar's baseline is unknown, no
         seeding; diffs from the second bar are real.
     nan_fill as in per_bar_volume: 0.0 for the chart tail's numeric
     convention, None so VWAP readers leave unknown bars out."""
@@ -256,13 +256,13 @@ def recorder_per_bar_volume(cum: pd.Series,
 
 
 def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFrame | None:
-    """Today's intraday underlying from the CBOE recorder snapshots — one
+    """Today's intraday underlying from the CBOE recorder snapshots, one
     `spot` per ~2-minute snapshot, ~15 minutes delayed. Built into minute rows
     (open=high=low=close=spot; volume = the diff of the snapshot's cumulative
     session volume, 0 where absent) so the resampler makes intraday candles.
     Cached incrementally per ticker: a poll re-lists at most every
     RECORDER_LIST_TTL seconds and reads only the snapshots it hasn't seen.
-    Best-effort — None off-session or when the recorder has nothing past
+    Best-effort: None off-session or when the recorder has nothing past
     `after`."""
     d = pd.Timestamp.now(tz=ET).date().isoformat()  # ET session date partition
     cache = _recorder_cache.get(ticker)
@@ -305,13 +305,13 @@ def _recorder_spot_tail(s3: Any, ticker: str, after: pd.Timestamp) -> pd.DataFra
     # per-bar volume = diff of the CUMULATIVE session volume across the FULL
     # ordered sequence (so the first returned bar is correct even when the
     # prior snapshot sits at/before `after`); 0 where the cumulative is absent
-    # (older snapshots predating the collector change) — honestly zero, never
+    # (older snapshots predating the collector change), honestly zero, never
     # invented. The diff runs before the `after` filter.
     full = pd.DataFrame(cache["rows"])  # rows are kept sorted by minute_ts
     cum = full["cum_vol"] if "cum_vol" in full.columns else pd.Series([None] * len(full))
     if cum.notna().any():
         # rollover-aware: the feed's first minutes carry YESTERDAY's total
-        # (a 42M spike on every chart's open bar — incident 2026-07-08)
+        # (a 42M spike on every chart's open bar, incident 2026-07-08)
         vol = recorder_per_bar_volume(cum, nan_fill=0.0)
     else:
         vol = pd.Series(0.0, index=full.index)
@@ -366,7 +366,7 @@ def _intraday_frame(
     ~15-min delayed) or None.
 
     include_tail=False skips the live-tail fetch entirely (the R2 listing +
-    snapshot pulls that made the FIRST chart paint block for seconds) — the
+    snapshot pulls that made the FIRST chart paint block for seconds), the
     caller gets the cached lake instantly and fetches the tail separately."""
     rule, per_bar = INTRADAY_INTERVALS[interval]
     reference_end = before.to_pydatetime() if before is not None else datetime.now(UTC)
@@ -403,8 +403,8 @@ def _intraday_frame(
                     )
                     # "live" only while the session is open (the recorder is
                     # still capturing). Once it closes, the same tail is shown
-                    # as a completed delayed record — not pulsing "live", not
-                    # polled — until the nightly refresh finalizes the day.
+                    # as a completed delayed record, not pulsing "live", not
+                    # polled, until the nightly refresh finalizes the day.
                     newest = rtail["minute_ts"].max()
                     active = pd.Timestamp.now(tz="UTC") - newest <= pd.Timedelta(
                         minutes=RECORDER_SESSION_ACTIVE_MIN
@@ -552,7 +552,7 @@ def get_bars(
             s3, ticker, interval, window, before_ts, target, include_tail=include_tail
         )
         if not include_tail and before_ts is None and len(frame):
-            # labeled honestly: this response is the cached lake only — the
+            # labeled honestly: this response is the cached lake only. The
             # tail-carrying follow-up brings the delayed badge. An EMPTY
             # lake keeps the default label: promising a separate tail on
             # zero bars would mislabel the gap (review finding 2026-07-15)
@@ -606,7 +606,7 @@ def get_bars(
 
 def warm_charts() -> None:
     """Boot prewarm (main.py runs this in a daemon thread): the exact views
-    MarketChart asks for first — 5m·1w plus the daily frame — for all three
+    MarketChart asks for first (5m·1w plus the daily frame) for all three
     tickers, so a first chart paint after a deploy reads from memory instead
     of paying the cold R2 pulls. Best-effort: no creds / empty lake is the
     request path's problem to report, never the warmer's."""
@@ -614,5 +614,5 @@ def warm_charts() -> None:
         for interval, window in (("5m", "1w"), ("1d", "1y")):
             try:
                 get_bars(ticker, interval, window, [])
-            except Exception:  # noqa: BLE001 — warming must never take down boot
+            except Exception:  # noqa: BLE001 (warming must never take down boot)
                 pass

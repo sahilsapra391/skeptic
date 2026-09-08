@@ -3,7 +3,7 @@
 Two rules every new-source reader inherits (established once, here):
 
 * The session bound of a datetime `as_of` derives from the UTC-NORMALIZED
-  moment, never the caller's local calendar date — an exotic-offset caller
+  moment, never the caller's local calendar date. An exotic-offset caller
   must not mark a live session "strictly before the bound" and see its
   whole file.
 * Row stamps with no timezone reference FAIL CLOSED. A naive wall-clock
@@ -42,7 +42,7 @@ def stamps_utc(series: pd.Series) -> pd.Series | None:
     timezone reference (caller fails closed).
 
     tz-awareness is detected at the VALUE level (an explicit Z/offset in the
-    string), not from pandas parse dtypes — pandas collapses mixed-offset
+    string), not from pandas parse dtypes. Pandas collapses mixed-offset
     columns unpredictably. Offset-less rows become NaT and drop out of any
     ≤-moment comparison (fail closed per row)."""
     if pd.api.types.is_datetime64_any_dtype(series):

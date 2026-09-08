@@ -1,4 +1,4 @@
-"""In-house forward flow family — hand-computed.
+"""In-house forward flow family, hand-computed.
 
 Classification is sign(vwap − mid); exactly-at-mid volume is counted,
 never signed. Quantities mirror flow_signals conventions so the
@@ -38,7 +38,7 @@ class TestReduceFlowSession:
         assert row["net_call_premium"] == 230.0
         assert row["net_put_premium"] == 500.0
         assert row["net_premium"] == 230.0 - 500.0
-        # puts (4+1+5) / calls (3+2+7) — classification-independent
+        # puts (4+1+5) / calls (3+2+7), classification-independent
         assert row["put_call_flow_ratio"] == round(10 / 12, 4)
         # dflow = +150 − 100 − 160 (the delta-less put is skipped, counted)
         assert row["nope_eod"] == round(-110.0 / 1000.0, 6)
@@ -72,21 +72,21 @@ class TestReduceFlowSession:
 class TestTapeSideTruth:
     def test_majority_and_tie_handling(self) -> None:
         tape = pd.DataFrame([
-            # contract A, minute 13:30 — ask 5 lots vs bid 2 → majority +1
+            # contract A, minute 13:30: ask 5 lots vs bid 2 → majority +1
             {"executed_at": "2026-07-08 13:30:01+00", "expiry": "2026-07-18",
              "option_type": "call", "strike": "100", "size": "5",
              "tags": "{ask_side,etf}"},
             {"executed_at": "2026-07-08 13:30:40+00", "expiry": "2026-07-18",
              "option_type": "call", "strike": "100", "size": "2",
              "tags": "{bid_side,etf}"},
-            # contract A, minute 13:31 — tied 3/3 → excluded (no majority)
+            # contract A, minute 13:31: tied 3/3 → excluded (no majority)
             {"executed_at": "2026-07-08 13:31:05+00", "expiry": "2026-07-18",
              "option_type": "call", "strike": "100", "size": "3",
              "tags": "{ask_side,etf}"},
             {"executed_at": "2026-07-08 13:31:50+00", "expiry": "2026-07-18",
              "option_type": "call", "strike": "100", "size": "3",
              "tags": "{bid_side,etf}"},
-            # mid print — never side truth
+            # mid print, never side truth
             {"executed_at": "2026-07-08 13:32:00+00", "expiry": "2026-07-18",
              "option_type": "call", "strike": "100", "size": "9",
              "tags": "{mid_side,etf}"},

@@ -1,7 +1,7 @@
 """Launch L2: credits + gating.
 
 A signed-in caller spends 1 credit per backtest. The credit law (owner
-override): you only pay for a GRADED verdict — a refusal or an our-fault
+override): you only pay for a GRADED verdict. A refusal or an our-fault
 failure refunds the credit. Anonymous runs are defended by the armor and cost
 no credits; the service principal is never charged. The debit and the run row
 are written in ONE transaction (crash between = neither), and the refund is
@@ -83,7 +83,7 @@ def new_device() -> TestClient:
 
 def _signup(client: TestClient, email: str) -> dict:
     # a fresh IP per signup so the per-IP signup rate limit (10/hr) never trips
-    # as the suite grows — identity is the account, not the IP
+    # as the suite grows (identity is the account, not the IP)
     r = client.post(
         "/api/auth/signup", json={"email": email, "password": PASSWORD}, headers=_fresh_ip()
     )
@@ -165,7 +165,7 @@ def test_refund_run_is_idempotent_and_self_scoped() -> None:
         s.commit()
     assert db.refund_run(run_id) is True
     assert db.credit_balance(uid) == 0  # -1 debit + 1 refund
-    assert db.refund_run(run_id) is False  # idempotent — no second refund
+    assert db.refund_run(run_id) is False  # idempotent, no second refund
     assert db.credit_balance(uid) == 0
 
     # a run that was NEVER charged (anon armor / service) is a no-op
@@ -195,7 +195,7 @@ def test_out_of_credits_blocks_and_creates_nothing(grading: TestClient) -> None:
     r = grading.post("/api/backtest", json={"spec": fx.SPEC, "min_trades": 1})
     assert r.status_code == 402
     assert "credit" in r.json()["detail"].lower()
-    # crash-atomic gate: no run row, no debit row — neither, not one
+    # crash-atomic gate: no run row, no debit row. Neither, not one
     assert _run_count() == before_runs
     assert len(_ledger(uid)) == before_rows
 
@@ -236,7 +236,7 @@ def test_service_principal_is_not_charged(monkeypatch: pytest.MonkeyPatch) -> No
 def test_refunded_refusal_cannot_unlock_at_a_lower_bar(grading: TestClient) -> None:
     """The critical exploit: submit at an absurd bar to FORCE a refusal (→
     refund → net 0 credits), then view at ?min_trades=1 to unlock the graded
-    verdict for free. The seal keeps a REFUNDED refusal refused at any bar —
+    verdict for free. The seal keeps a REFUNDED refusal refused at any bar:
     you get the credit back OR the verdict, never both. (This fixture GRADES
     at bar 1, so without the seal the second view would bless it.)"""
     email = _email()
@@ -248,9 +248,9 @@ def test_refunded_refusal_cannot_unlock_at_a_lower_bar(grading: TestClient) -> N
     assert _verdict(grading, run_id)["refusal"] is True  # refused at bar 10000
     assert _credits(grading) == 5  # debited then refunded → net zero
 
-    # the exploit's second move — view at bar 1 to unlock the verdict
+    # the exploit's second move: view at bar 1 to unlock the verdict
     regraded = grading.get(f"/api/runs/{run_id}?min_trades=1").json()
-    assert regraded["verdict"]["refusal"] is True  # SEALED — still refused
+    assert regraded["verdict"]["refusal"] is True  # SEALED, still refused
     assert _credits(grading) == 5  # and never re-charged
 
 
@@ -265,10 +265,10 @@ def test_a_charged_graded_run_still_regrades_freely(grading: TestClient) -> None
     assert not _verdict(grading, run_id).get("refusal")  # graded, charged
     assert _credits(grading) == 4
     # raise the bar at view time → it re-caps to a refusal (display only, no
-    # refund) — proof the seal didn't freeze non-refunded runs
+    # refund), proof the seal didn't freeze non-refunded runs
     strict = grading.get(f"/api/runs/{run_id}?min_trades=10000").json()
     assert strict["verdict"]["refusal"] is True
-    assert _credits(grading) == 4  # still charged — view-time re-grade never refunds
+    assert _credits(grading) == 4  # still charged, view-time re-grade never refunds
 
 
 # ------------------------------------------------ durability: interrupted runs
@@ -277,7 +277,7 @@ def test_a_charged_graded_run_still_regrades_freely(grading: TestClient) -> None
 def test_boot_sweep_refunds_interrupted_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     """A run debits at creation; if the process dies mid-run (OOM / redeploy)
     the completion-path refund never fires. The boot sweep marks it error AND
-    refunds — an interrupted run must not permanently charge the user."""
+    refunds. An interrupted run must not permanently charge the user."""
     client = _client(monkeypatch, _grading_store)
     import app.api.runs as runs_mod
 
@@ -299,7 +299,7 @@ def test_boot_sweep_refunds_interrupted_runs(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_refusal_refund_is_atomic_with_completion(refusing: TestClient) -> None:
     """The refund is written in the SAME transaction as status='done', so a
-    run is never visible in an un-refunded window — closing the seal's TOCTOU
+    run is never visible in an un-refunded window, closing the seal's TOCTOU
     race (a concurrent ?min_trades=1 can't catch it un-refunded)."""
     email = _email()
     _signup(refusing, email)
@@ -310,7 +310,7 @@ def test_refusal_refund_is_atomic_with_completion(refusing: TestClient) -> None:
 
 
 def test_replay_of_a_refused_run_is_blocked(refusing: TestClient) -> None:
-    """A receipt verifies a BLESSED verdict — a refusal has nothing to receipt.
+    """A receipt verifies a BLESSED verdict. A refusal has nothing to receipt.
     Blocking it closes the replay paywall bypass: a refunded refusal can't
     spawn an uncharged receipt run that a lower-bar re-grade would unlock."""
     email = _email()
@@ -325,7 +325,7 @@ def test_replay_of_a_refused_run_is_blocked(refusing: TestClient) -> None:
 def test_run_access_is_enforced_on_read_ask_and_replay(grading: TestClient) -> None:
     """A run is private to its owner across READ, ASK, and REPLAY (a receipt
     of someone else's paid graded run was a cross-user IDOR + free-compute
-    leak). 404 — existence is nobody else's business."""
+    leak). 404: existence is nobody else's business."""
     _signup(grading, _email())
     run_id = grading.post(
         "/api/backtest", json={"spec": fx.SPEC, "min_trades": 1}
@@ -342,7 +342,7 @@ def test_run_access_is_enforced_on_read_ask_and_replay(grading: TestClient) -> N
 
 def test_session_caller_origin_is_forced_to_user(grading: TestClient) -> None:
     """A signed-in caller can't declare an automation origin to dodge the
-    debit — the run is stamped origin=user and charged like any other."""
+    debit. The run is stamped origin=user and charged like any other."""
     email = _email()
     _signup(grading, email)
     r = grading.post(

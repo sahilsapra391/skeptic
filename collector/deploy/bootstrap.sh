@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# bootstrap.sh — stand up the Skeptic collector on a fresh Ubuntu VM (Oracle
+# bootstrap.sh: stand up the Skeptic collector on a fresh Ubuntu VM (Oracle
 # Cloud always-free, or any always-on host). Run as root: `sudo bash bootstrap.sh`.
 # Idempotent: safe to re-run to redeploy after a `git pull`.
 set -euo pipefail
 
 # The repo is private, so an unauthenticated https clone fails. Default to SSH,
 # which needs a read-only deploy key for root on this VM (bootstrap runs git as
-# root) — see deploy/README.md "Provision" for the setup.
+# root), see deploy/README.md "Provision" for the setup.
 REPO="${SKEPTIC_REPO:-git@github.com:sahilsapra391/skeptic.git}"
 BRANCH="${SKEPTIC_BRANCH:-main}"
 DEST=/opt/skeptic
@@ -29,7 +29,7 @@ if [ ! -x /usr/local/bin/uv ]; then
     curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh || true
     if [ ! -x /usr/local/bin/uv ]; then
         found="$(command -v uv || echo /root/.local/bin/uv)"
-        [ -x "$found" ] || { echo "!! uv install failed — install it manually" >&2; exit 1; }
+        [ -x "$found" ] || { echo "!! uv install failed. Install it manually" >&2; exit 1; }
         ln -sf "$found" /usr/local/bin/uv
     fi
 fi
@@ -40,7 +40,7 @@ echo "== code ($BRANCH) =="
 git config --global --get-all safe.directory 2>/dev/null | grep -qx "$DEST" \
     || git config --global --add safe.directory "$DEST"
 # Trust github.com's host key so the SSH clone doesn't stall on an interactive
-# prompt (the deploy key itself is created manually — see deploy/README.md).
+# prompt (the deploy key itself is created manually, see deploy/README.md).
 if ! ssh-keygen -F github.com -f /root/.ssh/known_hosts >/dev/null 2>&1; then
     mkdir -p /root/.ssh && chmod 700 /root/.ssh
     ssh-keyscan github.com >> /root/.ssh/known_hosts
@@ -62,7 +62,7 @@ sudo -u "$SVC_USER" env HOME=/home/"$SVC_USER" /usr/local/bin/uv sync
 # The nightly unlock scan runs out of backend/ and imports app.db (sqlalchemy +
 # psycopg2), which the collector venv does not carry. Sync it here so the timer
 # never pays for a first-run resolve inside its own TimeoutStartSec. On the 1 GB
-# E2.1.Micro this is the step most likely to OOM — the 2 GB swapfile from the
+# E2.1.Micro this is the step most likely to OOM. The 2 GB swapfile from the
 # Provision section above is what makes it fit.
 echo "== python env (backend) =="
 cd "$DEST/backend"
@@ -104,7 +104,7 @@ if [ -n "$missing" ]; then
 !! $DEST/collector/.env is missing (or left empty):${missing}
 
    The VM owns the scheduled collection lanes now, and every one of those
-   vars is load-bearing for one of them — see collector/deploy/README.md
+   vars is load-bearing for one of them, see collector/deploy/README.md
    ("Secrets are the one thing neither path can deliver"). Copy the values
    from the GitHub repo secrets, then re-run this script.
 EOF

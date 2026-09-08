@@ -1,4 +1,4 @@
-# Skeptic — Design Brief for Claude Design
+# Skeptic: Design Brief for Claude Design
 *Paste this entire document into Claude Design as the opening prompt.*
 
 ## What you are designing
@@ -22,14 +22,14 @@ falsification. NOT: crypto dashboards, Robinhood confetti, WallStreetBets
 energy, "AI magic sparkle" aesthetics.
 
 > **DECIDED (owner, 2026-07-02): radical simplicity is a hard requirement.**
-> The owner evaluated Option Alpha Pro and found it confusing — that whole
+> The owner evaluated Option Alpha Pro and found it confusing. That whole
 > class of product (bot-builder decision trees, dashboards of dashboards,
 > jargon-dense panels, dozens of toggles) is the explicit anti-example.
 > Skeptic is **led by chat and natural language everywhere**: English is the
 > only configuration language, the typed conversation is the primary control
 > surface, every screen holds one primary action, and detail arrives by
 > progressive disclosure (headline first, expand on demand). When a design
-> choice trades power for simplicity, choose simplicity — the honesty layer
+> choice trades power for simplicity, choose simplicity. The honesty layer
 > supplies the power. A first-time user should run their first analysis
 > without reading anything but the screen in front of them.
 
@@ -90,9 +90,9 @@ The entry point. A focused composer where the user describes a strategy in
 English. Include: template chips for the five v1 structures (short put,
 credit spread, iron condor, covered call, long call/put) that pre-fill
 example phrasing; a visible, honest data-coverage line, fed live from
-/api/data/coverage and **per-ticker asymmetric** — e.g. "SPY chains:
+/api/data/coverage and **per-ticker asymmetric** (e.g. "SPY chains:
 2020-01 → today · QQQ/IWM chains: 2026-07 → today · minute bars (all
-three): 2024-02 → today" — so expectations are set before anything runs.
+three): 2024-02 → today"), so expectations are set before anything runs.
 Design the line to hold that asymmetry gracefully; it is the product being
 honest, not a bug state.
 **DECIDED (PM): hybrid input.** Chat is primary; the compiled parameters
@@ -135,7 +135,7 @@ streak (days captured), a coverage timeline per ticker **per source** (four
 lanes now: SPY EOD backfill 2020→2026 from the community archive, the
 nightly Yahoo record from 2026-07, Alpaca minute bars from 2024-02, and the
 live intraday quote recorder from 2026-07-02), the intraday recorder's
-heartbeat ("last snapshot 2 min ago" — it runs on the owner's machine and
+heartbeat ("last snapshot 2 min ago", it runs on the owner's machine and
 can gap honestly), last collector run status, data-quality flags (bid/ask
 null rates, stale quotes), and **named blind spots** (e.g. "SPY EOD history
 is Mon/Wed/Fri-granular before 2024-09"; "archive outage spans the

@@ -1,4 +1,4 @@
-"""D3b: the auto-unlock queue — the brief's acceptance ("an
+"""D3b: the auto-unlock queue. Covers the brief's acceptance ("an
 insufficient_evidence run demonstrably auto-upgrades after a simulated
 coverage delta") plus the owner's scoring-policy line: auto re-runs NEVER
 bump the family trial counter (same spec + more data ≠ a new try)."""
@@ -19,7 +19,7 @@ from tests.fixtures.engine import fx_short_put_assigned as fx
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    # Empty, not deleted — the in-test import of scripts/nightly_improve
+    # Empty, not deleted: the in-test import of scripts/nightly_improve
     # runs load_local_env(), whose setdefault would resurrect a DELETED
     # key mid-test (real LLM calls); an empty var survives setdefault.
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
@@ -45,7 +45,7 @@ class TestAutoUnlockRun:
         self, client: TestClient
     ) -> None:
         # 1) a REFUSED parent run (the fixture store's single trade always
-        #    refuses) — stores unlock_json + its trial count
+        #    refuses). Stores unlock_json + its trial count
         r = client.post("/api/backtest", json={"spec": fx.SPEC})
         parent_id = r.json()["run_id"]
         parent_payload = client.get(f"/api/runs/{parent_id}").json()
@@ -132,7 +132,7 @@ class TestExecuteUnlocks:
         monkeypatch.setattr(requests, "post", fake_post)
 
         submitted = ni.execute_unlocks(decisions)
-        # 4 ready, but the nightly cap is 3 — and the not-ready one never posts
+        # 4 ready, but the nightly cap is 3, and the not-ready one never posts
         assert submitted == ni.AUTO_RERUNS_PER_NIGHT == 3
         assert len(posted) == 3
         assert all(p["body"]["origin"] == "auto_unlock" for p in posted)

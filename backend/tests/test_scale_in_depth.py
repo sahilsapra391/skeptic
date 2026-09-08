@@ -1,9 +1,9 @@
-"""Ladder depth attribution (D5b) — the crown-jewel output.
+"""Ladder depth attribution (D5b): the crown-jewel output.
 
 Two views of a scale-in run's realized P&L: the per-tier table (baskets
-grouped by the MAX rung depth they reached — iVol's P&L-by-ladder-depth) and
-the marginal-rung analysis (P&L attributable to the fills added AT each depth
-— are the deep adds themselves net negative?). Both MUST sum to the same
+grouped by the MAX rung depth they reached, iVol's P&L-by-ladder-depth) and
+the marginal-rung analysis (P&L attributable to the fills added AT each depth.
+Are the deep adds themselves net negative?). Both MUST sum to the same
 realized total. Hand-computed on one basket, tied out on a 20-basket run.
 """
 
@@ -85,14 +85,14 @@ def test_depth_table_ties_out_and_locates_the_loss() -> None:
     assert sum(t.total_pl for t in ld.tiers) == pytest.approx(realized, abs=0.01)
     assert sum(r.marginal_pl for r in ld.rungs) == pytest.approx(realized, abs=0.01)
 
-    # two tiers: shallow (rung0 only) wins, deep (rung1) loses — the martingale
+    # two tiers: shallow (rung0 only) wins, deep (rung1) loses. The martingale
     tiers = {t.depth: t for t in ld.tiers}
     assert set(tiers) == {1, 2}
     assert tiers[1].total_pl > 0  # shallow entries carry the profit
     assert tiers[2].total_pl < 0  # the deep baskets are the loss
     assert tiers[2].pct_gross_loss == pytest.approx(1.0)  # ALL of the gross loss
 
-    # the deep adds themselves are net negative — the crown-jewel finding
+    # the deep adds themselves are net negative, the crown-jewel finding
     deep_rung = ld.rungs[-1]
     assert deep_rung.net_negative is True
     assert ld.deepest_net_negative is True
@@ -133,11 +133,11 @@ def test_payload_carries_depth_panel_for_ladders_only() -> None:
     assert len(block["tiers"]) == 2 and len(block["rungs"]) == 2
     assert block["deepestNetNegative"] is True
     # the deep tier's bar carries a negative P/L sign (red/green is fine on a
-    # DATA panel — never on the verdict, per the color rule)
+    # DATA panel, never on the verdict, per the color rule)
     deep_tier = next(t for t in block["tiers"] if t["depth"] == 2)
     assert deep_tier["plSign"] == "neg"
     assert block["rungs"][-1]["netNeg"] is True
 
-    # a non-ladder report carries no depth panel — zero leakage
+    # a non-ladder report carries no depth panel, zero leakage
     non_ladder = report.model_copy(update={"ladder_depth": None})
     assert _ladder_depth_block(non_ladder) is None

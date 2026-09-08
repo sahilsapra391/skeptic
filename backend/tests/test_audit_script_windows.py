@@ -43,7 +43,7 @@ BOUNDARY_INSTANT = "2026-07-17 18:53:22.305000"
 
 
 def _load_script() -> Any:
-    """Import the audit script by path — `scripts/` is not a package."""
+    """Import the audit script by path (`scripts/` is not a package)."""
     if not SCRIPT.is_file():
         pytest.fail(f"audit script not found at {SCRIPT}")
     spec = importlib.util.spec_from_file_location("audit_strike_width", SCRIPT)
@@ -103,7 +103,7 @@ def test_since_is_inclusive_of_its_whole_day(audit_mod: Any, db: str) -> None:
 def test_equal_bounds_select_that_day(audit_mod: Any, db: str) -> None:
     """V-107: the tightest boundary there is, and the one that should have been
     in V-98. `--since X --until X` means that whole day, and it is a legal
-    window — refusing it as "empty or inverted" was historical defect 4."""
+    window. Refusing it as "empty or inverted" was historical defect 4."""
     assert _ids(audit_mod, db, BOUNDARY_DAY, BOUNDARY_DAY) == {"boundary"}
 
 
@@ -191,7 +191,7 @@ def test_malformed_since_is_rejected_too(audit_mod: Any, bad: str) -> None:
 
 def test_since_after_until_is_rejected(audit_mod: Any) -> None:
     """An inverted window silently returns nothing, which reads as 'no runs
-    detected' — the most dangerous possible false negative for this audit."""
+    detected', the most dangerous possible false negative for this audit."""
     with pytest.raises(audit_mod.WindowArgumentError) as exc:
         audit_mod.resolve_window("2026-07-18", "2026-07-16")
     assert "2026-07-18" in str(exc.value)

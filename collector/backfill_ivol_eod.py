@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-backfill_ivol_eod.py — capture iVolatility EOD per-contract options (full greeks +
+backfill_ivol_eod.py: capture iVolatility EOD per-contract options (full greeks +
 NBBO + IV + OI + volume) into the R2 chain lake, 2005→ for SPY/QQQ/IWM.
 
 Fills the biggest EOD gap: `options/source=ivolatility/` is empty (bulk chain is
@@ -13,7 +13,7 @@ Fills the biggest EOD gap: `options/source=ivolatility/` is empty (bulk chain is
     → the contract's WHOLE EOD history in ONE request (date, bid, ask, iv, delta,
     gamma, theta, vega, rho, open interest, volume, strike, expiration, ...)
 
-Design (engine-aligned — the engine SELECTS strikes by delta): discover contracts
+Design (engine-aligned; the engine SELECTS strikes by delta): discover contracts
 on a delta×DTE ladder at a coarse cadence, pull each unique contract's full life
 once (staged raw), then REGROUP into per-date canonical chains. Newest-first,
 resumable, rate-gated concurrent like backfill_ivol_intraday.py.
@@ -21,7 +21,7 @@ resumable, rate-gated concurrent like backfill_ivol_intraday.py.
 Modes:
   --mode fetch     discover + pull → ivol_eod_staging/ticker={T}/id={id}.parquet
   --mode regroup   staged raw → options/source=ivolatility/ticker={T}/date={D}/chain.parquet
-                   (canonical schema; LOCAL, no API — safe to re-run anytime)
+                   (canonical schema; LOCAL, no API, so safe to re-run anytime)
 
 Run:
   uv run --env-file .env python backfill_ivol_eod.py --mode fetch \
@@ -70,7 +70,7 @@ EOD_START = "2005-01-03"
 DEFAULT_RATE = 80
 DEFAULT_CONCURRENCY = 4
 DEFAULT_CADENCE = 21          # discover every N trading days (newest-first)
-# delta ladder (decimals; puts negative, calls positive) — the premium-strategy range
+# delta ladder (decimals; puts negative, calls positive), the premium-strategy range
 DEFAULT_DELTAS = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50]
 DEFAULT_DTES = [14, 30, 45]  # entry tenors; whole-life pulls fill 0..exp between them
 PULL_LOOKBACK_DAYS = 250     # from = expiration - this; one request = whole life
@@ -150,7 +150,7 @@ def discover(
     ticker: str, day: str, deltas: list[float], dtes: list[int]
 ) -> tuple[dict[int, str], int]:
     """nearest-option-tickers across the delta×DTE ladder (puts negative, calls
-    positive). Returns ({option_id: option_symbol}, error_count) — a nonzero
+    positive). Returns ({option_id: option_symbol}, error_count). A nonzero
     error count means the discovery is INCOMPLETE and the date must not be
     marked done (review finding: transient errors were permanently lost)."""
     found: dict[int, str] = {}
@@ -284,7 +284,7 @@ def run_fetch(args, s3) -> int:
                 pull_errors = 0
                 for oid, osym, ok, df in pool.map(_do, list(new.items())):
                     if not ok:
-                        pull_errors += 1  # transient — NOT staged, retried next run
+                        pull_errors += 1  # transient, NOT staged, retried next run
                         continue
                     if df is not None and len(df):
                         if not args.dry_run:
@@ -292,11 +292,11 @@ def run_fetch(args, s3) -> int:
                         staged.add(oid)
                         pulled += 1
                     else:
-                        staged.add(oid)  # vendor-empty/bad OCC — don't retry
+                        staged.add(oid)  # vendor-empty/bad OCC, don't retry
                 if disc_errors or pull_errors:
                     # incomplete date: leave it OUT of done_dates so a later run
-                    # re-discovers it (already-staged pulls are skipped — cheap)
-                    log.warning("%s %s: INCOMPLETE (%d discovery / %d pull errors) — will retry",
+                    # re-discovers it (already-staged pulls are skipped, cheap)
+                    log.warning("%s %s: INCOMPLETE (%d discovery / %d pull errors), will retry",
                                 ticker, day, disc_errors, pull_errors)
                 else:
                     done_months.add(day)
@@ -307,7 +307,7 @@ def run_fetch(args, s3) -> int:
                     _flush()
                 if args.max_requests and _req_count[0] >= args.max_requests:
                     _flush()
-                    log.info("max-requests %d reached — stopping cleanly", args.max_requests)
+                    log.info("max-requests %d reached, stopping cleanly", args.max_requests)
                     return 0
 
             _flush()
@@ -348,7 +348,7 @@ def _to_canonical(raw: pd.DataFrame, ticker: str) -> pd.DataFrame:
         "source": "ivolatility",
     })
     # vendor sentinel: preiv == -1.0 marks rows whose IV/greeks were not
-    # computed (observed live: delta=-1.0 with gamma/vega/theta all 0) —
+    # computed (observed live: delta=-1.0 with gamma/vega/theta all 0);
     # null the analytics, keep the real NBBO row
     sent = (_num(raw.get("preiv")) == -1.0).fillna(False).to_numpy()
     if sent.any():
@@ -359,7 +359,7 @@ def _to_canonical(raw: pd.DataFrame, ticker: str) -> pd.DataFrame:
 def _other_source_dates(s3, ticker: str) -> set[str]:
     """Chain dates already covered by other EOD sources. Guard (review
     finding): ivolatility OUTRANKS every source in the engine's precedence and
-    a delta ladder is SPARSER than a full chain — so by default regroup must
+    a delta ladder is SPARSER than a full chain, so by default regroup must
     never supersede a date a fuller source already covers."""
     covered: set[str] = set()
     for src in ("dolthub", "alphavantage", "yahoo"):
@@ -427,7 +427,7 @@ def run_regroup(args, s3) -> int:
                 if written % 500 == 0:
                     log.info("  %s: wrote %d/%d date-chains", ticker, written, len(groups))
         log.info("%s [regroup] done: %d date-chains written · %d skipped (covered by "
-                 "fuller sources — use --allow-supersede to override) · %d rejected (quality)",
+                 "fuller sources; use --allow-supersede to override) · %d rejected (quality)",
                  ticker, written, skipped_covered, skipped_quality)
     return 0
 

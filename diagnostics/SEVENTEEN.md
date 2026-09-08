@@ -1,4 +1,4 @@
-# SEVENTEEN — the seventeen-fills anomaly
+# SEVENTEEN: the seventeen-fills anomaly
 
 **Status:** root cause proven in code; final data-lake confirmation is a
 one-command check Sahil runs against R2 (see §5).
@@ -10,7 +10,7 @@ one-command check Sahil runs against R2 (see §5).
 > outside the strategies.
 
 It does. The constant is **the number of distinct options-chain date
-partitions present in the R2 lake** — nothing in any strategy, and no cap
+partitions present in the R2 lake**, nothing in any strategy, and no cap
 anywhere in the code.
 
 ---
@@ -19,7 +19,7 @@ anywhere in the code.
 
 1. **Underlying dailies are backfilled deep; chains are not.** The engine's
    clock is built from `store.sessions`, which comes from the underlying
-   daily bars (`underlying/ticker=SPY/daily.parquet`) — years of history.
+   daily bars (`underlying/ticker=SPY/daily.parquet`), years of history.
    Options chains are a *separate* set of per-date partitions
    (`options/source=*/ticker=SPY/date=YYYY-MM-DD/`), and only ~17 of those
    dates currently exist in the lake.
@@ -63,7 +63,7 @@ anywhere in the code.
 
 ## 2. Ruling out the alternatives (the brief's decisive comparison)
 
-Reproduction script: `diagnostics/repro_seventeen.py` — three maximally
+Reproduction script: `diagnostics/repro_seventeen.py`, three maximally
 different specs against two synthetic lakes.
 
 ### (b) A hidden code cap at 17? **Refuted.**
@@ -84,12 +84,12 @@ Corroborating code search: no literal `17`, no `max_fills`, no `LIMIT`, no
 response slice `[:N]`, and no pagination truncation anywhere in the read
 path. `list_date_prefixes`
 ([`r2.py:73-82`](../backend/app/data/r2.py#L73)) walks **every** page of
-`list_objects_v2` — the date listing is complete, never truncated.
+`list_objects_v2`. The date listing is complete, never truncated.
 
 ### (a) The data lake is the constant? **Confirmed (mechanism).**
 
-Same three specs against a **sparse** lake — 17 chain dates spread across
-1,600 sessions:
+Same three specs against a **sparse** lake (17 chain dates spread across
+1,600 sessions):
 
 | lake | strategy | filled | `no_chain_data` skips | all fills ⊆ the 17 chain dates? |
 |------|----------|-------:|----------------------:|:---:|
@@ -100,13 +100,13 @@ Same three specs against a **sparse** lake — 17 chain dates spread across
 The daily strategy reproduces the exact reported symptom: **17 fills,
 ~1,500 `no_chain_data` skips.** Every strategy's fills are a subset of the
 same 17 chain dates. (Weekly is lower because only 4 of the 17 dates are
-Mondays; monthly is 14 because 14 fall in distinct months — both track the
+Mondays; monthly is 14 because 14 fall in distinct months. Both track the
 schedule∩chain-date intersection, nothing intrinsic to 17.)
 
 ### (c) Entry-date generator clamping / walk-forward miscount? **Refuted.**
 
 The generated candidate dates span the full requested window
-(2020-01-06 … 2025-10-10 in the sparse run) — the clock is not clamped, and
+(2020-01-06 … 2025-10-10 in the sparse run). The clock is not clamped, and
 the skips are attributed to `no_chain_data`, i.e. missing data on generated
 dates, not missing dates. Walk-forward is downstream of the fill count and
 plays no part.
@@ -122,8 +122,8 @@ step 5).
 ## 4. Fix plan
 
 - **Root cause (data, out of engine scope):** the lake needs more chain
-  dates. That is the Alpha Vantage / iVolatility backfill depth problem —
-  brief Phase 1 item 5 and Phase 3 Loop C. The engine cannot manufacture
+  dates. That is the Alpha Vantage / iVolatility backfill depth problem
+  (brief Phase 1 item 5 and Phase 3 Loop C). The engine cannot manufacture
   coverage it does not have; it can only stop overstating it.
 - **Honesty consequence (this session, shipped):**
   1. Compute a **coverage** stat (requested window vs. sessions with a
@@ -132,10 +132,10 @@ step 5).
      the requested window is materially short (< 50%), mirroring the
      existing thin-sample cap. `app/honesty/trust.py`.
   3. **Disclose** requested-vs-effective window + coverage % in the verdict
-     caveats (grounded automatically — every number in the report is in the
+     caveats (grounded automatically: every number in the report is in the
      verdict's allowed set). `app/honesty/verdict.py`.
 - **Regression protection (this session, shipped):**
-  `backend/tests/test_seventeen_regression.py` — a 60-chain-date synthetic
+  `backend/tests/test_seventeen_regression.py`, a 60-chain-date synthetic
   lake asserts `filled > 17` and `filled == analytically expected`, and a
   sparse lake asserts fills track the chain-date count with the balance
   attributed to `no_chain_data`. Any future hidden cap fails this test.
@@ -152,6 +152,6 @@ uv run --project backend python diagnostics/count_chain_partitions.py SPY
 It prints, per source, the count of `date=` partitions under
 `options/source=*/ticker=SPY/` and the dolthub quarantine size. If the
 union is ~17, root cause is confirmed exactly as written above. If it is
-materially larger, re-open this file — the count would then point at a
+materially larger, re-open this file. The count would then point at a
 loader-side date filter rather than the lake, and the dense-lake evidence
 in §2 still stands as proof there is no fill cap.

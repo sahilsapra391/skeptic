@@ -11,7 +11,7 @@ This directory moves the recorder to an **always-on VM under systemd**, which
 never sleeps, restarts on any crash, and pages you if a session goes quiet.
 
 Since 2026-08-04 it also owns the three scheduled collection jobs that used to
-run on GitHub Actions — see "Scheduled jobs" below for why they followed.
+run on GitHub Actions. See "Scheduled jobs" below for why they followed.
 
 ## What's here
 
@@ -20,14 +20,14 @@ run on GitHub Actions — see "Scheduled jobs" below for why they followed.
 | `skeptic-intraday.service` | systemd unit for `intraday.py`, `Restart=always`. |
 | `heartbeat.py` | alerts if no fresh snapshot lands during a session. |
 | `skeptic-heartbeat.service` / `.timer` | run the heartbeat every 5 min. |
-| `autoupdate.sh` + `skeptic-autoupdate.service` / `.timer` | nightly self-update: pull main, sync deps, restart the recorder — never inside/near the session. |
+| `autoupdate.sh` + `skeptic-autoupdate.service` / `.timer` | nightly self-update: pull main, sync deps, restart the recorder, never inside/near the session. |
 | `collect-eod.sh` + `skeptic-collect-eod.service` / `.timer` | nightly EOD collection chain, 21:30 UTC + 22:30 UTC catch-up, Mon–Fri. |
 | `skeptic-quality.service` / `.timer` | weekly data-quality scan, Sat 13:00 UTC. |
 | `skeptic-improve.service` / `.timer` | nightly unlock scan (ENGINE-V3 D3), Tue–Sat 07:00 UTC. |
-| `skeptic-keepwarm.service` / `.timer` | ping `skeptic.fyi/api/health` every 5 min so the first idea of the day never lands on a cold Railway box (one ping warms the Vercel proxy AND the backend; a GitHub Actions cron at */5 would bill ~9k private-repo minutes/month — the VM timer is free). |
+| `skeptic-keepwarm.service` / `.timer` | ping `skeptic.fyi/api/health` every 5 min so the first idea of the day never lands on a cold Railway box (one ping warms the Vercel proxy AND the backend; a GitHub Actions cron at */5 would bill ~9k private-repo minutes/month, while the VM timer is free). |
 | `bootstrap.sh` | provision a fresh Ubuntu VM end to end (idempotent). |
 
-## Provision (Oracle Cloud always-free — $0)
+## Provision (Oracle Cloud always-free, $0)
 
 The repo is **private**, so nothing on the VM can fetch it anonymously: the
 raw.githubusercontent.com URL for `bootstrap.sh` returns 404, and an
@@ -37,7 +37,7 @@ read-only deploy key for the clone.
 
 1. **Create the VM.** Oracle Cloud → Compute → Instances → Create. Pick an
    **Always Free** shape, image **Ubuntu 22.04/24.04**, and add your SSH key.
-   No inbound ports are needed — the recorder only makes outbound calls.
+   No inbound ports are needed. The recorder only makes outbound calls.
    `VM.Standard.A1.Flex` (Ampere ARM, 1 OCPU / 6 GB) is the comfortable pick,
    but A1 capacity is often unavailable ("Out of capacity" at launch); the
    realistic fallback is `VM.Standard.E2.1.Micro` (x86, 1 GB RAM), which works
@@ -58,7 +58,7 @@ read-only deploy key for the clone.
    sudo cat /root/.ssh/id_ed25519.pub
    ```
    Add the printed public key at GitHub → repo → **Settings → Deploy keys →
-   Add deploy key**. Leave **"Allow write access" unchecked** — the VM only
+   Add deploy key**. Leave **"Allow write access" unchecked**. The VM only
    ever pulls. (Bootstrap adds github.com to root's `known_hosts` itself.)
 4. **Copy secrets + the script.** From your Mac's checkout:
    ```
@@ -66,8 +66,8 @@ read-only deploy key for the clone.
    scp collector/deploy/bootstrap.sh ubuntu@<vm-ip>:/tmp/
    ```
    (The first bootstrap run stops at its missing-`.env` check after creating
-   `/opt/skeptic`. Move the env into place — `sudo mv /tmp/skeptic.env
-   /opt/skeptic/collector/.env` — then re-run bootstrap to finish.)
+   `/opt/skeptic`. Move the env into place, `sudo mv /tmp/skeptic.env
+   /opt/skeptic/collector/.env`, then re-run bootstrap to finish.)
 5. **Bootstrap.**
    ```
    ssh ubuntu@<vm-ip>
@@ -77,7 +77,7 @@ read-only deploy key for the clone.
    (`git@github.com:sahilsapra391/skeptic.git` by default; override with
    `sudo SKEPTIC_REPO=... bash /tmp/bootstrap.sh`), builds the venv, and
    enables the recorder + heartbeat. Re-run any time to redeploy after a
-   merge — the clone pulls with the same read-only deploy key.
+   merge. The clone pulls with the same read-only deploy key.
 
 ## Scheduled jobs (moved off GitHub Actions, 2026-08-04)
 
@@ -85,14 +85,14 @@ The recorder came here because a sleeping laptop cost 164 min of a session.
 The scheduled collectors came here for a different reason: private-repo Actions
 minutes bill against the **account**, and a billing block refused to start the
 nightly EOD job outright. Both scheduled runs died in under 5 s with "the job
-was not started", which means `collect.py` never ran — so it pinged neither
+was not started", which means `collect.py` never ran, so it pinged neither
 success nor `/fail`, and the only evidence was the Healthchecks tile going
 quiet. A data pipeline whose scheduler can be switched off by a payment problem
 is not a pipeline you can trust overnight.
 
 | Timer | When (UTC) | Runs |
 |---|---|---|
-| `skeptic-collect-eod.timer` | `Mon-Fri 21:30` + `22:30` | `collect-eod.sh` — the full 11-step chain |
+| `skeptic-collect-eod.timer` | `Mon-Fri 21:30` + `22:30` | `collect-eod.sh`, the full 11-step chain |
 | `skeptic-quality.timer` | `Sat 13:00` | `collect.py --mode quality` |
 | `skeptic-improve.timer` | `Tue-Sat 07:00` | `backend/scripts/nightly_improve.py --execute` |
 
@@ -116,11 +116,11 @@ Three things worth knowing before you touch any of it:
 ### Deploying a new or changed timer
 
 `autoupdate.sh` installs unit files by glob every night, but deliberately does
-not `enable` anything — a unit you disabled on purpose must not come back on a
+not `enable` anything. A unit you disabled on purpose must not come back on a
 pull. So a NEW timer needs one manual enable after the code lands:
 
 ```
-sudo systemctl start skeptic-autoupdate.service     # pull now — see the guard note
+sudo systemctl start skeptic-autoupdate.service     # pull now, see the guard note
 sudo -u skeptic env HOME=/home/skeptic /usr/local/bin/uv sync --project /opt/skeptic/backend
 sudo systemctl enable --now skeptic-collect-eod.timer skeptic-quality.timer skeptic-improve.timer
 systemctl list-timers "skeptic-*"                   # confirm next elapse
@@ -130,17 +130,17 @@ Three things that will bite you on the cutover day, in order:
 
 1. **Merging deletes the Actions crons immediately.** Until the enable below
    lands there is no scheduler on either host, so finish this before the next
-   slot — 21:30 UTC for the EOD chain. The `workflow_dispatch` fallback covers
+   slot, 21:30 UTC for the EOD chain. The `workflow_dispatch` fallback covers
    a night you miss.
 2. **`systemctl start skeptic-autoupdate.service` exits 0 without pulling
    inside the session guard** (30 min before the open through close+15 min).
-   That is a *silent* no-op — the only evidence is `guard said 'skip'` in
+   That is a *silent* no-op. The only evidence is `guard said 'skip'` in
    `/var/log/skeptic/autoupdate.log`. Run the cutover outside that window, and
    confirm with `git -C /opt/skeptic log -1` before enabling.
 3. **`backend/`'s venv does not exist on a VM provisioned before this change**
    (bootstrap's backend sync is new here, and the *old* autoupdate on the box
-   at cutover time has no backend step). Hence the explicit `uv sync` above —
-   without it the first improve run pays for a cold resolve inside its own
+   at cutover time has no backend step). Hence the explicit `uv sync` above.
+   Without it the first improve run pays for a cold resolve inside its own
    `TimeoutStartSec`, which is the most OOM-prone thing this 1 GB box does.
 
 Prefer that over re-running `bootstrap.sh` when the VM is already provisioned:
@@ -152,9 +152,9 @@ Secrets are the one thing neither path can deliver. The three jobs need
 `ALPHAVANTAGE_API_KEY`, `APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`,
 `DATABASE_URL`, `HEALTHCHECK_URL`, `SKEPTIC_API_URL` and
 `SKEPTIC_ACCESS_TOKEN` in `/opt/skeptic/collector/.env` on top of what the
-recorder already used — see `collector/.env.example` for the full set.
+recorder already used. See `collector/.env.example` for the full set.
 (`SKEPTIC_ACCESS_TOKEN` is the automation/service **bearer** the backend
-accepts as `Authorization` — the same value the workflows used — not the
+accepts as `Authorization`, the same value the workflows used, not the
 proxy's `x-skeptic-gate` secret; the improve scan posts straight to the
 Railway URL.) A run with `HEALTHCHECK_URL` missing still collects, but nothing
 watches it, which is the exact failure mode this whole section exists to
@@ -178,7 +178,7 @@ How each lane reports failure after the move:
 - **The EOD chain pages on both paths.** `collect-eod.sh` pings `<url>/fail`
   (naming the failed steps) when a *step* fails, and
   `skeptic-collect-eod.service` carries an `ExecStopPost=` running
-  `hc-fail.sh`, which is the only hook that survives the unit being *killed* —
+  `hc-fail.sh`, which is the only hook that survives the unit being *killed*:
   the 45-min wall, an OOM kill, a reboot. That second path matters because
   `collect.py` pings SUCCESS as step 1 of 11: without it a chain killed at
   minute 44 would leave a green tile over derivations that never ran.
@@ -218,7 +218,7 @@ other's toes. It only covers Actions runs, so the move here quietly removed
 it: a manual `collect-eod` or `alpaca-backfill` dispatch could land on top of
 the VM's nightly chain, and both sides spend the same Alpaca account (one
 200 req/min budget, which `alpaca.py` paces against at 185 assuming it is
-alone) and write the same R2 lake. Nothing corrupts — both sides just crawl,
+alone) and write the same R2 lake. Nothing corrupts. Both sides just crawl,
 and this chain has a 45-min wall to crawl into.
 
 `collector/lock.py` is the lease both hosts honour, one JSON object at
@@ -228,7 +228,7 @@ and this chain has a 45-min wall to crawl into.
 |---|---|---|---|
 | `collect-eod.sh` (VM) | before step 1, releases on an EXIT/TERM trap | 3000s (the unit's 2700s wall + margin) | logs, pings `HEALTHCHECK_URL/fail` naming the holder, exits non-zero |
 | `collect-eod.yml` (dispatch) | first step after `uv`, releases under `if: always()` | 3000s (its 45-min job wall + margin) | the job fails, red, naming the holder |
-| `alpaca-backfill.yml` (dispatch) | same | `max_minutes + 20` min — the budget it was actually given, not the 350-min job wall | same |
+| `alpaca-backfill.yml` (dispatch) | same | `max_minutes + 20` min, the budget it was actually given, not the 350-min job wall | same |
 
 Three things worth knowing:
 
@@ -240,7 +240,7 @@ Three things worth knowing:
 - **Wedged lane?** `cd /opt/skeptic/collector && uv run --env-file .env
   python lock.py status` shows who holds it and for how much longer;
   `python lock.py release --force` takes it back when you know that holder is
-  dead. Neither needs the VM — any checkout with R2 credentials will do.
+  dead. Neither needs the VM. Any checkout with R2 credentials will do.
 - **An unreadable lease counts as free.** Fail-open is deliberate: a corrupt
   object that stopped collection every night until someone read a journal
   would be a worse outage than the overlap the lock prevents.
@@ -249,7 +249,7 @@ Three things worth knowing:
   held for the holder's whole run, so a backfill *started* at 18:00 with a
   5-hour budget still owns the lane at 21:30 and the nightly chain refuses.
   That trades "both crawl" for "the chain collects nothing", which is the
-  wrong way round — the chain is the lane that matters and the backfill is
+  wrong way round: the chain is the lane that matters and the backfill is
   resumable by design. Nothing in the code can tell those two apart at
   21:30, so it is a scheduling rule, not a lock feature: size `max_minutes`
   to land before ~21:25 UTC, or dispatch after the night's tile goes green.
@@ -259,13 +259,13 @@ Three things worth knowing:
 Dispatching a backfill *inside* 21:00–24:00 UTC is now safe: it fails fast,
 naming the holder, instead of quietly halving the night's throughput. And a
 refusal at 22:30 turns the tile red even when the 21:30 chain already banked
-the night — that is deliberate. It is a real event worth reading, not a false
+the night. That is deliberate. It is a real event worth reading, not a false
 alarm, and the body says which.
 
 Remaining known gaps (owner decisions, deliberately not half-wired here):
 
 - **The Saturday weekly pass kept its GitHub cron** (needs repo write for the
-  proposal PR) and therefore kept the billing-failure exposure — and it has
+  proposal PR) and therefore kept the billing-failure exposure, and it has
   no dead-man check. A repeat billing block silences it in the exact shape
   the Jul 27–31 outage took. Give it its own Healthchecks check (ping at the
   end of the weekly step) or accept a silent-failure window of ≤1 week.
@@ -279,7 +279,7 @@ restart the recorder. Two safety properties:
 
 - **Session-safe.** The script re-checks the XNYS session window with a
   30-min lookahead and skips inside it, because `Persistent=true` replays a
-  missed run at boot — which can be any hour. The unit's
+  missed run at boot, which can be any hour. The unit's
   `TimeoutStartSec=1500` then bounds the whole run at 25 min, so even a
   stalled fetch can never carry the recorder restart into the session.
 - **Fail-safe.** Any failure (non-ff merge after a force-push, dep
@@ -291,7 +291,7 @@ What it can never do: deliver secrets. A new data source's API key still has
 to be added to `/opt/skeptic/collector/.env` by hand.
 
 Manual redeploy right now (don't wait for 3 AM): `sudo systemctl start
-skeptic-autoupdate.service` — same script, same session guard.
+skeptic-autoupdate.service`, same script, same session guard.
 
 ## Verify
 

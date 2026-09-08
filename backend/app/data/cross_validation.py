@@ -1,18 +1,18 @@
-"""Cross-source validation (ENGINE-V4 F7) — pair comparators + loaders.
+"""Cross-source validation (ENGINE-V4 F7): pair comparators + loaders.
 
 Every comparator reduces one session's overlap between two INDEPENDENT
 sources to a uniform record:
 
     {"joined": n, "checked": n, "within_band": n, "agreement_rate": r}
 
-joined   contracts/rows present in BOTH sources (structural agreement —
+joined   contracts/rows present in BOTH sources (structural agreement:
          parsing, strike scaling, date attribution);
 checked  the subset where a price/size comparison is honest (e.g. traded
          near the close, two-sided quotes);
 within_band  checked rows whose values agree within the documented
          tolerance; agreement_rate = within_band / checked.
 
-Owner decisions (2026-07-08): REPORTED, never scored — per-pair rates
+Owner decisions (2026-07-08): REPORTED, never scored. Per-pair rates
 travel with their audited-share denominators, no blended single score
 (weights across incommensurable pairs would be an invented convention
 wearing a number); trust-caps wait until accumulated history EARNS the
@@ -36,7 +36,7 @@ import pandas as pd
 PAIR_KEY = "reference/derived/cross_validation/pair={pair}/ticker={ticker}.parquet"
 
 # price bands (one-off validator, diagnosed on real data 2026-07-01):
-# $0.05 beyond the quoted spread, or 2% of mid — whichever is larger
+# $0.05 beyond the quoted spread, or 2% of mid, whichever is larger
 ABS_TOL = 0.05
 REL_TOL = 0.02
 # size bands: OI is a settled end-of-day figure (tight); volume captures
@@ -55,7 +55,7 @@ PAIRS = ("dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
          # delayed NBBO record the engine quotes intraday fills from
          "recorder_vs_uw_tape",
          # the in-house forward flow family (Alpaca×recorder classification)
-         # vs the frozen UW flow artifact on their overlap — the numbers a
+         # vs the frozen UW flow artifact on their overlap, the numbers a
          # future unfreeze/substitution decision must cite
          "flow_inhouse_vs_uw")
 
@@ -64,17 +64,17 @@ PAIRS = ("dolthub_vs_alpaca", "dolthub_vs_uw", "yahoo_vs_ivol5m",
 # 2026-07-08 tape NBBO vs 4 recorder snaps, lag sweep 0/5/10/14/15/16/20
 # min → agreement 0.93 at 15 min, 0.74 at 16, ≤0.43 elsewhere). A snap's
 # quotes are therefore valid around source_ts − 15 min, and the tape join
-# slices trades by that shifted moment — never capture time.
+# slices trades by that shifted moment, never capture time.
 RECORDER_DELAY_MIN = 15
 # One snap's quote validity window: the recorder loop is per-minute, so a
 # snap covers the 60 s starting at its shifted moment. Gaps in the record
-# (missed minutes) leave prints uncovered — honest absence, they are never
+# (missed minutes) leave prints uncovered: honest absence, they are never
 # joined against a stale quote.
 RECORDER_SNAP_WINDOW_SEC = 60
 
 # In-house continuation bands (reporting conventions, reviewed constants):
 # vol-point quantities compare a FITTED surface against a raw-chain
-# interpolation — 1.5 vol points; HV is the same statistic on the same
+# interpolation: 1.5 vol points; HV is the same statistic on the same
 # closes (tight: 0.01 abs / 5% rel); PCR compares chain volume to flow
 # volume (loose: 25%); max-pain distance is the same formula on the same
 # OI (0.5 pp); GEX/DEX conventions share only their SIGN.
@@ -99,7 +99,7 @@ def _record(joined: int, checked: int, within: int,
 
 def band_tol(mid: pd.Series) -> pd.Series:
     """THE reviewed price band, single-sourced: max(ABS_TOL, REL_TOL × mid)
-    per row. Every price comparator uses this — a tolerance tweak lands
+    per row. Every price comparator uses this. A tolerance tweak lands
     everywhere at once or the cross-pair rates stop being comparable."""
     return (mid * REL_TOL).clip(lower=ABS_TOL)
 
@@ -126,7 +126,7 @@ def recorder_tape_window(
     behind its feed stamp (measured constant above), for
     RECORDER_SNAP_WINDOW_SEC. Clamping `start` to `not_before` keeps
     windows disjoint when the feed stalls and consecutive snaps repeat a
-    source_ts — the same print is never judged twice (a stalled feed
+    source_ts. The same print is never judged twice (a stalled feed
     would otherwise over-weight one minute's prints up to ~14×).
     `ts` must be sorted and on the same clock as `source_ts` (UTC)."""
     src = pd.Timestamp(source_ts)
@@ -140,7 +140,7 @@ def recorder_tape_window(
             start = nb
         if nb > end:
             # an out-of-order source_ts (feed hiccup / the recorder's
-            # timestamp-field fallback) must never REWIND the clamp — a
+            # timestamp-field fallback) must never REWIND the clamp. A
             # rewound not_before would let the next normal snap re-slice
             # rows already consumed (review 2026-07-13: double-counted
             # volume banked forever under set-difference incrementality)
@@ -167,7 +167,7 @@ def compare_dolthub_alpaca(
     if spots is None or spots.empty:
         return None
     # one malformed session must not poison the nightly derive forever
-    # (review #5) — unrecognized shape is honest absence, like every pair
+    # (review #5): unrecognized shape is honest absence, like every pair
     if not {"expiration", "right", "strike", "bid", "ask", "delta",
             "spot"}.issubset(eod.columns):
         return None
@@ -188,7 +188,7 @@ def compare_dolthub_alpaca(
     j = eod.merge(last, on=["expiration", "right", "strike"], how="left")
     two_sided = j[j["bid"].notna() & j["ask"].notna() & (j["bid"] > 0)]
     # joined = present in BOTH sources (the module contract, review #12);
-    # a NaN vendor delta cannot be adjusted — excluded from checked,
+    # a NaN vendor delta cannot be adjusted: excluded from checked,
     # never fabricated into a violation (review #5)
     joined = int(two_sided["last_trade"].notna().sum())
     traded = two_sided[two_sided["last_trade"].notna()
@@ -225,7 +225,7 @@ def compare_dolthub_uw(
 ) -> dict[str, Any] | None:
     """DoltHub chain volume/OI summed per expiry vs UW volume_oi_expiry.
     A row agrees when BOTH totals sit within their relative bands (OI
-    tight at 5%, volume looser at 10% — capture cutoffs differ)."""
+    tight at 5%, volume looser at 10% because capture cutoffs differ)."""
     if chain is None or chain.empty or voe is None or voe.empty:
         return None
     need_c = {"expiration", "volume", "open_interest"}
@@ -302,7 +302,7 @@ def compare_massive_ivol5m(
 ) -> dict[str, Any] | None:
     """Massive daily per-contract close (TRADE) vs the iVol 5-min NBBO
     day range: the vendor close should sit inside [day-min bid − tol,
-    day-max ask + tol] — a trade can't honestly print outside the day's
+    day-max ask + tol]. A trade can't honestly print outside the day's
     quoted band. Massive is NEVER a fill source (guardrail #1); this is
     the F5-deferred coverage/volume cross-check landing at F7."""
     if massive_day is None or massive_day.empty:
@@ -317,8 +317,8 @@ def compare_massive_ivol5m(
     iv = ivol_day.copy()
     iv["bid"] = pd.to_numeric(iv["bid"], errors="coerce")
     iv["ask"] = pd.to_numeric(iv["ask"], errors="coerce")
-    # the two vendors format the OCC symbol differently — Massive prefixes
-    # "O:", iVol pads the root to six chars — so the raw join finds NOTHING
+    # the two vendors format the OCC symbol differently (Massive prefixes
+    # "O:", iVol pads the root to six chars), so the raw join finds NOTHING
     # (real-lake acceptance 2026-07-08). Normalize both to the canonical
     # {root}{YYMMDD}{C/P}{strike8} before joining (all tickers are 3-char
     # roots, so stripping "O:" and whitespace is unambiguous).
@@ -344,11 +344,11 @@ def compare_recorder_tape_window(
     """One recorder snapshot vs the UW tape prints inside its validity
     window (the runner slices trades by source_ts − RECORDER_DELAY_MIN):
     a print on a contract the snap quotes two-sided must sit inside
-    [bid − tol, ask + tol], tol = max(ABS_TOL, REL_TOL × mid) — the
+    [bid − tol, ask + tol], tol = max(ABS_TOL, REL_TOL × mid), the
     reviewed band. The quote is delayed top-of-book and a print inside
     the next 60 s may legitimately chase a fast move, so the band is a
     reporting convention, never scoring. Extras `below_bid`/`beyond_ask`
-    accumulate the DIRECTION of every violation — the displayed-quote
+    accumulate the DIRECTION of every violation, the displayed-quote
     calibration signal (F5 disclosure → D3d staging), reported only.
     Prints on contracts the snap doesn't list join zero (honest absence);
     an unrecognized shape is None, like every pair."""
@@ -366,7 +366,7 @@ def compare_recorder_tape_window(
     q["bid"] = pd.to_numeric(q["bid"], errors="coerce")
     q["ask"] = pd.to_numeric(q["ask"], errors="coerce")
     # a snap lists each contract once; a malformed duplicate would fan the
-    # merge out and double-count prints — keep the first, defensively
+    # merge out and double-count prints, so keep the first, defensively
     q = (q.dropna(subset=["_strike"])
          .drop_duplicates(subset=keys, keep="first"))[keys + ["bid", "ask"]]
     t = trades.copy()
@@ -378,7 +378,7 @@ def compare_recorder_tape_window(
     if t.empty:
         return None
     j = t.merge(q, on=keys, how="inner")
-    # a crossed quote (bid > ask — the delayed feed does serve them) is
+    # a crossed quote (bid > ask, and the delayed feed does serve them) is
     # not an honest two-sided market: excluded from checked, or one print
     # could land in below_bid AND beyond_ask and the direction extras
     # would stop reconciling with checked
@@ -399,8 +399,8 @@ def compare_signal_values(
     """One session's signal-vs-signal comparison. Each field is
     (ours, theirs, mode, abs_tol, rel_tol); mode "band" agrees within
     max(abs_tol, rel_tol·|theirs|), mode "sign" agrees on sign (an exact
-    zero on either side is joined but unCHECKED — sign(0) is not a
-    claim). None when nothing joined — that session has no overlap."""
+    zero on either side is joined but unCHECKED: sign(0) is not a
+    claim). None when nothing joined: that session has no overlap."""
     joined = checked = within = 0
     for ours, theirs, mode, abs_tol, rel_tol in fields:
         if ours is None or theirs is None:
@@ -427,7 +427,7 @@ def compare_signal_values(
 def load_pair_summary(
     s3: Any, pair: str, ticker: str
 ) -> dict[str, dict[str, Any]]:
-    """{iso-date: record} from a pair artifact — empty until derived."""
+    """{iso-date: record} from a pair artifact, empty until derived."""
     from app.data import r2
 
     df = r2.get_parquet(s3, PAIR_KEY.format(pair=pair, ticker=ticker))

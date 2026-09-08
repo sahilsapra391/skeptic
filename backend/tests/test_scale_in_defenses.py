@@ -1,14 +1,14 @@
-"""Scale-in martingale defenses (D5c) — the checks that LIFT the D5a interlock.
+"""Scale-in martingale defenses (D5c), the checks that LIFT the D5a interlock.
 
 Until D5c a ladder was hard-capped no matter what (the interlock). Now the
 interlock is replaced by two real, strategy-specific defenses: a ruin-tail
 Monte Carlo on the basket P&L sequence and a deep-rung-dependency check.
 
   * A martingale-overfit ladder (one lucky deep reversal in a sea of ruinous
-    ones) is REFUSED — BOTH defenses fire, and NOT because the sample is thin.
-  * A clean ladder that clears the defenses is now BLESSABLE — the whole point
+    ones) is REFUSED. BOTH defenses fire, and NOT because the sample is thin.
+  * A clean ladder that clears the defenses is now BLESSABLE, the whole point
     of shipping the primitive behind the interlock and lifting it here.
-  * Sample counting still uses BASKETS, not per-rung fills — adds are not
+  * Sample counting still uses BASKETS, not per-rung fills. Adds are not
     trades, so a ladder can't inflate its way past the 15-trade bar.
 """
 
@@ -41,7 +41,7 @@ def test_martingale_overfit_refused_by_both_defenses() -> None:
     si = report.scale_in
     assert si is not None
 
-    # cleared the sample bar — the refusal is the martingale, NOT thin evidence
+    # cleared the sample bar: the refusal is the martingale, NOT thin evidence
     assert report.regime_sample.trades >= MIN_TRADES
     assert report.regime_sample.capped is False
     assert report.regime_sample.regimes_present >= 2
@@ -87,13 +87,13 @@ def test_clean_ladder_clears_the_defenses_and_is_blessed() -> None:
     _spec, _result, report = _report(scale_in_multi_session)
     si = report.scale_in
     assert si is not None
-    # neither hard cap fires — removing the deepest rung IMPROVES the total,
+    # neither hard cap fires: removing the deepest rung IMPROVES the total,
     # and the ruin tail is contained
     assert si.deep_rung_sign_flip is False
     assert si.ruin_flagged is False
     assert si.caps_trust is False
 
-    # so the ladder is judged like any strategy — and here it grades (no
+    # so the ladder is judged like any strategy, and here it grades (no
     # "scale-in safety checks pending" refusal anywhere)
     assert report.trust.label != "insufficient_evidence"
     assert report.trust.level is not None
@@ -106,10 +106,10 @@ def test_sample_counts_baskets_not_per_rung_fills() -> None:
     result = run_backtest(spec, store, intraday)
     report = run_gauntlet(spec, store, result, trials=1, intraday=intraday)
 
-    # ONE basket built from FOUR rung fills — the sample counts the basket
+    # ONE basket built from FOUR rung fills: the sample counts the basket
     assert len(result.rung_fills) == 4
     assert report.regime_sample.trades == 1
-    # so a lone ladder is still sample-capped — a ladder can't inflate its way
+    # so a lone ladder is still sample-capped: a ladder can't inflate its way
     # to 15 "trades" by adding more rungs
     assert report.trust.label == "insufficient_evidence"
     assert report.regime_sample.capped is True
@@ -119,6 +119,6 @@ def test_sample_counts_baskets_not_per_rung_fills() -> None:
 def test_martingale_refusal_not_chased_by_auto_unlock() -> None:
     spec, _result, report = _report(martingale_overfit_multi_session)
     assert report.trust.label == "insufficient_evidence"
-    # the caps are strategy properties, not thin data — the auto-unlock scan
+    # the caps are strategy properties, not thin data, so the auto-unlock scan
     # must not re-run and re-refuse them forever
     assert unlock_conditions(report, spec) is None

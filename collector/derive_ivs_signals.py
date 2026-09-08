@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_ivs_signals.py — surface → signal derivation (ENGINE-V4 F4).
+derive_ivs_signals.py: surface → signal derivation (ENGINE-V4 F4).
 
 Reads each banked IVS session surface ONCE and appends one row per session
 to reference/derived/ivs_signals/ticker={T}.parquet:
@@ -10,15 +10,15 @@ Incremental by SET DIFFERENCE, not a watermark: each run derives exactly
 the listed surface sessions that have no row in the artifact yet. That
 makes every hole self-healing (review finding, F4): a transient R2 read
 failure retries next night, and a surface that the iVol backfill drip
-lands at an OLD date is picked up the night it appears — no state file to
+lands at an OLD date is picked up the night it appears, with no state file to
 advance past it, nothing to recover manually. A derived-but-signal-less
 session writes an all-None row (so it is not retried); only sessions whose
 surface could not be READ stay pending, and the skip count is logged
 loudly. Self-improvement thesis: the signal series grows with the lake
 automatically.
 
-The derivation MATH is imported from the backend (app/data/ivs_signals.py)
-— one implementation, fixture-tested in the backend battery; this side
+The derivation MATH is imported from the backend (app/data/ivs_signals.py),
+one implementation, fixture-tested in the backend battery; this side
 only walks the lake.
 
 Run:  cd collector && uv run python derive_ivs_signals.py [--tickers SPY,QQQ,IWM]
@@ -49,7 +49,7 @@ def _load_dotenv(path: Path = Path(__file__).parent / ".env") -> None:
 
 _load_dotenv()
 
-# single-source the derivation from the backend (F0 pattern — pandas-only)
+# single-source the derivation from the backend (F0 pattern, pandas-only)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.data.ivs_signals import SIGNALS_KEY, derive_signal_row  # noqa: E402
 
@@ -95,7 +95,7 @@ def derive_ticker(s3, ticker: str) -> int:
             s3, f"reference/ivol/ivs/ticker={ticker}/date={d}/surface.parquet")
         if surf is None or surf.empty:
             # unreadable ≠ derived: NO row is written, so this session is
-            # retried on the next pass — a hole heals, never sticks
+            # retried on the next pass. A hole heals, never sticks
             skipped.append(d)
             continue
         row = derive_signal_row(surf)

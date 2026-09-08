@@ -5,14 +5,14 @@
  * script once and renders the challenge; callers mint a token on demand via
  * the imperative `refresh()` handle. Renders nothing (and refresh() resolves
  * null) when NEXT_PUBLIC_TURNSTILE_SITE_KEY is unset, so dev / pre-launch
- * runs proceed without Cloudflare keys — the backend skips verification in
+ * runs proceed without Cloudflare keys. The backend skips verification in
  * the same case.
  *
  * Why refresh() and not a token-at-mount ref: a Turnstile token is single-use
  * and time-bounded. Minting it at mount and sending that same token on the
  * user's FIRST click meant the first submit rode a stale/consumed token that
- * siteverify rejected ("the human check didn't pass — please try again"),
- * while an immediate retry — which re-solved the widget — passed. Solving at
+ * siteverify rejected ("the human check didn't pass, please try again"),
+ * while an immediate retry (which re-solved the widget) passed. Solving at
  * SUBMIT makes every attempt carry a freshly minted, never-yet-redeemed token,
  * so the first click behaves exactly like the (previously working) second.
  */
@@ -24,7 +24,7 @@ import { TURNSTILE_SITE_KEY, turnstileConfigured } from "@/lib/turnstile";
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 // refresh() never hangs a submit: if a fresh token doesn't arrive within this
 // window (script slow to load, a visible challenge the user hasn't finished),
-// it resolves null — reset() has already invalidated any earlier token, so
+// it resolves null: reset() has already invalidated any earlier token, so
 // sending that would just 403. The caller surfaces null as a gentle "try
 // again in a second" nudge rather than a scary rejection.
 const REFRESH_TIMEOUT_MS = 8000;
@@ -46,7 +46,7 @@ declare global {
 export type TurnstileHandle = {
   // Mint a FRESH, single-use token for THIS submit. Resolves with the token,
   // or null when Turnstile isn't configured (dev / pre-launch) or the widget
-  // couldn't produce one in time — the caller then nudges the user to retry
+  // couldn't produce one in time. The caller then nudges the user to retry
   // instead of sending an empty/stale token.
   refresh: () => Promise<string | null>;
 };
@@ -72,7 +72,7 @@ export const TurnstileWidget = forwardRef<
   TurnstileHandle,
   {
     // optional notification on every token the widget produces (mount solve,
-    // a refresh, or null on expiry/error) — the send path uses refresh()
+    // a refresh, or null on expiry/error). The send path uses refresh()
     onVerify?: (token: string | null) => void;
   }
 >(function TurnstileWidget({ onVerify }, handleRef) {
@@ -108,7 +108,7 @@ export const TurnstileWidget = forwardRef<
           "error-callback": () => deliverRef.current(null),
           appearance: "interaction-only", // invisible unless a challenge is needed
           // integration-attribution label (the render-API equivalent of a
-          // cf-turnstile div's data-action) — a static tag in our own
+          // cf-turnstile div's data-action), a static tag in our own
           // Cloudflare analytics, no per-user data
           action: "turnstile-spin-v2",
         });
@@ -144,14 +144,14 @@ export const TurnstileWidget = forwardRef<
             try {
               wt.reset(widgetId.current);
             } catch {
-              // widget vanished — no fresh token to give
+              // widget vanished, no fresh token to give
               pending.current = null;
               return resolve(null);
             }
           }
           // if the widget is still loading (an instant submit), the in-flight
           // mount solve will settle `pending` with its freshly minted token.
-          // On timeout resolve null — reset() has already invalidated any
+          // On timeout resolve null: reset() has already invalidated any
           // earlier token, so the caller nudges instead of sending a dud.
           setTimeout(() => {
             if (pending.current === resolve) {

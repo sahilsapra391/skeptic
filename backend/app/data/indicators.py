@@ -1,10 +1,10 @@
-"""Chart indicators — strictly trailing windows, computed server-side so the
+"""Chart indicators: strictly trailing windows, computed server-side so the
 frontend never does math beyond shaping (TECH-SPEC §8). The M2 engine's
 indicator module grows from here; every function ships with a hand-computed
 fixture test (tests/test_indicators.py).
 
 All functions take/return pandas Series aligned to the input index; warmup
-positions are NaN (the chart draws nothing there — no fabricated values).
+positions are NaN (the chart draws nothing there, no fabricated values).
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def sma(close: pd.Series, period: int) -> pd.Series:
 
 def ema(close: pd.Series, period: int) -> pd.Series:
     """EMA seeded with the SMA of the first `period` values (classic charting
-    convention) — values before the seed are NaN, never extrapolated."""
+    convention). Values before the seed are NaN, never extrapolated."""
     if len(close) < period:
         return pd.Series(np.nan, index=close.index)
     seed = close.iloc[:period].mean()

@@ -3,7 +3,7 @@
     "spec_version": 1,
     "meta": {
       "name": "overfit SPY 15d 28dte 25pt 100sl",
-      "description_raw": "deliberately overfit fixture \u2014 tuned on the full sample"
+      "description_raw": "deliberately overfit fixture, tuned on the full sample"
     },
     "underlying": {
       "ticker": "SPY"
@@ -57,5 +57,5 @@
   "trials": 108,
   "data_seed": 2,
   "in_sample_sharpe": 0.6849,
-  "note": "parameters tuned on the FULL zero-edge sample by tests/fixtures/synthetic_market.py \u2014 the gauntlet must always catch this"
+  "note": "parameters tuned on the FULL zero-edge sample by tests/fixtures/synthetic_market.py. The gauntlet must always catch this"
 }

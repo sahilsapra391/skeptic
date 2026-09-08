@@ -18,7 +18,7 @@ const plexMono = IBM_Plex_Mono({
   variable: "--font-plex-mono",
 });
 
-// display serif — headings and important moments ONLY (owner directive
+// display serif: headings and important moments ONLY (owner directive
 // 2026-07-03): body stays Archivo, data stays Plex Mono
 const newsreader = Newsreader({
   subsets: ["latin"],
@@ -29,17 +29,17 @@ const newsreader = Newsreader({
 
 export const metadata: Metadata = {
   // SEO (launch L4): absolute URLs for OG/canonical resolve against this.
-  // Every claim in titles/descriptions must stay literally true — the
+  // Every claim in titles/descriptions must stay literally true. The
   // audience detects fakery for a living (design brief), and so do raters.
   metadataBase: new URL("https://skeptic.fyi"),
   title: {
-    default: "Skeptic — The Options Backtester That Argues With You",
-    template: "%s — Skeptic",
+    default: "Skeptic: The Options Backtester That Argues With You",
+    template: "%s | Skeptic",
   },
   description:
     "Backtest options strategies in plain English. Skeptic interviews you, " +
-    "runs the strategy on real intraday options data — fills at bid/ask, " +
-    "never mid — then attacks its own result and refuses verdicts the " +
+    "runs the strategy on real intraday options data (fills at bid/ask, " +
+    "never mid), then attacks its own result and refuses verdicts the " +
     "evidence can't support. Research tool, not financial advice.",
   applicationName: "Skeptic",
   category: "finance",
@@ -55,11 +55,11 @@ export const metadata: Metadata = {
     "monte carlo backtest",
   ],
   // no root canonical: Next metadata inherits into child segments, which
-  // would declare every subpage a duplicate of `/` — each page carries its
+  // would declare every subpage a duplicate of `/`. Each page carries its
   // own (the landing's lives in app/page.tsx)
   icons: {
     // owner-picked: the ink-black tile with the centered white S.
-    // ?v=2 = brand kit v2 (2026-07-16): same filenames, new bytes — without
+    // ?v=2 = brand kit v2 (2026-07-16): same filenames, new bytes. Without
     // it, favicon caches and OG scrapers keep serving the old mark. Bump on
     // every future kit import.
     icon: [
@@ -70,9 +70,9 @@ export const metadata: Metadata = {
     apple: "/favicon-dark-tile-180.png?v=2",
   },
   openGraph: {
-    title: "Skeptic — The Options Backtester That Argues With You",
+    title: "Skeptic: The Options Backtester That Argues With You",
     description:
-      "Pitch a trade in plain English. Get the honest read — refusals included.",
+      "Pitch a trade in plain English. Get the honest read, refusals included.",
     url: "https://skeptic.fyi",
     siteName: "Skeptic",
     type: "website",
@@ -81,9 +81,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Skeptic — The Options Backtester That Argues With You",
+    title: "Skeptic: The Options Backtester That Argues With You",
     description:
-      "Pitch a trade in plain English. Get the honest read — refusals included.",
+      "Pitch a trade in plain English. Get the honest read, refusals included.",
     images: ["/og-image-1200x630.png?v=2"],
   },
   robots: {
@@ -104,7 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
     >
       <head>
-        {/* apply Appearance before first paint — no theme flash. Mirrors
+        {/* apply Appearance before first paint (no theme flash). Mirrors
             resolveTheme() in lib/settings.ts: Market Hours (default/unset) is
             light 8am–6pm New York, dark otherwise. The landing at `/` keeps
             its own preference key (sk-landing-theme, launch L4) so its footer
@@ -128,7 +128,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       {/* the viewport-locked app shell (nav rail + scroll-caged main) lives
-          in app/(app)/layout.tsx — the landing at `/` scrolls the window */}
+          in app/(app)/layout.tsx. The landing at `/` scrolls the window */}
       <body className="bg-ground font-sans text-ink antialiased">
         <ThemeApplier />
         {children}

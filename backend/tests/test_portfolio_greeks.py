@@ -1,4 +1,4 @@
-"""Portfolio greeks per marked session (D1d) — hand-computed.
+"""Portfolio greeks per marked session (D1d), hand-computed.
 
 Single short put, 2 contracts, quote greeks: delta −0.30, gamma 0.02,
 theta −0.05 ($/day/share), vega 0.30. Short → sign −1, scale = −1×2×100:
@@ -7,8 +7,8 @@ theta −0.05 ($/day/share), vega 0.30. Short → sign −1, scale = −1×2×10
   theta = −(−0.05)×200 = +10 $/day (the short collects decay)
   vega  = −(0.30)×200  = −60 $/vol-pt
 Covered-call stock adds +100Δ per 100 shares (1Δ per share).
-A greek missing on any open leg → THAT aggregate is None for the day —
-a partial sum would understate exposure. Flat book → exact zeros.
+A greek missing on any open leg → THAT aggregate is None for the day.
+A partial sum would understate exposure. Flat book → exact zeros.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class TestAggregation:
         result = run_backtest(_spec(), build_fixture_store("SPY", chains, underlying))
 
         assert result.portfolio_vega == [pytest.approx(-60.0), None]
-        # the other greeks stay computed — per-greek independence
+        # the other greeks stay computed (per-greek independence)
         assert result.portfolio_delta == [pytest.approx(60.0)] * 2
 
     def test_flat_book_is_exact_zero(self) -> None:

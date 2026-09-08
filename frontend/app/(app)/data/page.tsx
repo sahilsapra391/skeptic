@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Data Observatory — "Data, honestly." Mission telemetry for the lake:
+ * Data Observatory: "Data, honestly." Mission telemetry for the lake:
  * collection streak, recorder heartbeat, per-source coverage lanes, and
  * named blind spots. Everything on this screen is computed from the live
  * /api/data/coverage payload; when the lake is unreachable the screen says
  * so instead of inventing numbers.
  *
  * UX Chunk C (owner plan 2026-07-14): the former panel wall is regrouped
- * into five collapsible groups — Coverage at a glance (open by default),
+ * into five collapsible groups: Coverage at a glance (open by default),
  * EOD chains & history, Intraday & minute lakes, Signal sources, and Data
  * health & incidents. NO data was removed: every fact is reachable within
  * one expand. Anything flagged lifts a warn badge onto its group header so
@@ -38,7 +38,7 @@ const TICKERS = ["SPY", "QQQ", "IWM"] as const;
 // the standard lane grid, shared by every group's lane section
 const LANE_GRID =
   "grid grid-cols-[150px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]";
-// chain-quality warn rule — ONE definition shared by the detail rows and
+// chain-quality warn rule, ONE definition shared by the detail rows and
 // the EOD group badge, so a threshold tune can never make them disagree
 const CHAIN_FIELDS = ["iv", "delta", "vega", "volume", "open_interest"];
 const WEAK_FIELD_SHARE = 0.5;
@@ -46,7 +46,7 @@ const WEAK_FIELD_SHARE = 0.5;
 // group expand state persists locally; "glance" is the only group open on
 // a first visit (owner plan: coverage at a glance stays at the top,
 // everything else is one click away). The union type ties each <Group id>
-// to its openGroups key — a renamed/typo'd id fails the compile instead of
+// to its openGroups key. A renamed/typo'd id fails the compile instead of
 // silently never persisting.
 type GroupId = "glance" | "eod" | "intraday" | "signals" | "health";
 const GROUPS_KEY = "skeptic-observatory-groups";
@@ -178,7 +178,7 @@ export default function DataPage() {
     useState<Partial<Record<GroupId, boolean>>>(DEFAULT_OPEN);
 
   useEffect(() => {
-    // hydrate the remembered expand state (client-only — localStorage in
+    // hydrate the remembered expand state (client-only: localStorage in
     // render would mismatch the server HTML, same pattern as the hero).
     // Keep only boolean values from a plain object: corrupt/legacy state
     // (arrays, truthy non-booleans) would otherwise swallow the first
@@ -192,7 +192,7 @@ export default function DataPage() {
         setOpenGroups({ ...DEFAULT_OPEN, ...clean });
       }
     } catch {
-      /* private mode — keep defaults */
+      /* private mode, keep defaults */
     }
   }, []);
 
@@ -202,7 +202,7 @@ export default function DataPage() {
       try {
         localStorage.setItem(GROUPS_KEY, JSON.stringify(next));
       } catch {
-        /* private mode — state lives for the session only */
+        /* private mode, state lives for the session only */
       }
       return next;
     });
@@ -248,7 +248,7 @@ export default function DataPage() {
           <div className="font-mono text-[12px] text-warn">telemetry unavailable</div>
           <div className="mt-2 text-[13px] leading-relaxed text-ink-3">{error}</div>
           <div className="mt-2 font-mono text-[11.5px] text-ink-4">
-            This screen never shows cached or invented coverage — no lake, no numbers.
+            This screen never shows cached or invented coverage. No lake, no numbers.
           </div>
         </div>
       </div>
@@ -272,7 +272,7 @@ export default function DataPage() {
   const recordFirst =
     coverage.record_first ?? closeChain?.first ?? coverage.eod.yahoo?.SPY?.first;
   // frozen vs accruing is the BACKEND's one verdict (it also writes the
-  // blind-spot text) — re-deriving it here could contradict that panel
+  // blind-spot text). Re-deriving it here could contradict that panel
   const alpacaAccruing = coverage.sources_status.alpaca_minute_accruing === true;
   const inhouse = coverage.inhouse_signals?.SPY;
   const hvAgreement =
@@ -303,7 +303,7 @@ export default function DataPage() {
       (laterStart ? ` · QQQ/IWM since ${monthYear(laterStart)}` : "")
     : "no chains banked yet";
   // any chain source with a load-bearing field under the shared threshold
-  // lifts a badge — the SAME constants the detail rows paint warn with, so
+  // lifts a badge, the SAME constants the detail rows paint warn with, so
   // the badge and the rows can never disagree. Null-safe: this runs in the
   // component body on every payload, warn-worthy or not (review finding).
   const weakChainFields = TICKERS.flatMap((t) =>
@@ -368,7 +368,7 @@ export default function DataPage() {
 
       {recordStaleDays != null && recordStaleDays > 4 && (
         <div className="mb-3 rounded-xl border border-warn/50 px-3.5 py-3 font-mono text-[12px] text-warn">
-          ⚠ collector may be down — last EOD record {shortDate(coverage.record_latest!)} (
+          ⚠ collector may be down, last EOD record {shortDate(coverage.record_latest!)} (
           {recordStaleDays} days ago)
         </div>
       )}
@@ -386,7 +386,7 @@ export default function DataPage() {
             {/* owner 2026-07-17: counts from the OLDEST banked session
                 (chains reach Oct '09), not the young nightly streak */}
             <div className="font-mono text-[40px] font-semibold tracking-[.06em]">
-              {daysOnRecord(coverage)?.toLocaleString("en-US") ?? "—"}
+              {daysOnRecord(coverage)?.toLocaleString("en-US") ?? "n/a"}
             </div>
             <div className="mt-1 font-mono text-[9.5px] font-medium tracking-[.14em] text-ink-4">
               DAYS ON RECORD
@@ -412,7 +412,7 @@ export default function DataPage() {
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
-              {/* live: a bright pulse sweeps the full line (the "beat") — a short
+              {/* live: a bright pulse sweeps the full line (the "beat"), a short
                   dash traveling the whole path, over the fully-drawn base */}
               {recorderFresh && (
                 <polyline
@@ -455,7 +455,7 @@ export default function DataPage() {
                     ok ? "text-ink-3" : "text-ink-4",
                   )}
                 >
-                  {String(label)} {ok ? "✓" : "—"}
+                  {String(label)} {ok ? "✓" : "·"}
                 </span>
               ))}
               <span className="rounded-full border border-line px-[11px] py-1 font-mono text-[11px] text-ink-4">
@@ -475,8 +475,8 @@ export default function DataPage() {
           coverage.resolution_mix?.QQQ ||
           coverage.resolution_mix?.IWM) && (
           <Section
-            title="RESOLUTION MIX — FINEST HONEST DECISION CLOCK PER SESSION"
-            note="rebuilt nightly from the lake; minute bars upgrade the clock only —
+            title="RESOLUTION MIX: FINEST HONEST DECISION CLOCK PER SESSION"
+            note="rebuilt nightly from the lake; minute bars upgrade the clock only, and
             fills always quote from real NBBO (5-min iVol / recorder)"
           >
             <div className={LANE_GRID}>
@@ -542,7 +542,7 @@ export default function DataPage() {
         open={openGroups.eod === true}
         onToggle={toggleGroup}
       >
-        <Section title="COVERAGE LANES — PER SOURCE, 2020 → NOW">
+        <Section title="COVERAGE LANES: PER SOURCE, 2020 → NOW">
           <div className={LANE_GRID}>
             {dolthub && (
               <Lane
@@ -605,13 +605,13 @@ export default function DataPage() {
           </div>
         </Section>
 
-        {/* gated on ANY ticker's quality — the badge above scans all three,
+        {/* gated on ANY ticker's quality: the badge above scans all three,
             so it must never point at a section that then fails to render
             (review finding: SPY-only gate vs all-ticker badge) */}
         {(coverage.chain_quality?.SPY ||
           coverage.chain_quality?.QQQ ||
           coverage.chain_quality?.IWM) && (
-          <Section title="CHAIN QUALITY — FIELD COMPLETENESS PER SOURCE">
+          <Section title="CHAIN QUALITY: FIELD COMPLETENESS PER SOURCE">
             <div className="flex flex-col gap-2.5 font-mono text-[11.5px]">
               {TICKERS.map((t) => {
                 const q = coverage.chain_quality?.[t];
@@ -641,7 +641,7 @@ export default function DataPage() {
             {coverage.chain_quality?.SPY?.monthly_median_spread_pct && (
               <div className="mt-3 border-t border-line-softer pt-2.5">
                 <div className={clsx(PANEL_TITLE, "mb-1.5")}>
-                  SPY MEDIAN SPREAD BY MONTH — % OF MID
+                  SPY MEDIAN SPREAD BY MONTH (% OF MID)
                 </div>
                 <svg width="100%" viewBox="0 0 860 46" className="block" preserveAspectRatio="none">
                   {(() => {
@@ -664,8 +664,8 @@ export default function DataPage() {
                   })()}
                 </svg>
                 <div className="mt-1 font-mono text-[10px] text-ink-4">
-                  computed from the engine&apos;s local chain cache — appears after the first
-                  lake load
+                  computed from the engine&apos;s local chain cache (appears after the first
+                  lake load)
                 </div>
               </div>
             )}
@@ -682,7 +682,7 @@ export default function DataPage() {
         open={openGroups.intraday === true}
         onToggle={toggleGroup}
       >
-        <Section title="COVERAGE LANES — PER SOURCE, 2020 → NOW">
+        <Section title="COVERAGE LANES: PER SOURCE, 2020 → NOW">
           <div className={LANE_GRID}>
             {minute && (
               <Lane
@@ -716,7 +716,7 @@ export default function DataPage() {
                 t1={today}
                 note={`minute quotes · best-effort uptime${
                   recorderMins != null && !recorderFresh
-                    ? ` · last snapshot ${recorderMins} min ago — stalled`
+                    ? ` · last snapshot ${recorderMins} min ago, stalled`
                     : ""
                 }`}
               />
@@ -742,7 +742,7 @@ export default function DataPage() {
               </div>
             )}
             {/* gated like the old new-sources bullet: whenever new_sources
-                exists — a per-ticker "pending" is itself a fact worth
+                exists, a per-ticker "pending" is itself a fact worth
                 showing (review finding: the tighter uw_minute gate silently
                 dropped the whole line in the not-yet-flowing state) */}
             {coverage.new_sources && (
@@ -769,7 +769,7 @@ export default function DataPage() {
         onToggle={toggleGroup}
       >
         {coverage.ivol_analytics?.SPY?.ivx && (
-          <Section title="IV ANALYTICS (IVOLATILITY) — IVX / HV, BANKED YEARS">
+          <Section title="IV ANALYTICS (IVOLATILITY): IVX / HV, BANKED YEARS">
             <div className={LANE_GRID}>
               {TICKERS.map((t) => {
                 const ivx = coverage.ivol_analytics?.[t]?.ivx;
@@ -794,10 +794,10 @@ export default function DataPage() {
           coverage.ivs_signals?.QQQ ||
           coverage.ivs_signals?.IWM) && (
           <Section
-            title="VOL-SURFACE SIGNALS — 25Δ SKEW / 30v90 TERM SLOPE, DERIVED NIGHTLY"
+            title="VOL-SURFACE SIGNALS: 25Δ SKEW / 30v90 TERM SLOPE, DERIVED NIGHTLY"
             note="derived once per session from the fitted IVS surface; sessions
-            missing a tenor or delta bracket carry no value for that signal —
-            filters read them as unavailable, never interpolated"
+            missing a tenor or delta bracket carry no value for that signal
+            (filters read them as unavailable, never interpolated)"
           >
             <div className={LANE_GRID}>
               {TICKERS.map((t) => {
@@ -823,8 +823,8 @@ export default function DataPage() {
           coverage.dealer_positioning?.QQQ ||
           coverage.dealer_positioning?.IWM) && (
           <Section
-            title="DEALER POSITIONING (UW) — NET GEX / DEX, SIGN + RANK VOCABULARY"
-            note="vendor units are opaque — filters read the sign (long/short
+            title="DEALER POSITIONING (UW): NET GEX / DEX, SIGN + RANK VOCABULARY"
+            note="vendor units are opaque, so filters read the sign (long/short
             gamma) and the trailing-year percentile only; runs conditioned
             on this family refuse windows starting before the first banked
             session"
@@ -853,7 +853,7 @@ export default function DataPage() {
           coverage.flow_signals?.QQQ ||
           coverage.flow_signals?.IWM) && (
           <Section
-            title="FLOW / SENTIMENT / PIN (UW) — EOD REDUCTIONS, SPEC v7"
+            title="FLOW / SENTIMENT / PIN (UW): EOD REDUCTIONS, SPEC v7"
             note="net premium & NOPE read as sign/rank only; put/call ratio and
             max-pain distance are unit-free; market tide is market-wide.
             runs conditioned on this family refuse windows starting before
@@ -893,20 +893,22 @@ export default function DataPage() {
           coverage.inhouse_signals?.QQQ ||
           coverage.inhouse_signals?.IWM) && (
           <Section
-            title="IN-HOUSE CONTINUATIONS — FORWARD RECORD, NO VENDOR SUBSCRIPTIONS"
+            title="IN-HOUSE CONTINUATIONS: FORWARD RECORD, NO VENDOR SUBSCRIPTIONS"
             note={
               <>
                 derived nightly from the CBOE close chain and our own dailies
                 {coverage.vendor_lasts?.ivs
-                  ? ` — iVol series last observed ${coverage.vendor_lasts.ivs}`
+                  ? `. iVol series last observed ${coverage.vendor_lasts.ivs}`
                   : ""}
                 {coverage.vendor_lasts?.uw
-                  ? `, UW families ${coverage.vendor_lasts.uw}`
+                  ? `${coverage.vendor_lasts?.ivs ? "," : "."} UW families ${
+                      coverage.vendor_lasts.uw
+                    }`
                   : ""}
                 . vendor history stays untouched; runs crossing a seam disclose
                 it, and the cross-validation pairs (Data health group) measure
                 every continuation on its overlap. GEX/DEX are banked +
-                sign-checked only — never spliced into the UW series.
+                sign-checked only, never spliced into the UW series.
               </>
             }
           >
@@ -957,8 +959,8 @@ export default function DataPage() {
                   {coverage.new_sources.uw_daily?.market_tide?.market && (
                     <span className="text-ink-4">
                       {" "}
-                      — {coverage.new_sources.uw_daily.market_tide.market.first} →{" "}
-                      {coverage.new_sources.uw_daily.market_tide.market.last}
+                      ({coverage.new_sources.uw_daily.market_tide.market.first} →{" "}
+                      {coverage.new_sources.uw_daily.market_tide.market.last})
                     </span>
                   )}
                 </span>
@@ -1010,9 +1012,9 @@ export default function DataPage() {
         {coverage.cross_validation &&
           Object.keys(coverage.cross_validation).length > 0 && (
             <Section
-              title="CROSS-SOURCE VALIDATION — INDEPENDENT VENDORS, PER-PAIR AGREEMENT"
-              note="agreement rates travel with their audited denominators — reported,
-              never scored; thresholds are earned from this history, not invented"
+              title="CROSS-SOURCE VALIDATION: INDEPENDENT VENDORS, PER-PAIR AGREEMENT"
+              note="agreement rates travel with their audited denominators (reported,
+              never scored); thresholds are earned from this history, not invented"
             >
               <div className="grid grid-cols-[200px_1fr_290px] items-center gap-2.5 font-mono text-[11.5px]">
                 {Object.entries(coverage.cross_validation).flatMap(([pair, byT]) =>
@@ -1073,7 +1075,7 @@ export default function DataPage() {
                     <span className="font-mono text-ink-4">{p.rank}.</span>
                     <span>
                       {p.want}
-                      <span className="text-ink-4"> — {p.why}</span>
+                      <span className="text-ink-4"> ({p.why})</span>
                     </span>
                   </div>
                 ))}

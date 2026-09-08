@@ -1,22 +1,22 @@
 """ENGINE-V3 D3d: what should the collectors want next?
 
-Weekly aggregation of three demand signals into a single ranked list —
-`state/collection_priorities.json` — surfaced on the Observatory as the
+Weekly aggregation of three demand signals into a single ranked list
+(`state/collection_priorities.json`) surfaced on the Observatory as the
 "collection wants" line. The ranking is DERIVED, never hand-ordered, and
 the scoring is a reviewed constant of this script (standing guardrail:
 scoring changes only via reviewed PRs). Collector consumption of the
 ranking is D4 follow-up work; this pass only states the demand.
 
 Signals:
-1. UNLOCK DEMAND — refused runs waiting on data (runs.unlock_json).
+1. UNLOCK DEMAND: refused runs waiting on data (runs.unlock_json).
    Each waiting run is a user who asked a question the lake couldn't
    answer: the strongest signal, +5 per run per {ticker, clock}.
-2. SKIP PRESSURE — data-shaped skip reasons across recent done runs
+2. SKIP PRESSURE: data-shaped skip reasons across recent done runs
    (payload trade logs): +1 per 25 skips, capped at +5 per reason.
-3. STRUCTURAL GAPS — from the coverage ledger and calibration state:
+3. STRUCTURAL GAPS (from the coverage ledger and calibration state):
    thin EOD history (< 100 sessions), lagging intraday capture (< half
    the deepest ticker), and a thin calibration overlap (short-DTE EOD
-   history — the D3c lake finding).
+   history, the D3c lake finding).
 
 Aggregates only; no chain rows.
 """
@@ -55,7 +55,7 @@ THIN_CALIBRATION_SCORE = 4
 RECENT_RUNS_SCANNED = 200
 
 # Skip reasons that point at missing DATA (vs strategy conditions that
-# legitimately didn't trigger — max_concurrent, conditions_not_met,
+# legitimately didn't trigger: max_concurrent, conditions_not_met,
 # risk_* and vega_cap are the strategy speaking, not the lake). The
 # vocabulary is the engine's (engine.py / fills.py / selection.py).
 DATA_SKIP_REASONS = {
@@ -131,7 +131,7 @@ def structural_gaps(s3: Any) -> list[dict[str, Any]]:
                 wants.append({
                     "want": f"EOD chain history for {ticker}",
                     "why": f"only {int(sessions)} EOD chain sessions in the lake "
-                           f"(< {THIN_EOD_SESSIONS}) — multi-year daily backtests "
+                           f"(< {THIN_EOD_SESSIONS}), so multi-year daily backtests "
                            "are impossible",
                     "score": THIN_EOD_SCORE,
                 })
@@ -140,7 +140,7 @@ def structural_gaps(s3: Any) -> list[dict[str, Any]]:
                 wants.append({
                     "want": f"extend the 5-min capture for {ticker}",
                     "why": f"{int(sessions)} intraday sessions vs {int(deepest)} on "
-                           "the deepest ticker — 5-min verdicts lag here",
+                           "the deepest ticker, so 5-min verdicts lag here",
                     "score": LAGGING_INTRADAY_SCORE,
                 })
     cal = r2.get_json(s3, CAL_STATE_KEY, None)
@@ -151,7 +151,7 @@ def structural_gaps(s3: Any) -> list[dict[str, Any]]:
             wants.append({
                 "want": "short-dated EOD chains (keep the Yahoo 0–60 DTE snapshot running)",
                 "why": f"fill-model calibration has n={n} overlapping contract-day "
-                       f"sides (< {floor}) — the historical EOD record carries no "
+                       f"sides (< {floor}). The historical EOD record carries no "
                        "<11 DTE expirations, so calibration and two-sided verdict "
                        "receipts both wait on this capture",
                 "score": THIN_CALIBRATION_SCORE,

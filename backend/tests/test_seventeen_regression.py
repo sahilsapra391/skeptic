@@ -3,12 +3,12 @@
 
 Two invariants, forever:
   1. NO hidden fill cap: a strategy over a 60-chain-date lake fills on every
-     one of those dates — > 17, and exactly the analytically expected count.
+     one of those dates (> 17, and exactly the analytically expected count).
      Any future cap (a stray [:N], LIMIT, max_fills, pagination truncation)
      fails this test.
   2. Fills TRACK the chain-date count: over a lake with few chain dates
      spread across a long session history, fills equal the chain-date count
-     and the balance is `no_chain_data` — and the honesty layer refuses to
+     and the balance is `no_chain_data`, and the honesty layer refuses to
      bless it (coverage cap → insufficient_evidence).
 """
 
@@ -81,7 +81,7 @@ def test_no_hidden_fill_cap_sixty_chain_dates() -> None:
     result = run_backtest(StrategySpec.model_validate(_daily_short_put()), store)
 
     assert result.filled == 60, (
-        f"expected one fill per chain date (60), got {result.filled} — a hidden "
+        f"expected one fill per chain date (60), got {result.filled}. A hidden "
         "cap or capacity block is truncating fills"
     )
     assert result.filled > 17, "SEVENTEEN regression: fills capped at/under 17"
@@ -140,7 +140,7 @@ def test_sparse_lake_fills_track_chain_dates_and_are_refused() -> None:
 
 def test_full_coverage_is_not_flagged_short() -> None:
     """The converse guard: a densely-covered synthetic run must NOT trip the
-    coverage cap — otherwise the overfit fixture and every honest run break."""
+    coverage cap, otherwise the overfit fixture and every honest run break."""
     store = synthetic_store(seed=11, sessions=200)
     result = run_backtest(StrategySpec.model_validate(_daily_short_put()), store)
     report = run_gauntlet(

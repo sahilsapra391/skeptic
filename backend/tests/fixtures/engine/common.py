@@ -30,7 +30,7 @@ math relies on (documented once here, enforced by these tests):
       short OTM → expires worthless
       short ITM put  → assigned: buy 100 sh @ strike, liquidate next
                        session OPEN (stock legs carry no added commission
-                       or spread — documented approximation)
+                       or spread, documented approximation)
       short ITM call → covered: shares called away @ strike;
                        uncovered: short 100 sh @ strike, buy back next open
   * time_exit_dte = 0 means hold to expiration settlement; > 0 closes at

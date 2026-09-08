@@ -83,7 +83,7 @@ def main() -> int:
     assert payload.get("retail"), "no retail register"
     took = time.time() - t0
     print(f"   “{verdict['headline'][:90]}…”")
-    print(f"\nSMOKE PASS — end-to-end in {took:.0f}s on {base}")
+    print(f"\nSMOKE PASS: end-to-end in {took:.0f}s on {base}")
     return 0
 
 

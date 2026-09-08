@@ -2,14 +2,14 @@
 
 /** Export actions for the completed-run screen (parity Tier 1).
  *
- * Primary: Save PDF — prints the run screen itself via the browser's
+ * Primary: Save PDF. It prints the run screen itself via the browser's
  * print-to-PDF. The print stylesheet hides app chrome, the paper palette
  * is applied for the duration of the dialog, and the document title is
  * set to a filename shape (browsers default the saved PDF's name to it).
  *
  * Behind the menu, the two stored-run exports (both #100 endpoints):
- * Report (HTML) — the run's story as a standalone page anyone can open,
- * served inline and opened in a new tab; and Notebook (.ipynb) — the
+ * Report (HTML), the run's story as a standalone page anyone can open,
+ * served inline and opened in a new tab; and Notebook (.ipynb), the
  * same story with a pinned reproduce, for re-running the numbers. Demo
  * runs get no menu: there is no stored run to export, while Save PDF
  * still works (it prints whatever the screen honestly shows).
@@ -55,7 +55,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
     try {
       window.print();
     } catch {
-      // no dialog ever opened (blocked by policy/webview) — undo now
+      // no dialog ever opened (blocked by policy/webview), undo now
       restoreTitle?.();
     }
     // no timeout fallback on purpose: in engines where print() returns
@@ -79,7 +79,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
       a.click();
       a.remove();
       // revoking on the click tick can cancel the save in Firefox/Safari
-      // before the download stream opens — give the browser a long beat
+      // before the download stream opens. Give the browser a long beat
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       setOpen(false);
     } catch (e) {
@@ -100,7 +100,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
     >
       <button
         onClick={printPdf}
-        title="save this screen as a PDF — the browser's print dialog opens with the paper palette applied"
+        title="save this screen as a PDF (the browser's print dialog opens with the paper palette applied)"
         className={clsx(SEGMENT, "px-4", demo ? "rounded-[10px]" : "rounded-l-[10px]")}
       >
         <svg
@@ -119,7 +119,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
         </svg>
         Save PDF
       </button>
-      {/* demo runs have no stored run to export — no menu, PDF only */}
+      {/* demo runs have no stored run to export. No menu, PDF only */}
       {!demo && (
         <button
           onClick={() => {
@@ -146,7 +146,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
       )}
       {open && !demo && (
         <>
-          {/* click-away backdrop — inert while a download is in flight so
+          {/* click-away backdrop, inert while a download is in flight so
               its failure can't land in a closed menu unseen */}
           <div
             className="fixed inset-0 z-10"
@@ -161,7 +161,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
             {/* a plain anchor, deliberately: the proxy owns the bearer token
                 server-side and the endpoint serves inline, so target=_blank
                 navigation renders the report with zero popup-blocker
-                exposure — no fetch, no blob, no busy state */}
+                exposure: no fetch, no blob, no busy state */}
             <a
               role="menuitem"
               href={`/api/runs/${runId}/report`}
@@ -184,7 +184,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
                 }
               }}
               className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[12.5px] font-medium text-ink-2 hover:bg-raised-3 hover:text-ink"
-              title="the run's story as a standalone page — opens in a new tab, prints clean, needs no app"
+              title="the run's story as a standalone page: opens in a new tab, prints clean, needs no app"
             >
               <svg
                 width="13"
@@ -207,7 +207,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
               onClick={downloadNotebook}
               disabled={busy}
               className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[12.5px] font-medium text-ink-2 hover:bg-raised-3 hover:text-ink disabled:cursor-wait"
-              title="the run's story as an executable notebook — setup, numbers, honesty gauntlet, and a pinned reproduce"
+              title="the run's story as an executable notebook: setup, numbers, honesty gauntlet, and a pinned reproduce"
             >
               <svg
                 width="13"
@@ -225,7 +225,7 @@ export function ExportActions({ runId, demo }: { runId: string; demo: boolean })
               </svg>
               {busy ? "exporting…" : "Notebook (.ipynb)"}
             </button>
-            {/* the last attempt's failure stays visible on reopen — honest
+            {/* the last attempt's failure stays visible on reopen, honest
                 last-state, with retry one click above */}
             {error && !busy && (
               <div className="px-2.5 pb-1 pt-1.5 font-mono text-[10.5px] leading-[1.5] text-warn">

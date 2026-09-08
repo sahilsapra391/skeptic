@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-derive_cross_validation.py — nightly cross-source validation (ENGINE-V4 F7).
+derive_cross_validation.py: nightly cross-source validation (ENGINE-V4 F7).
 
 Reduces every session (or Massive symbol) where two INDEPENDENT sources
 overlap to uniform agreement records:
   reference/derived/cross_validation/pair={pair}/ticker={T}.parquet
       date · joined · checked · within_band · agreement_rate (+extras)
 
-Pairs (comparator MATH lives in app/data/cross_validation.py — one
+Pairs (comparator MATH lives in app/data/cross_validation.py, one
 implementation, fixture-tested):
   dolthub_vs_alpaca   SPY: EOD closing quotes vs minute trades (near-close
                       + delta-adjusted, the proven one-off methodology)
   dolthub_vs_uw       SPY: chain volume/OI per expiry vs UW volume_oi_expiry
   yahoo_vs_ivol5m     EOD quote chain vs the last 5-min NBBO (0-2 DTE)
-  massive_vs_ivol5m   QQQ/IWM: daily close vs the 5-min NBBO day range —
-                      unit of work is the SYMBOL (each aggs file holds the
+  massive_vs_ivol5m   QQQ/IWM: daily close vs the 5-min NBBO day range.
+                      Unit of work is the SYMBOL (each aggs file holds the
                       contract's whole history); per-session COUNTS
                       accumulate as the crawl lands (F5-deferred check)
   hv_inhouse_vs_ivol · ivs_cboe_vs_ivol · positioning_cboe_vs_uw
@@ -217,7 +217,7 @@ def _ivol_last_quotes(day: pd.DataFrame) -> pd.DataFrame | None:
 
 def _latest_yahoo_snapshot(s3, ticker: str, d: str):
     """Yahoo banks intraday snapshots (snap_<ts>.parquet), not a single
-    chain.parquet — read the LAST one of the session (closest to the
+    chain.parquet. Read the LAST one of the session (closest to the
     close), the same convention the coverage builder uses."""
     prefix = f"options/source=yahoo/ticker={ticker}/date={d}/"
     keys = [o["Key"] for page in s3.get_paginator("list_objects_v2").paginate(
@@ -288,7 +288,7 @@ def run_massive_vs_ivol5m(s3, ticker: str) -> int:
     for sym in symbols:
         m_df = r2_get_parquet(s3, f"{prefix}symbol={sym}.parquet")
         if m_df is None or m_df.empty or "date" not in m_df.columns:
-            processed.append(sym)  # empty aggs file — nothing to compare, done
+            processed.append(sym)  # empty aggs file, nothing to compare, done
             continue
         for d, day_rows in m_df.groupby(m_df["date"].astype(str)):
             if d not in day_cache:
@@ -323,7 +323,7 @@ _SNAP_COLUMNS = ["source_ts", "expiration", "right", "strike", "bid", "ask"]
 
 
 def _tape_day(s3, ticker: str, d: str) -> pd.DataFrame | None:
-    """One session's tape prints, ts-sorted. Spooled read — the file is
+    """One session's tape prints, ts-sorted. Spooled read: the file is
     millions of prints across ~40 columns, so the bytes stream to disk
     and only the five projected columns are decoded; the raw executed_at
     strings are dropped once parsed (OOM rule: nothing dead resident)."""
@@ -346,23 +346,23 @@ def _snap_keys(s3, ticker: str, d: str) -> list[str]:
 
 def run_recorder_vs_uw_tape(s3, ticker: str) -> int:
     """Recorder displayed quotes vs the UW full-tape prints. Per snap:
-    prints inside the snap's shifted validity window (recorder_tape_window
-    — the measured 15-min feed lag, 60 s span, clamped disjoint so a
+    prints inside the snap's shifted validity window (recorder_tape_window,
+    the measured 15-min feed lag, 60 s span, clamped disjoint so a
     stalled feed never judges the same print twice) are checked against
     that snap's two-sided quotes; per-session counts fold through
     merge_records, the single-sourced rate math.
 
     Session semantics:
-      * the CURRENT ET session is never derived — both inputs can exist
+      * the CURRENT ET session is never derived: both inputs can exist
         in partial form intraday, and a partial row would freeze forever
         under set-difference incrementality;
-      * any snap READ failure aborts the session row (transient — retried
+      * any snap READ failure aborts the session row (transient, retried
         next run, the same depth the tape-read failure already gets);
       * a session whose snaps yield no usable window writes an explicit
         zero-coverage row (snaps=0): honest absence that also stops the
         nightly from re-downloading the whole tape day forever.
 
-    Extras: below_bid / beyond_ask (violation direction — the
+    Extras: below_bid / beyond_ask (violation direction, the
     displayed-quote calibration signal), tape_trades (session prints),
     windowed_trades (prints the snap windows could actually see, so a
     recorder gap day is visibly partial), snaps (usable windows)."""
@@ -380,7 +380,7 @@ def run_recorder_vs_uw_tape(s3, ticker: str) -> int:
     for d in todo:
         trades = _tape_day(s3, ticker, d)
         if trades is None or trades.empty:
-            continue  # unreadable tape — no row, retries next run
+            continue  # unreadable tape, no row, retries next run
         parts: list[dict] = []
         windowed = 0
         failed_reads = 0
@@ -388,14 +388,14 @@ def run_recorder_vs_uw_tape(s3, ticker: str) -> int:
         for skey in _snap_keys(s3, ticker, d):
             snap = r2_get_parquet(s3, skey, columns=_SNAP_COLUMNS)
             if snap is None:
-                failed_reads += 1  # transient R2 failure — the session
+                failed_reads += 1  # transient R2 failure, the session
                 continue           # must not freeze half-covered
             if snap.empty:
                 continue
             src = pd.to_datetime(str(snap["source_ts"].iloc[0]),
                                  utc=True, errors="coerce")
             if pd.isna(src):
-                continue  # unplaceable on the feed clock — skipped,
+                continue  # unplaceable on the feed clock, skipped,
                 # never joined at the wrong moment (permanent shape,
                 # not a read failure)
             lo, hi, not_before = recorder_tape_window(
@@ -408,8 +408,8 @@ def run_recorder_vs_uw_tape(s3, ticker: str) -> int:
             windowed += hi - lo
             parts.append(rec_row)
         if failed_reads:
-            log.warning("recorder_vs_uw_tape %s %s: %d snap reads failed — "
-                        "no row, retrying next run", ticker, d, failed_reads)
+            log.warning("recorder_vs_uw_tape %s %s: %d snap reads failed "
+                        "(no row, retrying next run)", ticker, d, failed_reads)
             continue
         row = merge_records(parts, "below_bid", "beyond_ask",
                             tape_trades=int(len(trades)),
@@ -448,7 +448,7 @@ def _run_signal_pair(
     session lies past the banked overlap edge there is nothing left to
     compare and the expensive vendor load (22 HV year files per ticker)
     is skipped. Documented assumption: a frozen vendor never back-fills
-    behind the banked edge — if a feed ever RESUMES, delete the pair
+    behind the banked edge. If a feed ever RESUMES, delete the pair
     artifact so the overlap re-derives from scratch."""
     key = PAIR_KEY.format(pair=pair, ticker=ticker)
     existing, have = _artifact(s3, key)
@@ -461,10 +461,10 @@ def _run_signal_pair(
         return 0
     if have and not any(min(have) <= c <= max(have) for c in candidates):
         # every un-banked in-house session lies OUTSIDE the banked overlap
-        # window — before the vendor's history starts or past its frozen
-        # edge — so the vendor load can prove nothing new
+        # window (before the vendor's history starts or past its frozen
+        # edge), so the vendor load can prove nothing new
         log.info("%s %s: no new sessions inside the banked vendor window "
-                 "%s → %s — nothing to compare (%d banked)",
+                 "%s → %s, nothing to compare (%d banked)",
                  pair, ticker, min(have), max(have), len(have))
         return 0
     vendor = vendor_loader()
@@ -500,7 +500,7 @@ _POS_FIELDS = ("net_gex", "net_dex", "put_call_ratio", "max_pain_dist_pct")
 
 
 def run_hv_inhouse_vs_ivol(s3, ticker: str) -> int:
-    """In-house HV (own dailies) vs the frozen vendor 30d HV — the seam
+    """In-house HV (own dailies) vs the frozen vendor 30d HV: the seam
     with the deepest overlap (~5,400 sessions), measured not asserted."""
     return _run_signal_pair(
         s3, "hv_inhouse_vs_ivol", ticker,

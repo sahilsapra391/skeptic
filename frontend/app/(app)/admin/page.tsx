@@ -3,7 +3,7 @@
 /**
  * Launch L5: the owner admin portal. Award (or claw back) credits and read
  * launch telemetry. Access is decided server-side (SKEPTIC_ADMIN_EMAILS); this
- * page mirrors it client-side — a non-admin is bounced to /new, and every
+ * page mirrors it client-side: a non-admin is bounced to /new, and every
  * endpoint 404s for them regardless. Numbers are data → IBM Plex Mono.
  */
 

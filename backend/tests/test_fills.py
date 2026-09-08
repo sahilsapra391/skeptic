@@ -1,4 +1,4 @@
-"""Fill model unit tests — guardrail #1 arithmetic, hand-checked.
+"""Fill model unit tests: guardrail #1 arithmetic, hand-checked.
 
 bid 2.00 / ask 2.20, slip 0.5:
   mid = 2.10
@@ -44,7 +44,7 @@ def test_quote_problems() -> None:
 
 
 class TestSideAwareEarnedDefaults:
-    """D3d-earned defaults (owner 2026-07-13): buys 0.85 / sells 0.90 —
+    """D3d-earned defaults (owner 2026-07-13): buys 0.85 / sells 0.90,
     measured from 233M tape prints, replacing the assumed flat 0.5.
     Hand-computed at bid 2.00 / ask 2.20 (mid 2.10, half-spread 0.10)."""
 
@@ -66,8 +66,8 @@ class TestSideAwareEarnedDefaults:
         assert fill_price(q, "sell", base_slip(c, "sell")) == pytest.approx(2.01)
 
     def test_explicit_both_sides_equalize(self) -> None:
-        # the parser writes BOTH fields when the user states one number —
-        # an equalized spec behaves exactly like the old single-knob model
+        # the parser writes BOTH fields when the user states one number.
+        # An equalized spec behaves exactly like the old single-knob model
         c = Costs(slippage_half_spread_fraction=0.5,
                   slippage_half_spread_fraction_sell=0.5)
         q = Quote(bid=2.00, ask=2.20, delta=None)
@@ -78,8 +78,8 @@ class TestSideAwareEarnedDefaults:
 class TestSlippageMirrorValidator:
     """The single-number contract at the MODEL layer (review finding 1+5):
     a lone buy value mirrors into the absent sell field, so pre-2026-07-13
-    stored specs re-validate to the exact flat model their runs used —
-    audits and replays regenerate identical fills, never a hybrid."""
+    stored specs re-validate to the exact flat model their runs used.
+    Audits and replays regenerate identical fills, never a hybrid."""
 
     def test_old_stored_spec_stays_flat(self) -> None:
         c = Costs.model_validate(

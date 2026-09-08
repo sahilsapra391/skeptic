@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-alpaca.py — Alpaca minute-bar options lake (DATA-PIPELINE §4b, BUILD-PLAN M1.5).
+alpaca.py: Alpaca minute-bar options lake (DATA-PIPELINE §4b, BUILD-PLAN M1.5).
 
 Modes:
   --mode backfill   Walk month × ticker from 2024-02 (Alpaca history start)
@@ -14,7 +14,7 @@ Modes:
 
 Step-0 findings this design encodes (BUILD-LOG 2026-07-02): expired
 contracts list back to 2024-02 via the trading API; historical option
-QUOTES are not served on the Basic plan (404 — latest-only), so this module
+QUOTES are not served on the Basic plan (404, latest-only), so this module
 never requests quotes; account rate limit is 200 req/min.
 
 Env vars required: APCA_API_KEY_ID, APCA_API_SECRET_KEY, R2_ACCOUNT_ID,
@@ -115,7 +115,7 @@ def _get(url: str, params: dict) -> dict:
             continue
         if resp.status_code == 403 and "OPRA" in resp.text:
             raise RuntimeError(
-                "Alpaca returned 403 'OPRA agreement is not signed' — an account "
+                "Alpaca returned 403 'OPRA agreement is not signed'. An account "
                 "entitlement, not a code failure. Sign the (free, non-professional) "
                 "OPRA data agreement in the Alpaca dashboard, then re-run; the "
                 "frontier resumes automatically.")
@@ -148,7 +148,7 @@ def contract_symbols(ticker: str, exp_gte: date, exp_lte: date) -> list[str]:
                 break
     # The trading API lists adjusted/non-standard series (e.g. 1SPY...,
     # penny strikes after corporate actions) that the data API refuses
-    # with 400 "invalid symbol" — keep only standard-root contracts.
+    # with 400 "invalid symbol". Keep only standard-root contracts.
     valid, dropped = [], 0
     for s in symbols:
         m = OCC_RE.match(s)
@@ -329,7 +329,7 @@ def run_backfill(start_month: str, tickers: list[str], max_minutes: float) -> in
     for ticker, month in pending:
         if time.monotonic() > deadline:
             log.warning("INCOMPLETE: wall-clock budget reached; %d ticker-months "
-                        "remain — re-dispatch to continue", len(
+                        "remain. Re-dispatch to continue", len(
                             [(t, m) for (t, m) in pending
                              if state.get(t, {}).get(m, {}).get("status") != "done"]))
             return 0
@@ -339,11 +339,11 @@ def run_backfill(start_month: str, tickers: list[str], max_minutes: float) -> in
             if "OPRA" not in str(exc):
                 raise
             # DECIDED 2026-07-02: OPRA entitlement unavailable (dashboard
-            # error on signing) — the options minute lake is frozen as-is; a
+            # error on signing). The options minute lake is frozen as-is; a
             # missing entitlement is a known condition, not an incident.
             # Options months stay pending and resume automatically if the
             # entitlement ever appears; underlying bars are not OPRA-gated.
-            log.error("known condition: OPRA entitlement missing — options "
+            log.error("known condition: OPRA entitlement missing. Options "
                       "minute lake frozen; skipping options months, "
                       "continuing with underlying bars")
             break
@@ -393,19 +393,19 @@ def run_eod(tickers: list[str]) -> int:
             except RuntimeError as exc:
                 if "OPRA" in str(exc) and day == sessions[-1]:
                     # known condition (DECIDED 2026-07-02): the entitlement
-                    # 403 fires on the JUST-CLOSED session only — historical
+                    # 403 fires on the JUST-CLOSED session only. Historical
                     # days serve fine, which every night's lookback proves by
                     # writing them seconds before this error. Skip THIS day
                     # and keep going; tomorrow's lookback picks it up.
                     #
                     # The old handler `break`-ed here, which fell through the
                     # for/else into the OUTER break and aborted the whole
-                    # top-up on SPY's current session — silently freezing
+                    # top-up on SPY's current session, silently freezing
                     # QQQ/IWM for a month while the run stayed green (found
                     # 2026-08-04). It also reset `failures = 0`, erasing real
                     # earlier failures; both are gone.
                     log.error("known condition: OPRA entitlement missing for "
-                              "%s %s (just-closed session) — day skipped, "
+                              "%s %s (just-closed session). Day skipped, "
                               "top-up continues", ticker, day)
                     continue
                 if "OPRA" in str(exc):
@@ -414,7 +414,7 @@ def run_eod(tickers: list[str]) -> int:
                     # not that today's data is unpublished. Treating that as
                     # benign is exactly how the lake froze unnoticed, so fail
                     # the run and let the dead-man go red.
-                    log.error("OPRA entitlement missing for %s %s — a "
+                    log.error("OPRA entitlement missing for %s %s. A "
                               "HISTORICAL session, so this is not the "
                               "known just-closed condition; failing the run",
                               ticker, day)

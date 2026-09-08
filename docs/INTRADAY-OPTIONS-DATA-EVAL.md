@@ -1,4 +1,4 @@
-# Intraday (1-minute) options history for QQQ/IWM — acquisition evaluation
+# Intraday (1-minute) options history for QQQ/IWM: acquisition evaluation
 
 *Evaluated 2026-07-01. Question from the owner: minute-by-minute options
 pricing for QQQ and IWM, 5–10 years back (10 preferred, 5 worst-case),
@@ -20,7 +20,7 @@ contributes nothing here).*
 **Free + 5–10 years + minute granularity does not exist. Not from any
 API, not by scraping.** US options quote history is OPRA-licensed vendor
 data; nobody gives away deep minute history, and the past cannot be
-scraped because no free surface displays it (verified empirically below —
+scraped because no free surface displays it (verified empirically below:
 Yahoo deletes contracts from its API at expiration).
 
 What is actually attainable, verified today:
@@ -28,10 +28,10 @@ What is actually attainable, verified today:
 - **Free, straight API:** Alpaca's free plan serves historical option
   **1-min bars and quotes back to 2024-02** (their collection start) for
   any US-listed underlying incl. QQQ/IWM. That is ~2.4 years today and
-  grows forward — the best free answer that exists, well short of 5.
+  grows forward, the best free answer that exists, well short of 5.
 - **Free, forward-only:** we can start *collecting* minute quotes today
-  at $0 (CBOE's delayed-quote JSON returns the full QQQ chain — 10,606
-  contracts with bid/ask/IV/greeks/OI — in one unauthenticated request;
+  at $0 (CBOE's delayed-quote JSON returns the full QQQ chain, 10,606
+  contracts with bid/ask/IV/greeks/OI, in one unauthenticated request;
   tested). History then accrues from now, like the Yahoo EOD leg.
 - **The actual 5–10 year ask is cheap-but-paid:** ThetaData sells 1-min
   option quote history back to **2020-01 at $40/mo** (Value) and tick
@@ -43,19 +43,19 @@ What is actually attainable, verified today:
 - **Owner-suggested sources (addendum, same day):** two of three pan out.
   **OptionsDX** sells QQQ option chains at **5/15/30-min + EOD
   granularity, 2012–2023**, full fields (bid/ask/last, IV, greeks,
-  underlying), $0–$20 per year×granularity variant — tens of dollars
+  underlying), $0–$20 per year×granularity variant, tens of dollars
   one-time for the whole QQQ intraday history, splicing into Alpaca's
   2024-02→ minute data almost seamlessly. **No IWM in their catalog.**
   **QuantConnect**'s free tier includes cloud backtesting *and* a research
-  node against AlgoSeek US equity options — **minute resolution,
-  quotes+trades+OI, 4,000 symbols incl. QQQ/IWM, from 2012-01** —
+  node against AlgoSeek US equity options (**minute resolution,
+  quotes+trades+OI, 4,000 symbols incl. QQQ/IWM, from 2012-01**),
   use-in-platform only (bulk export is paid and license-restricted).
   **Kaggle** has nothing minute-level for QQQ/IWM options: the best hits
   are EOD QQQ/SPY chain re-dumps (2020–2022) of murky provenance, which
   the record lake can't trust anyway.
 
 Ongoing subscriptions all violate the locked ~$25/mo budget
-(README-START-HERE Decisions #3 — the same rule that killed AV premium).
+(README-START-HERE Decisions #3, the same rule that killed AV premium).
 A one-time bootstrap month is an owner decision, not something this
 evaluation can authorize.
 
@@ -63,7 +63,7 @@ evaluation can authorize.
 
 OPRA is the consolidated tape for US listed options; vendors pay
 exchange/OPRA fees and license the redistribution. The data is also
-enormous — QQQ alone carries **10,606 live contracts today** (counted on
+enormous: QQQ alone carries **10,606 live contracts today** (counted on
 CBOE's feed), and a minute-quote history for one ETF chain runs to
 billions of rows per decade. Free tiers therefore top out at EOD
 granularity, shallow lookbacks, or delayed snapshots of *now*. Every
@@ -73,44 +73,44 @@ granularity, shallow lookbacks, or delayed snapshots of *now*. Every
 
 | provider | free tier gives | minute history depth | data type | 5–10y cost | verdict for this ask |
 |---|---|---|---|---|---|
-| **Alpaca** | options history API, free key | **2024-02 → now (~2.4y)** | 1-min bars + trades + quotes (recency >15 min on free feed — irrelevant for backtests) | $0 | best free option; adopt |
-| **ThetaData** | EOD chains 2023-06 → now, 20 req/min | Value $40/mo: **1-min quotes+OHLC+OI to 2020-01**; Standard $80/mo: tick to 2016-01; Pro $160/mo: 2012-06 | quotes (NBBO) — exactly what the fill model needs | $40–80 one-time-ish (single month) or ongoing | cheapest route to the real ask; owner decision |
+| **Alpaca** | options history API, free key | **2024-02 → now (~2.4y)** | 1-min bars + trades + quotes (recency >15 min on free feed, irrelevant for backtests) | $0 | best free option; adopt |
+| **ThetaData** | EOD chains 2023-06 → now, 20 req/min | Value $40/mo: **1-min quotes+OHLC+OI to 2020-01**; Standard $80/mo: tick to 2016-01; Pro $160/mo: 2012-06 | quotes (NBBO), exactly what the fill model needs | $40–80 one-time-ish (single month) or ongoing | cheapest route to the real ask; owner decision |
 | **Databento** | $125 signup credit | OPRA.PILLAR: 1-min trade bars + 1-min consolidated BBO (`cbbo-1m`) **to 2013-04** (full MBP quotes only 2023-03→) | trades + sampled BBO | usage-priced; exact cost preflightable via their metadata API *before* paying | precise pay-per-pull alternative; get the quote first |
-| **OptionsDX** | free account; some year×granularity variants priced $0 | QQQ: **5/15/30-min + EOD chains, 2012–2023** (monthly CSVs) | bid/ask/last + IV + greeks + underlying | ~$0–20 per year×granularity; whole QQQ intraday history ≈ tens of dollars one-time | **best cheap ownable QQQ intraday**; catalog = SPY/SPX/VIX/QQQ/TSLA/AAPL/UVXY/SLV/NVDA/BTC — **no IWM**; 5-min floor, not 1-min |
-| **QuantConnect** | free tier: cloud backtest node + research node, all datasets at minute–daily | AlgoSeek US equity options: **minute, 2012-01 →**, 4,000 symbols incl. QQQ+IWM | quotes + trades + OI (greeks via universe dataset) | $0 in-platform; bulk download paid + license-restricted; live deploy paid | **deepest free-to-USE minute source for both tickers** — but the data can't be exported into our lake; it's a venue, not a source |
+| **OptionsDX** | free account; some year×granularity variants priced $0 | QQQ: **5/15/30-min + EOD chains, 2012–2023** (monthly CSVs) | bid/ask/last + IV + greeks + underlying | ~$0–20 per year×granularity; whole QQQ intraday history ≈ tens of dollars one-time | **best cheap ownable QQQ intraday**; catalog = SPY/SPX/VIX/QQQ/TSLA/AAPL/UVXY/SLV/NVDA/BTC, **no IWM**; 5-min floor, not 1-min |
+| **QuantConnect** | free tier: cloud backtest node + research node, all datasets at minute–daily | AlgoSeek US equity options: **minute, 2012-01 →**, 4,000 symbols incl. QQQ+IWM | quotes + trades + OI (greeks via universe dataset) | $0 in-platform; bulk download paid + license-restricted; live deploy paid | **deepest free-to-USE minute source for both tickers**, but the data can't be exported into our lake; it's a venue, not a source |
 | Polygon (now "Massive") | EOD-oriented free tier, 5 req/min (site is JS-walled; verify at signup) | paid tiers to $199/mo | aggregates/quotes | subscription | structurally unusable free: per-contract endpoints × ~10k contracts × 5 req/min |
-| FirstRateData | — | **options are EOD-only** (their 1-min granularity is stocks/ETFs) | EOD chains | ~$99/yr updates | eliminated for minute data |
-| CBOE DataShop | — | custom historical orders to 2000s | official everything | cart-quoted, typically the expensive route | overkill |
-| IBKR / Schwab / Tradier | account APIs | **no expired-contract history at all**; TOS thinkBack/OnDemand is in-platform replay, not exportable | — | — | dead end |
-| Kaggle / HuggingFace / GitHub / DoltHub | $0 | no minute options chains for QQQ/IWM (searched twice, incl. per-dataset check); closest: **EOD** QQQ & SPY chain dumps 2020–2022, SPY-only "intraday options" one-offs | EOD chains | — | dead end for this ask; the EOD dumps are unlicensed re-dumps of vendor data — provenance fails the record-lake bar, and OptionsDX sells the same thing clean for ~$20 |
+| FirstRateData | n/a | **options are EOD-only** (their 1-min granularity is stocks/ETFs) | EOD chains | ~$99/yr updates | eliminated for minute data |
+| CBOE DataShop | n/a | custom historical orders to 2000s | official everything | cart-quoted, typically the expensive route | overkill |
+| IBKR / Schwab / Tradier | account APIs | **no expired-contract history at all**; TOS thinkBack/OnDemand is in-platform replay, not exportable | n/a | n/a | dead end |
+| Kaggle / HuggingFace / GitHub / DoltHub | $0 | no minute options chains for QQQ/IWM (searched twice, incl. per-dataset check); closest: **EOD** QQQ & SPY chain dumps 2020–2022, SPY-only "intraday options" one-offs | EOD chains | n/a | dead end for this ask; the EOD dumps are unlicensed re-dumps of vendor data. Provenance fails the record-lake bar, and OptionsDX sells the same thing clean for ~$20 |
 
-## 3. Scraping assessment — what was actually tested
+## 3. Scraping assessment: what was actually tested
 
 - **Yahoo per-contract chart API** (the only free surface with any
   intraday option bars): a live ATM QQQ call returned 1-min **trade**
-  bars for a trailing ~week (6,162 minute slots, 1,027 filled — options
+  bars for a trailing ~week (6,162 minute slots, 1,027 filled: options
   trade sparsely); a contract that expired five days ago returns
   **HTTP 404**. Conclusion: the past is unscrapeable, and even forward
-  harvesting yields trade prices without bid/ask — which cannot feed the
+  harvesting yields trade prices without bid/ask, which cannot feed the
   engine's fill model (guardrail #1: fills come from bid/ask, never
   mid/last). Supplementary at best.
 - **CBOE delayed-quote JSON** (`cdn.cboe.com/.../options/QQQ.json`): full
   chain, bid/ask/IV/all greeks/OI/volume, one request, ~15-min delay, no
-  auth. Snapshot of *now* only — but as a forward collector it is
+  auth. Snapshot of *now* only, but as a forward collector it is
   strictly richer than the current yfinance leg. Tested and confirmed.
-- **Broker platforms** (TOS thinkBack etc.): not pursued — scraping
+- **Broker platforms** (TOS thinkBack etc.): not pursued, because scraping
   authenticated platforms breaches their terms, and none expose expired
   contract history programmatically anyway.
 
 ## 4. The two honest paths
 
-**Path A — $0, adopt now (recommended default):**
+**Path A. $0, adopt now (recommended default):**
 
 1. **Alpaca backfill**: free key → pull 1-min bars + quotes for
    QQQ/IWM (+SPY) from 2024-02 → `options/source=alpaca/…` in R2.
 2. **Forward minute collector** on the CBOE JSON (full chain incl.
    greeks/OI every minute or five). Infra reality: a 390-min/day loop is
-   ~8,200 runner-minutes/month — private-repo GitHub Actions free tier is
+   ~8,200 runner-minutes/month, and private-repo GitHub Actions free tier is
    2,000/mo, so this leg runs on the home Mac (launchd) or a free Oracle
    VM, the same fallback DATA-PIPELINE §5 already names for Yahoo
    throttling. GH Actions stays the EOD scheduler only.
@@ -121,27 +121,27 @@ granularity, shallow lookbacks, or delayed snapshots of *now*. Every
 Yield: minute history 2024-02→ (2.4y today, 5y in 2029-02), minute
 *quotes* from switch-on day forward, QQQ/IWM EOD depth to 2023-06.
 
-**Path B — paid one-time bootstrap (owner decision), two rungs:**
+**Path B. Paid one-time bootstrap (owner decision), two rungs:**
 
 - **B-lite, ~tens of dollars, QQQ only:** OptionsDX QQQ chains at 5-min
   (or 15/30-min/EOD) granularity, 2012–2023, $0–$20 per year×granularity,
   monthly CSVs with bid/ask/IV/greeks/underlying. Spliced with Alpaca
   (2024-02→) this yields a near-continuous QQQ intraday history
   2012→present. Floor is 5-minute, not 1-minute, and **IWM does not
-  exist in their catalog.** Single-user license; no redistribution —
+  exist in their catalog.** Single-user license; no redistribution,
   compatible with our rails.
 - **B-full, $40–80 once, both tickers at true 1-min:** one month of
   ThetaData Value ($40 → 1-min quotes to 2020-01, 6.5y) or Standard
   ($80 → 2016-01, 10.5y), bulk-download QQQ/IWM (+SPY while we're
   there), cancel. Read their ToS on post-cancellation data retention
-  *before* paying. Alternative: Databento — preflight the exact cost of
+  *before* paying. Alternative: Databento. Preflight the exact cost of
   `cbbo-1m`/`ohlcv-1m` for parent symbols `QQQ.OPT`+`IWM.OPT` 2016→2026;
   $125 signup credit offsets; decide on the number, not a guess.
 
-**Path C — QuantConnect as a free research venue (not a data source):**
+**Path C. QuantConnect as a free research venue (not a data source):**
 free tier runs cloud backtests and research notebooks against AlgoSeek
 minute-resolution options (quotes/trades/OI) for QQQ **and IWM** back to
-2012-01. This answers intraday research questions *today* at $0 — but the
+2012-01. This answers intraday research questions *today* at $0, but the
 data stays on their platform (export is paid and license-restricted), so
 it cannot fill the R2 lake or feed Skeptic's own engine/honesty layer.
 Useful as a pre-purchase sanity lane: if an intraday edge doesn't show up
@@ -149,7 +149,7 @@ in QC, don't buy history to chase it.
 
 **Never:** scraping authenticated broker platforms, or ingesting
 redistributed OPRA dumps. Both fail the project's legal rails, and dumps
-fail integrity (unverifiable provenance) — the honesty layer cannot sit
+fail integrity (unverifiable provenance). The honesty layer cannot sit
 on stolen, unauditable quotes.
 
 ## 5. Storage and engine impact (either path)
@@ -170,12 +170,12 @@ on stolen, unauditable quotes.
 
 ## 6. Recommendation
 
-Adopt **Path A now** — $0, starts the clock, and is the only way the free
+Adopt **Path A now**: $0, starts the clock, and is the only way the free
 constraint and the minute constraint coexist. **B-lite (OptionsDX QQQ,
 ~tens of dollars one-time) is the standout value** the owner should
 seriously consider: it makes QQQ intraday history 2012→present a solved
 problem at 5-min granularity for less than one month of any subscription.
-IWM history remains gated behind B-full ($40–80 once) — or behind Path C
+IWM history remains gated behind B-full ($40–80 once), or behind Path C
 for research-without-ownership. Do not take any ongoing subscription: the
 $25/mo budget rule already killed a cheaper one.
 

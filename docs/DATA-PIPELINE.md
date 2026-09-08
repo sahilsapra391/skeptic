@@ -1,4 +1,4 @@
-# Skeptic — Data Pipeline Specification
+# Skeptic: Data Pipeline Specification
 *Consumer: Claude Code (Milestone M1). This pipeline is deliberately built and
 started BEFORE the app, because history only accrues forward.*
 
@@ -18,7 +18,7 @@ started BEFORE the app, because history only accrues forward.*
 > source for SPY, QQQ, and IWM: one-time bulk backfill of 1-minute option
 > bars from 2024-02 (vendor history start) to present, then a nightly
 > top-up leg. Option quotes are fetched lazily at backtest decision
-> timestamps and cached — never bulk-pulled (rate-limit math in
+> timestamps and cached, never bulk-pulled (rate-limit math in
 > docs/INTRADAY-OPTIONS-DATA-EVAL.md; pre-2024-02 intraday does not exist
 > at $0, per the same eval). Implementation: BUILD-PLAN M1.5. Greeks for
 > minute data are computed, not stored per bar (§4b).**
@@ -29,26 +29,26 @@ started BEFORE the app, because history only accrues forward.*
 > backfill completed (159.4M bars banked). The lake stays as a static
 > research asset; the nightly Alpaca top-up treats the missing entitlement
 > as a **known condition** (green run, error-level log) and resumes
-> automatically if the entitlement ever appears — same pattern as the
+> automatically if the entitlement ever appears, same pattern as the
 > dormant AV leg. **The forward record is: nightly Yahoo EOD snapshots
 > (source of record) + the live intraday recorder (job 5: CBOE full-chain
 > minute quotes with bid/ask/IV/greeks/OI, Yahoo every 15 min as
 > redundancy).** Underlying minute bars are stock data (not OPRA-gated)
 > and continue.**
-> *(Correction, observed 2026-07-08: the top-up is landing bars again —
-> the lake shows sessions through 2026-07-06, so the entitlement is
+> *(Correction, observed 2026-07-08: the top-up is landing bars again.
+> The lake shows sessions through 2026-07-06, so the entitlement is
 > effectively active. The resume-automatically design worked; the
 > Observatory decides frozen-vs-accruing from the lake's own recency,
 > never from this document.)*
 
-> **DECIDED (owner, 2026-07-08): NO vendor subscriptions — the forward
+> **DECIDED (owner, 2026-07-08): NO vendor subscriptions. The forward
 > record is self-collected + in-house derived.** iVolatility (trial ends
 > ~2026-07-10; series frozen at 2026-07-02) and Unusual Whales (trial
 > banked 2025-07-08 → 2026-07-06) are not renewed. Consequences, all
 > implemented on this date:
 >
 > **TERMINAL (owner, 2026-07-13): both trials are OVER.** iVolatility keys
-> are dead — every iVol capture (analytics series, 5-min intraday, EOD
+> are dead. Every iVol capture (analytics series, 5-min intraday, EOD
 > per-contract staging, bars_1m) is CONCLUDED; no new iVolatility data will
 > ever be pulled, the launchd capture agents (com.skeptic.ivol-eod,
 > com.skeptic.recover-0710) are unloaded, and every iVol-sourced artifact
@@ -59,14 +59,14 @@ started BEFORE the app, because history only accrues forward.*
 > in-house derives only.
 >   1. **cboe_eod close chains** (`collector/derive_cboe_eod.py`): the
 >      recorder's LAST snapshot per session becomes a canonical EOD chain
->      at `options/source=cboe_eod/` — full chain, vendor greeks/IV/OI,
+>      at `options/source=cboe_eod/`: full chain, vendor greeks/IV/OI,
 >      displayed NBBO sizes, ~15-min-delayed quotes disclosed as a
 >      property of the source. Engine precedence: ivolatility >
 >      alphavantage > **cboe_eod** > yahoo > dolthub. This fixes the
 >      forward record's 60-DTE Yahoo cap and greeks gap.
 >   2. **In-house signal continuations** (`derive_inhouse_signals.py`,
 >      math in `backend/app/data/inhouse_signals.py`): HV-30d from our own
->      dailies (probe-pinned to the vendor convention — 30 log returns,
+>      dailies (probe-pinned to the vendor convention: 30 log returns,
 >      ddof=1, √252; overlap MAE 0.0002 across 5,408 sessions); ATM-IV
 >      30/90d, 25Δ skew and term slope interpolated from the cboe_eod
 >      chain; chain-volume put/call ratio; OI max-pain distance. These
@@ -76,17 +76,17 @@ started BEFORE the app, because history only accrues forward.*
 >      measured on the vendor overlap by F7 cross-validation pairs
 >      (hv_inhouse_vs_ivol · ivs_cboe_vs_ivol · positioning_cboe_vs_uw).
 >   3. **NOT spliced:** in-house net GEX/DEX (gamma·OI / delta·OI
->      conventions) disagreed with UW's sign on the overlap — banked and
+>      conventions) disagreed with UW's sign on the overlap, banked and
 >      sign-checked only, never a continuation. net_premium, NOPE and
 >      market_tide have **no free substitute**; the 2026-07-09
 >      trial-endgame catch-up extended them through 2026-07-09, where
 >      they freeze; their rank forms (94 obs < 126 floor) stay locked.
 >   4. **Tail-staleness guard** (engine): a coverage-capped signal whose
 >      window runs > 5 sessions past the series' last observation refuses
->      the run with the covered window named — a dead feed can never
+>      the run with the covered window named. A dead feed can never
 >      silently forward-fill.
-> Granularity ceiling, owner-confirmed: minute-by-minute is the maximum —
-> no free source serves seconds and the engine has no second grid.**
+> Granularity ceiling, owner-confirmed: minute-by-minute is the maximum.
+> No free source serves seconds and the engine has no second grid.**
 
 ## 1. Strategy: sources and jobs
 
@@ -104,7 +104,7 @@ started BEFORE the app, because history only accrues forward.*
   one-shot by `collector/dolthub.py` under the conditions of
   docs/DOLTHUB-EVAL.md §7 (XNYS filter, duplicate guard, spot joined from
   our dailies, vendor greeks, commit hash pinned in
-  `state/dolthub_backfill.json`). Static history — never re-collected; the
+  `state/dolthub_backfill.json`). Static history, never re-collected; the
   archive has no QQQ/IWM. M/W/F-cadence granularity before 2024-09 and the
   2024-08-05 vol-spike outage are disclosed by coverage.
 - **Alpaca Market Data (Basic plan, free)**: historical **option 1-minute
@@ -115,9 +115,9 @@ started BEFORE the app, because history only accrues forward.*
   via the trading API `GET /v2/options/contracts` (`status=inactive`;
   expired depth to 2024-02 verified at M1.5 step 0). **Historical option
   quotes are NOT served on the Basic plan** (step-0 finding C: HTTP 404 on
-  every feed — only latest quotes exist), so minute-granularity fills must
+  every feed, and only latest quotes exist), so minute-granularity fills must
   come from a disclosed spread model (real per-contract EOD spreads from
-  our own lake) and/or forward-collected quote snapshots — designed at the
+  our own lake) and/or forward-collected quote snapshots, designed at the
   minute-engine milestone. Role: the intraday options history and its
   nightly forward accrual.
 
@@ -138,10 +138,10 @@ started BEFORE the app, because history only accrues forward.*
    Alpaca (small pull). The one-time `alpaca-backfill` mode walks
    2024-02 → present with a resumable month×ticker frontier.
 5. **Intraday quote recorder** (`collector/intraday.py`, launchd agent on
-   the owner's Mac — Actions free minutes cannot host a 6.75 h/day loop):
+   the owner's Mac, because Actions free minutes cannot host a 6.75 h/day loop):
    every session minute, the CBOE delayed-quote JSON full chain per ticker
-   (bid/ask, IV, greeks, OI; ~3 req/min; quotes ~15-min delayed —
-   `snapshot_ts` = capture, `source_ts` = feed stamp) + a Yahoo chain
+   (bid/ask, IV, greeks, OI; ~3 req/min; quotes ~15-min delayed, with
+   `snapshot_ts` = capture and `source_ts` = feed stamp) + a Yahoo chain
    snapshot every 15 min as cross-source redundancy (Yahoo at 1-min would
    need ~120 req/min and endangers the nightly EOD source). These forward
    quotes are the fill-model record the Alpaca bar history lacks (§4b).
@@ -168,7 +168,7 @@ always-on VM that already hosts the intraday recorder has no such dependency.
 - `skeptic-quality.timer`: `Sat 13:00 UTC`, `collect.py --mode quality`.
 - `skeptic-improve.timer`: `Tue-Sat 07:00 UTC`, the ENGINE-V3 D3 unlock scan.
 - **Still on GitHub Actions:** the *Saturday* half of `nightly-improve.yml`
-  (`30 7 * * 6`) — the calibration + priorities pass opens a proposal PR, which
+  (`30 7 * * 6`). The calibration + priorities pass opens a proposal PR, which
   needs repo write, and the VM holds a read-only deploy key by design. The
   30-min offset preserves the original scan-then-weekly order across the two
   hosts.
@@ -219,12 +219,12 @@ reality: EOD chains for 3 ETFs ≈ 2–6 MB/day compressed; years fit comfortabl
 inside R2's 10 GB free tier. **The minute lakes do not.** Measured
 reality (M1.5 step 0 + first live snapshot): the Alpaca bar backfill is
 ~2.5 GB one-time (+~1.3 GB/yr forward), and the intraday quote recorder
-writes **~430 MB/session-day ≈ 109 GB/yr** at full-chain 1-min cadence —
-the free tier's headroom lasts ~17 trading days. The recorder therefore
+writes **~430 MB/session-day ≈ 109 GB/yr** at full-chain 1-min cadence.
+The free tier's headroom lasts ~17 trading days. The recorder therefore
 ships with a hard cap (`--max-lake-gb`, default 6 GB): it pauses itself
 rather than fill the shared bucket and break the nightly EOD record.
 **Owner decision, open:** enable R2 paid storage (~$0.015/GB-mo ≈
-$1–2/mo at year-one scale — well inside budget) and raise the cap, or
+$1–2/mo at year-one scale, well inside budget) and raise the cap, or
 direct a thinner lake (DTE/moneyness filter and/or 5-min cadence; any
 useful configuration still exceeds 10 GB within months).
 
@@ -269,13 +269,13 @@ contends with the live record).
 | vwap | float | |
 | source | str | `alpaca` |
 
-Bars exist only for (contract, minute) cells with ≥1 trade — options trade
+Bars exist only for (contract, minute) cells with ≥1 trade. Options trade
 sparsely and the lake reflects that honestly. Bars for expirations more
 than ~400 days out are not pulled (all-empty batches; constant
 `MAX_EXP_DAYS` in collector/alpaca.py). Greeks/IV are **not** stored per
 bar: computed on demand (TECH-SPEC §4 method, `greeks_source='computed'`)
 from underlying minute closes. **Minute-granularity fills may never use
-bar closes raw** — guardrail #1 applies at every timescale. Because Alpaca
+bar closes raw**. Guardrail #1 applies at every timescale. Because Alpaca
 serves no historical quotes (step-0 finding C), the minute-engine
 milestone must pick and disclose a fill model: per-contract spread
 estimates from our own EOD lake applied around bar prices, and/or true
@@ -321,7 +321,7 @@ Reference implementation: `reference/collector_v2.py`. Productionize as
   point-in-time guarantees, EOD quotes can be wide/stale at the close.
   The Observatory and every run's methodology note say so.
 - Intraday options history is a **fixed window plus a live tail**: Alpaca
-  minute trade bars cover **2024-02 → 2026-06 only** (lake frozen — OPRA
+  minute trade bars cover **2024-02 → 2026-06 only** (lake frozen: OPRA
   entitlement unavailable; see DECIDED block), and the live recorder's
   minute quote snapshots run **2026-07-02 →** (best-effort uptime). The
   gap 2026-07-01 has EOD coverage only. 0DTE/1DTE strategies (the owner's
@@ -341,11 +341,11 @@ Reference implementation: `reference/collector_v2.py`. Productionize as
 4. `/api/data/coverage` (or a temporary script until M2) reports ranges,
    counts, frontier, and quality flags from the lake alone.
 
-## §8 iVolatility backfill (2026-07 — the 20-year lake)
+## §8 iVolatility backfill (2026-07, the 20-year lake)
 
 One-shot backfill via the iVolatility Data Cloud API (Lab tier trial):
 `collector/backfill_ivol.py`. Endpoint `/equities/eod/options-rawiv`
-returns EOD chains with bid/ask AND vendor-computed greeks/IV per row —
+returns EOD chains with bid/ask AND vendor-computed greeks/IV per row,
 the only source in the lake with greeks everywhere, so it takes TOP
 precedence in the engine's chain loader (ivolatility > alphavantage >
 yahoo > dolthub).
@@ -353,10 +353,10 @@ yahoo > dolthub).
 Trial-day sequence:
 1. `IVOL_API_KEY=…` into collector/.env (username/password also works).
 2. `cd collector && uv run python backfill_ivol.py --probe`
-   — one known SPY session; prints contract count, sample rows, greeks
+   One known SPY session; prints contract count, sample rows, greeks
    coverage, validation verdict. Do not proceed until this passes.
 3. `caffeinate -i uv run python backfill_ivol.py`
-   — SPY+QQQ+IWM, 2005-01-03 → yesterday, 6 workers, resumable
+   SPY+QQQ+IWM, 2005-01-03 → yesterday, 6 workers, resumable
    (already-written dates skipped via R2 listing; vendor-empty sessions
    remembered in state/ivol_backfill.json). ~15,600 requests; hours.
 4. Delete backend/.cache/chains_*.parquet (or redeploy) so the manifest
@@ -366,46 +366,46 @@ Trial-day sequence:
 
 Per-day gates (rejected days are logged, never written): ≥50 rows,
 ≤5% crossed quotes, |delta| ≤ 1, no expirations before the trading date.
-Storage: ~3–5 GB parquet for 3 tickers × ~21 years — negligible on R2.
+Storage: ~3–5 GB parquet for 3 tickers × ~21 years, negligible on R2.
 
 ## §9 Unusual Whales backfill (prebuilt 2026-07-06, before subscription)
 
-Second vendor lane — **flow, dealer positioning, and vol analytics** UW sells
+Second vendor lane: **flow, dealer positioning, and vol analytics** UW sells
 that no price/quote source carries (GEX/DEX, market tide, net premium, OI
 structure, IV rank, skew, term structure). Options history depth ≈ 2022+.
 Collector: `collector/backfill_unusual_whales.py` (engine) +
 `collector/uw_manifest.py` (declarative endpoint list, 59 in-scope endpoints
 for SPY/QQQ/IWM). Auth = `Authorization: Bearer $UW_API_TOKEN` (collector/.env).
 
-Granularity: most positioning/vol signals are DAILY (one reading per session — inherent to the metric). Intraday is captured where UW offers it: underlying OHLC down to **1-minute** (candles 1d/1h/30m/5m/1m), market tide at its native **1-minute** default, net-premium ticks, and flow-per-strike-intraday. True second/tick bars aren't a UW REST product (only the excluded whole-market tape / live websocket); minute-and-5min OPTION quotes+greeks are already covered by the iVol 5-min capture, so UW is not run for that.
+Granularity: most positioning/vol signals are DAILY (one reading per session, inherent to the metric). Intraday is captured where UW offers it: underlying OHLC down to **1-minute** (candles 1d/1h/30m/5m/1m), market tide at its native **1-minute** default, net-premium ticks, and flow-per-strike-intraday. True second/tick bars aren't a UW REST product (only the excluded whole-market tape / live websocket); minute-and-5min OPTION quotes+greeks are already covered by the iVol 5-min capture, so UW is not run for that.
 
 Self-throttling: reads UW's own rate headers (`x-uw-req-per-minute-remaining`,
 `x-uw-token-req-limit`, `x-uw-daily-req-count`) off every response, paces under
 the per-minute ceiling, and stops cleanly ~25 requests short of the daily cap
 (resumable next day). Faithful banking: rows land via json_normalize with
-provenance stamps — we collect now, wire into the engine later.
+provenance stamps. We collect now, wire into the engine later.
 
 Trial-day sequence:
 1. `UW_API_TOKEN=…` into collector/.env.
-2. `uv run python backfill_unusual_whales.py --mode probe`  — RUN FIRST. Hits one
+2. `uv run python backfill_unusual_whales.py --mode probe`  (RUN FIRST). Hits one
    call per endpoint; reports status, row count, and how many distinct dates a
    no-date call returns (→ which `date?` endpoints are one-call series vs need
-   per-date iteration — the budget-defining unknown), plus the account's real
+   per-date iteration, the budget-defining unknown), plus the account's real
    daily/minute limits from the headers. Writes reference/state/uw_probe_report.json.
    Any 403 = that dataset isn't on the trial tariff (like iVol's tariff blocks).
 3. If the probe shows a `date?` endpoint returns many dates in one call, move it
-   from `ticker_date`→`ticker_series` (or market_*) in uw_manifest.py — a large
-   budget win — then:
+   from `ticker_date`→`ticker_series` (or market_*) in uw_manifest.py (a large
+   budget win), then:
 4. `caffeinate -i uv run python backfill_unusual_whales.py --mode series`  (P0/P1,
    cheap one-call histories + snapshots, all tickers).
 5. `caffeinate -i uv run python backfill_unusual_whales.py --mode daily`  (P2/P3
-   per-date sweeps, newest session first, budget-gated — the big one; rerun daily
+   per-date sweeps, newest session first, budget-gated (the big one); rerun daily
    until the state file shows complete).
-6. `--mode contracts` — per-contract daily history (OHLC+NBBO+IV+OI) for every
+6. `--mode contracts`: per-contract daily history (OHLC+NBBO+IV+OI) for every
    symbol seen in the banked option_chains listings: the QQQ/IWM chain rebuild.
    Most expensive; run last, only if budget allows.
 
 Prefixes: `reference/uw/{name}/…` (series/ohlc), `uw/{name}/ticker={T}/date={D}/`
 (ticker×date), `uw/{name}/date={D}/` (market×date), `uw/option_hist/…` (contracts).
 State: `reference/state/uw_backfill.json`. Nothing here touches the chain lake or
-the engine — wiring UW signals into spec indicators is a later, reviewed phase.
+the engine. Wiring UW signals into spec indicators is a later, reviewed phase.

@@ -87,7 +87,7 @@ export function NavRail() {
   // 0 = finished mark (never animates on mount); each click replays the
   // brand draw-on, same mechanism as the landing hero. The rail logo
   // unmounts when the sidebar collapses, so once a replay has played we
-  // return `run` to 0 — otherwise the next expand would remount mid-`run>0`
+  // return `run` to 0. Otherwise the next expand would remount mid-`run>0`
   // and redraw unbidden. (Under reduced motion the bump is already inert,
   // the component renders static.)
   const [markRun, setMarkRun] = useState(0);
@@ -104,13 +104,13 @@ export function NavRail() {
       <button
         type="button"
         onClick={() => setMarkRun((n) => n + 1)}
-        aria-label="Skeptic — replay the wordmark draw-on"
+        aria-label="Skeptic, replay the wordmark draw-on"
         className="block w-full min-w-0 cursor-pointer"
       >
         {/* caps at 133px (the draw box is 704×152 with a 100-unit glyph,
             matching the old wordmark img's glyph height at h-[28px]) but
             SCALES DOWN via w-full when the resizable rail is dragged narrower
-            than the mark — the svg is width-driven (aspect-ratio in .mark), so
+            than the mark. The svg is width-driven (aspect-ratio in .mark), so
             it shrinks to fit instead of clipping the trailing "/C" */}
         <LandingWordmark run={markRun} className="block w-full max-w-[133px]" />
       </button>
@@ -166,7 +166,7 @@ export function NavRail() {
   useEffect(() => {
     listRuns()
       // the pinned showcase runs are Library content, not the visitor's
-      // activity — "RECENT ANALYSES" must never present them as it
+      // activity. "RECENT ANALYSES" must never present them as it
       .then(({ runs }) => setRecent(runs.filter((r) => !r.example).slice(0, 6)))
       .catch(() => undefined);
     // refreshes on navigation, so a just-finished run shows up
@@ -174,7 +174,7 @@ export function NavRail() {
 
   const activeFor = (href: string) => {
     if (href === "/new") return pathname === "/new";
-    // saved runs are library entries — keep Library lit while reading one
+    // saved runs are library entries. Keep Library lit while reading one
     if (href === "/library") return pathname.startsWith("/library") || pathname.startsWith("/runs");
     return pathname.startsWith(href);
   };
@@ -222,7 +222,7 @@ export function NavRail() {
               <Link
                 key={r.id}
                 href={`/runs/${r.id}`}
-                title={r.status === "running" ? `${r.name} — in progress` : r.name}
+                title={r.status === "running" ? `${r.name} (in progress)` : r.name}
                 className={clsx(
                   "flex items-center gap-1.5 rounded-[8px] px-2.5 py-[7px] text-[12.5px]",
                   pathname === `/runs/${r.id}`

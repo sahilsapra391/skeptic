@@ -1,10 +1,10 @@
-"""tail=0 — the fast first paint (2026-07-15).
+"""tail=0: the fast first paint (2026-07-15).
 
 The chart's first paint used to block on the live-tail fetch (an R2
 listing + snapshot pulls when no IEX keys exist) even when the cached lake
 could answer instantly. `include_tail=False` must serve the lake WITHOUT
 touching either tail path, labeled honestly; the default must keep
-fetching the tail. r2 and the lake are mocked — no live bucket needed."""
+fetching the tail. r2 and the lake are mocked (no live bucket needed)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.data import bars
 
 
 def _stale_lake_minutes() -> pd.DataFrame:
-    # a lake > 2 minutes old — exactly the state that arms the tail fetch
+    # a lake > 2 minutes old, exactly the state that arms the tail fetch
     end = datetime.now(UTC) - timedelta(hours=3)
     ts = pd.date_range(end=end, periods=390, freq="1min", tz="UTC")
     return pd.DataFrame({

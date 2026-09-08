@@ -3,7 +3,7 @@
 /**
  * The honest data-coverage line on the composer (design brief: per-ticker
  * asymmetric, fed live from /api/data/coverage). SPY reaches 2020 via the
- * verified archive; QQQ/IWM begin 2026-07 — the asymmetry is the product
+ * verified archive; QQQ/IWM begin 2026-07. The asymmetry is the product
  * being honest, not a bug state.
  */
 
@@ -47,7 +47,7 @@ export function CoverageChips() {
     return (
       <div className="mb-11 flex items-center gap-2">
         <span className="inline-flex items-center rounded-full border border-warn/50 px-3 py-[5px] font-mono text-[11px] text-warn">
-          coverage unavailable — {error.includes("backend unreachable") ? "backend offline" : "lake unreadable"}
+          coverage unavailable: {error.includes("backend unreachable") ? "backend offline" : "lake unreadable"}
         </span>
       </div>
     );

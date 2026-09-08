@@ -1,12 +1,12 @@
-"""Alpaca bar-modeled quotes + the D2d honesty additions — hand-computed.
+"""Alpaca bar-modeled quotes + the D2d honesty additions, hand-computed.
 
 Modeled quote math (spread_frac 0.04): last print close 2.00 →
   half = max(2.00 × 0.04 / 2, 0.01) = 0.04 → bid 1.96 / ask 2.04.
-Stress rule: modeled fills ALWAYS pay the full adverse price — a short
+Stress rule: modeled fills ALWAYS pay the full adverse price. A short
 put SELLS at the modeled bid 1.96 → cash +196.00 − 0.65 = +195.35.
 
 Stale-print guard: a print at 09:31 is a usable price for the 09:35 bar
-(4 min old) but NOT for the 09:45 bar (14 min old) — sparse trade prints
+(4 min old) but NOT for the 09:45 bar (14 min old). Sparse trade prints
 must never masquerade as standing quotes.
 """
 

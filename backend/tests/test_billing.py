@@ -3,7 +3,7 @@
 Credits are granted ONLY by the signature-verified webhook (never the browser
 success redirect, which is forgeable), and exactly once per Stripe event id
 (Stripe redelivers events). Checkout is Stripe-hosted; we just hand back a URL.
-Stripe itself is stubbed here — the SDK's own crypto is not under test, our
+Stripe itself is stubbed here. The SDK's own crypto is not under test, our
 wiring + idempotency + trust boundary are.
 """
 
@@ -121,7 +121,7 @@ def test_checkout_returns_a_hosted_url_for_a_signed_in_user(
     r = client.post("/api/checkout")
     assert r.status_code == 200
     assert r.json()["url"].startswith("https://checkout.stripe.com/")
-    # the ACCOUNT rides into the session server-side — the browser never
+    # the ACCOUNT rides into the session server-side; the browser never
     # asserts its own identity to Stripe
     assert captured["user_id"] == _uid(email)
     assert "purchase=success" in captured["success_url"]
@@ -168,7 +168,7 @@ def test_webhook_is_idempotent_per_event(
     _signup(client, email)
     uid = _uid(email)
     monkeypatch.setattr(billing, "verify_webhook_event", lambda p, s: _event(uid, "evt_dup"))
-    # Stripe redelivers the same event — the grant must happen exactly once
+    # Stripe redelivers the same event, and the grant must happen exactly once
     for _ in range(3):
         assert client.post(
             "/api/stripe/webhook", content=b"{}", headers={"stripe-signature": "x"}
@@ -221,7 +221,7 @@ def test_webhook_ignores_a_paid_session_without_our_marker(
     stripe_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Defense-in-depth: a paid session from some OTHER Stripe product/integration
-    that happens to set a client_reference_id must NOT mint credits — only a
+    that happens to set a client_reference_id must NOT mint credits. Only a
     session we created (carrying the purpose marker) grants."""
     client = _client()
     email = _email()
@@ -286,7 +286,7 @@ def test_refund_reverses_the_grant_and_redelivery_is_a_noop(
     pi = f"pi_{uuid.uuid4().hex[:12]}"
     _buy(client, monkeypatch, uid, pi)
     assert _credits(client) == 5 + billing.purchase_credits()
-    # the buyer gets a refund — the credits it granted are clawed back. Stripe
+    # the buyer gets a refund, so the credits it granted are clawed back. Stripe
     # redelivers the event; the reversal must still happen exactly once.
     for _ in range(3):
         _deliver(client, monkeypatch, _reversal(pi, "evt_refund"))
@@ -310,8 +310,8 @@ def test_refund_and_dispute_on_same_charge_reverse_only_once(
     stripe_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A refund and a dispute can both land for one charge (two event ids). The
-    money left our account once, so the credits are clawed back only once —
-    idempotency is per PAYMENT, not per event."""
+    money left our account once, so the credits are clawed back only once.
+    Idempotency is per PAYMENT, not per event."""
     client = _client()
     email = _email()
     _signup(client, email)
@@ -333,8 +333,8 @@ def test_unrelated_dispute_does_not_reverse(
     uid = _uid(email)
     pi = f"pi_{uuid.uuid4().hex[:12]}"
     _buy(client, monkeypatch, uid, pi)
-    # a dispute for some OTHER payment we never granted for — must not touch this
-    # account's balance
+    # a dispute for some OTHER payment we never granted for, so it must not
+    # touch this account's balance
     _deliver(
         client, monkeypatch, _reversal("pi_not_ours", "evt_x", etype="charge.dispute.created")
     )
@@ -342,7 +342,7 @@ def test_unrelated_dispute_does_not_reverse(
 
 
 def test_chargeback_can_drive_the_balance_negative(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The buyer spends the credits, THEN files a chargeback — balance goes
+    """The buyer spends the credits, THEN files a chargeback. Balance goes
     negative and they can't run again until they re-buy. That's correct."""
     monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "")
     client = _client()
@@ -371,7 +371,7 @@ def test_reverse_purchase_is_idempotent_per_payment_and_exact(
     uid = _uid(email)
     tag = uuid.uuid4().hex[:12]
     pi = f"pi_{tag}"
-    # a promo-sized grant (30, not the 50 constant) — the reversal must match it
+    # a promo-sized grant (30, not the 50 constant), so the reversal must match it
     assert db.grant_purchase(uid, 30, f"evt_g_{tag}", payment_intent=pi) is True
     assert _credits(client) == 35
     assert db.reverse_purchase(pi, f"evt_cb1_{tag}") is True  # reverses exactly 30
@@ -383,7 +383,7 @@ def test_reverse_purchase_is_idempotent_per_payment_and_exact(
 # ------------------------------------------ real signed events (no stub)
 #
 # Every webhook test above monkeypatches billing.verify_webhook_event and so
-# NEVER runs the real stripe.Webhook.construct_event — which returns a
+# NEVER runs the real stripe.Webhook.construct_event, which returns a
 # StripeObject whose API differs by SDK version. In stripe-python 15.x,
 # StripeObject dropped dict.get(), so session.get(...) raised AttributeError and
 # 500'd the LIVE grant + reversal in prod. These tests drive the real verify

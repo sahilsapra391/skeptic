@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Unusual Whales endpoint manifest — declarative, so backfill_unusual_whales.py
+"""Unusual Whales endpoint manifest: declarative, so backfill_unusual_whales.py
 stays engine-only. Scope: SPY / QQQ / IWM options, volatility, flow and dealer
 positioning. Everything ticker-scoped for our three tickers plus the market-wide
 options context; deliberately excludes congress / crypto / forex / private-markets /
 predictions / institutions / darkpool-market / sector / full-tape (see EXCLUDED).
 
 modes:
-  ticker_series   one GET per ticker, no date — full history OR a current snapshot
+  ticker_series   one GET per ticker, no date (full history OR a current snapshot)
                   → reference/uw/{name}/ticker={T}.parquet
   ticker_date     one GET per (ticker, session), date= param, iterated newest-first
                   → uw/{name}/ticker={T}/date={D}.parquet
-  ohlc            one GET per (ticker, candle) — returns the full candle history
+  ohlc            one GET per (ticker, candle), returns the full candle history
                   → reference/uw/ohlc/ticker={T}/candle={C}.parquet
   market_series   one GET, market-wide, no date
                   → reference/uw/{name}.parquet
@@ -35,7 +35,7 @@ from typing import Any
 OPTIONS_FLOOR = "2022-01-01"
 
 # candle sizes worth banking per ticker (each call returns full history for that
-# size). 1m depth is typically shallower than the daily history — the collector
+# size). 1m depth is typically shallower than the daily history. The collector
 # banks whatever the endpoint returns and the empty/short tail is honest.
 OHLC_CANDLES = ["1d", "1h", "30m", "5m", "1m"]
 
@@ -78,10 +78,10 @@ MANIFEST: list[dict[str, Any]] = [
     {"name": "shorts_volumes_by_exchange", "path": "/api/shorts/{ticker}/volumes-by-exchange",
      "mode": "ticker_series", "priority": 1},
 
-    # ---- P2: ticker × date sweeps (dealer positioning, flow, vol — the signal
+    # ---- P2: ticker × date sweeps (dealer positioning, flow, vol: the signal
     #          families no other lake source carries) --------------------------
     # probe 2026-07-06: no-date call returns the full aggregate-GEX TIME SERIES
-    # (≈250 sessions) in ONE request — bank as a series, not per-date. Strike/
+    # (≈250 sessions) in ONE request. Bank as a series, not per-date. Strike/
     # expiry-level GEX cross-sections still come per-date below.
     {"name": "greek_exposure", "path": "/api/stock/{ticker}/greek-exposure", "mode": "ticker_series", "priority": 1},
     {"name": "greek_exposure_strike", "path": "/api/stock/{ticker}/greek-exposure/strike",
@@ -124,7 +124,7 @@ MANIFEST: list[dict[str, Any]] = [
     {"name": "darkpool", "path": "/api/darkpool/{ticker}", "mode": "ticker_date", "priority": 2},
     {"name": "lit_flow", "path": "/api/lit-flow/{ticker}", "mode": "ticker_date", "priority": 2},
 
-    # ---- P1b: full ticker coverage — every remaining one-call ticker endpoint
+    # ---- P1b: full ticker coverage, every remaining one-call ticker endpoint
     #      (owner directive 2026-07-06: get EVERY endpoint for these tickers).
     #      Fundamentals/corporate/positioning; banked now, use decided later. --
     {"name": "financials", "path": "/api/stock/{ticker}/financials", "mode": "ticker_series", "priority": 1},
@@ -186,11 +186,11 @@ CONTRACT_SUBS: list[tuple[str, str]] = [
 ]
 
 # ---- deliberately excluded (documented, not forgotten) -----------------------
-# stock/{ticker}/ownership — enterprise-only (confirmed 422, not on this plan).
-# technical-indicator/{function} — derived indicators the engine already computes
+# stock/{ticker}/ownership: enterprise-only (confirmed 422, not on this plan).
+# technical-indicator/{function}: derived indicators the engine already computes
 #   natively (rsi/sma/ema…), not source data; function enum unpublished.
-# companies/{ticker}/transcripts/{quarter} — earnings-call TEXT, no backtest value,
-#   quarter format unconfirmed. option-contract/{id}/intraday — per-contract-per-day,
+# companies/{ticker}/transcripts/{quarter}: earnings-call TEXT, no backtest value,
+#   quarter format unconfirmed. option-contract/{id}/intraday: per-contract-per-day,
 #   astronomically many requests (we hold iVol 5-min options already). NOT our
 #   tickers / not options data: group-flow, sector-*, whole-market tape, congress·
 #   crypto·forex·private-markets·predictions·news·socket (live-only websockets).

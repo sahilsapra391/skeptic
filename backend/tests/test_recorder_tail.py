@@ -2,9 +2,9 @@
 
 The chart's underlying lake is nightly; when the Alpaca IEX tail isn't
 configured, today's intraday candles come from the CBOE recorder's ~2-minute
-snapshots — spot for price, the diff of the cumulative session volume for
+snapshots: spot for price, the diff of the cumulative session volume for
 volume (~15-min delayed, disclosed). These prove the spot/volume extraction,
-the > after filter, the incremental cache, and — through get_bars — the
+the > after filter, the incremental cache, and (through get_bars) the
 "live while the session is open, completed-and-labeled once it closes"
 behavior. r2 is mocked, so no live lake is needed.
 """
@@ -18,7 +18,7 @@ from app.data import bars
 
 _D = pd.Timestamp.now(tz=bars.ET).date().isoformat()  # today's ET session date
 # in the first hour after ET midnight, a synthetic "~60 min ago" recorder bar
-# legitimately lands on the prior ET calendar day — so the "session present"
+# legitimately lands on the prior ET calendar day, so the "session present"
 # assertions accept today OR yesterday, else CI flakes for runs 00:00–01:00 ET
 _DPREV = (pd.Timestamp.now(tz=bars.ET) - pd.Timedelta(days=1)).date().isoformat()
 _RECENT_ET = {_D, _DPREV}
@@ -65,7 +65,7 @@ def test_builds_ohlc_and_volume_from_cumulative(monkeypatch: pytest.MonkeyPatch)
     for col in ("open", "high", "low"):
         assert list(out[col]) == list(out["close"])
     # per-bar volume = diff of the cumulative. The FIRST bar's baseline is
-    # unknown — the feed's open-minutes value is the PRIOR session's total
+    # unknown: the feed's open-minutes value is the PRIOR session's total
     # until ~9:42 ET (incident 2026-07-08: yesterday's 42.48M spiked the
     # open bar on every chart), so it renders 0, never the cumulative.
     assert list(out["volume"]) == [0.0, 50.0, 60.0]

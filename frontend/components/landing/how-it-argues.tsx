@@ -10,18 +10,18 @@ import {
 } from "@/lib/interview-questions";
 
 /**
- * Landing §2 "How it argues" — three panel cards (design 2a lines 107–144,
+ * Landing §2 "How it argues", three panel cards (design 2a lines 107–144,
  * 2b lines 417–450; copy verbatim from copy-deck §2). Card 02 is a live
- * clone of the design-system QuestionCard (answer text is never read — the
+ * clone of the design-system QuestionCard (answer text is never read: the
  * demo compiles the same fixture spec either way, exactly like the design's
  * page logic). Quotes inside cards are body text, never serif. Trust hue
- * only — no P/L tokens on this surface.
+ * only, no P/L tokens on this surface.
  */
 
 // the gauntlet stages + the verdict, stepped through like the real app's
 // progress. mobileSuffix folds the essential note into the label below md.
 const ATTACK_ROWS: { label: string; note: string; mobileSuffix?: string; verdict?: boolean }[] = [
-  { label: "Backtest", note: "real bid/ask, never mid", mobileSuffix: " — real bid/ask, never mid" },
+  { label: "Backtest", note: "real bid/ask, never mid", mobileSuffix: ", real bid/ask, never mid" },
   { label: "Test on data it never saw", note: "last 30% kept hidden" },
   { label: "Test each time period", note: "rolling ~2-month windows" },
   { label: "Reshuffle the trades 1,000×", note: "how much was luck?" },
@@ -79,14 +79,14 @@ export function HowItArgues() {
         </h2>
 
         <div className="mt-[22px] grid items-stretch gap-[14px] md:mt-[38px] md:grid-cols-3 md:gap-[22px]">
-          {/* 01 — YOU PITCH */}
+          {/* 01: YOU PITCH */}
           <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-panel p-4 md:gap-[14px] md:p-5">
             <div className="flex justify-between font-mono text-[10.5px] tracking-[.12em] text-ink-3 md:text-[11px]">
-              <span>01 — YOU PITCH</span>
+              <span>01: YOU PITCH</span>
               <span className="hidden text-ink-5 md:inline">english, or a chart</span>
             </div>
             <div className="overflow-hidden rounded-lg border border-line-soft">
-              {/* the still is a LIGHT capture — it follows the page: shown
+              {/* the still is a LIGHT capture. It follows the page: shown
                   as-is on a light page, inverted (hue preserved) on a dark
                   one. Driven off the painted <html data-theme>, NOT a React
                   prop, so it can never mismatch the actual background. */}
@@ -99,24 +99,24 @@ export function HowItArgues() {
             </div>
             {/* "1993" = SPY inception per copy-deck §2 (flagged VERIFY there) */}
             <div className="text-[13px] leading-[1.55] text-ink-2 md:text-[13.5px] md:leading-[1.6]">
-              {'"You showed me winners — that\'s what eyes do. I\'ll test every look-alike since 1993, losers included."'}
+              {'"You showed me winners. That\'s what eyes do. I\'ll test every look-alike since 1993, losers included."'}
             </div>
           </div>
 
-          {/* 02 — IT INTERVIEWS */}
+          {/* 02: IT INTERVIEWS */}
           <div className="flex flex-col gap-3 rounded-[14px] border border-line bg-panel p-4 md:gap-[14px] md:p-5">
             <div className="flex justify-between font-mono text-[10.5px] tracking-[.12em] text-ink-3 md:text-[11px]">
-              <span>02 — IT INTERVIEWS</span>
+              <span>02: IT INTERVIEWS</span>
               <span className="hidden text-ink-5 md:inline">ambiguity earns a question</span>
             </div>
             <div className="text-[13px] leading-[1.55] text-ink-2 md:text-[13.5px] md:leading-[1.6]">
-              {'"Here\'s what I heard — every dial is adjustable."'}
+              {'"Here\'s what I heard. Every dial is adjustable."'}
             </div>
 
             {answered ? (
               <div className="flex flex-col gap-2 rounded-[14px] border border-dashed border-trust-border bg-trust-dim px-4 py-[14px] motion-safe:animate-fade-rise md:px-5 md:py-4">
                 <div className="font-mono text-[12.5px] text-trust">
-                  ✓ spec compiled — 10 dials, every one adjustable
+                  ✓ spec compiled: 10 dials, every one adjustable
                 </div>
                 <div className="font-mono text-[11.5px] text-ink-3">
                   window: last 1 year · 220 sessions · ~3s
@@ -132,7 +132,7 @@ export function HowItArgues() {
             ) : (
               <div className="rounded-[14px] border border-trust-border bg-trust-dim px-4 py-[14px] md:px-5 md:py-4">
                 <div className="mb-1 font-mono text-[10px] font-medium tracking-[.12em] text-trust md:text-[10.5px]">
-                  {"QUESTION 1 OF 1 — I DON'T GUESS"}
+                  {"QUESTION 1 OF 1: I DON'T GUESS"}
                 </div>
                 <div className="mb-3 text-[14.5px] font-semibold leading-[1.4] text-ink md:mb-[14px] md:text-[16.5px] md:leading-[1.375]">
                   {interview.q}
@@ -181,10 +181,10 @@ export function HowItArgues() {
             )}
           </div>
 
-          {/* 03 — IT ATTACKS ITSELF */}
+          {/* 03: IT ATTACKS ITSELF */}
           <div className="flex flex-col gap-[10px] rounded-[14px] border border-line bg-panel p-4 md:gap-[13px] md:p-5">
             <div className="flex justify-between font-mono text-[10.5px] tracking-[.12em] text-ink-3 md:text-[11px]">
-              <span>03 — IT ATTACKS ITSELF</span>
+              <span>03: IT ATTACKS ITSELF</span>
               <span className="hidden text-ink-5 md:inline">then the verdict</span>
             </div>
             <div className="flex flex-col gap-[9px] font-mono text-[12px] md:gap-[10px] md:text-[13px]">
@@ -238,7 +238,7 @@ export function HowItArgues() {
               />
             </div>
             <div className="hidden font-mono text-[11px] text-ink-4 md:block">
-              live numbers stream while it runs — never a loading bar
+              live numbers stream while it runs, never a loading bar
             </div>
           </div>
         </div>

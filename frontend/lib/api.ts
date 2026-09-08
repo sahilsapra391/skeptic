@@ -1,6 +1,6 @@
 /**
  * Typed client for the same-origin /api/* route handlers (which proxy to the
- * FastAPI backend and add the bearer token server-side — TECH-SPEC §9).
+ * FastAPI backend and add the bearer token server-side, TECH-SPEC §9).
  */
 
 import type {
@@ -17,6 +17,7 @@ import type {
   UnderlyingPoint,
 } from "./types";
 import { clearMyRuns, myRunIds, rememberRun } from "./my-runs";
+import { hasDashDefect, stripEmDashes, stripEmDashesDeep } from "./punctuation";
 import { getSettings } from "./settings";
 import { draftToSpec } from "./spec";
 
@@ -29,7 +30,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Pydantic validation refusals arrive as [{loc, msg, type}, …] — render the
+/** Pydantic validation refusals arrive as [{loc, msg, type}, …]. Render the
  * explanation as a sentence, not raw JSON. The refusal text IS the product's
  * answer (e.g. "intraday_scan cannot combine with scale_in"); showing it
  * beats making the user decode an error array. Unknown shapes still
@@ -52,12 +53,47 @@ function formatDetail(detail: unknown): string {
   return JSON.stringify(detail);
 }
 
+/** Two responses are NOT normalized, and the reason is correctness, not
+ * taste. Their prose is the run's provenance record and the client sends it
+ * straight back to the server:
+ *
+ *   /api/parse            the clarifying questions become the transcript that
+ *                         rides the next /api/backtest as provenance
+ *   /api/runs/:id/variant the parent's pitch, spec and conversation, carried
+ *                         onto the spec screen and re-submitted with the run
+ *
+ * A normalized value echoed back as authoritative would overwrite the stored
+ * record with the client's punctuation, which is corruption, not display. The
+ * bytes of those two payloads belong to the backend's write-time (L1) and
+ * read-time (L2) layers; nothing here gets a vote on them. */
+function isVerbatimPayload(path: string): boolean {
+  const route = path.split("?")[0];
+  return route === "/api/parse" || /^\/api\/runs\/[^/]+\/variant$/.test(route);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { cache: "no-store", ...init });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiError(res.status, formatDetail(body.detail ?? body));
+  // read the body as text first so the em-dash scan is one native string
+  // search on the raw bytes. A clean payload (nearly all of them) skips the
+  // walk entirely; a bars response never pays for the safety net
+  const raw = await res.text();
+  let body: unknown = {};
+  try {
+    if (raw) body = JSON.parse(raw);
+  } catch {
+    body = {};
   }
+  if (!res.ok) {
+    const detail = (body as { detail?: unknown }).detail ?? body;
+    // refusal text is the product's answer and is display-only, so it is
+    // normalized on every path, verbatim ones included
+    throw new ApiError(res.status, stripEmDashes(formatDetail(detail)));
+  }
+  // every spelling that renders as a dash, not just the glyph: an entity or
+  // a spaced double hyphen in the body would otherwise sail past this gate
+  // and reach the page, which is the hole the normalizer just grew to cover
+  const dirty = hasDashDefect(raw);
+  if (dirty && !isVerbatimPayload(path)) return stripEmDashesDeep(body) as T;
   return body as T;
 }
 
@@ -66,11 +102,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // so concurrent followers share it. Failures are never cached. Bounded:
 // paging URLs are unique and would otherwise pile up for the session.
 // `swr` (stale-while-revalidate) serves an EXPIRED-but-resolved entry
-// instantly and refreshes it in the background — navigation paints from
+// instantly and refreshes it in the background. Navigation paints from
 // the last known data instead of waiting on a cold proxy round-trip.
 const promiseCache = new Map<string, { t: number; p: Promise<unknown>; settled: boolean }>();
 const PROMISE_CACHE_MAX = 64;
-// swr serves an expired entry only this far past its TTL — beyond it the
+// swr serves an expired entry only this far past its TTL. Beyond it the
 // data is too old to paint even briefly (an hour-idle tab must not flash
 // hour-old bars under a "delayed ~15m" badge; review finding 2026-07-15)
 const SWR_MAX_EXTRA_MS = 600_000;
@@ -95,7 +131,7 @@ function storeRequest<T>(url: string): Promise<T> {
       entry.settled = true;
     },
     () => {
-      // delete only OUR entry — a fresh/evicted replacement under the same
+      // delete only OUR entry. A fresh/evicted replacement under the same
       // URL must survive this stale rejection (review finding 2026-07-15)
       if (promiseCache.get(url) === entry) promiseCache.delete(url);
     },
@@ -126,11 +162,11 @@ function cachedRequest<T>(
 // the composer fetches coverage on mount; a short client cache lets the
 // Data Observatory reuse that same payload and paint instantly on
 // navigation instead of re-reading the lake (the backend caches 300s
-// anyway — this adds no staleness a fresh request wouldn't also have)
+// anyway. This adds no staleness a fresh request wouldn't also have)
 const COVERAGE_CACHE_TTL_MS = 60_000;
 
 export function getCoverage(fresh = false): Promise<CoveragePayload> {
-  // fresh=true is the Observatory's live poll — it bypasses the client
+  // fresh=true is the Observatory's live poll. It bypasses the client
   // cache read (otherwise every tick re-serves the same snapshot)
   return cachedRequest<CoveragePayload>("/api/data/coverage", COVERAGE_CACHE_TTL_MS, fresh);
 }
@@ -147,7 +183,7 @@ export function getUnderlying(ticker: string, days = 240): Promise<{ series: Und
 }
 
 // client cache so the hero can warm the chart's first fetch before the
-// user opens chart mode — the switch then renders instantly. 5 minutes:
+// user opens chart mode. The switch then renders instantly. 5 minutes:
 // the bars are ~15-min delayed anyway (the UI badge says so), so client
 // staleness inside that window adds no dishonesty a fresh request
 // wouldn't also have; the 15s live poll bypasses via `fresh`.
@@ -163,7 +199,7 @@ export function getBars(
   const params = new URLSearchParams({ interval, window, indicators: indicators.join(",") });
   if (opts?.before) params.set("before", opts.before);
   if (opts?.limit) params.set("limit", String(opts.limit));
-  // tail=0 skips the backend's blocking live-tail fetch — the first paint
+  // tail=0 skips the backend's blocking live-tail fetch. The first paint
   // reads the cached lake instantly and the tail arrives in a follow-up
   if (opts?.tail === false) params.set("tail", "0");
   return cachedRequest<BarsPayload>(
@@ -175,7 +211,7 @@ export function getBars(
 }
 
 /** Warm the exact request MarketChart issues on first mount (5m · 1w,
- * lake-only) for ALL three tickers — chart mode then opens instantly and
+ * lake-only) for ALL three tickers. Chart mode then opens instantly and
  * SPY→QQQ→IWM switches land on a warm cache instead of a cold lake read. */
 export function prefetchBars(): void {
   for (const t of ["SPY", "QQQ", "IWM"]) {
@@ -195,10 +231,10 @@ export function parseText(
 }
 
 /** The confirmed window → backtest start/end dates. Throws when the user
- * has not confirmed a window — RUN must be impossible without one. */
+ * has not confirmed a window. RUN must be impossible without one. */
 export function windowToDates(draft: SpecDraft): { start: string | null; end: string | null } {
   const w = draft.window;
-  if (!w) throw new Error("data window is unset — the spec screen must ask, never default");
+  if (!w) throw new Error("data window is unset (the spec screen must ask, never default)");
   if (w.kind === "custom") return { start: w.start ?? null, end: w.end ?? null };
   if (w.kind === "all") return { start: null, end: null };
   const years = { "1y": 1, "3y": 3, "5y": 5, "10y": 10 }[w.kind];
@@ -208,7 +244,7 @@ export function windowToDates(draft: SpecDraft): { start: string | null; end: st
 }
 
 /** V-08: everything the spec screen needs to reopen a stored run as a variant.
- * Server-side projection — the client never rebuilds a parent's spec itself. */
+ * Server-side projection. The client never rebuilds a parent's spec itself. */
 export interface VariantDraftPayload {
   parent: { id: string; rootId: string; ordinal: number | null };
   draft: SpecDraft | null;
@@ -226,7 +262,7 @@ export function getVariantDraft(runId: string): Promise<VariantDraftPayload> {
 }
 
 /** V-14: the parent's own stored sweep result for the edit now on the dials, or
- *  null. Null is the ordinary answer — the parent's sweep did not run this exact
+ *  null. Null is the ordinary answer. The parent's sweep did not run this exact
  *  configuration, so there is nothing to say (V-231 prefers silence to a
  *  nearest-neighbour guess). Costs nothing and commits to nothing. */
 export type ArgueBackHit = {
@@ -249,7 +285,7 @@ export type ArgueBackHit = {
    *  may be several runs back. */
   parent_label: string | null;
   /** V-244: [lowest, highest] value the sweep tested. Shown only when the panel is
-   *  already visible, so it adds no claim about untested values — it tells the
+   *  already visible, so it adds no claim about untested values. It tells the
    *  reader the sweep had edges, which makes a later absence interpretable. */
   range: [number, number];
 };
@@ -278,13 +314,13 @@ export function startBacktest(
   parsedSpec?: Record<string, unknown> | null,
   untouched = true,
   conversation: ProvenanceEvent[] = [],
-  // the human-check token from the anon popup — rides the request so the
+  // the human-check token from the anon popup. It rides the request so the
   // backend can siteverify it. null when Turnstile isn't configured (dev /
   // pre-launch) or the caller is a signed-in account (backend skips the
   // check entirely for those).
   turnstileToken: string | null = null,
 ): Promise<StartResult> {
-  // an unedited parser spec runs verbatim — dial edits rebuild from the
+  // an unedited parser spec runs verbatim. Dial edits rebuild from the
   // dials WITH the parsed spec as base, so parser-only vocabulary
   // (ladders, intraday_scan, resolution, force-flat, time-of-day) is
   // never silently dropped by an unrelated dial edit (FX.5)
@@ -309,7 +345,7 @@ export function startBacktest(
   }
   spec.costs = { ...draft.costs };
   // pre-run dials apply to EVERY run too (2026-07-06): the confirmed data
-  // window (required), contracts, cadence and capital — like costs, they
+  // window (required), contracts, cadence and capital. Like costs, they
   // override even a verbatim parsed spec, because the screen showed them
   const dates = windowToDates(draft);
   spec.backtest = {
@@ -336,7 +372,7 @@ export function startBacktest(
     spec.entry = entry;
   }
   // Chunk A: the setup story rides the run request and is stored on the run
-  // row (display-only server-side — never fed to the engine or the verdict).
+  // row (display-only server-side, never fed to the engine or the verdict).
   // `confirmed.draft` replaces the old top-level `draft` key, which no
   // backend code ever read.
   const provenance = {
@@ -368,7 +404,7 @@ export function startBacktest(
     // pre-accounts: this browser's runs ride the curated listing via
     // include=, and signup later re-parents exactly this list (claim flow).
     // A demo-fallback run lives only in the proxy's memory and won't
-    // survive a later view (serverless instances differ) — remembering it
+    // survive a later view (serverless instances differ). Remembering it
     // would 404 on view AND wrongly burn the device's one free run, so
     // skip it (owner-reported bug 2026-07-17).
     if (!res.demo) rememberRun(res.run_id);
@@ -377,22 +413,22 @@ export function startBacktest(
 }
 
 export function getRun(id: string): Promise<RunPayload> {
-  // the current evidence bar rides every read — saved runs re-grade
+  // the current evidence bar rides every read. Saved runs re-grade
   // server-side when the bar moved since they ran (both directions)
   return request<RunPayload>(`/api/runs/${id}?min_trades=${getSettings().minTrades}`);
 }
 
-// the sidebar requests the library on every navigation — cache briefly so
+// the sidebar requests the library on every navigation. Cache briefly so
 // a click-around doesn't hammer the runs database
 const RUNS_CACHE_TTL_MS = 30_000;
 
 export function listRuns(fresh = false): Promise<{ runs: RunSummary[]; demo: boolean }> {
-  // `fresh` bypasses the cache — the library polls with it while a run
+  // `fresh` bypasses the cache. The library polls with it while a run
   // is in progress so the card flips to its verdict without a reload.
-  // swr: an expired listing paints instantly and refreshes behind — the
+  // swr: an expired listing paints instantly and refreshes behind. The
   // nav rail calls this on every navigation.
   // Pre-accounts curation (launch L4): the server lists the two pinned
-  // examples; this browser's own runs ride along explicitly — the same
+  // examples; this browser's own runs ride along explicitly, the same
   // id list the claim flow re-parents at signup.
   // sorted: the ids are recency-ordered in storage, and an order-sensitive
   // key would mint a fresh cache entry (cold nav-rail paint) after every run
@@ -434,7 +470,7 @@ export function replayRun(id: string): Promise<{ run_id: string; parent: string 
 }
 
 /** Parity Tier 1: the completed run as an executable .ipynb. Returns the
- * exact text the backend built — parsing and re-stringifying it here would
+ * exact text the backend built. Parsing and re-stringifying it here would
  * reformat the notebook, which is why this can't ride request<T> (it
  * always json()s the body). The HTML report needs no fetch helper: it's
  * served inline and the menu links straight at the proxy path. */
@@ -443,8 +479,8 @@ export async function fetchNotebook(id: string): Promise<string> {
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
     const detail = formatDetail(body.detail ?? body);
-    // an HTML or empty error body (edge proxy 502) formats to "{}" —
-    // name the status instead of showing the user a brace pair
+    // an HTML or empty error body (edge proxy 502) formats to "{}".
+    // Name the status instead of showing the user a brace pair
     throw new ApiError(
       res.status,
       detail === "{}" ? `export failed (HTTP ${res.status})` : detail,
@@ -471,7 +507,7 @@ export function getHealth(): Promise<{
   return request("/api/health");
 }
 
-/** Launch L1: the signed-in account — email + credit balance (computed
+/** Launch L1: the signed-in account, with email + credit balance (computed
  * server-side from the append-only ledger; there is no stored balance).
  * 401 (signed out) surfaces as ApiError. */
 export type MePayload = {
@@ -486,7 +522,7 @@ export function fetchMe(): Promise<MePayload> {
   return request<MePayload>("/api/me");
 }
 
-/** Launch L5 admin surface. Award (or claw back, negative) a user's credits —
+/** Launch L5 admin surface. Award (or claw back, negative) a user's credits,
  * the web equivalent of scripts/grant_credits.py. 404 for non-admins. */
 export function adminGrantCredits(
   email: string,
@@ -520,7 +556,7 @@ export function adminMetrics(): Promise<AdminMetrics> {
 }
 
 /** Launch L1b (self-rolled auth): what signup/login return. The session
- * itself never touches client code — it rides an httpOnly cookie set by
+ * itself never touches client code. It rides an httpOnly cookie set by
  * the backend and relayed through the proxy. */
 export type AuthAccount = {
   email: string;
@@ -534,12 +570,12 @@ export function signup(
   email: string,
   password: string,
   // the Turnstile human-check token; null when Turnstile isn't configured
-  // (dev / pre-launch) — the backend skips the check in the same case
+  // (dev / pre-launch). The backend skips the check in the same case
   turnstileToken: string | null = null,
 ): Promise<AuthAccount> {
   // the claim flow: this browser's pre-account runs (the skeptic-my-runs
   // breadcrumb) ride the signup and re-parent server-side; on success the
-  // breadcrumb clears — ownership is DB truth from here on, and a stale
+  // breadcrumb clears. Ownership is DB truth from here on, and a stale
   // list would try to re-claim already-owned runs on a future signup
   return request<AuthAccount>("/api/auth/signup", {
     method: "POST",
@@ -570,7 +606,7 @@ export function logout(): Promise<{ ok: boolean }> {
 
 /** Launch L3: start a Stripe Checkout for the signed-in account and return
  * the hosted URL to redirect the browser to. Credits are granted by the
- * signature-verified webhook AFTER payment — never by the return redirect. */
+ * signature-verified webhook AFTER payment, never by the return redirect. */
 export function startCheckout(): Promise<{ url: string }> {
   return request<{ url: string }>("/api/checkout", { method: "POST" });
 }

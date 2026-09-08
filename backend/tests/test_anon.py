@@ -5,7 +5,7 @@ doctored client can't turn the engine into free compute: Cloudflare Turnstile,
 one run per SIGNED anon token, one run per IP window, a global daily budget,
 and a daily-clock / ≤3-year constraint. Signed-in accounts and the service
 principal skip ALL of it. Signup re-parents the device's anon run (the
-conversion moment). No raw token or IP is ever stored — only HMAC'd hashes.
+conversion moment). No raw token or IP is ever stored, only HMAC'd hashes.
 
 Every anon POST here stubs the background engine (`_execute_run`): the armor
 is entirely PRE-run, so the gauntlet is irrelevant and a real 5-minute run
@@ -13,8 +13,8 @@ would block the test on the intraday lake. The AnonTrial row and the run row
 are both written synchronously in the endpoint, before the task is queued.
 
 Each test sources its anon runs from a UNIQUE IP (`fresh_ip`) so the
-module-level per-IP window and the global daily budget — both counted over a
-session-shared SQLite file — never cross-contaminate between tests.
+module-level per-IP window and the global daily budget (both counted over a
+session-shared SQLite file) never cross-contaminate between tests.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from app.main import app
 from app.models.spec import Clock, StrategySpec
 from tests.fixtures.engine import fx_short_put_assigned as fx
 
-# this whole module drives the REAL armor — opt out of the conftest
+# this whole module drives the REAL armor, so opt out of the conftest
 # neutralizer that disables it for every other (pre-armor) test
 pytestmark = pytest.mark.real_anon_armor
 
@@ -102,7 +102,7 @@ def signup(client: TestClient, email: str | None = None, claim: list[str] | None
 
 @pytest.fixture()
 def _stub_engine(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The armor is all pre-run — stub the background gauntlet so anon POSTs
+    """The armor is all pre-run. Stub the background gauntlet so anon POSTs
     are fast and never touch the engine or the intraday lake."""
     import app.api.runs as runs_mod
 
@@ -152,7 +152,7 @@ def test_first_anon_backtest_arms_exactly_one_trial(anon_client: TestClient) -> 
     assert isinstance(body["trialConstraint"], str) and body["trialConstraint"]
     run_id = body["run_id"]
 
-    # the device gets a signed, httpOnly, secure cookie — its one-run identity
+    # the device gets a signed, httpOnly, secure cookie, its one-run identity
     set_cookie = r.headers["set-cookie"]
     assert "skeptic_anon=" in set_cookie
     assert "HttpOnly" in set_cookie
@@ -193,7 +193,7 @@ def test_new_device_same_ip_blocked_then_allowed_past_the_window(
     assert first.status_code == 200
     run_id = first.json()["run_id"]
 
-    # a fresh browser (new cookie jar) from the same IP is inside the window —
+    # a fresh browser (new cookie jar) from the same IP is inside the window,
     # the cookie-clearer defense
     blocked = new_device().post("/api/backtest", json={"spec": fx.SPEC}, headers=ip)
     assert blocked.status_code == 402
@@ -219,7 +219,7 @@ def test_global_daily_budget_has_a_distinct_refusal(
     )
     monkeypatch.setenv("SKEPTIC_ANON_DAILY_BUDGET", "1")
     # a brand-new device on a brand-new IP now hits the CEILING, not the
-    # device rule — the budget check runs first and its message is distinct
+    # device rule. The budget check runs first and its message is distinct
     r = new_device().post("/api/backtest", json={"spec": fx.SPEC}, headers=fresh_ip())
     assert r.status_code == 402
     detail = r.json()["detail"]
@@ -232,7 +232,7 @@ def test_global_daily_budget_has_a_distinct_refusal(
 
 def test_enforce_constraints_rejects_intraday_and_long_windows() -> None:
     # a doctored client asking for more than the fast path is REJECTED (422),
-    # never silently clamped — tested at the unit that guards it, since a full
+    # never silently clamped. Tested at the unit that guards it, since a full
     # 5-minute StrategySpec is awkward to build end to end
     daily = StrategySpec.model_validate(fx.SPEC)
     anon.enforce_constraints(daily)  # daily clock, ~15-day window → passes
@@ -287,7 +287,7 @@ def test_open_ended_long_window_rejected_at_the_endpoint(anon_client: TestClient
 
 def test_origin_switch_does_not_escape_the_armor(anon_client: TestClient) -> None:
     """The critical bypass: is_anon must NOT key on req.origin. An anon
-    declaring origin=auto_unlock (an automation origin) is still ARMORED —
+    declaring origin=auto_unlock (an automation origin) is still ARMORED:
     the second run from the device is refused, exactly like origin=user."""
     first = anon_client.post(
         "/api/backtest", json={"spec": fx.SPEC, "origin": "auto_unlock"}, headers=fresh_ip()
@@ -315,7 +315,7 @@ def test_signed_in_user_bypasses_the_anon_constraints(anon_client: TestClient) -
     r = anon_client.post(
         "/api/backtest", json={"spec": five}, headers={**auth, **fresh_ip()}
     )
-    assert r.status_code == 200  # 5-minute accepted — not the anon 422
+    assert r.status_code == 200  # 5-minute accepted, not the anon 422
 
     long_window = copy.deepcopy(fx.SPEC)
     long_window["backtest"]["start"] = "2015-01-05"
@@ -336,7 +336,7 @@ def test_turnstile_failure_blocks_the_anon_run(
     monkeypatch.setattr(anon, "verify_turnstile", lambda token, ip: False)
     before = anon_trial_count()
     # anonymous traffic reaches the route through the proxy gate (no session,
-    # no service bearer) — the human check runs before anything is recorded
+    # no service bearer). The human check runs before anything is recorded
     r = deployed_client.post(
         "/api/backtest",
         json={"spec": fx.SPEC, "turnstile_token": "bad-token"},
@@ -364,7 +364,7 @@ def test_verify_turnstile_internals(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The one canonical siteverify: a real success passes, and EVERY failure
-    mode fails closed while logging a distinguishable reason — so a prod
+    mode fails closed while logging a distinguishable reason, so a prod
     first-click 403 is diagnosable (Cloudflare error-codes were discarded
     before). Never returns True without a genuine success."""
     # no secret → the human check is skipped (dev / pre-launch)
@@ -484,8 +484,8 @@ def test_anon_token_roundtrips_and_forgeries_are_rejected(
     assert anon.verified_hash(rand + ".") is None  # empty signature
     assert anon.verified_hash(rand + "." + "0" * len(sig)) is None  # tampered sig
 
-    # rotate the secret: a token signed under the old key no longer verifies —
-    # the signature is what lets us reject a forged token before the DB
+    # rotate the secret: a token signed under the old key no longer verifies.
+    # The signature is what lets us reject a forged token before the DB
     monkeypatch.setenv("SKEPTIC_ANON_SECRET", "rotated-secret")
     assert anon.verified_hash(token) is None
 
@@ -548,14 +548,14 @@ def test_signup_claims_the_anon_run_without_double_counting(
 
     # sign up on the SAME device (the skeptic_anon cookie rides the jar) AND
     # also name the run in the localStorage breadcrumb. The anon token and the
-    # breadcrumb are unioned — the run must claim exactly once, not twice.
+    # breadcrumb are unioned, so the run must claim exactly once, not twice.
     email = unique_email()
     r = signup(anon_client, email, claim=[run_id])
     assert r.status_code == 200
     assert r.json()["claimedRuns"] == 1
     assert owner_of(run_id) == uid_of(email)
 
-    # a second account can't re-claim it — it's owned now
+    # a second account can't re-claim it, it's owned now
     again = signup(anon_client, claim=[run_id])
     assert again.json()["claimedRuns"] == 0
     assert owner_of(run_id) == uid_of(email)
@@ -568,7 +568,7 @@ def test_armor_proceeds_on_the_sqlite_fallback(
     anon_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A session-less anon caller never touches the accounts DB, so the armor
-    does NOT 503 like the account surfaces — it PROCEEDS, stamping a NULL
+    does NOT 503 like the account surfaces. It PROCEEDS, stamping a NULL
     owner (still claimable), and the trial is recorded best-effort."""
     monkeypatch.setattr(db, "FALLBACK_REASON", "neon unreachable (test)")
     r = anon_client.post("/api/backtest", json={"spec": fx.SPEC}, headers=fresh_ip())
@@ -584,10 +584,10 @@ def test_session_bearing_request_during_outage_relaxes_db_limits_only(
     """A likely signed-in person whose session can't be validated mid-outage
     (accounts DB on the SQLite fallback) is NOT one-run-limited: the per-device
     DB layers relax, so no anon cookie is minted and no trial is recorded. But
-    the DB-FREE layers still hold — the human check and the fast-path
-    constraint — so an outage is never a bot-flushable free-compute hole. (A
+    the DB-FREE layers still hold (the human check and the fast-path
+    constraint), so an outage is never a bot-flushable free-compute hole. (A
     bogus cookie under NORMAL operation resolves to None and gets the FULL
-    armor — see the other tests — so this is not a bypass.)"""
+    armor, see the other tests, so this is not a bypass.)"""
     monkeypatch.setattr(db, "FALLBACK_REASON", "neon unreachable (test)")
 
     # a valid daily spec: proceeds, but with NO device counting
@@ -600,7 +600,7 @@ def test_session_bearing_request_during_outage_relaxes_db_limits_only(
     assert trials_for(r.json()["run_id"]) == 0
     assert anon_trial_count() == before
 
-    # …but the ≤3y window constraint STILL applies mid-outage — an oversized
+    # …but the ≤3y window constraint STILL applies mid-outage. An oversized
     # window is refused, so an outage can't be turned into free heavy compute
     client2 = new_device()
     client2.cookies.set("skeptic_session", "another-unvalidatable-token")

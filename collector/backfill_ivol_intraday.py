@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-backfill_ivol_intraday.py — capture iVolatility INTRADAY 5-minute history into R2
+backfill_ivol_intraday.py captures iVolatility INTRADAY 5-minute history into R2
 during the Data Cloud trial. Companion to backfill_ivol.py (EOD, currently 403).
 
 Verified by the probes (2026-07-04):
   * intraday endpoints are entitled on the trial key (EOD chain is 403);
   * option rawiv gives 5-min NBBO bid/ask + vendor greeks/IV, depth to 2013;
     underlying gives 5-min bid/ask/last, depth to 2011;
-  * the option endpoint is STRICTLY per (symbol, date, expDate, strike) — one
+  * the option endpoint is STRICTLY per (symbol, date, expDate, strike): one
     request = one contract-day (~82 bars); only optType=ALL batches call+put;
   * the ~90/min rate ceiling is SHARED per account/IP (proven: 3 keys concurrent
     still ≈ 92/min), so extra keys do NOT multiply throughput.
 
 Throughput therefore comes from CONCURRENCY, not keys: a shared RateGate paces all
 threads to ~80/min (under the ceiling) while a small thread pool fetches a session's
-~50 contracts in parallel — filling the headroom a serial loop (~52/min) leaves.
+~50 contracts in parallel, filling the headroom a serial loop (~52/min) leaves.
 Keys are rotated only to spread load / dodge any per-key penalty. R2 writes and
 state stay serial (one parquet per (ticker, session) in the main thread → no races).
 Newest-first + resumable (R2 object = done; empty dates remembered in state).
@@ -136,7 +136,7 @@ def _get(path: str, params: dict) -> tuple[int, object]:
         _GATE.wait()
         try:
             r = requests.get(f"{BASE}{path}", params=params, headers=auth, timeout=TIMEOUT)
-        except Exception as exc:  # noqa: BLE001 — retry then give up
+        except Exception as exc:  # noqa: BLE001 (retry then give up)
             if attempt == RETRIES - 1:
                 log.warning("request error %s: %s", path, _scrub(repr(exc)))
                 return -1, None
@@ -152,7 +152,7 @@ def _get(path: str, params: dict) -> tuple[int, object]:
         if r.status_code in (429, 500, 502, 503, 504):
             time.sleep(BACKOFF_BASE * 2 ** attempt)
             continue
-        return r.status_code, None  # 400/403 etc — no retry
+        return r.status_code, None  # 400/403 etc, no retry
     return 429, None
 
 
@@ -299,13 +299,13 @@ def capture_option_session(s3, pool, ticker, day, exp_cal, band, max_dte, have_u
                       if i is not None and i + k < len(exp_cal["_asc"])]
 
     collected: list[dict] = []
-    # phase 1 — ATM probe per candidate expiry (parallel); keep only listed expiries
+    # phase 1: ATM probe per candidate expiry (parallel); keep only listed expiries
     live_exps: list[str] = []
     for exp, atm_rows in pool.map(lambda e: (e, fetch_option(ticker, day, e, atm)), candidate_exps):
         if atm_rows:
             collected.extend(atm_rows)
             live_exps.append(exp)
-    # phase 2 — the rest of the ladder for listed expiries (parallel)
+    # phase 2: the rest of the ladder for listed expiries (parallel)
     tasks = [(e, k) for e in live_exps for k in strikes if k != atm]
     if tasks:
         for rows in pool.map(lambda ek: fetch_option(ticker, day, ek[0], ek[1]), tasks):
@@ -393,7 +393,7 @@ def run(args: argparse.Namespace) -> int:
                                                    args.band, args.max_dte, have_u, empty, args.dry_run)
                         if n == 0:
                             empty.add(day)
-                except Exception as exc:  # noqa: BLE001 — one bad day never kills the run
+                except Exception as exc:  # noqa: BLE001 (one bad day never kills the run)
                     log.warning("%s %s failed: %s", ticker, day, _scrub(repr(exc)))
                     continue
                 done += 1
@@ -406,7 +406,7 @@ def run(args: argparse.Namespace) -> int:
                     log.info("… flushed state (%s %s, %d done, req=%d)",
                              ticker, args.mode, done, _req_count[0])
                 if args.max_requests and _req_count[0] >= args.max_requests:
-                    log.info("max-requests %d reached — stopping cleanly", args.max_requests)
+                    log.info("max-requests %d reached, stopping cleanly", args.max_requests)
                     tstate["empty"] = sorted(empty)
                     r2_put_json(s3, state_key, state)
                     return 0

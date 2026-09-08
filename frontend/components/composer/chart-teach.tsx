@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "Show it on the chart" — teach-by-example on the full MarketChart.
+ * "Show it on the chart": teach-by-example on the full MarketChart.
  * Click = entry, click again = exit, up to 10 examples.
  *
  * STRUCTURE INFERENCE: each pinned move is scored against the series' own
@@ -12,7 +12,7 @@
  *   consistent gentle drift down → call credit spread
  *   consistent strong move down  → long put
  *   mixed directions / flat      → iron condor      (range-bound)
- * The inference is a starting point — every dial is editable on the spec
+ * The inference is a starting point. Every dial is editable on the spec
  * screen, and nothing runs on an unconfirmed spec.
  */
 
@@ -30,13 +30,13 @@ const TICKERS: Ticker[] = ["SPY", "QQQ", "IWM"];
 const MAX_EXAMPLES = 10;
 
 // z-score thresholds: below DIRECTION the move is noise; above STRONG the
-// move is conviction-sized for this timeframe. DIRECTION leans permissive —
+// move is conviction-sized for this timeframe. DIRECTION leans permissive:
 // a deliberately pinned move is an intent signal even when statistically
 // mild; only near-sideways pins read as range-bound.
 const Z_DIRECTION = 0.35;
 const Z_STRONG = 1.8;
 
-// starting strike dial per inferred structure — a visible, editable dial on
+// starting strike dial per inferred structure: a visible, editable dial on
 // the spec screen. The EXIT is never defaulted: pins can't express one, so
 // the spec screen asks its one question, exactly like the chat path.
 const DEFAULT_DELTA: Record<string, number> = {
@@ -48,7 +48,7 @@ const DEFAULT_DELTA: Record<string, number> = {
 };
 
 // shared with the provenance story view (lib/format.pinLabel) so teach-time
-// labels and the "How this was built" record can never disagree — and the
+// labels and the "How this was built" record can never disagree, and the
 // shared version formats date-only bars as plain dates instead of sliding
 // them back a day through the UTC-midnight → ET conversion
 const fmtPin = pinLabel;
@@ -83,7 +83,7 @@ function inferStructure(pins: ChartPin[], bars: Bar[]): Inference {
       );
       z = sd > 0 ? move / sd : 0;
     } else {
-      z = move / 0.02; // series context unavailable — assume ~2% typical move
+      z = move / 0.02; // series context unavailable, assume ~2% typical move
     }
     zs.push(z);
   }
@@ -110,7 +110,7 @@ const TRIGGER_LOOKBACK_SESSIONS = 20;
 /** Average % below the rolling 20-session high on DAILY closes at the
  * pinned entry dates. Measured on daily data no matter what interval the
  * user pinned on, because that is exactly what the engine's
- * drawdown_from_high_pct(period=20) will test — an intraday buffer's
+ * drawdown_from_high_pct(period=20) will test. An intraday buffer's
  * running high is a different quantity and would compile a threshold the
  * backtest never reproduces. Values are ≥ 0 by construction (the rolling
  * window includes the pin's own close). Rounded to 0.5%, clamped to
@@ -146,7 +146,7 @@ async function entryPullbackPct(complete: ChartPin[], ticker: Ticker): Promise<n
   if (!dds.length) return 2;
   const avg = dds.reduce((s, d) => s + d, 0) / dds.length;
   // monotone: rounds-to-zero means "entered at the high" and takes the 1%
-  // floor — it must never jump ABOVE deeper-pullback pins
+  // floor, it must never jump ABOVE deeper-pullback pins
   const rounded = Math.round(avg * 2) / 2;
   return Math.min(10, Math.max(1, rounded));
 }
@@ -157,7 +157,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
   const [bars, setBars] = useState<Bar[]>([]);
   // default width matches the Describe It box; expanded fills the page
   const [expanded, setExpanded] = useState(false);
-  // compile fetches daily bars to derive the trigger — brief async gate
+  // compile fetches daily bars to derive the trigger (brief async gate)
   const [compiling, setCompiling] = useState(false);
 
   const complete = pins.filter((p) => p.b != null);
@@ -173,7 +173,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   // directional slide, armed on the ticker click and fired when the DESTINATION
-  // ticker's bars land — tagging the target keeps a rapid multi-switch or an
+  // ticker's bars land. Tagging the target keeps a rapid multi-switch or an
   // unrelated buffer change (paging, live poll) from consuming the slide
   const pendingSlideRef = useRef<{ dir: "left" | "right"; target: Ticker } | null>(null);
 
@@ -232,7 +232,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
         dte: 45,
         cadence: "signal",
         size: "1 contract",
-        // pins can't express an exit — the spec screen asks, never defaults
+        // pins can't express an exit: the spec screen asks, never defaults
         exit: null,
         fromChart: true,
         quote: `taught by ${n} pinned example${n === 1 ? "" : "s"} on the ${ticker} chart`,
@@ -245,7 +245,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
           period: TRIGGER_LOOKBACK_SESSIONS,
         },
         examples: n,
-        // provenance (Chunk A): the raw bars clicked, as ISO times — the
+        // provenance (Chunk A): the raw bars clicked, as ISO times. The
         // formatted anchor above is display; this is the record
         chartContext: {
           ticker,
@@ -258,7 +258,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
   }
 
   const pendingNote = pending
-    ? `entry pinned at ${fmtPin(pending.a.t)} — now click where you’d exit`
+    ? `entry pinned at ${fmtPin(pending.a.t)}. Now click where you’d exit`
     : complete.length
       ? `${complete.length} example${complete.length > 1 ? "s" : ""} pinned · add up to ${MAX_EXAMPLES}, or continue →`
       : "Show me 1–10 trades you’d have taken. Click where you’d enter.";
@@ -335,7 +335,7 @@ export function ChartTeach({ onCompile }: { onCompile: (draft: SpecDraft) => voi
             className="mt-1.5 flex items-center justify-between rounded-[9px] border border-line bg-raised px-3 py-2"
           >
             <span className="font-mono text-[13.5px] text-ink-2">
-              example {i + 1} — {fmtPin(pin.a.t)} → {pin.b ? fmtPin(pin.b.t) : ""} ·{" "}
+              example {i + 1}: {fmtPin(pin.a.t)} → {pin.b ? fmtPin(pin.b.t) : ""} ·{" "}
               {movePct >= 0 ? "+" : ""}
               {movePct.toFixed(1)}%
             </span>

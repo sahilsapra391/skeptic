@@ -1,6 +1,6 @@
 """Run → self-contained HTML report (the share-with-anyone export).
 
-The notebook (builder.py) is the EXECUTABLE artifact — reproduce proof,
+The notebook (builder.py) is the EXECUTABLE artifact: reproduce proof,
 live cells, analyst medium. This is the readable one: a single HTML file
 anyone can open, on-brand, print-to-PDF clean (owner ask 2026-07-14:
 "a format people actually know how to use"). Same story, same order:
@@ -9,13 +9,21 @@ honesty gauntlet → the verdict → the reproducibility appendix.
 
 Rules the document keeps:
   * Static truth. Everything is rendered from the STORED run at export
-    time — no live calls, so the file stands alone and never drifts from
+    time. No live calls, so the file stands alone and never drifts from
     what the app showed.
   * Every user-derived string is HTML-escaped (the prompt and answers
-    are client-captured display data — provenance.py's trust boundary).
+    are client-captured display data, provenance.py's trust boundary).
+  * House punctuation, applied to EVERYTHING the document renders,
+    including the prompt the user typed. This file is a terminal render
+    artifact: the browser navigates straight to it, no frontend layer sits
+    in front of it, and nothing here is ever submitted back. So the read
+    time exemption that protects a round-tripped value (app/api/payload.py)
+    does not apply, and the owner's rule governs instead: no em-dash on any
+    page, including a visitor's own words echoed back at them. The stored
+    row is untouched, as always: normalization builds a display copy.
   * Three voices only (owner typography directive): Newsreader for the
     headline moments, Archivo for prose, IBM Plex Mono for data. Loaded
-    from Google Fonts with system fallbacks — offline/print degrades,
+    from Google Fonts with system fallbacks. Offline/print degrades,
     never substitutes a fourth family.
   * Charts follow the app's monochrome ink language: single-series
     neutral marks (contrast-validated ≥3:1 on the light surface; the
@@ -32,6 +40,8 @@ import html
 import json
 import math
 from typing import Any
+
+from app.text import normalize, normalize_mapping
 
 _INK = "#16181d"
 _INK2 = "#34383f"
@@ -107,27 +117,32 @@ _FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
           '00;600&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wgh'
           't@6..72,500&display=swap" rel="stylesheet">')
 
-DISCLAIMER = ("Personal research only — not financial advice; nothing here "
+DISCLAIMER = ("Personal research only, not financial advice; nothing here "
               "is a recommendation to trade anything.")
 
 
 def _esc(value: Any) -> str:
-    return html.escape(str(value), quote=True)
+    """House punctuation, then HTML escaping. Every dynamic string in the
+    document passes through here, which makes this the one place the
+    document can be wrong about punctuation. Normalizing before escaping
+    matters: `html.escape` would turn a literal ampersand into `&amp;` and
+    hide an entity spelling from the normalizer that has to fold it."""
+    return html.escape(normalize(str(value)), quote=True)
 
 
 def _series_svg(series: list[dict[str, Any]] | None, *, kind: str,
                 caption: str) -> str:
     """Single-series inline SVG in the app's monochrome ink language:
     2px line (or baseline-anchored area for drawdown), three recessive
-    gridlines, min/max + first/last labels in mono ink — one axis, no
+    gridlines, min/max + first/last labels in mono ink, one axis, no
     legend (a single series is named by its caption). Points are the
     payload's _downsample rows: {"t": iso_date, "v": value}."""
     if not series or len(series) < 2:
         return ""
     values = [float(p["v"]) for p in series]
     if not all(math.isfinite(v) for v in values):
-        # a poisoned point would silently corrupt every coordinate —
-        # omit the chart rather than render garbage (the tables beside
+        # a poisoned point would silently corrupt every coordinate.
+        # Omit the chart rather than render garbage (the tables beside
         # it still carry the numbers)
         return ""
     lo, hi = min(values), max(values)
@@ -174,7 +189,7 @@ def _series_svg(series: list[dict[str, Any]] | None, *, kind: str,
 
 def _rows(pairs: list[tuple[str, Any]]) -> str:
     """Label/value rows: labels never wrap (shrink-to-fit key column),
-    values wrap anywhere — a long JSON value must fold, never force a
+    values wrap anywhere: a long JSON value must fold, never force a
     horizontal scrollbar (browser-verified failure mode)."""
     out = []
     for label, value in pairs:
@@ -187,7 +202,7 @@ def _rows(pairs: list[tuple[str, Any]]) -> str:
 
 
 def _dict_table(rows: list[dict[str, Any]]) -> str:
-    """A list of homogeneous dicts as a real column table — the ladder
+    """A list of homogeneous dicts as a real column table. The ladder
     and agreement blocks deserve columns, not JSON blobs in a cell."""
     if not rows:
         return ""
@@ -215,7 +230,7 @@ def _provenance_html(record: dict[str, Any], grid: dict[str, Any]) -> str:
         parts.append(f'<p class="note"><em>{_esc(note)}</em></p>')
     if record.get("derived"):
         parts.append('<p class="note"><em>Setup story derived from the '
-                     "stored spec — this run predates provenance recording, "
+                     "stored spec. This run predates provenance recording, "
                      "so the clarifying conversation was never captured "
                      "(and is not invented).</em></p>")
     prompt = (record.get("prompt") or {}).get("text")
@@ -236,7 +251,7 @@ def _provenance_html(record: dict[str, Any], grid: dict[str, Any]) -> str:
         dropped = record.get("truncated", {}).get("dropped_events")
         if dropped:
             parts.append(f'<p class="note"><em>({_esc(dropped)} further '
-                         "exchange(s) not shown — size-capped at recording "
+                         "exchange(s) not shown, size-capped at recording "
                          "time.)</em></p>")
     parts.append("<p><strong>The decision grid that ran (from the "
                  "validated spec):</strong></p>")
@@ -307,7 +322,7 @@ def _honesty_html(payload: dict[str, Any],
     if sweep_notes:
         parts.append("<p><strong>Sweep coverage, disclosed</strong> "
                      '<span class="note">(what the sensitivity stage did '
-                     "and did not probe — absence is never a free "
+                     "and did not probe. Absence is never a free "
                      "pass):</span></p>")
         parts.append("<ul>" + "".join(f"<li>{_esc(n)}</li>"
                                       for n in sweep_notes) + "</ul>")
@@ -324,6 +339,17 @@ def build_report(
     sweep_notes: list[str] | None = None,
 ) -> str:
     """Assemble the standalone HTML document."""
+    # House punctuation at the door, on a copy, before a single string is
+    # rendered. `_esc` normalizes too, and both are wanted: this pass also
+    # reaches the values that are `json.dumps`-ed into a cell, where the
+    # default ensure_ascii would have written the character out as a
+    # backslash escape that no dash-shaped search would ever find.
+    name = normalize(name)
+    payload = normalize_mapping(payload)
+    provenance = normalize_mapping(provenance)
+    grid = normalize_mapping(grid)
+    sweep_notes = [normalize(note) for note in sweep_notes] if sweep_notes else None
+
     parts: list[str] = []
     parts.append(f"<h1>{_esc(name)}</h1>")
     parts.append(f'<p class="meta">Skeptic research report · run '
@@ -335,18 +361,18 @@ def build_report(
 
     parts.append("<section><h2>The numbers</h2>")
     window_note = ("Computed on the effective window named in the meta "
-                   "line above — a surface that shows results shows the "
+                   "line above. A surface that shows results shows the "
                    "data they were computed on.")
     parts.append(f'<p class="note">{_esc(window_note)}</p>')
     tiles = "".join(
-        f'<div class="tile"><b>{_esc(t.get("v", "—"))}</b>'
+        f'<div class="tile"><b>{_esc(t.get("v", "n/a"))}</b>'
         f'<span>{_esc(t.get("l", ""))}</span></div>'
         for t in payload.get("mtiles") or []
     )
     if tiles:
         parts.append(f'<div class="tiles">{tiles}</div>')
     parts.append(_series_svg(payload.get("equitySeries"), kind="line",
-                             caption="Equity — stored run"))
+                             caption="Equity (stored run)"))
     parts.append(_series_svg(payload.get("drawdownSeries"), kind="area",
                              caption="Drawdown"))
     parts.append("</section>")
@@ -378,7 +404,7 @@ def build_report(
     ld = payload.get("ladderDepth")
     if ld:
         parts.append("<p><strong>Scale-in depth attribution (P&amp;L by "
-                     "ladder depth — both views tie out):</strong></p>")
+                     "ladder depth, both views tie out):</strong></p>")
         for label, key in (("per-tier", "tiers"), ("marginal per rung", "rungs")):
             rows = ld.get(key) or []
             if rows:
@@ -401,10 +427,10 @@ def build_report(
     parts.append("<section><h2>Reproducibility appendix</h2>")
     parts.append('<p class="note">This run re-executes deterministically: '
                  "same spec, same seed, the recorded effective window, and "
-                 "— for intraday runs — the recorded per-session bar "
+                 "(for intraday runs) the recorded per-session bar "
                  "resolution pinned. The executable proof lives in the "
                  "notebook export (same run, .ipynb); a fresh app run may "
-                 "legitimately differ as the lake deepens — a replay never "
+                 "legitimately differ as the lake deepens. A replay never "
                  "silently re-resolves.</p>")
     parts.append("<table><tbody>" + _rows([
         ("seed", grid.get("seed")),
@@ -428,11 +454,11 @@ def build_report(
 
     parts.append(f'<div class="footer"><p class="disclaimer">'
                  f"{_esc(DISCLAIMER)}</p>"
-                 '<p class="meta">Generated by Skeptic — the honesty layer '
+                 '<p class="meta">Generated by Skeptic. The honesty layer '
                  "is the product.</p></div>")
 
     body = "".join(parts)
     return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
             f"<meta name=\"viewport\" content=\"width=device-width, "
-            f"initial-scale=1\"><title>{_esc(name)} — Skeptic</title>"
+            f"initial-scale=1\"><title>{_esc(name)} (Skeptic)</title>"
             f"{_FONTS}<style>{_CSS}</style></head><body>{body}</body></html>")

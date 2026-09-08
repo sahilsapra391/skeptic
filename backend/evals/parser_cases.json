@@ -1,5 +1,5 @@
 {
- "comment": "Parser eval set — 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype). F4 adds cases 31-35 (vol-surface vocabulary: skew_25d / term_structure_slope in vol points, the VRP alias onto hv_iv_spread_30d, and the vague-threshold / unsupported-tenor asks). Owner gate fulfilled 2026-07-07: cases 27/28/36 are the owner's VERBATIM prompts (typos preserved — that is the point: the golden set protects the owner's real phrasing, not tidy archetypes); 28 is kind spec_or_questions (owner-blessed dual outcome). F1 adds cases 37-40 (dealer-positioning vocabulary: gex/dex sign + rank, the raw-vendor-unit refusal). F2/F3 adds cases 41-45 (flow/tide/NOPE/put-call/max-pain vocabulary; dollar and NOPE raw thresholds refused).",
+ "comment": "Parser eval set: 14 clear (spec) cases with hand-written ground truth + 8 ambiguous (questions) cases that must produce questions with zero fabricated parameters. Grows the M4/D1c/D2c set with the D5 scale-in ladder (cases 19-22). Ground truth compares the decision-relevant subset; meta.name, costs, sizing defaults, dte windows, rearm and stop_adding_on are free. FX.5 adds cases 23-28 (intraday_scan/resolution vocabulary, the exit-less 0DTE ask, the golden archetype). F4 adds cases 31-35 (vol-surface vocabulary: skew_25d / term_structure_slope in vol points, the VRP alias onto hv_iv_spread_30d, and the vague-threshold / unsupported-tenor asks). Owner gate fulfilled 2026-07-07: cases 27/28/36 are the owner's VERBATIM prompts (typos preserved, which is the point: the golden set protects the owner's real phrasing, not tidy archetypes); 28 is kind spec_or_questions (owner-blessed dual outcome). F1 adds cases 37-40 (dealer-positioning vocabulary: gex/dex sign + rank, the raw-vendor-unit refusal). F2/F3 adds cases 41-45 (flow/tide/NOPE/put-call/max-pain vocabulary; dollar and NOPE raw thresholds refused).",
  "cases": [
   {
    "case": 1,
@@ -393,7 +393,7 @@
    "case": 15,
    "text": "Buy a 60 DTE ATM call on QQQ and harvest theta between 21 and 7 DTE at 50% profit.",
    "kind": "questions",
-   "comment": "Owner amendment 1 golden case: theta_harvest has no defined max profit on a long option — the parser must ASK (offering a plain profit target or time exit), never emit theta_harvest on a long_call."
+   "comment": "Owner amendment 1 golden case: theta_harvest has no defined max profit on a long option. The parser must ASK (offering a plain profit target or time exit), never emit theta_harvest on a long_call."
   },
   {
    "case": 16,
@@ -484,13 +484,13 @@
    "case": 18,
    "text": "Scalp SPY 0DTE puts off the 1-minute chart, in at 9:32, out by 9:47.",
    "kind": "questions",
-   "comment": "Sub-5-minute vocabulary: the record is 5-minute bars — the parser must ASK (offering the 5-min grid), never silently round 9:32 to 9:30 or emit a 1-minute indicator."
+   "comment": "Sub-5-minute vocabulary: the record is 5-minute bars. The parser must ASK (offering the 5-min grid), never silently round 9:32 to 9:30 or emit a 1-minute indicator."
   },
   {
    "case": 19,
-   "text": "Buy a 1DTE ATM call on SPY and scale in as the 5-minute RSI(14) falls: 2 contracts at RSI 30, 3 more at 25, 5 at 20, 10 at 15. Stop adding once RSI stops making new lows. Cap the whole basket at 20 contracts. Take profit at 40% of the blended cost, stop out at 75%, and flatten by 3:45 — no overnight.",
+   "text": "Buy a 1DTE ATM call on SPY and scale in as the 5-minute RSI(14) falls: 2 contracts at RSI 30, 3 more at 25, 5 at 20, 10 at 15. Stop adding once RSI stops making new lows. Cap the whole basket at 20 contracts. Take profit at 40% of the blended cost, stop out at 75%, and flatten by 3:45, no overnight.",
    "kind": "spec",
-   "comment": "D5 GOLDEN — the founder's scale-in ladder family. Runs AS WRITTEN: a 4-rung intraday RSI ladder on a 1DTE ATM call, not flattened to a single entry. Owner may swap in their verbatim prompt; the ground truth is the decision-relevant subset.",
+   "comment": "D5 GOLDEN: the founder's scale-in ladder family. Runs AS WRITTEN: a 4-rung intraday RSI ladder on a 1DTE ATM call, not flattened to a single entry. Owner may swap in their verbatim prompt; the ground truth is the decision-relevant subset.",
    "expect": {
     "spec_version": 3,
     "clock": "5min",
@@ -574,9 +574,9 @@
   },
   {
    "case": 20,
-   "text": "On QQQ, buy the nearest same-day-expiry ATM call and add as the 5-minute RSI(2) drops — 1 contract at 25, then 2 more at 15 — capped at 5 contracts total. Take profit 50%, out by 3:50, nothing held overnight.",
+   "text": "On QQQ, buy the nearest same-day-expiry ATM call and add as the 5-minute RSI(2) drops (1 contract at 25, then 2 more at 15), capped at 5 contracts total. Take profit 50%, out by 3:50, nothing held overnight.",
    "kind": "spec",
-   "comment": "A second, shorter ladder (0DTE QQQ) to prove generality — the primitive isn't special-cased to SPY or to four rungs.",
+   "comment": "A second, shorter ladder (0DTE QQQ) to prove generality. The primitive isn't special-cased to SPY or to four rungs.",
    "expect": {
     "spec_version": 3,
     "clock": "5min",
@@ -637,17 +637,17 @@
    "case": 21,
    "text": "Scale into SPY 1DTE ATM calls on the 5-minute RSI(14): 2 at 30, 3 at 25, 5 at 20. Take profit at 40%, flatten by 3:45.",
    "kind": "questions",
-   "comment": "The ladder is supported and fully specified EXCEPT the ruin cap — a scale-in with no max_total_contracts is unbounded ruin. The parser must ASK for the cap, never default it (guardrail #3)."
+   "comment": "The ladder is supported and fully specified EXCEPT the ruin cap. A scale-in with no max_total_contracts is unbounded ruin. The parser must ASK for the cap, never default it (guardrail #3)."
   },
   {
    "case": 22,
-   "text": "Buy SPY 1DTE ATM calls and add more as the 5-minute RSI(14) drops — 2 at 30, 3 at 25, 5 at 20 — max 15 contracts.",
+   "text": "Buy SPY 1DTE ATM calls and add more as the 5-minute RSI(14) drops (2 at 30, 3 at 25, 5 at 20), max 15 contracts.",
    "kind": "questions",
-   "comment": "A ladder with a cap but ZERO exit rules — the parser must ASK for an exit, exactly as it does for any structure with no stated exit."
+   "comment": "A ladder with a cap but ZERO exit rules. The parser must ASK for an exit, exactly as it does for any structure with no stated exit."
   },
   {
    "case": 23,
-   "text": "Sell a 0DTE at-the-money put on SPY every time the 5-minute RSI(14) dips below 30 — take every setup, don't stop after the first. 25% profit target, flatten everything by 15:45.",
+   "text": "Sell a 0DTE at-the-money put on SPY every time the 5-minute RSI(14) dips below 30. Take every setup, don't stop after the first. 25% profit target, flatten everything by 15:45.",
    "kind": "spec",
    "comment": "FX.5 clear case: 'every time / take every setup' phrasing → entry.intraday_scan every_setup (one entry per signal episode, engine-managed). No resolution phrasing → NO resolution field (never inferred from 0DTE).",
    "expect": {
@@ -695,7 +695,7 @@
    "case": 24,
    "text": "Each morning sell one 0DTE ATM put on SPY, 25% profit target, flat by 15:45.",
    "kind": "spec",
-   "comment": "FX.5 contrast case: 'each morning ... one' is once-per-session phrasing — intraday_scan must be ABSENT (fabricating it changes the strategy).",
+   "comment": "FX.5 contrast case: 'each morning ... one' is once-per-session phrasing: intraday_scan must be ABSENT (fabricating it changes the strategy).",
    "expect": {
     "spec_version": 3,
     "clock": "5min",
@@ -724,7 +724,7 @@
   },
   {
    "case": 25,
-   "text": "Sell 0DTE ATM SPY puts with a 25% profit target, flat by 15:45 — use the finest data you have, minute-level where it exists.",
+   "text": "Sell 0DTE ATM SPY puts with a 25% profit target, flat by 15:45. Use the finest data you have, minute-level where it exists.",
    "kind": "spec",
    "comment": "FX.5 clear case: explicit resolution phrasing → backtest.resolution finest. Data policy mapped ONLY from explicit language.",
    "expect": {
@@ -758,13 +758,13 @@
    "case": 26,
    "text": "Sell 0DTE at-the-money puts on SPY every day.",
    "kind": "questions",
-   "comment": "FX.5 guardrail-#3 case: an exit-less 0DTE SELLING strategy must ASK — and the ask should OFFER the concrete choices (force-flat time / profit target / hold to settlement). Suggest, never default. NOTE: the harness grades kind only — it cannot verify the ask OFFERS the three choices; that behavior is prompt-specified and owner-checked at the gate."
+   "comment": "FX.5 guardrail-#3 case: an exit-less 0DTE SELLING strategy must ASK, and the ask should OFFER the concrete choices (force-flat time / profit target / hold to settlement). Suggest, never default. NOTE: the harness grades kind only. It cannot verify the ask OFFERS the three choices; that behavior is prompt-specified and owner-checked at the gate."
   },
   {
    "case": 27,
    "text": "Sell 0 DTE SPY puts at the money, take profit at 25% and just keep selling new ones all day whenever the last one closes, dont hold anything past 3:45 just close everything by then. Use the best data you have, minute level wherever possible. Stop loss 100% of the credit.",
    "kind": "spec",
-   "comment": "OWNER VERBATIM golden case (gate commitment, replaces the archetype): full v4 — unconditional lifecycle cycling + finest resolution (explicit 'best data / minute level' phrasing) + force-flat 15:45 + PT 25 + stop 100% of credit.",
+   "comment": "OWNER VERBATIM golden case (gate commitment, replaces the archetype): full v4: unconditional lifecycle cycling + finest resolution (explicit 'best data / minute level' phrasing) + force-flat 15:45 + PT 25 + stop 100% of credit.",
    "expect": {
     "spec_version": 4,
     "clock": "5min",
@@ -799,7 +799,7 @@
    "case": 28,
    "text": "Buy 1 DTE QQQ calls at the money, sell at 20% profit and get back in right after, keep doing this the whole day. If it goes against me 50% then exit. No holding overnight obviously.",
    "kind": "spec_or_questions",
-   "comment": "OWNER VERBATIM golden case (gate commitment, replaces the archetype): condition-less cycling long. 'No holding overnight' on 1DTE should map to a force-flat (any end-of-session time is faithful — the list); the TIME is unstated, so ASKING is owner-blessed as equally correct. NO resolution field — never asked for.",
+   "comment": "OWNER VERBATIM golden case (gate commitment, replaces the archetype): condition-less cycling long. 'No holding overnight' on 1DTE should map to a force-flat (any end-of-session time is faithful, per the list); the TIME is unstated, so ASKING is owner-blessed as equally correct. NO resolution field, never asked for.",
    "expect": {
     "spec_version": 4,
     "clock": "5min",
@@ -838,13 +838,13 @@
    "case": 29,
    "text": "Sell a 30-delta put on SPY, close at 50% profit.",
    "kind": "questions",
-   "comment": "Review finding: the intraday cadence carve-out must NOT leak to daily strategies — no cadence AND no condition on a DAILY-clock strategy still asks (guardrail #3)."
+   "comment": "Review finding: the intraday cadence carve-out must NOT leak to daily strategies: no cadence AND no condition on a DAILY-clock strategy still asks (guardrail #3)."
   },
   {
    "case": 30,
    "text": "Every time RSI(14) dips below 30, buy a 45 DTE ATM call on SPY. Sell at 30% profit or 21 DTE.",
    "kind": "spec",
-   "comment": "Review finding: 'every time' on a LONGER-TENOR strategy is plain signal_only daily vocabulary — intraday_scan/clock 5min must NOT be fabricated.",
+   "comment": "Review finding: 'every time' on a LONGER-TENOR strategy is plain signal_only daily vocabulary: intraday_scan/clock 5min must NOT be fabricated.",
    "expect": {
     "spec_version": 1,
     "clock": "daily",
@@ -888,7 +888,7 @@
    "case": 31,
    "text": "Sell a 30-delta put on SPY every Monday, but only when the 25-delta skew is above 5. Close at 50% profit or 21 DTE.",
    "kind": "spec",
-   "comment": "F4: the skew filter in vol points — 'skew above 5' → skew_25d value 5 (never ×100), spec_version 5 server-computed.",
+   "comment": "F4: the skew filter in vol points, 'skew above 5' → skew_25d value 5 (never ×100), spec_version 5 server-computed.",
    "expect": {
     "spec_version": 5,
     "clock": "daily",
@@ -972,7 +972,7 @@
    "case": 33,
    "text": "Sell a 25-delta put on SPY weekly when the variance risk premium is above 4 points. Close at 50% profit or 21 DTE.",
    "kind": "spec",
-   "comment": "F4 owner decision: VRP is an ALIAS onto hv_iv_spread_30d (the same IV-minus-realized formula) — never a fabricated separate indicator, and NOT v5 vocabulary (stays spec_version 2).",
+   "comment": "F4 owner decision: VRP is an ALIAS onto hv_iv_spread_30d (the same IV-minus-realized formula), never a fabricated separate indicator, and NOT v5 vocabulary (stays spec_version 2).",
    "expect": {
     "spec_version": 2,
     "clock": "daily",
@@ -1013,25 +1013,25 @@
    "case": 34,
    "text": "Sell a put credit spread on SPY when skew gets really steep. 50% profit target.",
    "kind": "questions",
-   "comment": "F4: vague 'really steep' has NO threshold — the parser must ask (offering concrete vol-point values), never pick one. Spread deltas/width are also unstated."
+   "comment": "F4: vague 'really steep' has NO threshold. The parser must ask (offering concrete vol-point values), never pick one. Spread deltas/width are also unstated."
   },
   {
    "case": 35,
    "text": "Buy a 45 DTE ATM put on QQQ when the 10-delta skew on 60-day options is above 8. Sell at 30% profit or 21 DTE.",
    "kind": "questions",
-   "comment": "F4 owner decision: only 25Δ@30d skew and the 30v90 slope exist — other tenors/deltas must ASK (offering the two supported signals), never silently remap to skew_25d."
+   "comment": "F4 owner decision: only 25Δ@30d skew and the 30v90 slope exist. Other tenors/deltas must ASK (offering the two supported signals), never silently remap to skew_25d."
   },
   {
    "case": 36,
    "text": "I want you to buy 0 DTE SPY calls whos strike price is the same as the SPY current price so no difference and the entry for this position is that if RSI (14) is below 30 at any time during the day. At RSI 30 buy just 2 contracts and if RSI goes down to 25 then buy 3 more if RSI goes to 20 after that, then buy 5 contracts more, if it goes down to 15 then by 10 more keep buying new contracts until the reversal starts and then stop. The exit it should be a 40% profit. Ask me if you have any questions don't assume",
    "kind": "questions",
-   "comment": "OWNER VERBATIM golden case (gate commitment, new): the personal RSI scale-in ladder as actually typed ('by 10 more' typo included). Correct behavior = clarifying questions — the ruin cap (max_total_contracts) is UNSTATED ('keep buying... until the reversal' is open-ended past the 4 named rungs); reversal semantics for stop_adding_on and settlement-vs-force-flat are good asks too. On a post-answer spec, resolution must stay ABSENT — finest was never asked for."
+   "comment": "OWNER VERBATIM golden case (gate commitment, new): the personal RSI scale-in ladder as actually typed ('by 10 more' typo included). Correct behavior = clarifying questions: the ruin cap (max_total_contracts) is UNSTATED ('keep buying... until the reversal' is open-ended past the 4 named rungs); reversal semantics for stop_adding_on and settlement-vs-force-flat are good asks too. On a post-answer spec, resolution must stay ABSENT. Finest was never asked for."
   },
   {
    "case": 37,
    "text": "Sell a 30-delta put on SPY every Monday, but only when dealers are long gamma. Close at 50% profit or 21 DTE.",
    "kind": "spec",
-   "comment": "F1: the gamma-regime filter — 'dealers long gamma' → gex_level > 0 (sign IS the regime; no separate dealer_gamma_regime indicator), spec_version 6 server-computed.",
+   "comment": "F1: the gamma-regime filter, 'dealers long gamma' → gex_level > 0 (sign IS the regime; no separate dealer_gamma_regime indicator), spec_version 6 server-computed.",
    "expect": {
     "spec_version": 6,
     "clock": "daily",
@@ -1073,7 +1073,7 @@
    "case": 38,
    "text": "Buy a 45 DTE ATM put on QQQ whenever dealer gamma exposure is in the bottom decile of the past year. Sell at 40% profit or get out at 21 DTE.",
    "kind": "spec",
-   "comment": "F1: rank phrasing — 'bottom decile of the past year' → gex_rank_1y < 10 (percentile, ivx_rank convention; the ≥126-obs floor is engine semantics, not parser).",
+   "comment": "F1: rank phrasing, 'bottom decile of the past year' → gex_rank_1y < 10 (percentile, ivx_rank convention; the ≥126-obs floor is engine semantics, not parser).",
    "expect": {
     "spec_version": 6,
     "clock": "daily",
@@ -1115,13 +1115,13 @@
    "case": 39,
    "text": "Sell a put credit spread on SPY when GEX is above 5 billion, short leg 25 delta, $5 wide, 45 DTE, weekly entries. Take profit at 50%.",
    "kind": "questions",
-   "comment": "F1 owner decision: raw vendor-unit thresholds are REFUSED — the units are opaque and a silent upstream rescale would corrupt every threshold spec. Must ask, offering the sign form or a percentile rank; never emit gex_level with value 5e9."
+   "comment": "F1 owner decision: raw vendor-unit thresholds are REFUSED. The units are opaque and a silent upstream rescale would corrupt every threshold spec. Must ask, offering the sign form or a percentile rank; never emit gex_level with value 5e9."
   },
   {
    "case": 40,
    "text": "Sell a call credit spread on SPY, short leg 25 delta, $5 wide, 45 DTE, weekly, but only when dealers are net short delta. Exit at 50% profit or 21 DTE.",
    "kind": "spec",
-   "comment": "F1: the DEX side — 'dealers net short delta' → dex_level < 0.",
+   "comment": "F1: the DEX side, 'dealers net short delta' → dex_level < 0.",
    "expect": {
     "spec_version": 6,
     "clock": "daily",
@@ -1211,7 +1211,7 @@
    "case": 42,
    "text": "Buy a 45 DTE ATM call on QQQ whenever the market-wide tide is risk-on and the put/call ratio is below 0.8. Sell at 40% profit or 21 DTE.",
    "kind": "spec",
-   "comment": "F2: market_tide_level is MARKET-WIDE (one series for all tickers) + put_call_flow_ratio raw threshold (unit-free ratio — legal).",
+   "comment": "F2: market_tide_level is MARKET-WIDE (one series for all tickers) + put_call_flow_ratio raw threshold (unit-free ratio, legal).",
    "expect": {
     "spec_version": 7,
     "clock": "daily",
@@ -1262,7 +1262,7 @@
    "case": 43,
    "text": "Sell an iron condor on SPY, 20 delta shorts, $3 wings, 30 DTE, monthly, but only when spot is within 1% of max pain. Take profit 40%, time exit 10 DTE.",
    "kind": "spec",
-   "comment": "F3: 'within 1% of max pain' → TWO ANDed max_pain_distance_pct conditions (< 1 and > −1; front expiry — the convention is the concept).",
+   "comment": "F3: 'within 1% of max pain' → TWO ANDed max_pain_distance_pct conditions (< 1 and > −1; front expiry, the convention is the concept).",
    "expect": {
     "spec_version": 7,
     "clock": "daily",
@@ -1330,13 +1330,13 @@
    "case": 44,
    "text": "Buy a 45 DTE ATM put on SPY when NOPE is above 20. Sell at 30% profit or 21 DTE.",
    "kind": "questions",
-   "comment": "F2 owner decision: RAW NOPE thresholds are refused even though the metric is dimensionless — we ingest the VENDOR'S implementation; must ask offering sign or rank, never emit nope_level with value 20."
+   "comment": "F2 owner decision: RAW NOPE thresholds are refused even though the metric is dimensionless. We ingest the VENDOR'S implementation; must ask offering sign or rank, never emit nope_level with value 20."
   },
   {
    "case": 45,
    "text": "Sell a put credit spread on SPY weekly when net options premium is above 50 million dollars, short leg 25 delta, $5 wide, 45 DTE. Take profit at 50%.",
    "kind": "questions",
-   "comment": "F2: raw DOLLAR flow thresholds refused (vendor magnitudes) — ask offering the sign form or a percentile rank."
+   "comment": "F2: raw DOLLAR flow thresholds refused (vendor magnitudes). Ask offering the sign form or a percentile rank."
   },
   {
    "case": 46,
@@ -1428,7 +1428,7 @@
    "case": 49,
    "text": "Sell a 30-delta put on SPY when VIX crosses above 20. Close at 50% profit or 21 DTE.",
    "kind": "questions",
-   "comment": "Cross-detection is not supported on vix_level (a point-in-time read; only the bar-series indicators carry yesterday's value). The parser must ASK whether the level form ('VIX above 20') is acceptable — never silently swap crosses for above (they fire on different bars; the substitution changes the strategy). This combination used to validate and then 500 at the first evaluated session."
+   "comment": "Cross-detection is not supported on vix_level (a point-in-time read; only the bar-series indicators carry yesterday's value). The parser must ASK whether the level form ('VIX above 20') is acceptable, never silently swap crosses for above (they fire on different bars; the substitution changes the strategy). This combination used to validate and then 500 at the first evaluated session."
   }
  ]
 }
