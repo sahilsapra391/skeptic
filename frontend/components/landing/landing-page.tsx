@@ -25,6 +25,10 @@ import { LandingHero, LandingTopbar } from "@/components/landing/hero";
 import { HowItArgues } from "@/components/landing/how-it-argues";
 import { LandingFooter } from "@/components/landing/landing-footer";
 import { Pricing } from "@/components/landing/pricing";
+import {
+  ProductHuntBubble,
+  useProductHuntBubble,
+} from "@/components/landing/product-hunt-badge";
 import { Receipts } from "@/components/landing/receipts";
 import {
   DeviceGateModal,
@@ -36,6 +40,10 @@ import { VerdictShowcase } from "@/components/landing/verdict-showcase";
 export function LandingPage() {
   const theme = useLandingTheme();
   const draw = useWordmarkDraw();
+  // Product Hunt launch bubble (owner 2026-09-07): every fresh visit gets
+  // it; the cross hides it for the rest of the session. Held here because
+  // the footer reserves room for it while it is up.
+  const phBubble = useProductHuntBubble();
 
   // the product opens in popups ON the landing (owner 2026-07-17) — a
   // visitor is never redirected into the app shell.
@@ -143,6 +151,18 @@ export function LandingPage() {
       });
   };
 
+  // background-run banner: shown whenever a run is in flight/tracked but
+  // its popup is minimized (or after a reload, when only the persisted id
+  // survives). The Product Hunt bubble shares the corner and lifts above it.
+  const bannerShown = Boolean(
+    (runFlow || activeRunId) &&
+      !runOpen &&
+      !(activeRunId && viewRunId === activeRunId) &&
+      // an idle chart flow with no tracked run has nothing in progress — a
+      // "being set up…" pill for it would be a false claim
+      !(runFlow?.mode === "chart" && flowRunId === null && !activeRunId),
+  );
+
   return (
     <div className="min-h-screen bg-ground">
       <LandingTopbar theme={theme} draw={draw} />
@@ -159,18 +179,15 @@ export function LandingPage() {
         <CopilotDemo />
         <Pricing />
       </main>
-      <LandingFooter theme={theme} />
+      <LandingFooter theme={theme} bubbleShown={phBubble.shown} />
 
-      {/* background-run banner: shown whenever a run is in flight/tracked
-          but its popup is minimized (or after a reload, when only the
-          persisted id survives). Clicking reopens the live popup if it's
-          still mounted, else opens a read-only view. */}
-      {(runFlow || activeRunId) &&
-        !runOpen &&
-        !(activeRunId && viewRunId === activeRunId) &&
-        // an idle chart flow with no tracked run has nothing in progress —
-        // a "being set up…" pill for it would be a false claim
-        !(runFlow?.mode === "chart" && flowRunId === null && !activeRunId) && (
+      {phBubble.shown && (
+        <ProductHuntBubble lifted={bannerShown} onDismiss={phBubble.dismiss} />
+      )}
+
+      {/* clicking the banner reopens the live popup if it's still mounted,
+          else opens a read-only view */}
+      {bannerShown && (
         <ActiveRunBanner
           runId={activeRunId}
           // reopening the popup is only right when the popup contains the
