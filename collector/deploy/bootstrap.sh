@@ -124,7 +124,6 @@ systemctl daemon-reload
 systemctl enable --now skeptic-intraday.service
 systemctl enable --now skeptic-heartbeat.timer
 systemctl enable --now skeptic-autoupdate.timer
-systemctl enable --now skeptic-keepwarm.timer
 # Scheduled collection moved off GitHub Actions 2026-08-04 (billing block took
 # the EOD job down silently). See "Scheduled jobs" in README.md.
 systemctl enable --now skeptic-collect-eod.timer

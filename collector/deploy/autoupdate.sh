@@ -109,7 +109,7 @@ install -m644 "$DEST"/collector/deploy/skeptic-*.service /etc/systemd/system/
 install -m644 "$DEST"/collector/deploy/skeptic-*.timer /etc/systemd/system/
 systemctl daemon-reload
 # restart only the long-lived recorder (the heartbeat is a fresh process
-# every fire, and the keep-warm ping is a oneshot)
+# every fire)
 systemctl restart skeptic-intraday.service
 # Only NOW is the deploy complete; anything above failing means tomorrow
 # re-runs the whole chain instead of declaring itself up to date.

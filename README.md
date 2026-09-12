@@ -148,7 +148,7 @@ flowchart TB
         FE --- FNORM
     end
 
-    subgraph railway["FastAPI on Railway"]
+    subgraph railway["FastAPI on Railway, asleep when idle"]
         API["API routes"]
         PARSE["parser/<br/>NL to spec"]
         ENG["engine/<br/>fills, selection<br/>margin, metrics"]
@@ -188,6 +188,19 @@ flowchart TB
 
 Frontend on Vercel. Backend on Railway. Data in R2, queried with DuckDB.
 Collection on a VM that is always on, for reasons the next sections explain.
+
+The backend is the opposite of always on. Railway's Serverless setting stops its
+container a few minutes after it last sent anything and boots a new one on the
+next request, so a month nobody uses the product costs the plan's floor rather
+than a container's memory held around the clock. Three things make that safe.
+A run in progress keeps the container awake with a once-a-minute database
+heartbeat, because most of a gauntlet is arithmetic that Railway would otherwise
+read as idle and stop mid-run. Pooled database connections close once the
+process goes quiet, since Railway counts an open connection as activity. And a
+request that arrives while the container boots, which Railway answers with a
+502, is sent again by the proxy only when it provably never reached the app;
+the nightly scan wakes the backend with a health check before it submits
+anything, and a night with nothing to submit never wakes it at all.
 
 The backend refuses to alter the schema of a remote database unless something
 explicitly chose to, and it refuses at import, so a server pointed at a database

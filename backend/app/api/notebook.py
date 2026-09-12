@@ -32,6 +32,7 @@ from app import db
 from app.api.jobs import claim_run_job, pinned_engine_rerun
 from app.api.payload import sweep_coverage_notes
 from app.api.provenance import derived_boxes
+from app.serverless import holds_awake
 
 log = logging.getLogger("notebook")
 
@@ -272,6 +273,7 @@ def _divergence_report(
     return out
 
 
+@holds_awake
 def _execute_reproduce(run_id: str) -> None:
     import os
 

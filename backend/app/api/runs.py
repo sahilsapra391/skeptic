@@ -34,6 +34,7 @@ from app.api.provenance import (
 from app.engine.concurrency import ENGINE_LOCK, release_memory
 from app.honesty.stages import MIN_TRADES
 from app.models.spec import StrategySpec
+from app.serverless import holds_awake
 from app.text import normalize
 
 log = logging.getLogger("runs")
@@ -193,6 +194,7 @@ def _inherit_min_trades(parent_run_id: str | None) -> int:
     return MIN_TRADES
 
 
+@holds_awake
 def _execute_run(run_id: str, auto_note: str | None = None,
                  min_trades: int = MIN_TRADES) -> None:
     """Background job: serialize on the engine lock, run one gauntlet, then
@@ -1398,6 +1400,7 @@ def audit_run(run_id: str, tasks: BackgroundTasks) -> dict[str, Any]:
     return {"run_id": run_id, "demo": False, "status": "auditing"}
 
 
+@holds_awake
 def _execute_audit(run_id: str) -> None:
     try:
         with db.session() as s:

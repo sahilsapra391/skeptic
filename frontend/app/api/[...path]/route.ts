@@ -8,16 +8,24 @@
  * dev) and SKEPTIC_DEMO_FALLBACK != "0", those routes (and only those)
  * fall back to labeled demo fixtures. Data routes (/api/data/*, /api/health)
  * NEVER fall back: coverage is real or absent, never invented.
+ *
+ * Wake: the backend sleeps when idle (backend/railway.json). A request that
+ * lands while Railway boots the container is sent again, but only when it
+ * provably never reached the app. The rules live in lib/wake.ts.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
 import { createDemoRun, demoAskAnswer, demoParse, getDemoRun, listDemoRuns } from "@/lib/demo";
+import { sendWaking, WAKE_BUDGET_MS } from "@/lib/wake";
 import type { SpecDraft } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const BACKEND = process.env.SKEPTIC_API_URL ?? "http://localhost:8000";
+// a local dev backend never sleeps: a down one should fail fast, not wait out
+// a wake budget before the demo fallback
+const LOCAL_BACKEND = /localhost|127\.0\.0\.1/.test(BACKEND);
 
 function demoEnabled(): boolean {
   return process.env.SKEPTIC_DEMO_FALLBACK !== "0";
@@ -120,7 +128,18 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
   const body = req.method === "GET" || req.method === "HEAD" ? null : await req.text();
 
   try {
-    const upstream = await forward(req, path, body);
+    const { response: upstream, stillWaking } = await sendWaking(
+      () => forward(req, path, body),
+      req.method,
+      { budgetMs: LOCAL_BACKEND ? 0 : WAKE_BUDGET_MS },
+    );
+    if (stillWaking) {
+      await upstream.body?.cancel();
+      return NextResponse.json(
+        { detail: "the engine is waking up after sitting idle. Try again in a few seconds" },
+        { status: 503, headers: { "retry-after": "5" } },
+      );
+    }
     if (upstream.status === 501 && demoEligible(path) && demoEnabled()) {
       return demoResponse(req, path, body);
     }
@@ -164,13 +183,14 @@ async function handle(req: NextRequest, { params }: { params: { path: string[] }
       return demoResponse(req, path, body);
     }
     // the dev hint only makes sense against a local backend; in prod the
-    // usual cause is a redeploy window. Say so instead of leaking dev docs
-    const local = /localhost|127\.0\.0\.1/.test(BACKEND);
+    // usual cause is a redeploy window or a container still waking. Say so
+    // instead of leaking dev docs
+    const local = LOCAL_BACKEND;
     return NextResponse.json(
       {
         detail: local
           ? `backend unreachable at ${BACKEND}. Start it with: cd backend && uv run uvicorn app.main:app`
-          : "the engine is unreachable. It may be redeploying; try again in a minute",
+          : "the engine is unreachable. It may be waking up or redeploying; try again in a minute",
       },
       { status: 502 },
     );
