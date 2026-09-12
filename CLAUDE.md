@@ -225,6 +225,36 @@ Prompts also ask the models to avoid the character. Worth doing, worth nothing
 by itself: a prompt is a request, and the normalizer is the part that cannot be
 talked out of it.
 
+## The backend sleeps when idle (owner directive 2026-09-11)
+
+Railway's Serverless setting is on, in `backend/railway.json`
+(`sleepApplication`) rather than the dashboard, so the repo can see it and a
+test pins it. Railway stops the container 5 to 10 minutes after its last
+outbound packet and boots a fresh one on the next request. That is why an idle
+month costs the Hobby floor instead of a container's memory held around the
+clock, and it is easy to undo by accident.
+
+- **Nothing may send traffic on a timer.** A keep-warm ping, a polling loop, a
+  telemetry SDK or metrics exporter in the backend, or a timer anywhere that
+  calls it, keeps the container awake permanently and puts the bill back where
+  it was. The VM keep-warm timer was retired for exactly this reason, and
+  `backend/tests/test_serverless_config.py` fails if a deploy unit starts
+  calling the API on a schedule again.
+- **In-process background work holds the container awake.** Every job that
+  runs after its request returns gets `@holds_awake` (`app/serverless.py`).
+  Most of a run is arithmetic with no network traffic, and Railway cannot tell
+  that from idle: an undecorated job gets stopped mid-run, lost, and refunded.
+  The same test checks every job that exists today.
+- **Anything that POSTs to the backend has to survive a boot.** Railway answers
+  a request to a sleeping service with a 502 while the container starts. The
+  Vercel proxy re-sends only what provably never reached the app
+  (`frontend/lib/wake.ts`), and the nightly scan wakes the backend with a
+  health check before its first POST (`scripts/nightly_improve.py`). A new
+  caller copies one of those, never a blind retry of a POST.
+- Pooled database connections close once the process has been quiet for 90
+  seconds, because Railway counts an open connection as activity. Do not hold
+  a connection open across idle time.
+
 ## Engineering conventions
 
 - Python: uv, ruff, mypy (strict on `engine/` and `honesty/`), pydantic v2

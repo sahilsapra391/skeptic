@@ -658,3 +658,19 @@ def _ensure_indexes() -> None:
 
 def session() -> Session:
     return SessionLocal()
+
+
+def release_idle_connections() -> bool:
+    """Close every pooled connection nobody is using right now.
+
+    Called by the idle release in `app/serverless.py` once the process has
+    gone quiet, so an open socket to the database cannot keep the Railway
+    container awake (Railway counts open connections as activity). A checked
+    out connection is untouched and simply retired when its session ends.
+    SQLite is left alone: a file has no socket to close, and disposing an
+    in-memory database would destroy it. Returns whether anything was
+    released."""
+    if _engine.url.get_backend_name() == "sqlite":
+        return False
+    _engine.dispose()
+    return True

@@ -15,6 +15,11 @@ run on GitHub Actions. See "Scheduled jobs" below for why they followed.
 
 ## What's here
 
+There is no keep-warm timer, on purpose. The Railway backend sleeps when idle
+(`backend/railway.json`), and a timer that pinged it would hold it awake around
+the clock and bill for it. `backend/tests/test_serverless_config.py` fails if a
+unit here starts calling the API on a schedule.
+
 | File | Role |
 |---|---|
 | `skeptic-intraday.service` | systemd unit for `intraday.py`, `Restart=always`. |
@@ -24,7 +29,6 @@ run on GitHub Actions. See "Scheduled jobs" below for why they followed.
 | `collect-eod.sh` + `skeptic-collect-eod.service` / `.timer` | nightly EOD collection chain, 21:30 UTC + 22:30 UTC catch-up, Mon–Fri. |
 | `skeptic-quality.service` / `.timer` | weekly data-quality scan, Sat 13:00 UTC. |
 | `skeptic-improve.service` / `.timer` | nightly unlock scan (ENGINE-V3 D3), Tue–Sat 07:00 UTC. |
-| `skeptic-keepwarm.service` / `.timer` | ping `skeptic.fyi/api/health` every 5 min so the first idea of the day never lands on a cold Railway box (one ping warms the Vercel proxy AND the backend; a GitHub Actions cron at */5 would bill ~9k private-repo minutes/month, while the VM timer is free). |
 | `bootstrap.sh` | provision a fresh Ubuntu VM end to end (idempotent). |
 
 ## Provision (Oracle Cloud always-free, $0)
@@ -144,8 +148,8 @@ Three things that will bite you on the cutover day, in order:
    `TimeoutStartSec`, which is the most OOM-prone thing this 1 GB box does.
 
 Prefer that over re-running `bootstrap.sh` when the VM is already provisioned:
-bootstrap also re-enables everything in its list, which will switch
-`skeptic-keepwarm.timer` back on if you had turned it off. (Bootstrap *is*
+bootstrap also re-enables everything in its list, including any timer you had
+deliberately turned off. (Bootstrap *is*
 the better path if you also want its new `.env` completeness check.)
 
 Secrets are the one thing neither path can deliver. The three jobs need

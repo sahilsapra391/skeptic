@@ -124,6 +124,28 @@ _logging.getLogger("main").warning("DATABASE TARGET: %s", db_target_line())
 init_db()
 _sweep_orphaned_runs()
 
+# Railway Serverless (backend/railway.json, app/serverless.py): once the process
+# has gone quiet, close the pooled database sockets so nothing keeps an idle
+# container awake, and count every request as activity.
+from app import serverless as _serverless  # noqa: E402
+from app.db import release_idle_connections as _release_idle  # noqa: E402
+
+_serverless.start_idle_release(_release_idle)
+
+
+@app.middleware("http")
+async def note_activity(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Marked on the way in AND out, so a request slower than the idle window
+    never has the pool emptied underneath it."""
+    _serverless.note_activity()
+    try:
+        return await call_next(request)
+    finally:
+        _serverless.note_activity()
+
+
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 
 app.add_middleware(

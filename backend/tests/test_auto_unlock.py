@@ -130,6 +130,9 @@ class TestExecuteUnlocks:
         monkeypatch.setenv("SKEPTIC_API_URL", "http://api.test")
         monkeypatch.setenv("SKEPTIC_ACCESS_TOKEN", "tok")
         monkeypatch.setattr(requests, "post", fake_post)
+        # the executor wakes the (possibly sleeping) backend before posting
+        monkeypatch.setattr(requests, "get", lambda url, timeout=None: type(
+            "Health", (), {"status_code": 200})())
 
         submitted = ni.execute_unlocks(decisions)
         # 4 ready, but the nightly cap is 3, and the not-ready one never posts

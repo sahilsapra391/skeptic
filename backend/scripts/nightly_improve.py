@@ -128,6 +128,37 @@ def scan_unlocks(today: date | None = None) -> list[UnlockDecision]:
     return decisions
 
 
+# The backend sleeps when idle (backend/railway.json), and Railway's proxy
+# answers a request to a sleeping service with a 502 while the container boots.
+# Everything this script sends is a POST that must land exactly once, so the
+# backend is woken first with an idempotent health check, and the real request
+# only goes to a backend that has answered. A night with nothing to submit
+# never wakes it at all.
+WAKE_TIMEOUT_SECONDS = 180.0
+WAKE_POLL_SECONDS = 5.0
+
+
+def wake_backend(base: str) -> bool:
+    """Poll the health route until the backend answers 200. False, loudly,
+    when it has not woken within WAKE_TIMEOUT_SECONDS."""
+    import time
+
+    import requests
+
+    deadline = time.monotonic() + WAKE_TIMEOUT_SECONDS
+    while True:
+        try:
+            if requests.get(f"{base}/api/health", timeout=15).status_code == 200:
+                return True
+        except requests.RequestException:
+            pass
+        if time.monotonic() + WAKE_POLL_SECONDS > deadline:
+            log.error("backend did not wake within %.0fs, nothing submitted",
+                      WAKE_TIMEOUT_SECONDS)
+            return False
+        time.sleep(WAKE_POLL_SECONDS)
+
+
 def execute_unlocks(decisions: list[UnlockDecision]) -> int:
     """Submit capped re-runs through the backend API (Railway executes:
     warm caches, LLM key, same DB; this script never runs the engine).
@@ -144,6 +175,8 @@ def execute_unlocks(decisions: list[UnlockDecision]) -> int:
         headers["Authorization"] = f"Bearer {token}"
 
     ready = [d for d in decisions if d.should_rerun][:AUTO_RERUNS_PER_NIGHT]
+    if not ready or not wake_backend(base):
+        return 0
     submitted = 0
     for d in ready:
         with db.session() as s:
@@ -220,8 +253,11 @@ def drain_receipts(delay: int = RECEIPT_DELAY_SECONDS) -> int:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
+    queue = eligible_for_receipt()
+    if not queue or not wake_backend(base):
+        return 0
     done = 0
-    for run_id in eligible_for_receipt():
+    for run_id in queue:
         resp = requests.post(f"{base}/api/runs/{run_id}/replay",
                              headers=headers, timeout=30)
         if resp.status_code == 409:
